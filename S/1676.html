@@ -1,0 +1,309 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>mpz/powm_ui.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.5' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/2224.html'>mpz</a>/powm_ui.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L59'>[^]</a><a href='#L122'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L59' title='Defined at 59.'>mod</a></li>
+<li><a href='#L107' title='Defined at 107.'>reduce</a></li>
+<li><a href='#L122' title='Defined at 122.'>mpz_powm_ui</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* mpz_powm_ui(res,base,exp,mod) -- Set R to (B^E) mod M.</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Contributed to the GNU project by Torbjörn Granlund.</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>Copyright 1991, 1993, 1994, 1996, 1997, 2000-2002, 2005, 2008, 2009,</em>
+<a id='L6' name='L6'></a><em class='comment'>2011-2013, 2015 Free Software Foundation, Inc.</em>
+<a id='L7' name='L7'></a><em class='comment'></em>
+<a id='L8' name='L8'></a><em class='comment'>This file is part of the GNU MP Library.</em>
+<a id='L9' name='L9'></a><em class='comment'></em>
+<a id='L10' name='L10'></a><em class='comment'>The GNU MP Library is free software; you can redistribute it and/or modify</em>
+<a id='L11' name='L11'></a><em class='comment'>it under the terms of either:</em>
+<a id='L12' name='L12'></a><em class='comment'></em>
+<a id='L13' name='L13'></a><em class='comment'>  * the GNU Lesser General Public License as published by the Free</em>
+<a id='L14' name='L14'></a><em class='comment'>    Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L15' name='L15'></a><em class='comment'>    option) any later version.</em>
+<a id='L16' name='L16'></a><em class='comment'></em>
+<a id='L17' name='L17'></a><em class='comment'>or</em>
+<a id='L18' name='L18'></a><em class='comment'></em>
+<a id='L19' name='L19'></a><em class='comment'>  * the GNU General Public License as published by the Free Software</em>
+<a id='L20' name='L20'></a><em class='comment'>    Foundation; either version 2 of the License, or (at your option) any</em>
+<a id='L21' name='L21'></a><em class='comment'>    later version.</em>
+<a id='L22' name='L22'></a><em class='comment'></em>
+<a id='L23' name='L23'></a><em class='comment'>or both in parallel, as here.</em>
+<a id='L24' name='L24'></a><em class='comment'></em>
+<a id='L25' name='L25'></a><em class='comment'>The GNU MP Library is distributed in the hope that it will be useful, but</em>
+<a id='L26' name='L26'></a><em class='comment'>WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY</em>
+<a id='L27' name='L27'></a><em class='comment'>or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License</em>
+<a id='L28' name='L28'></a><em class='comment'>for more details.</em>
+<a id='L29' name='L29'></a><em class='comment'></em>
+<a id='L30' name='L30'></a><em class='comment'>You should have received copies of the GNU General Public License and the</em>
+<a id='L31' name='L31'></a><em class='comment'>GNU Lesser General Public License along with the GNU MP Library.  If not,</em>
+<a id='L32' name='L32'></a><em class='comment'>see https://www.gnu.org/licenses/.  */</em>
+<a id='L33' name='L33'></a>
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> "<a href='106.html'>gmp-impl.h</a>"
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> "<a href='114.html'>longlong.h</a>"
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a><em class='comment'>/* This code is very old, and should be rewritten to current GMP standard.  It</em>
+<a id='L40' name='L40'></a><em class='comment'>   is slower than mpz_powm for large exponents, but also for small exponents</em>
+<a id='L41' name='L41'></a><em class='comment'>   when the mod argument is small.</em>
+<a id='L42' name='L42'></a><em class='comment'></em>
+<a id='L43' name='L43'></a><em class='comment'>   As an intermediate solution, we now deflect to mpz_powm for exponents &gt;= 20.</em>
+<a id='L44' name='L44'></a><em class='comment'>*/</em>
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a><em class='comment'>/*</em>
+<a id='L47' name='L47'></a><em class='comment'>  b ^ e mod m   res</em>
+<a id='L48' name='L48'></a><em class='comment'>  0   0     0    ?</em>
+<a id='L49' name='L49'></a><em class='comment'>  0   e     0    ?</em>
+<a id='L50' name='L50'></a><em class='comment'>  0   0     m    ?</em>
+<a id='L51' name='L51'></a><em class='comment'>  0   e     m    0</em>
+<a id='L52' name='L52'></a><em class='comment'>  b   0     0    ?</em>
+<a id='L53' name='L53'></a><em class='comment'>  b   e     0    ?</em>
+<a id='L54' name='L54'></a><em class='comment'>  b   0     m    1 mod m</em>
+<a id='L55' name='L55'></a><em class='comment'>  b   e     m    b^e mod m</em>
+<a id='L56' name='L56'></a><em class='comment'>*/</em>
+<a id='L57' name='L57'></a>
+<a id='L58' name='L58'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L59' name='L59'></a><a href='../R/2490.html' title='Multiple referred from 74 places.'>mod</a> (<a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> np, <a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> nn, <a href='../S/121.html#L65' title='Defined at 65 in mini-gmp/mini-gmp.h.'>mp_srcptr</a> dp, <a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> dn, <a href='../S/106.html#L256' title='Defined at 256 in gmp-impl.h.'>gmp_pi1_t</a> *dinv, <a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>)
+<a id='L60' name='L60'></a><em class='brace'>{</em>
+<a id='L61' name='L61'></a>  <a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> qp = <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>;
+<a id='L62' name='L62'></a>
+<a id='L63' name='L63'></a>  <strong class='reserved'>if</strong> (dn == 1)
+<a id='L64' name='L64'></a>    <em class='brace'>{</em>
+<a id='L65' name='L65'></a>      np[0] = <a href='../D/2981.html' title='Multiple defined in 2 places.'>mpn_divrem_1</a> (qp, (<a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a>) 0, np, nn, dp[0]);
+<a id='L66' name='L66'></a>    <em class='brace'>}</em>
+<a id='L67' name='L67'></a>  <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (dn == 2)
+<a id='L68' name='L68'></a>    <em class='brace'>{</em>
+<a id='L69' name='L69'></a>      <a href='../D/2949.html' title='Multiple defined in 2 places.'>mpn_div_qr_2n_pi1</a> (qp, np, np, nn, dp[1], dp[0], dinv-&gt;inv32);
+<a id='L70' name='L70'></a>    <em class='brace'>}</em>
+<a id='L71' name='L71'></a>  <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/106.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (dn, <a href='../D/214.html' title='Multiple defined in 99 places.'>DC_DIV_QR_THRESHOLD</a>) ||
+<a id='L72' name='L72'></a>           <a href='../S/106.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (nn - dn, <a href='../D/214.html' title='Multiple defined in 99 places.'>DC_DIV_QR_THRESHOLD</a>))
+<a id='L73' name='L73'></a>    <em class='brace'>{</em>
+<a id='L74' name='L74'></a>      <a href='../D/3166.html' title='Multiple defined in 2 places.'>mpn_sbpi1_div_qr</a> (qp, np, nn, dp, dn, dinv-&gt;inv32);
+<a id='L75' name='L75'></a>    <em class='brace'>}</em>
+<a id='L76' name='L76'></a>  <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/106.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (dn, <a href='../D/929.html' title='Multiple defined in 96 places.'>MUPI_DIV_QR_THRESHOLD</a>) ||   <em class='comment'>/* fast condition */</em>
+<a id='L77' name='L77'></a>           <a href='../S/106.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (nn, 2 * <a href='../D/935.html' title='Multiple defined in 96 places.'>MU_DIV_QR_THRESHOLD</a>) || <em class='comment'>/* fast condition */</em>
+<a id='L78' name='L78'></a>           (<strong class='reserved'>double</strong>) (2 * (<a href='../D/935.html' title='Multiple defined in 96 places.'>MU_DIV_QR_THRESHOLD</a> - <a href='../D/929.html' title='Multiple defined in 96 places.'>MUPI_DIV_QR_THRESHOLD</a>)) * dn <em class='comment'>/* slow... */</em>
+<a id='L79' name='L79'></a>           + (<strong class='reserved'>double</strong>) <a href='../D/929.html' title='Multiple defined in 96 places.'>MUPI_DIV_QR_THRESHOLD</a> * nn &gt; (<strong class='reserved'>double</strong>) dn * nn)    <em class='comment'>/* ...condition */</em>
+<a id='L80' name='L80'></a>    <em class='brace'>{</em>
+<a id='L81' name='L81'></a>      <a href='../D/2931.html' title='Multiple defined in 2 places.'>mpn_dcpi1_div_qr</a> (qp, np, nn, dp, dn, dinv);
+<a id='L82' name='L82'></a>    <em class='brace'>}</em>
+<a id='L83' name='L83'></a>  <strong class='reserved'>else</strong>
+<a id='L84' name='L84'></a>    <em class='brace'>{</em>
+<a id='L85' name='L85'></a>      <em class='comment'>/* We need to allocate separate remainder area, since mpn_mu_div_qr does</em>
+<a id='L86' name='L86'></a><em class='comment'>         not handle overlap between the numerator and remainder areas.</em>
+<a id='L87' name='L87'></a><em class='comment'>         FIXME: Make it handle such overlap.  */</em>
+<a id='L88' name='L88'></a>      <a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, scratch;
+<a id='L89' name='L89'></a>      <a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> itch;
+<a id='L90' name='L90'></a>      <a href='../D/1427.html' title='Multiple defined in 4 places.'>TMP_DECL</a>;
+<a id='L91' name='L91'></a>      <a href='../D/1431.html' title='Multiple defined in 4 places.'>TMP_MARK</a>;
+<a id='L92' name='L92'></a>
+<a id='L93' name='L93'></a>      itch = <a href='../D/3088.html' title='Multiple defined in 2 places.'>mpn_mu_div_qr_itch</a> (nn, dn, 0);
+<a id='L94' name='L94'></a>      <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a> = <a href='../S/106.html#L489' title='Defined at 489 in gmp-impl.h.'>TMP_BALLOC_LIMBS</a> (dn);
+<a id='L95' name='L95'></a>      scratch = <a href='../S/106.html#L489' title='Defined at 489 in gmp-impl.h.'>TMP_BALLOC_LIMBS</a> (itch);
+<a id='L96' name='L96'></a>
+<a id='L97' name='L97'></a>      <a href='../D/3085.html' title='Multiple defined in 2 places.'>mpn_mu_div_qr</a> (qp, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, np, nn, dp, dn, scratch);
+<a id='L98' name='L98'></a>      <a href='../S/106.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (np, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, dn);
+<a id='L99' name='L99'></a>
+<a id='L100' name='L100'></a>      <a href='../D/1429.html' title='Multiple defined in 4 places.'>TMP_FREE</a>;
+<a id='L101' name='L101'></a>    <em class='brace'>}</em>
+<a id='L102' name='L102'></a><em class='brace'>}</em>
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a><em class='comment'>/* Compute t = a mod m, a is defined by (ap,an), m is defined by (mp,mn), and</em>
+<a id='L105' name='L105'></a><em class='comment'>   t is defined by (tp,mn).  */</em>
+<a id='L106' name='L106'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L107' name='L107'></a><a href='../R/3401.html' title='Multiple referred from 3 places.'>reduce</a> (<a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, <a href='../S/121.html#L65' title='Defined at 65 in mini-gmp/mini-gmp.h.'>mp_srcptr</a> ap, <a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> an, <a href='../S/121.html#L65' title='Defined at 65 in mini-gmp/mini-gmp.h.'>mp_srcptr</a> mp, <a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> mn, <a href='../S/106.html#L256' title='Defined at 256 in gmp-impl.h.'>gmp_pi1_t</a> *dinv)
+<a id='L108' name='L108'></a><em class='brace'>{</em>
+<a id='L109' name='L109'></a>  <a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, scratch;
+<a id='L110' name='L110'></a>  <a href='../D/1427.html' title='Multiple defined in 4 places.'>TMP_DECL</a>;
+<a id='L111' name='L111'></a>  <a href='../D/1431.html' title='Multiple defined in 4 places.'>TMP_MARK</a>;
+<a id='L112' name='L112'></a>
+<a id='L113' name='L113'></a>  <a href='../S/106.html#L499' title='Defined at 499 in gmp-impl.h.'>TMP_ALLOC_LIMBS_2</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, an, scratch, an - mn + 1);
+<a id='L114' name='L114'></a>  <a href='../S/106.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, ap, an);
+<a id='L115' name='L115'></a>  <a href='../S/1676.html#L59' title='Defined at 59 in mpz/powm_ui.c.'>mod</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, an, mp, mn, dinv, scratch);
+<a id='L116' name='L116'></a>  <a href='../S/106.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, mn);
+<a id='L117' name='L117'></a>
+<a id='L118' name='L118'></a>  <a href='../D/1429.html' title='Multiple defined in 4 places.'>TMP_FREE</a>;
+<a id='L119' name='L119'></a><em class='brace'>}</em>
+<a id='L120' name='L120'></a>
+<a id='L121' name='L121'></a><strong class='reserved'>void</strong>
+<a id='L122' name='L122'></a><a href='../R/3236.html' title='Multiple referred from 16 places.'>mpz_powm_ui</a> (<a href='../D/3531.html' title='Multiple defined in 2 places.'>mpz_ptr</a> r, <a href='../S/121.html#L80' title='Defined at 80 in mini-gmp/mini-gmp.h.'>mpz_srcptr</a> b, <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>int</strong> el, <a href='../S/121.html#L80' title='Defined at 80 in mini-gmp/mini-gmp.h.'>mpz_srcptr</a> m)
+<a id='L123' name='L123'></a><em class='brace'>{</em>
+<a id='L124' name='L124'></a>  <strong class='reserved'>if</strong> (el &lt; 20)
+<a id='L125' name='L125'></a>    <em class='brace'>{</em>
+<a id='L126' name='L126'></a>      <a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> <a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a>, scratch;
+<a id='L127' name='L127'></a>      <a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> xn, tn, mn, bn;
+<a id='L128' name='L128'></a>      <strong class='reserved'>int</strong> m_zero_cnt;
+<a id='L129' name='L129'></a>      <strong class='reserved'>int</strong> c;
+<a id='L130' name='L130'></a>      <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> e, m2;
+<a id='L131' name='L131'></a>      <a href='../S/106.html#L256' title='Defined at 256 in gmp-impl.h.'>gmp_pi1_t</a> dinv;
+<a id='L132' name='L132'></a>      <a href='../D/1427.html' title='Multiple defined in 4 places.'>TMP_DECL</a>;
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a>      mp = <a href='../D/1055.html' title='Multiple defined in 2 places.'>PTR</a>(m);
+<a id='L135' name='L135'></a>      mn = <a href='../S/106.html#L545' title='Defined at 545 in gmp-impl.h.'>ABSIZ</a>(m);
+<a id='L136' name='L136'></a>      <strong class='reserved'>if</strong> (<a href='../S/106.html#L532' title='Defined at 532 in gmp-impl.h.'>UNLIKELY</a> (mn == 0))
+<a id='L137' name='L137'></a>        <a href='../S/106.html#L3931' title='Defined at 3931 in gmp-impl.h.'>DIVIDE_BY_ZERO</a>;
+<a id='L138' name='L138'></a>
+<a id='L139' name='L139'></a>      <strong class='reserved'>if</strong> (el &lt;= 1)
+<a id='L140' name='L140'></a>        <em class='brace'>{</em>
+<a id='L141' name='L141'></a>          <strong class='reserved'>if</strong> (el == 1)
+<a id='L142' name='L142'></a>            <em class='brace'>{</em>
+<a id='L143' name='L143'></a>              <a href='../D/3502.html' title='Multiple defined in 2 places.'>mpz_mod</a> (r, b, m);
+<a id='L144' name='L144'></a>              <strong class='reserved'>return</strong>;
+<a id='L145' name='L145'></a>            <em class='brace'>}</em>
+<a id='L146' name='L146'></a>          <em class='comment'>/* Exponent is zero, result is 1 mod M, i.e., 1 or 0 depending on if</em>
+<a id='L147' name='L147'></a><em class='comment'>             M equals 1.  */</em>
+<a id='L148' name='L148'></a>          <a href='../D/1149.html' title='Multiple defined in 2 places.'>SIZ</a>(r) = mn != 1 || mp[0] != 1;
+<a id='L149' name='L149'></a>          <a href='../S/106.html#L2008' title='Defined at 2008 in gmp-impl.h.'>MPZ_NEWALLOC</a> (r, 1)[0] = 1;
+<a id='L150' name='L150'></a>          <strong class='reserved'>return</strong>;
+<a id='L151' name='L151'></a>        <em class='brace'>}</em>
+<a id='L152' name='L152'></a>
+<a id='L153' name='L153'></a>      <a href='../D/1431.html' title='Multiple defined in 4 places.'>TMP_MARK</a>;
+<a id='L154' name='L154'></a>
+<a id='L155' name='L155'></a>      <em class='comment'>/* Normalize m (i.e. make its most significant bit set) as required by</em>
+<a id='L156' name='L156'></a><em class='comment'>         division functions below.  */</em>
+<a id='L157' name='L157'></a>      <a href='../D/2366.html' title='Multiple defined in 27 places.'>count_leading_zeros</a> (m_zero_cnt, mp[mn - 1]);
+<a id='L158' name='L158'></a>      m_zero_cnt -= GMP_NAIL_BITS;
+<a id='L159' name='L159'></a>      <strong class='reserved'>if</strong> (m_zero_cnt != 0)
+<a id='L160' name='L160'></a>        <em class='brace'>{</em>
+<a id='L161' name='L161'></a>          <a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> new_mp = <a href='../S/106.html#L487' title='Defined at 487 in gmp-impl.h.'>TMP_ALLOC_LIMBS</a> (mn);
+<a id='L162' name='L162'></a>          <a href='../D/3053.html' title='Multiple defined in 3 places.'>mpn_lshift</a> (new_mp, mp, mn, m_zero_cnt);
+<a id='L163' name='L163'></a>          mp = new_mp;
+<a id='L164' name='L164'></a>        <em class='brace'>}</em>
+<a id='L165' name='L165'></a>
+<a id='L166' name='L166'></a>      m2 = mn == 1 ? 0 : mp[mn - 2];
+<a id='L167' name='L167'></a>      <a href='../S/106.html#L3064' title='Defined at 3064 in gmp-impl.h.'>invert_pi1</a> (dinv, mp[mn - 1], m2);
+<a id='L168' name='L168'></a>
+<a id='L169' name='L169'></a>      bn = <a href='../S/106.html#L545' title='Defined at 545 in gmp-impl.h.'>ABSIZ</a>(b);
+<a id='L170' name='L170'></a>      <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a> = <a href='../D/1055.html' title='Multiple defined in 2 places.'>PTR</a>(b);
+<a id='L171' name='L171'></a>      <strong class='reserved'>if</strong> (bn &gt; mn)
+<a id='L172' name='L172'></a>        <em class='brace'>{</em>
+<a id='L173' name='L173'></a>          <em class='comment'>/* Reduce possibly huge base.  Use a function call to reduce, since we</em>
+<a id='L174' name='L174'></a><em class='comment'>             don't want the quotient allocation to live until function return.  */</em>
+<a id='L175' name='L175'></a>          <a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> new_bp = <a href='../S/106.html#L487' title='Defined at 487 in gmp-impl.h.'>TMP_ALLOC_LIMBS</a> (mn);
+<a id='L176' name='L176'></a>          <a href='../S/1676.html#L107' title='Defined at 107 in mpz/powm_ui.c.'>reduce</a> (new_bp, <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a>, bn, mp, mn, &amp;dinv);
+<a id='L177' name='L177'></a>          <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a> = new_bp;
+<a id='L178' name='L178'></a>          bn = mn;
+<a id='L179' name='L179'></a>          <em class='comment'>/* Canonicalize the base, since we are potentially going to multiply with</em>
+<a id='L180' name='L180'></a><em class='comment'>             it quite a few times.  */</em>
+<a id='L181' name='L181'></a>          <a href='../S/106.html#L1939' title='Defined at 1939 in gmp-impl.h.'>MPN_NORMALIZE</a> (<a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a>, bn);
+<a id='L182' name='L182'></a>        <em class='brace'>}</em>
+<a id='L183' name='L183'></a>
+<a id='L184' name='L184'></a>      <strong class='reserved'>if</strong> (bn == 0)
+<a id='L185' name='L185'></a>        <em class='brace'>{</em>
+<a id='L186' name='L186'></a>          <a href='../D/1149.html' title='Multiple defined in 2 places.'>SIZ</a>(r) = 0;
+<a id='L187' name='L187'></a>          <a href='../D/1429.html' title='Multiple defined in 4 places.'>TMP_FREE</a>;
+<a id='L188' name='L188'></a>          <strong class='reserved'>return</strong>;
+<a id='L189' name='L189'></a>        <em class='brace'>}</em>
+<a id='L190' name='L190'></a>
+<a id='L191' name='L191'></a>      <a href='../S/106.html#L512' title='Defined at 512 in gmp-impl.h.'>TMP_ALLOC_LIMBS_3</a> (<a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, mn, scratch, mn + 1, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, 2 * mn + 1);
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a>      <a href='../S/106.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (<a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a>, bn);
+<a id='L194' name='L194'></a>      xn = bn;
+<a id='L195' name='L195'></a>
+<a id='L196' name='L196'></a>      e = el;
+<a id='L197' name='L197'></a>      <a href='../D/2366.html' title='Multiple defined in 27 places.'>count_leading_zeros</a> (c, e);
+<a id='L198' name='L198'></a>      e = (e &lt;&lt; c) &lt;&lt; 1;                <em class='comment'>/* shift the exp bits to the left, lose msb */</em>
+<a id='L199' name='L199'></a>      c = <a href='../D/425.html' title='Multiple defined in 116 places.'>GMP_LIMB_BITS</a> - 1 - c;
+<a id='L200' name='L200'></a>
+<a id='L201' name='L201'></a>      <a href='../D/34.html' title='Multiple defined in 3 places.'>ASSERT</a> (c != 0); <em class='comment'>/* el &gt; 1 */</em>
+<a id='L202' name='L202'></a>        <em class='brace'>{</em>
+<a id='L203' name='L203'></a>          <em class='comment'>/* Main loop. */</em>
+<a id='L204' name='L204'></a>          <strong class='reserved'>do</strong>
+<a id='L205' name='L205'></a>            <em class='brace'>{</em>
+<a id='L206' name='L206'></a>              <a href='../D/3186.html' title='Multiple defined in 2 places.'>mpn_sqr</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, <a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, xn);
+<a id='L207' name='L207'></a>              tn = 2 * xn; tn -= <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>[tn - 1] == 0;
+<a id='L208' name='L208'></a>              <strong class='reserved'>if</strong> (tn &lt; mn)
+<a id='L209' name='L209'></a>                <em class='brace'>{</em>
+<a id='L210' name='L210'></a>                  <a href='../S/106.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (<a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, tn);
+<a id='L211' name='L211'></a>                  xn = tn;
+<a id='L212' name='L212'></a>                <em class='brace'>}</em>
+<a id='L213' name='L213'></a>              <strong class='reserved'>else</strong>
+<a id='L214' name='L214'></a>                <em class='brace'>{</em>
+<a id='L215' name='L215'></a>                  <a href='../S/1676.html#L59' title='Defined at 59 in mpz/powm_ui.c.'>mod</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, tn, mp, mn, &amp;dinv, scratch);
+<a id='L216' name='L216'></a>                  <a href='../S/106.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (<a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mn);
+<a id='L217' name='L217'></a>                  xn = mn;
+<a id='L218' name='L218'></a>                <em class='brace'>}</em>
+<a id='L219' name='L219'></a>
+<a id='L220' name='L220'></a>              <strong class='reserved'>if</strong> ((mp_limb_signed_t) e &lt; 0)
+<a id='L221' name='L221'></a>                <em class='brace'>{</em>
+<a id='L222' name='L222'></a>                  <a href='../D/3092.html' title='Multiple defined in 2 places.'>mpn_mul</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, <a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, xn, <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a>, bn);
+<a id='L223' name='L223'></a>                  tn = xn + bn; tn -= <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>[tn - 1] == 0;
+<a id='L224' name='L224'></a>                  <strong class='reserved'>if</strong> (tn &lt; mn)
+<a id='L225' name='L225'></a>                    <em class='brace'>{</em>
+<a id='L226' name='L226'></a>                      <a href='../S/106.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (<a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, tn);
+<a id='L227' name='L227'></a>                      xn = tn;
+<a id='L228' name='L228'></a>                    <em class='brace'>}</em>
+<a id='L229' name='L229'></a>                  <strong class='reserved'>else</strong>
+<a id='L230' name='L230'></a>                    <em class='brace'>{</em>
+<a id='L231' name='L231'></a>                      <a href='../S/1676.html#L59' title='Defined at 59 in mpz/powm_ui.c.'>mod</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, tn, mp, mn, &amp;dinv, scratch);
+<a id='L232' name='L232'></a>                      <a href='../S/106.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (<a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mn);
+<a id='L233' name='L233'></a>                      xn = mn;
+<a id='L234' name='L234'></a>                    <em class='brace'>}</em>
+<a id='L235' name='L235'></a>                <em class='brace'>}</em>
+<a id='L236' name='L236'></a>              e &lt;&lt;= 1;
+<a id='L237' name='L237'></a>              c--;
+<a id='L238' name='L238'></a>            <em class='brace'>}</em>
+<a id='L239' name='L239'></a>          <strong class='reserved'>while</strong> (c != 0);
+<a id='L240' name='L240'></a>        <em class='brace'>}</em>
+<a id='L241' name='L241'></a>
+<a id='L242' name='L242'></a>      <em class='comment'>/* We shifted m left m_zero_cnt steps.  Adjust the result by reducing it</em>
+<a id='L243' name='L243'></a><em class='comment'>         with the original M.  */</em>
+<a id='L244' name='L244'></a>      <strong class='reserved'>if</strong> (m_zero_cnt != 0)
+<a id='L245' name='L245'></a>        <em class='brace'>{</em>
+<a id='L246' name='L246'></a>          <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> cy;
+<a id='L247' name='L247'></a>          cy = <a href='../D/3053.html' title='Multiple defined in 3 places.'>mpn_lshift</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, <a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, xn, m_zero_cnt);
+<a id='L248' name='L248'></a>          <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>[xn] = cy; xn += cy != 0;
+<a id='L249' name='L249'></a>
+<a id='L250' name='L250'></a>          <strong class='reserved'>if</strong> (xn &gt;= mn)
+<a id='L251' name='L251'></a>            <em class='brace'>{</em>
+<a id='L252' name='L252'></a>              <a href='../S/1676.html#L59' title='Defined at 59 in mpz/powm_ui.c.'>mod</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, xn, mp, mn, &amp;dinv, scratch);
+<a id='L253' name='L253'></a>              xn = mn;
+<a id='L254' name='L254'></a>            <em class='brace'>}</em>
+<a id='L255' name='L255'></a>          <a href='../D/3161.html' title='Multiple defined in 3 places.'>mpn_rshift</a> (<a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, xn, m_zero_cnt);
+<a id='L256' name='L256'></a>        <em class='brace'>}</em>
+<a id='L257' name='L257'></a>      <a href='../S/106.html#L1939' title='Defined at 1939 in gmp-impl.h.'>MPN_NORMALIZE</a> (<a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, xn);
+<a id='L258' name='L258'></a>
+<a id='L259' name='L259'></a>      <strong class='reserved'>if</strong> ((el &amp; 1) != 0 &amp;&amp; <a href='../D/1149.html' title='Multiple defined in 2 places.'>SIZ</a>(b) &lt; 0 &amp;&amp; xn != 0)
+<a id='L260' name='L260'></a>        <em class='brace'>{</em>
+<a id='L261' name='L261'></a>          mp = <a href='../D/1055.html' title='Multiple defined in 2 places.'>PTR</a>(m);                  <em class='comment'>/* want original, unnormalized m */</em>
+<a id='L262' name='L262'></a>          <a href='../S/120.html#L520' title='Defined at 520 in mini-gmp/mini-gmp.c.'>mpn_sub</a> (<a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, mp, mn, <a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, xn);
+<a id='L263' name='L263'></a>          xn = mn;
+<a id='L264' name='L264'></a>          <a href='../S/106.html#L1939' title='Defined at 1939 in gmp-impl.h.'>MPN_NORMALIZE</a> (<a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, xn);
+<a id='L265' name='L265'></a>        <em class='brace'>}</em>
+<a id='L266' name='L266'></a>      <a href='../S/106.html#L2008' title='Defined at 2008 in gmp-impl.h.'>MPZ_NEWALLOC</a> (r, xn);
+<a id='L267' name='L267'></a>      <a href='../D/1149.html' title='Multiple defined in 2 places.'>SIZ</a> (r) = xn;
+<a id='L268' name='L268'></a>      <a href='../S/106.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (<a href='../D/1055.html' title='Multiple defined in 2 places.'>PTR</a>(r), <a href='../D/4495.html' title='Multiple defined in 6 places.'>xp</a>, xn);
+<a id='L269' name='L269'></a>
+<a id='L270' name='L270'></a>      <a href='../D/1429.html' title='Multiple defined in 4 places.'>TMP_FREE</a>;
+<a id='L271' name='L271'></a>    <em class='brace'>}</em>
+<a id='L272' name='L272'></a>  <strong class='reserved'>else</strong>
+<a id='L273' name='L273'></a>    <em class='brace'>{</em>
+<a id='L274' name='L274'></a>      <em class='comment'>/* For large exponents, fake an mpz_t exponent and deflect to the more</em>
+<a id='L275' name='L275'></a><em class='comment'>         sophisticated mpz_powm.  */</em>
+<a id='L276' name='L276'></a>      <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> e;
+<a id='L277' name='L277'></a>      <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> ep[<a href='../D/594.html' title='Multiple defined in 2 places.'>LIMBS_PER_ULONG</a>];
+<a id='L278' name='L278'></a>      <a href='../D/866.html' title='Multiple defined in 2 places.'>MPZ_FAKE_UI</a> (e, ep, el);
+<a id='L279' name='L279'></a>      <a href='../D/3524.html' title='Multiple defined in 2 places.'>mpz_powm</a> (r, b, e, m);
+<a id='L280' name='L280'></a>    <em class='brace'>}</em>
+<a id='L281' name='L281'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L59'>[^]</a><a href='#L122'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

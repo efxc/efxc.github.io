@@ -1,0 +1,217 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>mini-gmp/tests/testutils.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.5' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/2098.html'>mini-gmp</a>/<a href='../files/2099.html'>tests</a>/testutils.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L43'>[^]</a><a href='#L177'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L43' title='Defined at 43.'>block_init</a></li>
+<li><a href='#L57' title='Defined at 57.'>block_check</a></li>
+<li><a href='#L72' title='Defined at 72.'>tu_alloc</a></li>
+<li><a href='#L85' title='Defined at 85.'>tu_realloc</a></li>
+<li><a href='#L99' title='Defined at 99.'>tu_free</a></li>
+<li><a href='#L106' title='Defined at 106.'>testfree</a></li>
+<li><a href='#L115' title='Defined at 115.'>main</a></li>
+<li><a href='#L135' title='Defined at 135.'>testhalves</a></li>
+<li><a href='#L157' title='Defined at 157.'>dump</a></li>
+<li><a href='#L165' title='Defined at 165.'>mpz_set_str_or_abort</a></li>
+<li><a href='#L177' title='Defined at 177.'>mpz_lucas_mod</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>Copyright 2013-2015, 2018 Free Software Foundation, Inc.</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>This file is part of the GNU MP Library test suite.</em>
+<a id='L6' name='L6'></a><em class='comment'></em>
+<a id='L7' name='L7'></a><em class='comment'>The GNU MP Library test suite is free software; you can redistribute it</em>
+<a id='L8' name='L8'></a><em class='comment'>and/or modify it under the terms of the GNU General Public License as</em>
+<a id='L9' name='L9'></a><em class='comment'>published by the Free Software Foundation; either version 3 of the License,</em>
+<a id='L10' name='L10'></a><em class='comment'>or (at your option) any later version.</em>
+<a id='L11' name='L11'></a><em class='comment'></em>
+<a id='L12' name='L12'></a><em class='comment'>The GNU MP Library test suite is distributed in the hope that it will be</em>
+<a id='L13' name='L13'></a><em class='comment'>useful, but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L14' name='L14'></a><em class='comment'>MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General</em>
+<a id='L15' name='L15'></a><em class='comment'>Public License for more details.</em>
+<a id='L16' name='L16'></a><em class='comment'></em>
+<a id='L17' name='L17'></a><em class='comment'>You should have received a copy of the GNU General Public License along with</em>
+<a id='L18' name='L18'></a><em class='comment'>the GNU MP Library test suite.  If not, see https://www.gnu.org/licenses/.  */</em>
+<a id='L19' name='L19'></a>
+<a id='L20' name='L20'></a><em class='sharp'>#include</em> "<a href='163.html'>testutils.h</a>"
+<a id='L21' name='L21'></a>
+<a id='L22' name='L22'></a><em class='comment'>/* Include it here, so we we could tweak, e.g., how MPZ_REALLOC</em>
+<a id='L23' name='L23'></a><em class='comment'>   works. */</em>
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> "../mini-gmp.c"
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> "../mini-mpq.c"
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a><strong class='reserved'>static</strong> size_t total_alloc = 0;
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a><em class='comment'>/* Custom memory allocation to track memory usage, and add a small red</em>
+<a id='L30' name='L30'></a><em class='comment'>   zone.</em>
+<a id='L31' name='L31'></a><em class='comment'></em>
+<a id='L32' name='L32'></a><em class='comment'>   About alignment: In general, getting a block from malloc, and</em>
+<a id='L33' name='L33'></a><em class='comment'>   incrementing it by sizeof(size_t), like we do here, might give a</em>
+<a id='L34' name='L34'></a><em class='comment'>   pointer which is not properly aligned for all types. But the</em>
+<a id='L35' name='L35'></a><em class='comment'>   largest type we allocate space for is unsigned long (mp_limb_t),</em>
+<a id='L36' name='L36'></a><em class='comment'>   which shouldn't have stricter alignment requirements than</em>
+<a id='L37' name='L37'></a><em class='comment'>   size_t. */</em>
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> block_end[8] =
+<a id='L40' name='L40'></a>  <em class='brace'>{</em> 0x7c, 0x37, 0xd6, 0x12, 0xa8, 0x6c, 0x01, 0xd1 <em class='brace'>}</em>;
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> *
+<a id='L43' name='L43'></a><a href='../R/1940.html' title='Multiple referred from 2 places.'>block_init</a> (size_t *block, size_t <a href='../D/3949.html' title='Multiple defined in 2 places.'>size</a>)
+<a id='L44' name='L44'></a><em class='brace'>{</em>
+<a id='L45' name='L45'></a>  <strong class='reserved'>char</strong> *p;
+<a id='L46' name='L46'></a>  *block++ = <a href='../D/3949.html' title='Multiple defined in 2 places.'>size</a>;
+<a id='L47' name='L47'></a>
+<a id='L48' name='L48'></a>  p = (<strong class='reserved'>char</strong> *) block;
+<a id='L49' name='L49'></a>  memcpy (p + <a href='../D/3949.html' title='Multiple defined in 2 places.'>size</a>, block_end, <strong class='reserved'>sizeof</strong>(block_end));
+<a id='L50' name='L50'></a>
+<a id='L51' name='L51'></a>  total_alloc += <a href='../D/3949.html' title='Multiple defined in 2 places.'>size</a>;
+<a id='L52' name='L52'></a>  <strong class='reserved'>return</strong> p;
+<a id='L53' name='L53'></a><em class='brace'>}</em>
+<a id='L54' name='L54'></a>
+<a id='L55' name='L55'></a><em class='comment'>/* Check small redzone, return pointer to malloced block. */</em>
+<a id='L56' name='L56'></a><strong class='reserved'>static</strong> size_t *
+<a id='L57' name='L57'></a><a href='../R/1939.html' title='Multiple referred from 2 places.'>block_check</a>  (<strong class='reserved'>void</strong> *p)
+<a id='L58' name='L58'></a><em class='brace'>{</em>
+<a id='L59' name='L59'></a>  size_t *block = (size_t *) p - 1;
+<a id='L60' name='L60'></a>  size_t <a href='../D/3949.html' title='Multiple defined in 2 places.'>size</a> = block[0];
+<a id='L61' name='L61'></a>
+<a id='L62' name='L62'></a>  <strong class='reserved'>if</strong> (memcmp ((<strong class='reserved'>char</strong> *)p + <a href='../D/3949.html' title='Multiple defined in 2 places.'>size</a>, block_end, <strong class='reserved'>sizeof</strong>(block_end)) != 0)
+<a id='L63' name='L63'></a>    <em class='brace'>{</em>
+<a id='L64' name='L64'></a>      fprintf (stderr, "red zone overwritten.\n");
+<a id='L65' name='L65'></a>      abort ();
+<a id='L66' name='L66'></a>    <em class='brace'>}</em>
+<a id='L67' name='L67'></a>  total_alloc -= <a href='../D/3949.html' title='Multiple defined in 2 places.'>size</a>;
+<a id='L68' name='L68'></a>  <strong class='reserved'>return</strong> block;
+<a id='L69' name='L69'></a><em class='brace'>}</em>
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> *
+<a id='L72' name='L72'></a><a href='../S/162.html#L119' title='Referred from 119 in mini-gmp/tests/testutils.c.'>tu_alloc</a> (size_t <a href='../D/3949.html' title='Multiple defined in 2 places.'>size</a>)
+<a id='L73' name='L73'></a><em class='brace'>{</em>
+<a id='L74' name='L74'></a>  size_t *block = (size_t *) malloc (<strong class='reserved'>sizeof</strong>(size_t) + <a href='../D/3949.html' title='Multiple defined in 2 places.'>size</a> + <strong class='reserved'>sizeof</strong>(block_end));
+<a id='L75' name='L75'></a>  <strong class='reserved'>if</strong> (!block)
+<a id='L76' name='L76'></a>    <em class='brace'>{</em>
+<a id='L77' name='L77'></a>      fprintf (stderr, "Virtual memory exhausted.\n");
+<a id='L78' name='L78'></a>      abort ();
+<a id='L79' name='L79'></a>    <em class='brace'>}</em>
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a>  <strong class='reserved'>return</strong> <a href='../S/162.html#L43' title='Defined at 43 in mini-gmp/tests/testutils.c.'>block_init</a> (block, <a href='../D/3949.html' title='Multiple defined in 2 places.'>size</a>);
+<a id='L82' name='L82'></a><em class='brace'>}</em>
+<a id='L83' name='L83'></a>
+<a id='L84' name='L84'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> *
+<a id='L85' name='L85'></a><a href='../S/162.html#L119' title='Referred from 119 in mini-gmp/tests/testutils.c.'>tu_realloc</a> (<strong class='reserved'>void</strong> *p, size_t old_size, size_t new_size)
+<a id='L86' name='L86'></a><em class='brace'>{</em>
+<a id='L87' name='L87'></a>  size_t *block = <a href='../S/162.html#L57' title='Defined at 57 in mini-gmp/tests/testutils.c.'>block_check</a> (p);
+<a id='L88' name='L88'></a>  block = (size_t *) realloc (block, <strong class='reserved'>sizeof</strong>(size_t) + new_size + <strong class='reserved'>sizeof</strong>(block_end));
+<a id='L89' name='L89'></a>  <strong class='reserved'>if</strong> (!block)
+<a id='L90' name='L90'></a>    <em class='brace'>{</em>
+<a id='L91' name='L91'></a>      fprintf (stderr, "Virtual memory exhausted.\n");
+<a id='L92' name='L92'></a>      abort ();
+<a id='L93' name='L93'></a>    <em class='brace'>}</em>
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a>  <strong class='reserved'>return</strong> <a href='../S/162.html#L43' title='Defined at 43 in mini-gmp/tests/testutils.c.'>block_init</a> (block, new_size);
+<a id='L96' name='L96'></a><em class='brace'>}</em>
+<a id='L97' name='L97'></a>
+<a id='L98' name='L98'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L99' name='L99'></a><a href='../S/162.html#L119' title='Referred from 119 in mini-gmp/tests/testutils.c.'>tu_free</a> (<strong class='reserved'>void</strong> *p, size_t old_size)
+<a id='L100' name='L100'></a><em class='brace'>{</em>
+<a id='L101' name='L101'></a>  free (<a href='../S/162.html#L57' title='Defined at 57 in mini-gmp/tests/testutils.c.'>block_check</a> (p));
+<a id='L102' name='L102'></a><em class='brace'>}</em>
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a><em class='comment'>/* Free memory allocated via mini-gmp allocation function. */</em>
+<a id='L105' name='L105'></a><strong class='reserved'>void</strong>
+<a id='L106' name='L106'></a><a href='../R/4006.html' title='Multiple referred from 5 places.'>testfree</a> (<strong class='reserved'>void</strong> *p)
+<a id='L107' name='L107'></a><em class='brace'>{</em>
+<a id='L108' name='L108'></a>  <strong class='reserved'>void</strong> (*freefunc) (<strong class='reserved'>void</strong> *, size_t);
+<a id='L109' name='L109'></a>  <a href='../D/2744.html' title='Multiple defined in 2 places.'>mp_get_memory_functions</a> (NULL, NULL, &amp;freefunc);
+<a id='L110' name='L110'></a>
+<a id='L111' name='L111'></a>  freefunc (p, 0);
+<a id='L112' name='L112'></a><em class='brace'>}</em>
+<a id='L113' name='L113'></a>
+<a id='L114' name='L114'></a><strong class='reserved'>int</strong>
+<a id='L115' name='L115'></a>main (<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv)
+<a id='L116' name='L116'></a><em class='brace'>{</em>
+<a id='L117' name='L117'></a>  <a href='../S/125.html#L90' title='Defined at 90 in mini-gmp/tests/hex-random.c.'>hex_random_init</a> ();
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a>  <a href='../D/2750.html' title='Multiple defined in 2 places.'>mp_set_memory_functions</a> (<a href='../S/162.html#L72' title='Defined at 72 in mini-gmp/tests/testutils.c.'>tu_alloc</a>, <a href='../S/162.html#L85' title='Defined at 85 in mini-gmp/tests/testutils.c.'>tu_realloc</a>, <a href='../S/162.html#L99' title='Defined at 99 in mini-gmp/tests/testutils.c.'>tu_free</a>);
+<a id='L120' name='L120'></a>
+<a id='L121' name='L121'></a>  <em class='comment'>/* Currently, t-comb seems to be the only program accepting any</em>
+<a id='L122' name='L122'></a><em class='comment'>     arguments. It might make sense to parse common arguments here. */</em>
+<a id='L123' name='L123'></a>  <a href='../D/4311.html' title='Multiple defined in 31 places.'>testmain</a> (argc, argv);
+<a id='L124' name='L124'></a>
+<a id='L125' name='L125'></a>  <strong class='reserved'>if</strong> (total_alloc != 0)
+<a id='L126' name='L126'></a>    <em class='brace'>{</em>
+<a id='L127' name='L127'></a>      fprintf (stderr, "Memory leaked: %lu bytes.\n",
+<a id='L128' name='L128'></a>               (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>) total_alloc);
+<a id='L129' name='L129'></a>      abort ();
+<a id='L130' name='L130'></a>    <em class='brace'>}</em>
+<a id='L131' name='L131'></a>  <strong class='reserved'>return</strong> 0;
+<a id='L132' name='L132'></a><em class='brace'>}</em>
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a><strong class='reserved'>void</strong>
+<a id='L135' name='L135'></a><a href='../R/4007.html' title='Multiple referred from 2 places.'>testhalves</a> (<strong class='reserved'>int</strong> count, <strong class='reserved'>void</strong> (*tested_fun) (<strong class='reserved'>int</strong>))
+<a id='L136' name='L136'></a><em class='brace'>{</em>
+<a id='L137' name='L137'></a>  <strong class='reserved'>void</strong> (*freefunc) (<strong class='reserved'>void</strong> *, size_t);
+<a id='L138' name='L138'></a>  <strong class='reserved'>void</strong> *(*reallocfunc) (<strong class='reserved'>void</strong> *, size_t, size_t);
+<a id='L139' name='L139'></a>  <strong class='reserved'>void</strong> *(*allocfunc) (size_t);
+<a id='L140' name='L140'></a>  size_t initial_alloc;
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a>  <a href='../D/2744.html' title='Multiple defined in 2 places.'>mp_get_memory_functions</a> (&amp;allocfunc, &amp;reallocfunc, &amp;freefunc);
+<a id='L143' name='L143'></a>  initial_alloc = total_alloc;
+<a id='L144' name='L144'></a>  (*tested_fun) (count / 2);
+<a id='L145' name='L145'></a>  <strong class='reserved'>if</strong> (initial_alloc != total_alloc)
+<a id='L146' name='L146'></a>    <em class='brace'>{</em>
+<a id='L147' name='L147'></a>      fprintf (stderr, "First half, memory leaked: %lu bytes.\n",
+<a id='L148' name='L148'></a>               (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>) total_alloc - initial_alloc);
+<a id='L149' name='L149'></a>      abort ();
+<a id='L150' name='L150'></a>    <em class='brace'>}</em>
+<a id='L151' name='L151'></a>  <a href='../D/2750.html' title='Multiple defined in 2 places.'>mp_set_memory_functions</a> (NULL, NULL, NULL);
+<a id='L152' name='L152'></a>  (*tested_fun) (count / 2);
+<a id='L153' name='L153'></a>  <a href='../D/2750.html' title='Multiple defined in 2 places.'>mp_set_memory_functions</a> (allocfunc, reallocfunc, freefunc);
+<a id='L154' name='L154'></a><em class='brace'>}</em>
+<a id='L155' name='L155'></a>
+<a id='L156' name='L156'></a><strong class='reserved'>void</strong>
+<a id='L157' name='L157'></a><a href='../R/2169.html' title='Multiple referred from 281 places.'>dump</a> (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *label, <strong class='reserved'>const</strong> <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> x)
+<a id='L158' name='L158'></a><em class='brace'>{</em>
+<a id='L159' name='L159'></a>  <strong class='reserved'>char</strong> *buf = <a href='../D/3461.html' title='Multiple defined in 2 places.'>mpz_get_str</a> (NULL, 16, x);
+<a id='L160' name='L160'></a>  fprintf (stderr, "%s: %s\n", label, buf);
+<a id='L161' name='L161'></a>  <a href='../S/162.html#L106' title='Defined at 106 in mini-gmp/tests/testutils.c.'>testfree</a> (buf);
+<a id='L162' name='L162'></a><em class='brace'>}</em>
+<a id='L163' name='L163'></a>
+<a id='L164' name='L164'></a><strong class='reserved'>void</strong>
+<a id='L165' name='L165'></a><a href='../R/3264.html' title='Multiple referred from 49 places.'>mpz_set_str_or_abort</a> (<a href='../D/3531.html' title='Multiple defined in 2 places.'>mpz_ptr</a> z, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str, <strong class='reserved'>int</strong> base)
+<a id='L166' name='L166'></a><em class='brace'>{</em>
+<a id='L167' name='L167'></a>  <strong class='reserved'>if</strong> (<a href='../D/3554.html' title='Multiple defined in 2 places.'>mpz_set_str</a> (z, str, base) != 0)
+<a id='L168' name='L168'></a>    <em class='brace'>{</em>
+<a id='L169' name='L169'></a>      fprintf (stderr, "ERROR: mpz_set_str failed\n");
+<a id='L170' name='L170'></a>      fprintf (stderr, "   str  = \"%s\"\n", str);
+<a id='L171' name='L171'></a>      fprintf (stderr, "   base = %d\n", base);
+<a id='L172' name='L172'></a>      abort();
+<a id='L173' name='L173'></a>    <em class='brace'>}</em>
+<a id='L174' name='L174'></a><em class='brace'>}</em>
+<a id='L175' name='L175'></a>
+<a id='L176' name='L176'></a><strong class='reserved'>int</strong>
+<a id='L177' name='L177'></a><a href='../R/3205.html' title='Multiple referred from 7 places.'>mpz_lucas_mod</a> (<a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> <a href='../S/108.html#L2650' title='Defined at 2650 in gmpxx.h.'>V</a>, <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> Qk, <strong class='reserved'>long</strong> <a href='../D/1061.html' title='Multiple defined in 4 places.'>Q</a>,
+<a id='L178' name='L178'></a>               <a href='../S/121.html#L62' title='Defined at 62 in mini-gmp/mini-gmp.h.'>mp_bitcnt_t</a> <a href='../D/2142.html' title='Multiple defined in 15 places.'>b0</a>, <strong class='reserved'>const</strong> <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> n)
+<a id='L179' name='L179'></a><em class='brace'>{</em>
+<a id='L180' name='L180'></a>  <strong class='reserved'>return</strong> <a href='../S/120.html#L3395' title='Defined at 3395 in mini-gmp/mini-gmp.c.'>gmp_lucas_mod</a> (<a href='../S/108.html#L2650' title='Defined at 2650 in gmpxx.h.'>V</a>, Qk, <a href='../D/1061.html' title='Multiple defined in 4 places.'>Q</a>, <a href='../D/2142.html' title='Multiple defined in 15 places.'>b0</a>, n);
+<a id='L181' name='L181'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L43'>[^]</a><a href='#L177'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

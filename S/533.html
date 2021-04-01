@@ -1,0 +1,543 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>mpn/generic/rootrem.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.5' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/2101.html'>mpn</a>/<a href='../files/2124.html'>generic</a>/rootrem.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L89'>[^]</a><a href='#L207'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L89' title='Defined at 89.'>mpn_rootrem</a></li>
+<li><a href='#L143' title='Defined at 143.'>logbased_root</a></li>
+<li><a href='#L207' title='Defined at 207.'>mpn_rootrem_internal</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* mpn_rootrem(rootp,remp,ap,an,nth) -- Compute the nth root of {ap,an}, and</em>
+<a id='L2' name='L2'></a><em class='comment'>   store the truncated integer part at rootp and the remainder at remp.</em>
+<a id='L3' name='L3'></a><em class='comment'></em>
+<a id='L4' name='L4'></a><em class='comment'>   Contributed by Paul Zimmermann (algorithm) and</em>
+<a id='L5' name='L5'></a><em class='comment'>   Paul Zimmermann and Torbjorn Granlund (implementation).</em>
+<a id='L6' name='L6'></a><em class='comment'>   Marco Bodrato wrote logbased_root to seed the loop.</em>
+<a id='L7' name='L7'></a><em class='comment'></em>
+<a id='L8' name='L8'></a><em class='comment'>   THE FUNCTIONS IN THIS FILE ARE INTERNAL, AND HAVE MUTABLE INTERFACES.  IT'S</em>
+<a id='L9' name='L9'></a><em class='comment'>   ONLY SAFE TO REACH THEM THROUGH DOCUMENTED INTERFACES.  IN FACT, IT'S ALMOST</em>
+<a id='L10' name='L10'></a><em class='comment'>   GUARANTEED THAT THEY'LL CHANGE OR DISAPPEAR IN A FUTURE GNU MP RELEASE.</em>
+<a id='L11' name='L11'></a><em class='comment'></em>
+<a id='L12' name='L12'></a><em class='comment'>Copyright 2002, 2005, 2009-2012, 2015 Free Software Foundation, Inc.</em>
+<a id='L13' name='L13'></a><em class='comment'></em>
+<a id='L14' name='L14'></a><em class='comment'>This file is part of the GNU MP Library.</em>
+<a id='L15' name='L15'></a><em class='comment'></em>
+<a id='L16' name='L16'></a><em class='comment'>The GNU MP Library is free software; you can redistribute it and/or modify</em>
+<a id='L17' name='L17'></a><em class='comment'>it under the terms of either:</em>
+<a id='L18' name='L18'></a><em class='comment'></em>
+<a id='L19' name='L19'></a><em class='comment'>  * the GNU Lesser General Public License as published by the Free</em>
+<a id='L20' name='L20'></a><em class='comment'>    Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L21' name='L21'></a><em class='comment'>    option) any later version.</em>
+<a id='L22' name='L22'></a><em class='comment'></em>
+<a id='L23' name='L23'></a><em class='comment'>or</em>
+<a id='L24' name='L24'></a><em class='comment'></em>
+<a id='L25' name='L25'></a><em class='comment'>  * the GNU General Public License as published by the Free Software</em>
+<a id='L26' name='L26'></a><em class='comment'>    Foundation; either version 2 of the License, or (at your option) any</em>
+<a id='L27' name='L27'></a><em class='comment'>    later version.</em>
+<a id='L28' name='L28'></a><em class='comment'></em>
+<a id='L29' name='L29'></a><em class='comment'>or both in parallel, as here.</em>
+<a id='L30' name='L30'></a><em class='comment'></em>
+<a id='L31' name='L31'></a><em class='comment'>The GNU MP Library is distributed in the hope that it will be useful, but</em>
+<a id='L32' name='L32'></a><em class='comment'>WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY</em>
+<a id='L33' name='L33'></a><em class='comment'>or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License</em>
+<a id='L34' name='L34'></a><em class='comment'>for more details.</em>
+<a id='L35' name='L35'></a><em class='comment'></em>
+<a id='L36' name='L36'></a><em class='comment'>You should have received copies of the GNU General Public License and the</em>
+<a id='L37' name='L37'></a><em class='comment'>GNU Lesser General Public License along with the GNU MP Library.  If not,</em>
+<a id='L38' name='L38'></a><em class='comment'>see https://www.gnu.org/licenses/.  */</em>
+<a id='L39' name='L39'></a>
+<a id='L40' name='L40'></a><em class='comment'>/* FIXME:</em>
+<a id='L41' name='L41'></a><em class='comment'>     This implementation is not optimal when remp == NULL, since the complexity</em>
+<a id='L42' name='L42'></a><em class='comment'>     is M(n), whereas it should be M(n/k) on average.</em>
+<a id='L43' name='L43'></a><em class='comment'>*/</em>
+<a id='L44' name='L44'></a>
+<a id='L45' name='L45'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;              <em class='comment'>/* for NULL */</em>
+<a id='L46' name='L46'></a>
+<a id='L47' name='L47'></a><em class='sharp'>#include</em> "<a href='106.html'>gmp-impl.h</a>"
+<a id='L48' name='L48'></a><em class='sharp'>#include</em> "<a href='114.html'>longlong.h</a>"
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a><strong class='reserved'>static</strong> <a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> <a href='../S/533.html#L207' title='Defined at 207 in mpn/generic/rootrem.c.'>mpn_rootrem_internal</a> (<a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a>, <a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a>, <a href='../S/121.html#L65' title='Defined at 65 in mini-gmp/mini-gmp.h.'>mp_srcptr</a>, <a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a>,
+<a id='L51' name='L51'></a>                                       <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a>, <strong class='reserved'>int</strong>);
+<a id='L52' name='L52'></a>
+<a id='L53' name='L53'></a><em class='sharp'>#define</em> <a href='../R/779.html' title='Multiple referred from 2 places.'>MPN_RSHIFT</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>,un,cnt) \
+<a id='L54' name='L54'></a>  <strong class='reserved'>do</strong> <em class='brace'>{</em>                                                                  \
+<a id='L55' name='L55'></a>    <strong class='reserved'>if</strong> ((cnt) != 0)                                                     \
+<a id='L56' name='L56'></a>      <a href='../D/3161.html' title='Multiple defined in 3 places.'>mpn_rshift</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, un, cnt);                                     \
+<a id='L57' name='L57'></a>    <strong class='reserved'>else</strong>                                                                \
+<a id='L58' name='L58'></a>      <em class='brace'>{</em>                                                                 \
+<a id='L59' name='L59'></a>        <a href='../D/784.html' title='Multiple defined in 4 places.'>MPN_COPY_INCR</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, un);                                     \
+<a id='L60' name='L60'></a>      <em class='brace'>}</em>                                                                 \
+<a id='L61' name='L61'></a>  <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L62' name='L62'></a>
+<a id='L63' name='L63'></a><em class='sharp'>#define</em> <a href='../R/759.html' title='Multiple referred from 3 places.'>MPN_LSHIFT</a>(cy,<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>,un,cnt) \
+<a id='L64' name='L64'></a>  <strong class='reserved'>do</strong> <em class='brace'>{</em>                                                                  \
+<a id='L65' name='L65'></a>    <strong class='reserved'>if</strong> ((cnt) != 0)                                                     \
+<a id='L66' name='L66'></a>      cy = <a href='../D/3053.html' title='Multiple defined in 3 places.'>mpn_lshift</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, un, cnt);                                \
+<a id='L67' name='L67'></a>    <strong class='reserved'>else</strong>                                                                \
+<a id='L68' name='L68'></a>      <em class='brace'>{</em>                                                                 \
+<a id='L69' name='L69'></a>        <a href='../D/782.html' title='Multiple defined in 4 places.'>MPN_COPY_DECR</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, un);                                     \
+<a id='L70' name='L70'></a>        cy = 0;                                                         \
+<a id='L71' name='L71'></a>      <em class='brace'>}</em>                                                                 \
+<a id='L72' name='L72'></a>  <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L73' name='L73'></a>
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a><em class='comment'>/* Put in {rootp, ceil(un/k)} the kth root of {up, un}, rounded toward zero.</em>
+<a id='L76' name='L76'></a><em class='comment'>   If remp &lt;&gt; NULL, put in {remp, un} the remainder.</em>
+<a id='L77' name='L77'></a><em class='comment'>   Return the size (in limbs) of the remainder if remp &lt;&gt; NULL,</em>
+<a id='L78' name='L78'></a><em class='comment'>          or a non-zero value iff the remainder is non-zero when remp = NULL.</em>
+<a id='L79' name='L79'></a><em class='comment'>   Assumes:</em>
+<a id='L80' name='L80'></a><em class='comment'>   (a) up[un-1] is not zero</em>
+<a id='L81' name='L81'></a><em class='comment'>   (b) rootp has at least space for ceil(un/k) limbs</em>
+<a id='L82' name='L82'></a><em class='comment'>   (c) remp has at least space for un limbs (in case remp &lt;&gt; NULL)</em>
+<a id='L83' name='L83'></a><em class='comment'>   (d) the operands do not overlap.</em>
+<a id='L84' name='L84'></a><em class='comment'></em>
+<a id='L85' name='L85'></a><em class='comment'>   The auxiliary memory usage is 3*un+2 if remp = NULL,</em>
+<a id='L86' name='L86'></a><em class='comment'>   and 2*un+2 if remp &lt;&gt; NULL.  FIXME: This is an incorrect comment.</em>
+<a id='L87' name='L87'></a><em class='comment'>*/</em>
+<a id='L88' name='L88'></a><a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a>
+<a id='L89' name='L89'></a><a href='../R/2878.html' title='Multiple referred from 5 places.'>mpn_rootrem</a> (<a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> rootp, <a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> remp,
+<a id='L90' name='L90'></a>             <a href='../S/121.html#L65' title='Defined at 65 in mini-gmp/mini-gmp.h.'>mp_srcptr</a> <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, <a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> un, <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> k)
+<a id='L91' name='L91'></a><em class='brace'>{</em>
+<a id='L92' name='L92'></a>  <a href='../D/34.html' title='Multiple defined in 3 places.'>ASSERT</a> (un &gt; 0);
+<a id='L93' name='L93'></a>  <a href='../D/34.html' title='Multiple defined in 3 places.'>ASSERT</a> (<a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>[un - 1] != 0);
+<a id='L94' name='L94'></a>  <a href='../D/34.html' title='Multiple defined in 3 places.'>ASSERT</a> (k &gt; 1);
+<a id='L95' name='L95'></a>
+<a id='L96' name='L96'></a>  <strong class='reserved'>if</strong> (<a href='../S/106.html#L532' title='Defined at 532 in gmp-impl.h.'>UNLIKELY</a> (k == 2))
+<a id='L97' name='L97'></a>    <strong class='reserved'>return</strong> <a href='../D/3196.html' title='Multiple defined in 2 places.'>mpn_sqrtrem</a> (rootp, remp, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, un);
+<a id='L98' name='L98'></a>  <em class='comment'>/* (un-1)/k &gt; 2 &lt;=&gt; un &gt; 3k &lt;=&gt; (un + 2)/3 &gt; k */</em>
+<a id='L99' name='L99'></a>  <strong class='reserved'>if</strong> (remp == NULL &amp;&amp; (un + 2) / 3 &gt; k)
+<a id='L100' name='L100'></a>    <em class='comment'>/* Pad {up,un} with k zero limbs.  This will produce an approximate root</em>
+<a id='L101' name='L101'></a><em class='comment'>       with one more limb, allowing us to compute the exact integral result. */</em>
+<a id='L102' name='L102'></a>    <em class='brace'>{</em>
+<a id='L103' name='L103'></a>      <a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> sp, wp;
+<a id='L104' name='L104'></a>      <a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> rn, sn, wn;
+<a id='L105' name='L105'></a>      <a href='../D/1427.html' title='Multiple defined in 4 places.'>TMP_DECL</a>;
+<a id='L106' name='L106'></a>      <a href='../D/1431.html' title='Multiple defined in 4 places.'>TMP_MARK</a>;
+<a id='L107' name='L107'></a>      wn = un + k;
+<a id='L108' name='L108'></a>      sn = (un - 1) / k + 2; <em class='comment'>/* ceil(un/k) + 1 */</em>
+<a id='L109' name='L109'></a>      <a href='../S/106.html#L499' title='Defined at 499 in gmp-impl.h.'>TMP_ALLOC_LIMBS_2</a> (wp, wn, <em class='comment'>/* will contain the padded input */</em>
+<a id='L110' name='L110'></a>                         sp, sn); <em class='comment'>/* approximate root of padded input */</em>
+<a id='L111' name='L111'></a>      <a href='../S/106.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (wp + k, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, un);
+<a id='L112' name='L112'></a>      <a href='../D/794.html' title='Multiple defined in 2 places.'>MPN_FILL</a> (wp, k, 0);
+<a id='L113' name='L113'></a>      rn = <a href='../S/533.html#L207' title='Defined at 207 in mpn/generic/rootrem.c.'>mpn_rootrem_internal</a> (sp, NULL, wp, wn, k, 1);
+<a id='L114' name='L114'></a>      <em class='comment'>/* The approximate root S = {sp,sn} is either the correct root of</em>
+<a id='L115' name='L115'></a><em class='comment'>         {sp,sn}, or 1 too large.  Thus unless the least significant limb of</em>
+<a id='L116' name='L116'></a><em class='comment'>         S is 0 or 1, we can deduce the root of {up,un} is S truncated by one</em>
+<a id='L117' name='L117'></a><em class='comment'>         limb.  (In case sp[0]=1, we can deduce the root, but not decide</em>
+<a id='L118' name='L118'></a><em class='comment'>         whether it is exact or not.) */</em>
+<a id='L119' name='L119'></a>      <a href='../S/106.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (rootp, sp + 1, sn - 1);
+<a id='L120' name='L120'></a>      <a href='../D/1429.html' title='Multiple defined in 4 places.'>TMP_FREE</a>;
+<a id='L121' name='L121'></a>      <strong class='reserved'>return</strong> rn;
+<a id='L122' name='L122'></a>    <em class='brace'>}</em>
+<a id='L123' name='L123'></a>  <strong class='reserved'>else</strong>
+<a id='L124' name='L124'></a>    <em class='brace'>{</em>
+<a id='L125' name='L125'></a>      <strong class='reserved'>return</strong> <a href='../S/533.html#L207' title='Defined at 207 in mpn/generic/rootrem.c.'>mpn_rootrem_internal</a> (rootp, remp, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, un, k, 0);
+<a id='L126' name='L126'></a>    <em class='brace'>}</em>
+<a id='L127' name='L127'></a><em class='brace'>}</em>
+<a id='L128' name='L128'></a>
+<a id='L129' name='L129'></a><em class='sharp'>#define</em> <a href='../R/574.html' title='Multiple referred from 10 places.'>LOGROOT_USED_BITS</a> 8
+<a id='L130' name='L130'></a><em class='sharp'>#define</em> <a href='../R/572.html' title='Multiple referred from 5 places.'>LOGROOT_NEEDS_TWO_CORRECTIONS</a> 1
+<a id='L131' name='L131'></a><em class='sharp'>#define</em> <a href='../S/533.html#L251' title='Referred from 251 in mpn/generic/rootrem.c.'>LOGROOT_RETURNED_BITS</a> (<a href='../S/533.html#L129' title='Defined at 129 in mpn/generic/rootrem.c.'>LOGROOT_USED_BITS</a> + <a href='../S/533.html#L130' title='Defined at 130 in mpn/generic/rootrem.c.'>LOGROOT_NEEDS_TWO_CORRECTIONS</a>)
+<a id='L132' name='L132'></a><em class='comment'>/* Puts in *rootp some bits of the k^nt root of the number</em>
+<a id='L133' name='L133'></a><em class='comment'>   2^bitn * 1.op ; where op represents the "fractional" bits.</em>
+<a id='L134' name='L134'></a><em class='comment'></em>
+<a id='L135' name='L135'></a><em class='comment'>   The returned value is the number of bits of the root minus one;</em>
+<a id='L136' name='L136'></a><em class='comment'>   i.e. an approximation of the root will be</em>
+<a id='L137' name='L137'></a><em class='comment'>   (*rootp) * 2^(retval-LOGROOT_RETURNED_BITS+1).</em>
+<a id='L138' name='L138'></a><em class='comment'></em>
+<a id='L139' name='L139'></a><em class='comment'>   Currently, only LOGROOT_USED_BITS bits of op are used (the implicit</em>
+<a id='L140' name='L140'></a><em class='comment'>   one is not counted).</em>
+<a id='L141' name='L141'></a><em class='comment'> */</em>
+<a id='L142' name='L142'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong>
+<a id='L143' name='L143'></a><a href='../S/533.html#L250' title='Referred from 250 in mpn/generic/rootrem.c.'>logbased_root</a> (<a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> rootp, <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> op, <a href='../S/121.html#L62' title='Defined at 62 in mini-gmp/mini-gmp.h.'>mp_bitcnt_t</a> bitn, <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> k)
+<a id='L144' name='L144'></a><em class='brace'>{</em>
+<a id='L145' name='L145'></a>  <em class='comment'>/* vlog=vector(256,i,floor((log(256+i)/log(2)-8)*256)-(i&gt;255)) */</em>
+<a id='L146' name='L146'></a>  <strong class='reserved'>static</strong> <strong class='reserved'>const</strong>
+<a id='L147' name='L147'></a>  <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> vlog[] = <em class='brace'>{</em>1,   2,   4,   5,   7,   8,   9,  11,  12,  14,  15,  16,  18,  19,  21,  22,
+<a id='L148' name='L148'></a>                         23,  25,  26,  27,  29,  30,  31,  33,  34,  35,  37,  38,  39,  40,  42,  43,
+<a id='L149' name='L149'></a>                         44,  46,  47,  48,  49,  51,  52,  53,  54,  56,  57,  58,  59,  61,  62,  63,
+<a id='L150' name='L150'></a>                         64,  65,  67,  68,  69,  70,  71,  73,  74,  75,  76,  77,  78,  80,  81,  82,
+<a id='L151' name='L151'></a>                         83,  84,  85,  87,  88,  89,  90,  91,  92,  93,  94,  96,  97,  98,  99, 100,
+<a id='L152' name='L152'></a>                        101, 102, 103, 104, 105, 106, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117,
+<a id='L153' name='L153'></a>                        118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 131, 132, 133, 134,
+<a id='L154' name='L154'></a>                        135, 136, 137, 138, 139, 140, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149,
+<a id='L155' name='L155'></a>                        150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 162, 163, 164,
+<a id='L156' name='L156'></a>                        165, 166, 167, 168, 169, 170, 171, 172, 173, 173, 174, 175, 176, 177, 178, 179,
+<a id='L157' name='L157'></a>                        180, 181, 181, 182, 183, 184, 185, 186, 187, 188, 188, 189, 190, 191, 192, 193,
+<a id='L158' name='L158'></a>                        194, 194, 195, 196, 197, 198, 199, 200, 200, 201, 202, 203, 204, 205, 205, 206,
+<a id='L159' name='L159'></a>                        207, 208, 209, 209, 210, 211, 212, 213, 214, 214, 215, 216, 217, 218, 218, 219,
+<a id='L160' name='L160'></a>                        220, 221, 222, 222, 223, 224, 225, 225, 226, 227, 228, 229, 229, 230, 231, 232,
+<a id='L161' name='L161'></a>                        232, 233, 234, 235, 235, 236, 237, 238, 239, 239, 240, 241, 242, 242, 243, 244,
+<a id='L162' name='L162'></a>                        245, 245, 246, 247, 247, 248, 249, 250, 250, 251, 252, 253, 253, 254, 255, 255<em class='brace'>}</em>;
+<a id='L163' name='L163'></a>
+<a id='L164' name='L164'></a>  <em class='comment'>/* vexp=vector(256,i,floor(2^(8+i/256)-256)-(i&gt;255)) */</em>
+<a id='L165' name='L165'></a>  <strong class='reserved'>static</strong> <strong class='reserved'>const</strong>
+<a id='L166' name='L166'></a>  <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> vexp[] = <em class='brace'>{</em>0,   1,   2,   2,   3,   4,   4,   5,   6,   7,   7,   8,   9,   9,  10,  11,
+<a id='L167' name='L167'></a>                         12,  12,  13,  14,  14,  15,  16,  17,  17,  18,  19,  20,  20,  21,  22,  23,
+<a id='L168' name='L168'></a>                         23,  24,  25,  26,  26,  27,  28,  29,  30,  30,  31,  32,  33,  33,  34,  35,
+<a id='L169' name='L169'></a>                         36,  37,  37,  38,  39,  40,  41,  41,  42,  43,  44,  45,  45,  46,  47,  48,
+<a id='L170' name='L170'></a>                         49,  50,  50,  51,  52,  53,  54,  55,  55,  56,  57,  58,  59,  60,  61,  61,
+<a id='L171' name='L171'></a>                         62,  63,  64,  65,  66,  67,  67,  68,  69,  70,  71,  72,  73,  74,  75,  75,
+<a id='L172' name='L172'></a>                         76,  77,  78,  79,  80,  81,  82,  83,  84,  85,  86,  86,  87,  88,  89,  90,
+<a id='L173' name='L173'></a>                         91,  92,  93,  94,  95,  96,  97,  98,  99, 100, 101, 102, 103, 104, 105, 106,
+<a id='L174' name='L174'></a>                        107, 108, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 119, 120, 121, 122,
+<a id='L175' name='L175'></a>                        123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138,
+<a id='L176' name='L176'></a>                        139, 140, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 154, 155, 156,
+<a id='L177' name='L177'></a>                        157, 158, 159, 160, 161, 163, 164, 165, 166, 167, 168, 169, 171, 172, 173, 174,
+<a id='L178' name='L178'></a>                        175, 176, 178, 179, 180, 181, 182, 183, 185, 186, 187, 188, 189, 191, 192, 193,
+<a id='L179' name='L179'></a>                        194, 196, 197, 198, 199, 200, 202, 203, 204, 205, 207, 208, 209, 210, 212, 213,
+<a id='L180' name='L180'></a>                        214, 216, 217, 218, 219, 221, 222, 223, 225, 226, 227, 229, 230, 231, 232, 234,
+<a id='L181' name='L181'></a>                        235, 236, 238, 239, 240, 242, 243, 245, 246, 247, 249, 250, 251, 253, 254, 255<em class='brace'>}</em>;
+<a id='L182' name='L182'></a>  <a href='../S/121.html#L62' title='Defined at 62 in mini-gmp/mini-gmp.h.'>mp_bitcnt_t</a> retval;
+<a id='L183' name='L183'></a>
+<a id='L184' name='L184'></a>  <strong class='reserved'>if</strong> (<a href='../S/106.html#L532' title='Defined at 532 in gmp-impl.h.'>UNLIKELY</a> (bitn &gt; (~ (<a href='../S/121.html#L62' title='Defined at 62 in mini-gmp/mini-gmp.h.'>mp_bitcnt_t</a>) 0) &gt;&gt; <a href='../S/533.html#L129' title='Defined at 129 in mpn/generic/rootrem.c.'>LOGROOT_USED_BITS</a>))
+<a id='L185' name='L185'></a>    <em class='brace'>{</em>
+<a id='L186' name='L186'></a>      <em class='comment'>/* In the unlikely case, we use two divisions and a modulo. */</em>
+<a id='L187' name='L187'></a>      retval = bitn / k;
+<a id='L188' name='L188'></a>      bitn %= k;
+<a id='L189' name='L189'></a>      bitn = (bitn &lt;&lt; <a href='../S/533.html#L129' title='Defined at 129 in mpn/generic/rootrem.c.'>LOGROOT_USED_BITS</a> |
+<a id='L190' name='L190'></a>              vlog[op &gt;&gt; (GMP_NUMB_BITS - <a href='../S/533.html#L129' title='Defined at 129 in mpn/generic/rootrem.c.'>LOGROOT_USED_BITS</a>)]) / k;
+<a id='L191' name='L191'></a>    <em class='brace'>}</em>
+<a id='L192' name='L192'></a>  <strong class='reserved'>else</strong>
+<a id='L193' name='L193'></a>    <em class='brace'>{</em>
+<a id='L194' name='L194'></a>      bitn = (bitn &lt;&lt; <a href='../S/533.html#L129' title='Defined at 129 in mpn/generic/rootrem.c.'>LOGROOT_USED_BITS</a> |
+<a id='L195' name='L195'></a>              vlog[op &gt;&gt; (GMP_NUMB_BITS - <a href='../S/533.html#L129' title='Defined at 129 in mpn/generic/rootrem.c.'>LOGROOT_USED_BITS</a>)]) / k;
+<a id='L196' name='L196'></a>      retval = bitn &gt;&gt; <a href='../S/533.html#L129' title='Defined at 129 in mpn/generic/rootrem.c.'>LOGROOT_USED_BITS</a>;
+<a id='L197' name='L197'></a>      bitn &amp;= (<a href='../D/165.html' title='Multiple defined in 2 places.'>CNST_LIMB</a> (1) &lt;&lt; <a href='../S/533.html#L129' title='Defined at 129 in mpn/generic/rootrem.c.'>LOGROOT_USED_BITS</a>) - 1;
+<a id='L198' name='L198'></a>    <em class='brace'>}</em>
+<a id='L199' name='L199'></a>  <a href='../D/34.html' title='Multiple defined in 3 places.'>ASSERT</a>(bitn &lt; <a href='../D/165.html' title='Multiple defined in 2 places.'>CNST_LIMB</a> (1) &lt;&lt; <a href='../S/533.html#L129' title='Defined at 129 in mpn/generic/rootrem.c.'>LOGROOT_USED_BITS</a>);
+<a id='L200' name='L200'></a>  *rootp = <a href='../D/165.html' title='Multiple defined in 2 places.'>CNST_LIMB</a>(1) &lt;&lt; (<a href='../S/533.html#L129' title='Defined at 129 in mpn/generic/rootrem.c.'>LOGROOT_USED_BITS</a> - ! <a href='../S/533.html#L130' title='Defined at 130 in mpn/generic/rootrem.c.'>LOGROOT_NEEDS_TWO_CORRECTIONS</a>)
+<a id='L201' name='L201'></a>    | vexp[bitn] &gt;&gt; ! <a href='../S/533.html#L130' title='Defined at 130 in mpn/generic/rootrem.c.'>LOGROOT_NEEDS_TWO_CORRECTIONS</a>;
+<a id='L202' name='L202'></a>  <strong class='reserved'>return</strong> retval;
+<a id='L203' name='L203'></a><em class='brace'>}</em>
+<a id='L204' name='L204'></a>
+<a id='L205' name='L205'></a><em class='comment'>/* if approx is non-zero, does not compute the final remainder */</em>
+<a id='L206' name='L206'></a><strong class='reserved'>static</strong> <a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a>
+<a id='L207' name='L207'></a><a href='../R/2879.html' title='Multiple referred from 3 places.'>mpn_rootrem_internal</a> (<a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> rootp, <a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> remp, <a href='../S/121.html#L65' title='Defined at 65 in mini-gmp/mini-gmp.h.'>mp_srcptr</a> <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, <a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> un,
+<a id='L208' name='L208'></a>                      <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> k, <strong class='reserved'>int</strong> approx)
+<a id='L209' name='L209'></a><em class='brace'>{</em>
+<a id='L210' name='L210'></a>  <a href='../S/121.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> qp, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, sp, wp, scratch;
+<a id='L211' name='L211'></a>  <a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> qn, rn, sn, wn, nl, bn;
+<a id='L212' name='L212'></a>  <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> save, save2, cy, uh;
+<a id='L213' name='L213'></a>  <a href='../S/121.html#L62' title='Defined at 62 in mini-gmp/mini-gmp.h.'>mp_bitcnt_t</a> unb; <em class='comment'>/* number of significant bits of {up,un} */</em>
+<a id='L214' name='L214'></a>  <a href='../S/121.html#L62' title='Defined at 62 in mini-gmp/mini-gmp.h.'>mp_bitcnt_t</a> xnb; <em class='comment'>/* number of significant bits of the result */</em>
+<a id='L215' name='L215'></a>  <a href='../S/121.html#L62' title='Defined at 62 in mini-gmp/mini-gmp.h.'>mp_bitcnt_t</a> b, kk;
+<a id='L216' name='L216'></a>  <a href='../S/121.html#L62' title='Defined at 62 in mini-gmp/mini-gmp.h.'>mp_bitcnt_t</a> sizes[GMP_NUMB_BITS + 1];
+<a id='L217' name='L217'></a>  <strong class='reserved'>int</strong> ni;
+<a id='L218' name='L218'></a>  <strong class='reserved'>int</strong> perf_pow;
+<a id='L219' name='L219'></a>  <strong class='reserved'>unsigned</strong> ulz, snb, c, logk;
+<a id='L220' name='L220'></a>  <a href='../D/1427.html' title='Multiple defined in 4 places.'>TMP_DECL</a>;
+<a id='L221' name='L221'></a>
+<a id='L222' name='L222'></a>  <em class='comment'>/* MPN_SIZEINBASE_2EXP(unb, up, un, 1); --unb; */</em>
+<a id='L223' name='L223'></a>  uh = <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>[un - 1];
+<a id='L224' name='L224'></a>  <a href='../D/2366.html' title='Multiple defined in 27 places.'>count_leading_zeros</a> (ulz, uh);
+<a id='L225' name='L225'></a>  ulz = ulz - GMP_NAIL_BITS + 1; <em class='comment'>/* Ignore the first 1. */</em>
+<a id='L226' name='L226'></a>  unb = (<a href='../S/121.html#L62' title='Defined at 62 in mini-gmp/mini-gmp.h.'>mp_bitcnt_t</a>) un * GMP_NUMB_BITS - ulz;
+<a id='L227' name='L227'></a>  <em class='comment'>/* unb is the (truncated) logarithm of the input U in base 2*/</em>
+<a id='L228' name='L228'></a>
+<a id='L229' name='L229'></a>  <strong class='reserved'>if</strong> (unb &lt; k) <em class='comment'>/* root is 1 */</em>
+<a id='L230' name='L230'></a>    <em class='brace'>{</em>
+<a id='L231' name='L231'></a>      rootp[0] = 1;
+<a id='L232' name='L232'></a>      <strong class='reserved'>if</strong> (remp == NULL)
+<a id='L233' name='L233'></a>        un -= (*<a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a> == <a href='../D/165.html' title='Multiple defined in 2 places.'>CNST_LIMB</a> (1)); <em class='comment'>/* Non-zero iif {up,un} &gt; 1 */</em>
+<a id='L234' name='L234'></a>      <strong class='reserved'>else</strong>
+<a id='L235' name='L235'></a>        <em class='brace'>{</em>
+<a id='L236' name='L236'></a>          <a href='../S/120.html#L481' title='Defined at 481 in mini-gmp/mini-gmp.c.'>mpn_sub_1</a> (remp, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, un, <a href='../D/165.html' title='Multiple defined in 2 places.'>CNST_LIMB</a> (1));
+<a id='L237' name='L237'></a>          un -= (remp [un - 1] == 0);   <em class='comment'>/* There should be at most one zero limb,</em>
+<a id='L238' name='L238'></a><em class='comment'>                                   if we demand u to be normalized  */</em>
+<a id='L239' name='L239'></a>        <em class='brace'>}</em>
+<a id='L240' name='L240'></a>      <strong class='reserved'>return</strong> un;
+<a id='L241' name='L241'></a>    <em class='brace'>}</em>
+<a id='L242' name='L242'></a>  <em class='comment'>/* if (unb - k &lt; k/2 + k/16) // root is 2 */</em>
+<a id='L243' name='L243'></a>
+<a id='L244' name='L244'></a>  <strong class='reserved'>if</strong> (ulz == GMP_NUMB_BITS)
+<a id='L245' name='L245'></a>    uh = <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>[un - 2];
+<a id='L246' name='L246'></a>  <strong class='reserved'>else</strong>
+<a id='L247' name='L247'></a>    uh = (uh &lt;&lt; ulz &amp; <a href='../S/3.html#L47' title='Defined at 47 in asl.h.'>GMP_NUMB_MASK</a>) | <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>[un - 1 - (un != 1)] &gt;&gt; (GMP_NUMB_BITS - ulz);
+<a id='L248' name='L248'></a>  <a href='../D/34.html' title='Multiple defined in 3 places.'>ASSERT</a> (un != 1 || <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>[un - 1 - (un != 1)] &gt;&gt; (GMP_NUMB_BITS - ulz) == 1);
+<a id='L249' name='L249'></a>
+<a id='L250' name='L250'></a>  xnb = <a href='../S/533.html#L143' title='Defined at 143 in mpn/generic/rootrem.c.'>logbased_root</a> (rootp, uh, unb, k);
+<a id='L251' name='L251'></a>  snb = <a href='../S/533.html#L131' title='Defined at 131 in mpn/generic/rootrem.c.'>LOGROOT_RETURNED_BITS</a> - 1;
+<a id='L252' name='L252'></a>  <em class='comment'>/* xnb+1 is the number of bits of the root R */</em>
+<a id='L253' name='L253'></a>  <em class='comment'>/* snb+1 is the number of bits of the current approximation S */</em>
+<a id='L254' name='L254'></a>
+<a id='L255' name='L255'></a>  kk = k * xnb;         <em class='comment'>/* number of truncated bits in the input */</em>
+<a id='L256' name='L256'></a>
+<a id='L257' name='L257'></a>  <em class='comment'>/* FIXME: Should we skip the next two loops when xnb &lt;= snb ? */</em>
+<a id='L258' name='L258'></a>  <strong class='reserved'>for</strong> (uh = (k - 1) / 2, logk = 3; (uh &gt;&gt;= 1) != 0; ++logk )
+<a id='L259' name='L259'></a>    ;
+<a id='L260' name='L260'></a>  <em class='comment'>/* logk = ceil(log(k)/log(2)) + 1 */</em>
+<a id='L261' name='L261'></a>
+<a id='L262' name='L262'></a>  <em class='comment'>/* xnb is the number of remaining bits to determine in the kth root */</em>
+<a id='L263' name='L263'></a>  <strong class='reserved'>for</strong> (ni = 0; (sizes[ni] = xnb) &gt; snb; ++ni)
+<a id='L264' name='L264'></a>    <em class='brace'>{</em>
+<a id='L265' name='L265'></a>      <em class='comment'>/* invariant: here we want xnb+1 total bits for the kth root */</em>
+<a id='L266' name='L266'></a>
+<a id='L267' name='L267'></a>      <em class='comment'>/* if c is the new value of xnb, this means that we'll go from a</em>
+<a id='L268' name='L268'></a><em class='comment'>         root of c+1 bits (say s') to a root of xnb+1 bits.</em>
+<a id='L269' name='L269'></a><em class='comment'>         It is proved in the book "Modern Computer Arithmetic" by Brent</em>
+<a id='L270' name='L270'></a><em class='comment'>         and Zimmermann, Chapter 1, that</em>
+<a id='L271' name='L271'></a><em class='comment'>         if s' &gt;= k*beta, then at most one correction is necessary.</em>
+<a id='L272' name='L272'></a><em class='comment'>         Here beta = 2^(xnb-c), and s' &gt;= 2^c, thus it suffices that</em>
+<a id='L273' name='L273'></a><em class='comment'>         c &gt;= ceil((xnb + log2(k))/2). */</em>
+<a id='L274' name='L274'></a>      <strong class='reserved'>if</strong> (xnb &gt; logk)
+<a id='L275' name='L275'></a>        xnb = (xnb + logk) / 2;
+<a id='L276' name='L276'></a>      <strong class='reserved'>else</strong>
+<a id='L277' name='L277'></a>        --xnb;  <em class='comment'>/* add just one bit at a time */</em>
+<a id='L278' name='L278'></a>    <em class='brace'>}</em>
+<a id='L279' name='L279'></a>
+<a id='L280' name='L280'></a>  *rootp &gt;&gt;= snb - xnb;
+<a id='L281' name='L281'></a>  kk -= xnb;
+<a id='L282' name='L282'></a>
+<a id='L283' name='L283'></a>  <a href='../S/106.html#L2435' title='Defined at 2435 in gmp-impl.h.'>ASSERT_ALWAYS</a> (ni &lt; GMP_NUMB_BITS + 1);
+<a id='L284' name='L284'></a>  <em class='comment'>/* We have sizes[0] = b &gt; sizes[1] &gt; ... &gt; sizes[ni] = 0 with</em>
+<a id='L285' name='L285'></a><em class='comment'>     sizes[i] &lt;= 2 * sizes[i+1].</em>
+<a id='L286' name='L286'></a><em class='comment'>     Newton iteration will first compute sizes[ni-1] extra bits,</em>
+<a id='L287' name='L287'></a><em class='comment'>     then sizes[ni-2], ..., then sizes[0] = b. */</em>
+<a id='L288' name='L288'></a>
+<a id='L289' name='L289'></a>  <a href='../D/1431.html' title='Multiple defined in 4 places.'>TMP_MARK</a>;
+<a id='L290' name='L290'></a>  <em class='comment'>/* qp and wp need enough space to store S'^k where S' is an approximate</em>
+<a id='L291' name='L291'></a><em class='comment'>     root. Since S' can be as large as S+2, the worst case is when S=2 and</em>
+<a id='L292' name='L292'></a><em class='comment'>     S'=4. But then since we know the number of bits of S in advance, S'</em>
+<a id='L293' name='L293'></a><em class='comment'>     can only be 3 at most. Similarly for S=4, then S' can be 6 at most.</em>
+<a id='L294' name='L294'></a><em class='comment'>     So the worst case is S'/S=3/2, thus S'^k &lt;= (3/2)^k * S^k. Since S^k</em>
+<a id='L295' name='L295'></a><em class='comment'>     fits in un limbs, the number of extra limbs needed is bounded by</em>
+<a id='L296' name='L296'></a><em class='comment'>     ceil(k*log2(3/2)/GMP_NUMB_BITS). */</em>
+<a id='L297' name='L297'></a>  <em class='comment'>/* THINK: with the use of logbased_root, maybe the constant is</em>
+<a id='L298' name='L298'></a><em class='comment'>     258/256 instead of 3/2 ? log2(258/256) &lt; 1/89 &lt; 1/64 */</em>
+<a id='L299' name='L299'></a><em class='sharp'>#define</em> <a href='../R/323.html' title='Multiple referred from 7 places.'>EXTRA</a> 2 + (<a href='../S/121.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a>) (0.585 * (<strong class='reserved'>double</strong>) k / (<strong class='reserved'>double</strong>) GMP_NUMB_BITS)
+<a id='L300' name='L300'></a>  <a href='../S/106.html#L512' title='Defined at 512 in gmp-impl.h.'>TMP_ALLOC_LIMBS_3</a> (scratch, un + 1, <em class='comment'>/* used by mpn_div_q */</em>
+<a id='L301' name='L301'></a>                     qp, un + <a href='../D/338.html' title='Multiple defined in 2 places.'>EXTRA</a>,  <em class='comment'>/* will contain quotient and remainder</em>
+<a id='L302' name='L302'></a><em class='comment'>                                         of R/(k*S^(k-1)), and S^k */</em>
+<a id='L303' name='L303'></a>                     wp, un + <a href='../D/338.html' title='Multiple defined in 2 places.'>EXTRA</a>); <em class='comment'>/* will contain S^(k-1), k*S^(k-1),</em>
+<a id='L304' name='L304'></a><em class='comment'>                                         and temporary for mpn_pow_1 */</em>
+<a id='L305' name='L305'></a>
+<a id='L306' name='L306'></a>  <strong class='reserved'>if</strong> (remp == NULL)
+<a id='L307' name='L307'></a>    <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a> = scratch;       <em class='comment'>/* will contain the remainder */</em>
+<a id='L308' name='L308'></a>  <strong class='reserved'>else</strong>
+<a id='L309' name='L309'></a>    <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a> = remp;
+<a id='L310' name='L310'></a>  sp = rootp;
+<a id='L311' name='L311'></a>
+<a id='L312' name='L312'></a>  sn = 1;               <em class='comment'>/* Initial approximation has one limb */</em>
+<a id='L313' name='L313'></a>
+<a id='L314' name='L314'></a>  <strong class='reserved'>for</strong> (b = xnb; ni != 0; --ni)
+<a id='L315' name='L315'></a>    <em class='brace'>{</em>
+<a id='L316' name='L316'></a>      <em class='comment'>/* 1: loop invariant:</em>
+<a id='L317' name='L317'></a><em class='comment'>         {sp, sn} is the current approximation of the root, which has</em>
+<a id='L318' name='L318'></a><em class='comment'>                  exactly 1 + sizes[ni] bits.</em>
+<a id='L319' name='L319'></a><em class='comment'>         {rp, rn} is the current remainder</em>
+<a id='L320' name='L320'></a><em class='comment'>         {wp, wn} = {sp, sn}^(k-1)</em>
+<a id='L321' name='L321'></a><em class='comment'>         kk = number of truncated bits of the input</em>
+<a id='L322' name='L322'></a><em class='comment'>      */</em>
+<a id='L323' name='L323'></a>
+<a id='L324' name='L324'></a>      <em class='comment'>/* Since each iteration treats b bits from the root and thus k*b bits</em>
+<a id='L325' name='L325'></a><em class='comment'>         from the input, and we already considered b bits from the input,</em>
+<a id='L326' name='L326'></a><em class='comment'>         we now have to take another (k-1)*b bits from the input. */</em>
+<a id='L327' name='L327'></a>      kk -= (k - 1) * b; <em class='comment'>/* remaining input bits */</em>
+<a id='L328' name='L328'></a>      <em class='comment'>/* {rp, rn} = floor({up, un} / 2^kk) */</em>
+<a id='L329' name='L329'></a>      rn = un - kk / GMP_NUMB_BITS;
+<a id='L330' name='L330'></a>      <a href='../S/533.html#L53' title='Defined at 53 in mpn/generic/rootrem.c.'>MPN_RSHIFT</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a> + kk / GMP_NUMB_BITS, rn, kk % GMP_NUMB_BITS);
+<a id='L331' name='L331'></a>      rn -= <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>[rn - 1] == 0;
+<a id='L332' name='L332'></a>
+<a id='L333' name='L333'></a>      <em class='comment'>/* 9: current buffers: {sp,sn}, {rp,rn} */</em>
+<a id='L334' name='L334'></a>
+<a id='L335' name='L335'></a>      <strong class='reserved'>for</strong> (c = 0;; c++)
+<a id='L336' name='L336'></a>        <em class='brace'>{</em>
+<a id='L337' name='L337'></a>          <em class='comment'>/* Compute S^k in {qp,qn}. */</em>
+<a id='L338' name='L338'></a>          <em class='comment'>/* W &lt;- S^(k-1) for the next iteration,</em>
+<a id='L339' name='L339'></a><em class='comment'>             and S^k = W * S. */</em>
+<a id='L340' name='L340'></a>          wn = <a href='../S/524.html#L40' title='Defined at 40 in mpn/generic/pow_1.c.'>mpn_pow_1</a> (wp, sp, sn, k - 1, qp);
+<a id='L341' name='L341'></a>          <a href='../D/3092.html' title='Multiple defined in 2 places.'>mpn_mul</a> (qp, wp, wn, sp, sn);
+<a id='L342' name='L342'></a>          qn = wn + sn;
+<a id='L343' name='L343'></a>          qn -= qp[qn - 1] == 0;
+<a id='L344' name='L344'></a>
+<a id='L345' name='L345'></a>          perf_pow = 1;
+<a id='L346' name='L346'></a>          <em class='comment'>/* if S^k &gt; floor(U/2^kk), the root approximation was too large */</em>
+<a id='L347' name='L347'></a>          <strong class='reserved'>if</strong> (qn &gt; rn || (qn == rn &amp;&amp; (perf_pow=<a href='../S/120.html#L389' title='Defined at 389 in mini-gmp/mini-gmp.c.'>mpn_cmp</a> (qp, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, rn)) &gt; 0))
+<a id='L348' name='L348'></a>            <a href='../D/787.html' title='Multiple defined in 4 places.'>MPN_DECR_U</a> (sp, sn, 1);
+<a id='L349' name='L349'></a>          <strong class='reserved'>else</strong>
+<a id='L350' name='L350'></a>            <strong class='reserved'>break</strong>;
+<a id='L351' name='L351'></a>        <em class='brace'>}</em>
+<a id='L352' name='L352'></a>
+<a id='L353' name='L353'></a>      <em class='comment'>/* 10: current buffers: {sp,sn}, {rp,rn}, {qp,qn}, {wp,wn} */</em>
+<a id='L354' name='L354'></a>
+<a id='L355' name='L355'></a>      <em class='comment'>/* sometimes two corrections are needed with logbased_root*/</em>
+<a id='L356' name='L356'></a>      <a href='../D/34.html' title='Multiple defined in 3 places.'>ASSERT</a> (c &lt;= 1 + <a href='../S/533.html#L130' title='Defined at 130 in mpn/generic/rootrem.c.'>LOGROOT_NEEDS_TWO_CORRECTIONS</a>);
+<a id='L357' name='L357'></a>      <a href='../S/106.html#L2435' title='Defined at 2435 in gmp-impl.h.'>ASSERT_ALWAYS</a> (rn &gt;= qn);
+<a id='L358' name='L358'></a>
+<a id='L359' name='L359'></a>      b = sizes[ni - 1] - sizes[ni]; <em class='comment'>/* number of bits to compute in the</em>
+<a id='L360' name='L360'></a><em class='comment'>                                      next iteration */</em>
+<a id='L361' name='L361'></a>      bn = b / GMP_NUMB_BITS; <em class='comment'>/* lowest limb from high part of rp[], after shift */</em>
+<a id='L362' name='L362'></a>
+<a id='L363' name='L363'></a>      kk = kk - b;
+<a id='L364' name='L364'></a>      <em class='comment'>/* nl is the number of limbs in U which contain bits [kk,kk+b-1] */</em>
+<a id='L365' name='L365'></a>      nl = 1 + (kk + b - 1) / GMP_NUMB_BITS - (kk / GMP_NUMB_BITS);
+<a id='L366' name='L366'></a>      <em class='comment'>/* nl  = 1 + floor((kk + b - 1) / GMP_NUMB_BITS)</em>
+<a id='L367' name='L367'></a><em class='comment'>                 - floor(kk / GMP_NUMB_BITS)</em>
+<a id='L368' name='L368'></a><em class='comment'>             &lt;= 1 + (kk + b - 1) / GMP_NUMB_BITS</em>
+<a id='L369' name='L369'></a><em class='comment'>                  - (kk - GMP_NUMB_BITS + 1) / GMP_NUMB_BITS</em>
+<a id='L370' name='L370'></a><em class='comment'>             = 2 + (b - 2) / GMP_NUMB_BITS</em>
+<a id='L371' name='L371'></a><em class='comment'>         thus since nl is an integer:</em>
+<a id='L372' name='L372'></a><em class='comment'>         nl &lt;= 2 + floor(b/GMP_NUMB_BITS) &lt;= 2 + bn. */</em>
+<a id='L373' name='L373'></a>
+<a id='L374' name='L374'></a>      <em class='comment'>/* 11: current buffers: {sp,sn}, {rp,rn}, {wp,wn} */</em>
+<a id='L375' name='L375'></a>
+<a id='L376' name='L376'></a>      <em class='comment'>/* R = R - Q = floor(U/2^kk) - S^k */</em>
+<a id='L377' name='L377'></a>      <strong class='reserved'>if</strong> (perf_pow != 0)
+<a id='L378' name='L378'></a>        <em class='brace'>{</em>
+<a id='L379' name='L379'></a>          <a href='../S/120.html#L520' title='Defined at 520 in mini-gmp/mini-gmp.c.'>mpn_sub</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, rn, qp, qn);
+<a id='L380' name='L380'></a>          <a href='../S/106.html#L1950' title='Defined at 1950 in gmp-impl.h.'>MPN_NORMALIZE_NOT_ZERO</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, rn);
+<a id='L381' name='L381'></a>
+<a id='L382' name='L382'></a>          <em class='comment'>/* first multiply the remainder by 2^b */</em>
+<a id='L383' name='L383'></a>          <a href='../D/802.html' title='Multiple defined in 2 places.'>MPN_LSHIFT</a> (cy, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a> + bn, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, rn, b % GMP_NUMB_BITS);
+<a id='L384' name='L384'></a>          rn = rn + bn;
+<a id='L385' name='L385'></a>          <strong class='reserved'>if</strong> (cy != 0)
+<a id='L386' name='L386'></a>            <em class='brace'>{</em>
+<a id='L387' name='L387'></a>              <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>[rn] = cy;
+<a id='L388' name='L388'></a>              rn++;
+<a id='L389' name='L389'></a>            <em class='brace'>}</em>
+<a id='L390' name='L390'></a>
+<a id='L391' name='L391'></a>          save = <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>[bn];
+<a id='L392' name='L392'></a>          <em class='comment'>/* we have to save rp[bn] up to rp[nl-1], i.e. 1 or 2 limbs */</em>
+<a id='L393' name='L393'></a>          <strong class='reserved'>if</strong> (nl - 1 &gt; bn)
+<a id='L394' name='L394'></a>            save2 = <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>[bn + 1];
+<a id='L395' name='L395'></a>        <em class='brace'>}</em>
+<a id='L396' name='L396'></a>      <strong class='reserved'>else</strong>
+<a id='L397' name='L397'></a>        <em class='brace'>{</em>
+<a id='L398' name='L398'></a>          rn = bn;
+<a id='L399' name='L399'></a>          save2 = save = 0;
+<a id='L400' name='L400'></a>        <em class='brace'>}</em>
+<a id='L401' name='L401'></a>      <em class='comment'>/* 2: current buffers: {sp,sn}, {rp,rn}, {wp,wn} */</em>
+<a id='L402' name='L402'></a>
+<a id='L403' name='L403'></a>      <em class='comment'>/* Now insert bits [kk,kk+b-1] from the input U */</em>
+<a id='L404' name='L404'></a>      <a href='../S/533.html#L53' title='Defined at 53 in mpn/generic/rootrem.c.'>MPN_RSHIFT</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a> + kk / GMP_NUMB_BITS, nl, kk % GMP_NUMB_BITS);
+<a id='L405' name='L405'></a>      <em class='comment'>/* set to zero high bits of rp[bn] */</em>
+<a id='L406' name='L406'></a>      <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>[bn] &amp;= (<a href='../D/165.html' title='Multiple defined in 2 places.'>CNST_LIMB</a> (1) &lt;&lt; (b % GMP_NUMB_BITS)) - 1;
+<a id='L407' name='L407'></a>      <em class='comment'>/* restore corresponding bits */</em>
+<a id='L408' name='L408'></a>      <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>[bn] |= save;
+<a id='L409' name='L409'></a>      <strong class='reserved'>if</strong> (nl - 1 &gt; bn)
+<a id='L410' name='L410'></a>        <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>[bn + 1] = save2; <em class='comment'>/* the low b bits go in rp[0..bn] only, since</em>
+<a id='L411' name='L411'></a><em class='comment'>                               they start by bit 0 in rp[0], so they use</em>
+<a id='L412' name='L412'></a><em class='comment'>                               at most ceil(b/GMP_NUMB_BITS) limbs */</em>
+<a id='L413' name='L413'></a>      <em class='comment'>/* FIXME: Should we normalise {rp,rn} here ?*/</em>
+<a id='L414' name='L414'></a>
+<a id='L415' name='L415'></a>      <em class='comment'>/* 3: current buffers: {sp,sn}, {rp,rn}, {wp,wn} */</em>
+<a id='L416' name='L416'></a>
+<a id='L417' name='L417'></a>      <em class='comment'>/* compute {wp, wn} = k * {sp, sn}^(k-1) */</em>
+<a id='L418' name='L418'></a>      cy = <a href='../D/3093.html' title='Multiple defined in 5 places.'>mpn_mul_1</a> (wp, wp, wn, k);
+<a id='L419' name='L419'></a>      wp[wn] = cy;
+<a id='L420' name='L420'></a>      wn += cy != 0;
+<a id='L421' name='L421'></a>
+<a id='L422' name='L422'></a>      <em class='comment'>/* 6: current buffers: {sp,sn}, {qp,qn} */</em>
+<a id='L423' name='L423'></a>
+<a id='L424' name='L424'></a>      <em class='comment'>/* multiply the root approximation by 2^b */</em>
+<a id='L425' name='L425'></a>      <a href='../D/802.html' title='Multiple defined in 2 places.'>MPN_LSHIFT</a> (cy, sp + b / GMP_NUMB_BITS, sp, sn, b % GMP_NUMB_BITS);
+<a id='L426' name='L426'></a>      sn = sn + b / GMP_NUMB_BITS;
+<a id='L427' name='L427'></a>      <strong class='reserved'>if</strong> (cy != 0)
+<a id='L428' name='L428'></a>        <em class='brace'>{</em>
+<a id='L429' name='L429'></a>          sp[sn] = cy;
+<a id='L430' name='L430'></a>          sn++;
+<a id='L431' name='L431'></a>        <em class='brace'>}</em>
+<a id='L432' name='L432'></a>
+<a id='L433' name='L433'></a>      save = sp[b / GMP_NUMB_BITS];
+<a id='L434' name='L434'></a>
+<a id='L435' name='L435'></a>      <em class='comment'>/* Number of limbs used by b bits, when least significant bit is</em>
+<a id='L436' name='L436'></a><em class='comment'>         aligned to least limb */</em>
+<a id='L437' name='L437'></a>      bn = (b - 1) / GMP_NUMB_BITS + 1;
+<a id='L438' name='L438'></a>
+<a id='L439' name='L439'></a>      <em class='comment'>/* 4: current buffers: {sp,sn}, {rp,rn}, {wp,wn} */</em>
+<a id='L440' name='L440'></a>
+<a id='L441' name='L441'></a>      <em class='comment'>/* now divide {rp, rn} by {wp, wn} to get the low part of the root */</em>
+<a id='L442' name='L442'></a>      <strong class='reserved'>if</strong> (<a href='../S/106.html#L532' title='Defined at 532 in gmp-impl.h.'>UNLIKELY</a> (rn &lt; wn))
+<a id='L443' name='L443'></a>        <em class='brace'>{</em>
+<a id='L444' name='L444'></a>          <a href='../D/794.html' title='Multiple defined in 2 places.'>MPN_FILL</a> (sp, bn, 0);
+<a id='L445' name='L445'></a>        <em class='brace'>}</em>
+<a id='L446' name='L446'></a>      <strong class='reserved'>else</strong>
+<a id='L447' name='L447'></a>        <em class='brace'>{</em>
+<a id='L448' name='L448'></a>          qn = rn - wn; <em class='comment'>/* expected quotient size */</em>
+<a id='L449' name='L449'></a>          <strong class='reserved'>if</strong> (qn &lt;= bn) <em class='brace'>{</em> <em class='comment'>/* Divide only if result is not too big. */</em>
+<a id='L450' name='L450'></a>            <a href='../D/2938.html' title='Multiple defined in 2 places.'>mpn_div_q</a> (qp, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, rn, wp, wn, scratch);
+<a id='L451' name='L451'></a>            qn += qp[qn] != 0;
+<a id='L452' name='L452'></a>          <em class='brace'>}</em>
+<a id='L453' name='L453'></a>
+<a id='L454' name='L454'></a>      <em class='comment'>/* 5: current buffers: {sp,sn}, {qp,qn}.</em>
+<a id='L455' name='L455'></a><em class='comment'>         Note: {rp,rn} is not needed any more since we'll compute it from</em>
+<a id='L456' name='L456'></a><em class='comment'>         scratch at the end of the loop.</em>
+<a id='L457' name='L457'></a><em class='comment'>       */</em>
+<a id='L458' name='L458'></a>
+<a id='L459' name='L459'></a>      <em class='comment'>/* the quotient should be smaller than 2^b, since the previous</em>
+<a id='L460' name='L460'></a><em class='comment'>         approximation was correctly rounded toward zero */</em>
+<a id='L461' name='L461'></a>          <strong class='reserved'>if</strong> (qn &gt; bn || (qn == bn &amp;&amp; (b % GMP_NUMB_BITS != 0) &amp;&amp;
+<a id='L462' name='L462'></a>                          qp[qn - 1] &gt;= (<a href='../D/165.html' title='Multiple defined in 2 places.'>CNST_LIMB</a> (1) &lt;&lt; (b % GMP_NUMB_BITS))))
+<a id='L463' name='L463'></a>            <em class='brace'>{</em>
+<a id='L464' name='L464'></a>              <strong class='reserved'>for</strong> (qn = 1; qn &lt; bn; ++qn)
+<a id='L465' name='L465'></a>                sp[qn - 1] = GMP_NUMB_MAX;
+<a id='L466' name='L466'></a>              sp[qn - 1] = GMP_NUMB_MAX &gt;&gt; (GMP_NUMB_BITS - 1 - ((b - 1) % GMP_NUMB_BITS));
+<a id='L467' name='L467'></a>            <em class='brace'>}</em>
+<a id='L468' name='L468'></a>          <strong class='reserved'>else</strong>
+<a id='L469' name='L469'></a>            <em class='brace'>{</em>
+<a id='L470' name='L470'></a>      <em class='comment'>/* 7: current buffers: {sp,sn}, {qp,qn} */</em>
+<a id='L471' name='L471'></a>
+<a id='L472' name='L472'></a>      <em class='comment'>/* Combine sB and q to form sB + q.  */</em>
+<a id='L473' name='L473'></a>              <a href='../S/106.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (sp, qp, qn);
+<a id='L474' name='L474'></a>              <a href='../S/106.html#L1919' title='Defined at 1919 in gmp-impl.h.'>MPN_ZERO</a> (sp + qn, bn - qn);
+<a id='L475' name='L475'></a>            <em class='brace'>}</em>
+<a id='L476' name='L476'></a>        <em class='brace'>}</em>
+<a id='L477' name='L477'></a>      sp[b / GMP_NUMB_BITS] |= save;
+<a id='L478' name='L478'></a>
+<a id='L479' name='L479'></a>      <em class='comment'>/* 8: current buffer: {sp,sn} */</em>
+<a id='L480' name='L480'></a>
+<a id='L481' name='L481'></a>    <em class='brace'>}</em>
+<a id='L482' name='L482'></a>
+<a id='L483' name='L483'></a>  <em class='comment'>/* otherwise we have rn &gt; 0, thus the return value is ok */</em>
+<a id='L484' name='L484'></a>  <strong class='reserved'>if</strong> (!approx || sp[0] &lt;= <a href='../D/165.html' title='Multiple defined in 2 places.'>CNST_LIMB</a> (1))
+<a id='L485' name='L485'></a>    <em class='brace'>{</em>
+<a id='L486' name='L486'></a>      <strong class='reserved'>for</strong> (c = 0;; c++)
+<a id='L487' name='L487'></a>        <em class='brace'>{</em>
+<a id='L488' name='L488'></a>          <em class='comment'>/* Compute S^k in {qp,qn}. */</em>
+<a id='L489' name='L489'></a>          <em class='comment'>/* Last iteration: we don't need W anymore. */</em>
+<a id='L490' name='L490'></a>          <em class='comment'>/* mpn_pow_1 requires that both qp and wp have enough</em>
+<a id='L491' name='L491'></a><em class='comment'>             space to store the result {sp,sn}^k + 1 limb */</em>
+<a id='L492' name='L492'></a>          qn = <a href='../S/524.html#L40' title='Defined at 40 in mpn/generic/pow_1.c.'>mpn_pow_1</a> (qp, sp, sn, k, wp);
+<a id='L493' name='L493'></a>
+<a id='L494' name='L494'></a>          perf_pow = 1;
+<a id='L495' name='L495'></a>          <strong class='reserved'>if</strong> (qn &gt; un || (qn == un &amp;&amp; (perf_pow=<a href='../S/120.html#L389' title='Defined at 389 in mini-gmp/mini-gmp.c.'>mpn_cmp</a> (qp, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, un)) &gt; 0))
+<a id='L496' name='L496'></a>            <a href='../D/787.html' title='Multiple defined in 4 places.'>MPN_DECR_U</a> (sp, sn, 1);
+<a id='L497' name='L497'></a>          <strong class='reserved'>else</strong>
+<a id='L498' name='L498'></a>            <strong class='reserved'>break</strong>;
+<a id='L499' name='L499'></a>        <em class='brace'>}</em>;
+<a id='L500' name='L500'></a>
+<a id='L501' name='L501'></a>      <em class='comment'>/* sometimes two corrections are needed with logbased_root*/</em>
+<a id='L502' name='L502'></a>      <a href='../D/34.html' title='Multiple defined in 3 places.'>ASSERT</a> (c &lt;= 1 + <a href='../S/533.html#L130' title='Defined at 130 in mpn/generic/rootrem.c.'>LOGROOT_NEEDS_TWO_CORRECTIONS</a>);
+<a id='L503' name='L503'></a>
+<a id='L504' name='L504'></a>      rn = perf_pow != 0;
+<a id='L505' name='L505'></a>      <strong class='reserved'>if</strong> (rn != 0 &amp;&amp; remp != NULL)
+<a id='L506' name='L506'></a>        <em class='brace'>{</em>
+<a id='L507' name='L507'></a>          <a href='../S/120.html#L520' title='Defined at 520 in mini-gmp/mini-gmp.c.'>mpn_sub</a> (remp, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, un, qp, qn);
+<a id='L508' name='L508'></a>          rn = un;
+<a id='L509' name='L509'></a>          <a href='../S/106.html#L1950' title='Defined at 1950 in gmp-impl.h.'>MPN_NORMALIZE_NOT_ZERO</a> (remp, rn);
+<a id='L510' name='L510'></a>        <em class='brace'>}</em>
+<a id='L511' name='L511'></a>    <em class='brace'>}</em>
+<a id='L512' name='L512'></a>
+<a id='L513' name='L513'></a>  <a href='../D/1429.html' title='Multiple defined in 4 places.'>TMP_FREE</a>;
+<a id='L514' name='L514'></a>  <strong class='reserved'>return</strong> rn;
+<a id='L515' name='L515'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L89'>[^]</a><a href='#L207'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>
