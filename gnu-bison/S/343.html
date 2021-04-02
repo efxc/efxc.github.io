@@ -1,0 +1,842 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/getopt.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.5' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1107.html'>lib</a>/getopt.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L131'>[^]</a><a href='#L736'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L131' title='Defined at 131.'>exchange</a></li>
+<li><a href='#L194' title='Defined at 194.'>process_long_option</a></li>
+<li><a href='#L381' title='Defined at 381.'>_getopt_initialize</a></li>
+<li><a href='#L471' title='Defined at 471.'>_getopt_internal_r</a></li>
+<li><a href='#L703' title='Defined at 703.'>_getopt_internal</a></li>
+<li><a href='#L736' title='Defined at 736.'>GETOPT_ENTRY</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* Getopt for GNU.</em>
+<a id='L2' name='L2'></a><em class='comment'>   Copyright (C) 1987-2020 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'>   This file is part of the GNU C Library and is also part of gnulib.</em>
+<a id='L4' name='L4'></a><em class='comment'>   Patches to this file should be submitted to both projects.</em>
+<a id='L5' name='L5'></a><em class='comment'></em>
+<a id='L6' name='L6'></a><em class='comment'>   The GNU C Library is free software; you can redistribute it and/or</em>
+<a id='L7' name='L7'></a><em class='comment'>   modify it under the terms of the GNU General Public</em>
+<a id='L8' name='L8'></a><em class='comment'>   License as published by the Free Software Foundation; either</em>
+<a id='L9' name='L9'></a><em class='comment'>   version 3 of the License, or (at your option) any later version.</em>
+<a id='L10' name='L10'></a><em class='comment'></em>
+<a id='L11' name='L11'></a><em class='comment'>   The GNU C Library is distributed in the hope that it will be useful,</em>
+<a id='L12' name='L12'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L13' name='L13'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L14' name='L14'></a><em class='comment'>   General Public License for more details.</em>
+<a id='L15' name='L15'></a><em class='comment'></em>
+<a id='L16' name='L16'></a><em class='comment'>   You should have received a copy of the GNU General Public</em>
+<a id='L17' name='L17'></a><em class='comment'>   License along with the GNU C Library; if not, see</em>
+<a id='L18' name='L18'></a><em class='comment'>   &lt;https://www.gnu.org/licenses/&gt;.  */</em>
+<a id='L19' name='L19'></a>
+<a id='L20' name='L20'></a><em class='sharp'>#ifndef</em> _LIBC
+<a id='L21' name='L21'></a><em class='sharp'># include</em> &lt;config.h&gt;
+<a id='L22' name='L22'></a><em class='sharp'>#endif</em>
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> "getopt.h"
+<a id='L25' name='L25'></a>
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;unistd.h&gt;
+<a id='L30' name='L30'></a>
+<a id='L31' name='L31'></a><em class='sharp'>#ifdef</em> _LIBC
+<a id='L32' name='L32'></a><em class='comment'>/* When used as part of glibc, error printing must be done differently</em>
+<a id='L33' name='L33'></a><em class='comment'>   for standards compliance.  getopt is not a cancellation point, so</em>
+<a id='L34' name='L34'></a><em class='comment'>   it must not call functions that are, and it is specified by an</em>
+<a id='L35' name='L35'></a><em class='comment'>   older standard than stdio locking, so it must not refer to</em>
+<a id='L36' name='L36'></a><em class='comment'>   functions in the "user namespace" related to stdio locking.</em>
+<a id='L37' name='L37'></a><em class='comment'>   Finally, it must use glibc's internal message translation so that</em>
+<a id='L38' name='L38'></a><em class='comment'>   the messages are looked up in the proper text domain.  */</em>
+<a id='L39' name='L39'></a><em class='sharp'># include</em> &lt;libintl.h&gt;
+<a id='L40' name='L40'></a><em class='sharp'># define</em> <a href='../R/2771.html' title='Multiple referred from 375 places.'>fprintf</a> __fxprintf_nocancel
+<a id='L41' name='L41'></a><em class='sharp'># define</em> <a href='../R/2749.html' title='Multiple referred from 2 places.'>flockfile</a>(fp) _IO_flockfile (fp)
+<a id='L42' name='L42'></a><em class='sharp'># define</em> <a href='../R/2807.html' title='Multiple referred from 2 places.'>funlockfile</a>(fp) _IO_funlockfile (fp)
+<a id='L43' name='L43'></a><em class='sharp'>#else</em>
+<a id='L44' name='L44'></a><em class='sharp'># include</em> "<a href='350.html'>gettext.h</a>"
+<a id='L45' name='L45'></a><em class='sharp'># define</em> <a href='../R/1704.html' title='Multiple referred from 358 places.'>_</a>(msgid) <a href='../D/3456.html' title='Multiple defined in 4 places.'>gettext</a> (msgid)
+<a id='L46' name='L46'></a><em class='comment'>/* When used standalone, flockfile and funlockfile might not be</em>
+<a id='L47' name='L47'></a><em class='comment'>   available.  */</em>
+<a id='L48' name='L48'></a><em class='sharp'># if</em> (!<strong class='reserved'>defined</strong> _POSIX_THREAD_SAFE_FUNCTIONS \
+<a id='L49' name='L49'></a>      || (<strong class='reserved'>defined</strong> _WIN32 &amp;&amp; ! <strong class='reserved'>defined</strong> __CYGWIN__))
+<a id='L50' name='L50'></a><em class='sharp'>#  define</em> <a href='../R/2749.html' title='Multiple referred from 2 places.'>flockfile</a>(fp) <em class='comment'>/* nop */</em>
+<a id='L51' name='L51'></a><em class='sharp'>#  define</em> <a href='../R/2807.html' title='Multiple referred from 2 places.'>funlockfile</a>(fp) <em class='comment'>/* nop */</em>
+<a id='L52' name='L52'></a><em class='sharp'># endif</em>
+<a id='L53' name='L53'></a><em class='comment'>/* When used standalone, do not attempt to use alloca.  */</em>
+<a id='L54' name='L54'></a><em class='sharp'># define</em> <a href='../R/2051.html' title='Multiple referred from 2 places.'>__libc_use_alloca</a>(<a href='../D/4934.html' title='Multiple defined in 2 places.'>size</a>) 0
+<a id='L55' name='L55'></a><em class='sharp'># undef</em> <a href='../R/2171.html' title='Multiple referred from 16 places.'>alloca</a>
+<a id='L56' name='L56'></a><em class='sharp'># define</em> <a href='../R/2171.html' title='Multiple referred from 16 places.'>alloca</a>(<a href='../D/4934.html' title='Multiple defined in 2 places.'>size</a>) (abort (), (<strong class='reserved'>void</strong> *)0)
+<a id='L57' name='L57'></a><em class='sharp'>#endif</em>
+<a id='L58' name='L58'></a>
+<a id='L59' name='L59'></a><em class='comment'>/* This implementation of 'getopt' has three modes for handling</em>
+<a id='L60' name='L60'></a><em class='comment'>   options interspersed with non-option arguments.  It can stop</em>
+<a id='L61' name='L61'></a><em class='comment'>   scanning for options at the first non-option argument encountered,</em>
+<a id='L62' name='L62'></a><em class='comment'>   as POSIX specifies.  It can continue scanning for options after the</em>
+<a id='L63' name='L63'></a><em class='comment'>   first non-option argument, but permute 'argv' as it goes so that,</em>
+<a id='L64' name='L64'></a><em class='comment'>   after 'getopt' is done, all the options precede all the non-option</em>
+<a id='L65' name='L65'></a><em class='comment'>   arguments and 'optind' points to the first non-option argument.</em>
+<a id='L66' name='L66'></a><em class='comment'>   Or, it can report non-option arguments as if they were arguments to</em>
+<a id='L67' name='L67'></a><em class='comment'>   the option character '\x01'.</em>
+<a id='L68' name='L68'></a><em class='comment'></em>
+<a id='L69' name='L69'></a><em class='comment'>   The default behavior of 'getopt_long' is to permute the argument list.</em>
+<a id='L70' name='L70'></a><em class='comment'>   When this implementation is used standalone, the default behavior of</em>
+<a id='L71' name='L71'></a><em class='comment'>   'getopt' is to stop at the first non-option argument, but when it is</em>
+<a id='L72' name='L72'></a><em class='comment'>   used as part of GNU libc it also permutes the argument list.  In both</em>
+<a id='L73' name='L73'></a><em class='comment'>   cases, setting the environment variable POSIXLY_CORRECT to any value</em>
+<a id='L74' name='L74'></a><em class='comment'>   disables permutation.</em>
+<a id='L75' name='L75'></a><em class='comment'></em>
+<a id='L76' name='L76'></a><em class='comment'>   If the first character of the OPTSTRING argument to 'getopt' or</em>
+<a id='L77' name='L77'></a><em class='comment'>   'getopt_long' is '+', both functions will stop at the first</em>
+<a id='L78' name='L78'></a><em class='comment'>   non-option argument.  If it is '-', both functions will report</em>
+<a id='L79' name='L79'></a><em class='comment'>   non-option arguments as arguments to the option character '\x01'.  */</em>
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a><em class='sharp'>#include</em> "<a href='346.html'>getopt_int.h</a>"
+<a id='L82' name='L82'></a>
+<a id='L83' name='L83'></a><em class='comment'>/* For communication from 'getopt' to the caller.</em>
+<a id='L84' name='L84'></a><em class='comment'>   When 'getopt' finds an option that takes an argument,</em>
+<a id='L85' name='L85'></a><em class='comment'>   the argument value is returned here.</em>
+<a id='L86' name='L86'></a><em class='comment'>   Also, when 'ordering' is RETURN_IN_ORDER,</em>
+<a id='L87' name='L87'></a><em class='comment'>   each non-option ARGV-element is returned here.  */</em>
+<a id='L88' name='L88'></a>
+<a id='L89' name='L89'></a><strong class='reserved'>char</strong> *<a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a>;
+<a id='L90' name='L90'></a>
+<a id='L91' name='L91'></a><em class='comment'>/* Index in ARGV of the next element to be scanned.</em>
+<a id='L92' name='L92'></a><em class='comment'>   This is used for communication to and from the caller</em>
+<a id='L93' name='L93'></a><em class='comment'>   and for communication between successive calls to 'getopt'.</em>
+<a id='L94' name='L94'></a><em class='comment'></em>
+<a id='L95' name='L95'></a><em class='comment'>   On entry to 'getopt', zero means this is the first call; initialize.</em>
+<a id='L96' name='L96'></a><em class='comment'></em>
+<a id='L97' name='L97'></a><em class='comment'>   When 'getopt' returns -1, this is the index of the first of the</em>
+<a id='L98' name='L98'></a><em class='comment'>   non-option elements that the caller should itself scan.</em>
+<a id='L99' name='L99'></a><em class='comment'></em>
+<a id='L100' name='L100'></a><em class='comment'>   Otherwise, 'optind' communicates from one call to the next</em>
+<a id='L101' name='L101'></a><em class='comment'>   how much of ARGV has been scanned so far.  */</em>
+<a id='L102' name='L102'></a>
+<a id='L103' name='L103'></a><em class='comment'>/* 1003.2 says this must be 1 before any call.  */</em>
+<a id='L104' name='L104'></a><strong class='reserved'>int</strong> <a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> = 1;
+<a id='L105' name='L105'></a>
+<a id='L106' name='L106'></a><em class='comment'>/* Callers store zero here to inhibit the error message</em>
+<a id='L107' name='L107'></a><em class='comment'>   for unrecognized options.  */</em>
+<a id='L108' name='L108'></a>
+<a id='L109' name='L109'></a><strong class='reserved'>int</strong> <a href='../D/4437.html' title='Multiple defined in 2 places.'>opterr</a> = 1;
+<a id='L110' name='L110'></a>
+<a id='L111' name='L111'></a><em class='comment'>/* Set to an option character which was unrecognized.</em>
+<a id='L112' name='L112'></a><em class='comment'>   This must be initialized on some systems to avoid linking in the</em>
+<a id='L113' name='L113'></a><em class='comment'>   system's own getopt implementation.  */</em>
+<a id='L114' name='L114'></a>
+<a id='L115' name='L115'></a><strong class='reserved'>int</strong> <a href='../D/4441.html' title='Multiple defined in 2 places.'>optopt</a> = '?';
+<a id='L116' name='L116'></a>
+<a id='L117' name='L117'></a><em class='comment'>/* Keep a global copy of all internal members of getopt_data.  */</em>
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a><strong class='reserved'>static</strong> <strong class='reserved'>struct</strong> <a href='../S/346.html#L61' title='Defined at 61 in lib/getopt_int.h.'>_getopt_data</a> getopt_data;
+<a id='L120' name='L120'></a>
+<a id='L121' name='L121'></a><em class='comment'>/* Exchange two adjacent subsequences of ARGV.</em>
+<a id='L122' name='L122'></a><em class='comment'>   One subsequence is elements [first_nonopt,last_nonopt)</em>
+<a id='L123' name='L123'></a><em class='comment'>   which contains all the non-options that have been skipped so far.</em>
+<a id='L124' name='L124'></a><em class='comment'>   The other is elements [last_nonopt,optind), which contains all</em>
+<a id='L125' name='L125'></a><em class='comment'>   the options processed since those non-options were skipped.</em>
+<a id='L126' name='L126'></a><em class='comment'></em>
+<a id='L127' name='L127'></a><em class='comment'>   'first_nonopt' and 'last_nonopt' are relocated so that they describe</em>
+<a id='L128' name='L128'></a><em class='comment'>   the new indices of the non-options in ARGV after they are moved.  */</em>
+<a id='L129' name='L129'></a>
+<a id='L130' name='L130'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L131' name='L131'></a><a href='../R/2662.html' title='Multiple referred from 2 places.'>exchange</a> (<strong class='reserved'>char</strong> **argv, <strong class='reserved'>struct</strong> <a href='../S/346.html#L61' title='Defined at 61 in lib/getopt_int.h.'>_getopt_data</a> *d)
+<a id='L132' name='L132'></a><em class='brace'>{</em>
+<a id='L133' name='L133'></a>  <strong class='reserved'>int</strong> bottom = d-&gt;__first_nonopt;
+<a id='L134' name='L134'></a>  <strong class='reserved'>int</strong> middle = d-&gt;__last_nonopt;
+<a id='L135' name='L135'></a>  <strong class='reserved'>int</strong> top = d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>;
+<a id='L136' name='L136'></a>  <strong class='reserved'>char</strong> *tem;
+<a id='L137' name='L137'></a>
+<a id='L138' name='L138'></a>  <em class='comment'>/* Exchange the shorter segment with the far end of the longer segment.</em>
+<a id='L139' name='L139'></a><em class='comment'>     That puts the shorter segment into the right place.</em>
+<a id='L140' name='L140'></a><em class='comment'>     It leaves the longer segment in the right place overall,</em>
+<a id='L141' name='L141'></a><em class='comment'>     but it consists of two parts that need to be swapped next.  */</em>
+<a id='L142' name='L142'></a>
+<a id='L143' name='L143'></a>  <strong class='reserved'>while</strong> (top &gt; middle &amp;&amp; middle &gt; bottom)
+<a id='L144' name='L144'></a>    <em class='brace'>{</em>
+<a id='L145' name='L145'></a>      <strong class='reserved'>if</strong> (top - middle &gt; middle - bottom)
+<a id='L146' name='L146'></a>        <em class='brace'>{</em>
+<a id='L147' name='L147'></a>          <em class='comment'>/* Bottom segment is the short one.  */</em>
+<a id='L148' name='L148'></a>          <strong class='reserved'>int</strong> len = middle - bottom;
+<a id='L149' name='L149'></a>          <strong class='reserved'>int</strong> i;
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a>          <em class='comment'>/* Swap it with the top part of the top segment.  */</em>
+<a id='L152' name='L152'></a>          <strong class='reserved'>for</strong> (i = 0; i &lt; len; i++)
+<a id='L153' name='L153'></a>            <em class='brace'>{</em>
+<a id='L154' name='L154'></a>              tem = argv[bottom + i];
+<a id='L155' name='L155'></a>              argv[bottom + i] = argv[top - (middle - bottom) + i];
+<a id='L156' name='L156'></a>              argv[top - (middle - bottom) + i] = tem;
+<a id='L157' name='L157'></a>            <em class='brace'>}</em>
+<a id='L158' name='L158'></a>          <em class='comment'>/* Exclude the moved bottom segment from further swapping.  */</em>
+<a id='L159' name='L159'></a>          top -= len;
+<a id='L160' name='L160'></a>        <em class='brace'>}</em>
+<a id='L161' name='L161'></a>      <strong class='reserved'>else</strong>
+<a id='L162' name='L162'></a>        <em class='brace'>{</em>
+<a id='L163' name='L163'></a>          <em class='comment'>/* Top segment is the short one.  */</em>
+<a id='L164' name='L164'></a>          <strong class='reserved'>int</strong> len = top - middle;
+<a id='L165' name='L165'></a>          <strong class='reserved'>int</strong> i;
+<a id='L166' name='L166'></a>
+<a id='L167' name='L167'></a>          <em class='comment'>/* Swap it with the bottom part of the bottom segment.  */</em>
+<a id='L168' name='L168'></a>          <strong class='reserved'>for</strong> (i = 0; i &lt; len; i++)
+<a id='L169' name='L169'></a>            <em class='brace'>{</em>
+<a id='L170' name='L170'></a>              tem = argv[bottom + i];
+<a id='L171' name='L171'></a>              argv[bottom + i] = argv[middle + i];
+<a id='L172' name='L172'></a>              argv[middle + i] = tem;
+<a id='L173' name='L173'></a>            <em class='brace'>}</em>
+<a id='L174' name='L174'></a>          <em class='comment'>/* Exclude the moved top segment from further swapping.  */</em>
+<a id='L175' name='L175'></a>          bottom += len;
+<a id='L176' name='L176'></a>        <em class='brace'>}</em>
+<a id='L177' name='L177'></a>    <em class='brace'>}</em>
+<a id='L178' name='L178'></a>
+<a id='L179' name='L179'></a>  <em class='comment'>/* Update records for the slots the non-options now occupy.  */</em>
+<a id='L180' name='L180'></a>
+<a id='L181' name='L181'></a>  d-&gt;__first_nonopt += (d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> - d-&gt;__last_nonopt);
+<a id='L182' name='L182'></a>  d-&gt;__last_nonopt = d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>;
+<a id='L183' name='L183'></a><em class='brace'>}</em>
+<a id='L184' name='L184'></a>
+<a id='L185' name='L185'></a><em class='comment'>/* Process the argument starting with d-&gt;__nextchar as a long option.</em>
+<a id='L186' name='L186'></a><em class='comment'>   d-&gt;optind should *not* have been advanced over this argument.</em>
+<a id='L187' name='L187'></a><em class='comment'></em>
+<a id='L188' name='L188'></a><em class='comment'>   If the value returned is -1, it was not actually a long option, the</em>
+<a id='L189' name='L189'></a><em class='comment'>   state is unchanged, and the argument should be processed as a set</em>
+<a id='L190' name='L190'></a><em class='comment'>   of short options (this can only happen when long_only is true).</em>
+<a id='L191' name='L191'></a><em class='comment'>   Otherwise, the option (and its argument, if any) have been consumed</em>
+<a id='L192' name='L192'></a><em class='comment'>   and the return value is the value to return from _getopt_internal_r.  */</em>
+<a id='L193' name='L193'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L194' name='L194'></a><a href='../R/3872.html' title='Multiple referred from 3 places.'>process_long_option</a> (<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *optstring,
+<a id='L195' name='L195'></a>                     <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../D/4439.html' title='Multiple defined in 3 places.'>option</a> *longopts, <strong class='reserved'>int</strong> *longind,
+<a id='L196' name='L196'></a>                     <strong class='reserved'>int</strong> long_only, <strong class='reserved'>struct</strong> <a href='../S/346.html#L61' title='Defined at 61 in lib/getopt_int.h.'>_getopt_data</a> *d,
+<a id='L197' name='L197'></a>                     <strong class='reserved'>int</strong> print_errors, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *prefix)
+<a id='L198' name='L198'></a><em class='brace'>{</em>
+<a id='L199' name='L199'></a>  <strong class='reserved'>char</strong> *nameend;
+<a id='L200' name='L200'></a>  <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> namelen;
+<a id='L201' name='L201'></a>  <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../D/4439.html' title='Multiple defined in 3 places.'>option</a> *p;
+<a id='L202' name='L202'></a>  <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../D/4439.html' title='Multiple defined in 3 places.'>option</a> *pfound = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L203' name='L203'></a>  <strong class='reserved'>int</strong> n_options;
+<a id='L204' name='L204'></a>  <strong class='reserved'>int</strong> option_index;
+<a id='L205' name='L205'></a>
+<a id='L206' name='L206'></a>  <strong class='reserved'>for</strong> (nameend = d-&gt;__nextchar; *nameend &amp;&amp; *nameend != '='; nameend++)
+<a id='L207' name='L207'></a>    <em class='comment'>/* Do nothing.  */</em> ;
+<a id='L208' name='L208'></a>  namelen = nameend - d-&gt;__nextchar;
+<a id='L209' name='L209'></a>
+<a id='L210' name='L210'></a>  <em class='comment'>/* First look for an exact match, counting the options as a side</em>
+<a id='L211' name='L211'></a><em class='comment'>     effect.  */</em>
+<a id='L212' name='L212'></a>  <strong class='reserved'>for</strong> (p = longopts, n_options = 0; p-&gt;name; p++, n_options++)
+<a id='L213' name='L213'></a>    <strong class='reserved'>if</strong> (!<a href='../D/5103.html' title='Multiple defined in 2 places.'>strncmp</a> (p-&gt;name, d-&gt;__nextchar, namelen)
+<a id='L214' name='L214'></a>        &amp;&amp; namelen == strlen (p-&gt;name))
+<a id='L215' name='L215'></a>      <em class='brace'>{</em>
+<a id='L216' name='L216'></a>        <em class='comment'>/* Exact match found.  */</em>
+<a id='L217' name='L217'></a>        pfound = p;
+<a id='L218' name='L218'></a>        option_index = n_options;
+<a id='L219' name='L219'></a>        <strong class='reserved'>break</strong>;
+<a id='L220' name='L220'></a>      <em class='brace'>}</em>
+<a id='L221' name='L221'></a>
+<a id='L222' name='L222'></a>  <strong class='reserved'>if</strong> (pfound == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L223' name='L223'></a>    <em class='brace'>{</em>
+<a id='L224' name='L224'></a>      <em class='comment'>/* Didn't find an exact match, so look for abbreviations.  */</em>
+<a id='L225' name='L225'></a>      <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *ambig_set = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L226' name='L226'></a>      <strong class='reserved'>int</strong> ambig_malloced = 0;
+<a id='L227' name='L227'></a>      <strong class='reserved'>int</strong> ambig_fallback = 0;
+<a id='L228' name='L228'></a>      <strong class='reserved'>int</strong> indfound = -1;
+<a id='L229' name='L229'></a>
+<a id='L230' name='L230'></a>      <strong class='reserved'>for</strong> (p = longopts, option_index = 0; p-&gt;name; p++, option_index++)
+<a id='L231' name='L231'></a>        <strong class='reserved'>if</strong> (!<a href='../D/5103.html' title='Multiple defined in 2 places.'>strncmp</a> (p-&gt;name, d-&gt;__nextchar, namelen))
+<a id='L232' name='L232'></a>          <em class='brace'>{</em>
+<a id='L233' name='L233'></a>            <strong class='reserved'>if</strong> (pfound == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L234' name='L234'></a>              <em class='brace'>{</em>
+<a id='L235' name='L235'></a>                <em class='comment'>/* First nonexact match found.  */</em>
+<a id='L236' name='L236'></a>                pfound = p;
+<a id='L237' name='L237'></a>                indfound = option_index;
+<a id='L238' name='L238'></a>              <em class='brace'>}</em>
+<a id='L239' name='L239'></a>            <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (long_only
+<a id='L240' name='L240'></a>                     || pfound-&gt;has_arg != p-&gt;has_arg
+<a id='L241' name='L241'></a>                     || pfound-&gt;<a href='../S/1034.html#L2573' title='Defined at 2573 in src/scan-skel.c.'>flag</a> != p-&gt;<a href='../S/1034.html#L2573' title='Defined at 2573 in src/scan-skel.c.'>flag</a>
+<a id='L242' name='L242'></a>                     || pfound-&gt;val != p-&gt;val)
+<a id='L243' name='L243'></a>              <em class='brace'>{</em>
+<a id='L244' name='L244'></a>                <em class='comment'>/* Second or later nonexact match found.  */</em>
+<a id='L245' name='L245'></a>                <strong class='reserved'>if</strong> (!ambig_fallback)
+<a id='L246' name='L246'></a>                  <em class='brace'>{</em>
+<a id='L247' name='L247'></a>                    <strong class='reserved'>if</strong> (!print_errors)
+<a id='L248' name='L248'></a>                      <em class='comment'>/* Don't waste effort tracking the ambig set if</em>
+<a id='L249' name='L249'></a><em class='comment'>                         we're not going to print it anyway.  */</em>
+<a id='L250' name='L250'></a>                      ambig_fallback = 1;
+<a id='L251' name='L251'></a>                    <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (!ambig_set)
+<a id='L252' name='L252'></a>                      <em class='brace'>{</em>
+<a id='L253' name='L253'></a>                        <strong class='reserved'>if</strong> (<a href='../S/343.html#L54' title='Defined at 54 in lib/getopt.c.'>__libc_use_alloca</a> (n_options))
+<a id='L254' name='L254'></a>                          ambig_set = <a href='../D/2656.html' title='Multiple defined in 8 places.'>alloca</a> (n_options);
+<a id='L255' name='L255'></a>                        <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> ((ambig_set = <a href='../D/4204.html' title='Multiple defined in 4 places.'>malloc</a> (n_options)) == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L256' name='L256'></a>                          <em class='comment'>/* Fall back to simpler error message.  */</em>
+<a id='L257' name='L257'></a>                          ambig_fallback = 1;
+<a id='L258' name='L258'></a>                        <strong class='reserved'>else</strong>
+<a id='L259' name='L259'></a>                          ambig_malloced = 1;
+<a id='L260' name='L260'></a>
+<a id='L261' name='L261'></a>                        <strong class='reserved'>if</strong> (ambig_set)
+<a id='L262' name='L262'></a>                          <em class='brace'>{</em>
+<a id='L263' name='L263'></a>                            memset (ambig_set, 0, n_options);
+<a id='L264' name='L264'></a>                            ambig_set[indfound] = 1;
+<a id='L265' name='L265'></a>                          <em class='brace'>}</em>
+<a id='L266' name='L266'></a>                      <em class='brace'>}</em>
+<a id='L267' name='L267'></a>                    <strong class='reserved'>if</strong> (ambig_set)
+<a id='L268' name='L268'></a>                      ambig_set[option_index] = 1;
+<a id='L269' name='L269'></a>                  <em class='brace'>}</em>
+<a id='L270' name='L270'></a>              <em class='brace'>}</em>
+<a id='L271' name='L271'></a>          <em class='brace'>}</em>
+<a id='L272' name='L272'></a>
+<a id='L273' name='L273'></a>      <strong class='reserved'>if</strong> (ambig_set || ambig_fallback)
+<a id='L274' name='L274'></a>        <em class='brace'>{</em>
+<a id='L275' name='L275'></a>          <strong class='reserved'>if</strong> (print_errors)
+<a id='L276' name='L276'></a>            <em class='brace'>{</em>
+<a id='L277' name='L277'></a>              <strong class='reserved'>if</strong> (ambig_fallback)
+<a id='L278' name='L278'></a>                <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, <a href='../D/2087.html' title='Multiple defined in 44 places.'>_</a>("%s: option '%s%s' is ambiguous\n"),
+<a id='L279' name='L279'></a>                         argv[0], prefix, d-&gt;__nextchar);
+<a id='L280' name='L280'></a>              <strong class='reserved'>else</strong>
+<a id='L281' name='L281'></a>                <em class='brace'>{</em>
+<a id='L282' name='L282'></a>                  <a href='../D/3328.html' title='Multiple defined in 6 places.'>flockfile</a> (stderr);
+<a id='L283' name='L283'></a>                  <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr,
+<a id='L284' name='L284'></a>                           <a href='../D/2087.html' title='Multiple defined in 44 places.'>_</a>("%s: option '%s%s' is ambiguous; possibilities:"),
+<a id='L285' name='L285'></a>                           argv[0], prefix, d-&gt;__nextchar);
+<a id='L286' name='L286'></a>
+<a id='L287' name='L287'></a>                  <strong class='reserved'>for</strong> (option_index = 0; option_index &lt; n_options; option_index++)
+<a id='L288' name='L288'></a>                    <strong class='reserved'>if</strong> (ambig_set[option_index])
+<a id='L289' name='L289'></a>                      <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, " '%s%s'",
+<a id='L290' name='L290'></a>                               prefix, longopts[option_index].name);
+<a id='L291' name='L291'></a>
+<a id='L292' name='L292'></a>                  <em class='comment'>/* This must use 'fprintf' even though it's only</em>
+<a id='L293' name='L293'></a><em class='comment'>                     printing a single character, so that it goes through</em>
+<a id='L294' name='L294'></a><em class='comment'>                     __fxprintf_nocancel when compiled as part of glibc.  */</em>
+<a id='L295' name='L295'></a>                  <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, "\n");
+<a id='L296' name='L296'></a>                  <a href='../D/3387.html' title='Multiple defined in 6 places.'>funlockfile</a> (stderr);
+<a id='L297' name='L297'></a>                <em class='brace'>}</em>
+<a id='L298' name='L298'></a>            <em class='brace'>}</em>
+<a id='L299' name='L299'></a>          <strong class='reserved'>if</strong> (ambig_malloced)
+<a id='L300' name='L300'></a>            free (ambig_set);
+<a id='L301' name='L301'></a>          d-&gt;__nextchar += strlen (d-&gt;__nextchar);
+<a id='L302' name='L302'></a>          d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>++;
+<a id='L303' name='L303'></a>          d-&gt;<a href='../D/4441.html' title='Multiple defined in 2 places.'>optopt</a> = 0;
+<a id='L304' name='L304'></a>          <strong class='reserved'>return</strong> '?';
+<a id='L305' name='L305'></a>        <em class='brace'>}</em>
+<a id='L306' name='L306'></a>
+<a id='L307' name='L307'></a>      option_index = indfound;
+<a id='L308' name='L308'></a>    <em class='brace'>}</em>
+<a id='L309' name='L309'></a>
+<a id='L310' name='L310'></a>  <strong class='reserved'>if</strong> (pfound == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L311' name='L311'></a>    <em class='brace'>{</em>
+<a id='L312' name='L312'></a>      <em class='comment'>/* Can't find it as a long option.  If this is not getopt_long_only,</em>
+<a id='L313' name='L313'></a><em class='comment'>         or the option starts with '--' or is not a valid short option,</em>
+<a id='L314' name='L314'></a><em class='comment'>         then it's an error.  */</em>
+<a id='L315' name='L315'></a>      <strong class='reserved'>if</strong> (!long_only || argv[d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>][1] == '-'
+<a id='L316' name='L316'></a>          || <a href='../S/547.html#L336' title='Defined at 336 in lib/string.in.h.'>strchr</a> (optstring, *d-&gt;__nextchar) == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L317' name='L317'></a>        <em class='brace'>{</em>
+<a id='L318' name='L318'></a>          <strong class='reserved'>if</strong> (print_errors)
+<a id='L319' name='L319'></a>            <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, <a href='../D/2087.html' title='Multiple defined in 44 places.'>_</a>("%s: unrecognized option '%s%s'\n"),
+<a id='L320' name='L320'></a>                     argv[0], prefix, d-&gt;__nextchar);
+<a id='L321' name='L321'></a>
+<a id='L322' name='L322'></a>          d-&gt;__nextchar = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L323' name='L323'></a>          d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>++;
+<a id='L324' name='L324'></a>          d-&gt;<a href='../D/4441.html' title='Multiple defined in 2 places.'>optopt</a> = 0;
+<a id='L325' name='L325'></a>          <strong class='reserved'>return</strong> '?';
+<a id='L326' name='L326'></a>        <em class='brace'>}</em>
+<a id='L327' name='L327'></a>
+<a id='L328' name='L328'></a>      <em class='comment'>/* Otherwise interpret it as a short option.  */</em>
+<a id='L329' name='L329'></a>      <strong class='reserved'>return</strong> -1;
+<a id='L330' name='L330'></a>    <em class='brace'>}</em>
+<a id='L331' name='L331'></a>
+<a id='L332' name='L332'></a>  <em class='comment'>/* We have found a matching long option.  Consume it.  */</em>
+<a id='L333' name='L333'></a>  d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>++;
+<a id='L334' name='L334'></a>  d-&gt;__nextchar = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L335' name='L335'></a>  <strong class='reserved'>if</strong> (*nameend)
+<a id='L336' name='L336'></a>    <em class='brace'>{</em>
+<a id='L337' name='L337'></a>      <em class='comment'>/* Don't test has_arg with &gt;, because some C compilers don't</em>
+<a id='L338' name='L338'></a><em class='comment'>         allow it to be used on enums.  */</em>
+<a id='L339' name='L339'></a>      <strong class='reserved'>if</strong> (pfound-&gt;has_arg)
+<a id='L340' name='L340'></a>        d-&gt;<a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a> = nameend + 1;
+<a id='L341' name='L341'></a>      <strong class='reserved'>else</strong>
+<a id='L342' name='L342'></a>        <em class='brace'>{</em>
+<a id='L343' name='L343'></a>          <strong class='reserved'>if</strong> (print_errors)
+<a id='L344' name='L344'></a>            <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr,
+<a id='L345' name='L345'></a>                     <a href='../D/2087.html' title='Multiple defined in 44 places.'>_</a>("%s: option '%s%s' doesn't allow an argument\n"),
+<a id='L346' name='L346'></a>                     argv[0], prefix, pfound-&gt;name);
+<a id='L347' name='L347'></a>
+<a id='L348' name='L348'></a>          d-&gt;<a href='../D/4441.html' title='Multiple defined in 2 places.'>optopt</a> = pfound-&gt;val;
+<a id='L349' name='L349'></a>          <strong class='reserved'>return</strong> '?';
+<a id='L350' name='L350'></a>        <em class='brace'>}</em>
+<a id='L351' name='L351'></a>    <em class='brace'>}</em>
+<a id='L352' name='L352'></a>  <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (pfound-&gt;has_arg == 1)
+<a id='L353' name='L353'></a>    <em class='brace'>{</em>
+<a id='L354' name='L354'></a>      <strong class='reserved'>if</strong> (d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> &lt; argc)
+<a id='L355' name='L355'></a>        d-&gt;<a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a> = argv[d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>++];
+<a id='L356' name='L356'></a>      <strong class='reserved'>else</strong>
+<a id='L357' name='L357'></a>        <em class='brace'>{</em>
+<a id='L358' name='L358'></a>          <strong class='reserved'>if</strong> (print_errors)
+<a id='L359' name='L359'></a>            <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr,
+<a id='L360' name='L360'></a>                     <a href='../D/2087.html' title='Multiple defined in 44 places.'>_</a>("%s: option '%s%s' requires an argument\n"),
+<a id='L361' name='L361'></a>                     argv[0], prefix, pfound-&gt;name);
+<a id='L362' name='L362'></a>
+<a id='L363' name='L363'></a>          d-&gt;<a href='../D/4441.html' title='Multiple defined in 2 places.'>optopt</a> = pfound-&gt;val;
+<a id='L364' name='L364'></a>          <strong class='reserved'>return</strong> optstring[0] == ':' ? ':' : '?';
+<a id='L365' name='L365'></a>        <em class='brace'>}</em>
+<a id='L366' name='L366'></a>    <em class='brace'>}</em>
+<a id='L367' name='L367'></a>
+<a id='L368' name='L368'></a>  <strong class='reserved'>if</strong> (longind != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L369' name='L369'></a>    *longind = option_index;
+<a id='L370' name='L370'></a>  <strong class='reserved'>if</strong> (pfound-&gt;<a href='../S/1034.html#L2573' title='Defined at 2573 in src/scan-skel.c.'>flag</a>)
+<a id='L371' name='L371'></a>    <em class='brace'>{</em>
+<a id='L372' name='L372'></a>      *(pfound-&gt;<a href='../S/1034.html#L2573' title='Defined at 2573 in src/scan-skel.c.'>flag</a>) = pfound-&gt;val;
+<a id='L373' name='L373'></a>      <strong class='reserved'>return</strong> 0;
+<a id='L374' name='L374'></a>    <em class='brace'>}</em>
+<a id='L375' name='L375'></a>  <strong class='reserved'>return</strong> pfound-&gt;val;
+<a id='L376' name='L376'></a><em class='brace'>}</em>
+<a id='L377' name='L377'></a>
+<a id='L378' name='L378'></a><em class='comment'>/* Initialize internal data upon the first call to getopt.  */</em>
+<a id='L379' name='L379'></a>
+<a id='L380' name='L380'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *
+<a id='L381' name='L381'></a><a href='../S/343.html#L483' title='Referred from 483 in lib/getopt.c.'>_getopt_initialize</a> (<strong class='reserved'>int</strong> argc <a href='../S/292.html#L1812' title='Defined at 1812 in lib/config.in.h.'>_GL_UNUSED</a>,
+<a id='L382' name='L382'></a>                    <strong class='reserved'>char</strong> **argv <a href='../S/292.html#L1812' title='Defined at 1812 in lib/config.in.h.'>_GL_UNUSED</a>, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *optstring,
+<a id='L383' name='L383'></a>                    <strong class='reserved'>struct</strong> <a href='../S/346.html#L61' title='Defined at 61 in lib/getopt_int.h.'>_getopt_data</a> *d, <strong class='reserved'>int</strong> posixly_correct)
+<a id='L384' name='L384'></a><em class='brace'>{</em>
+<a id='L385' name='L385'></a>  <em class='comment'>/* Start processing options with ARGV-element 1 (since ARGV-element 0</em>
+<a id='L386' name='L386'></a><em class='comment'>     is the program name); the sequence of previously skipped</em>
+<a id='L387' name='L387'></a><em class='comment'>     non-option ARGV-elements is empty.  */</em>
+<a id='L388' name='L388'></a>  <strong class='reserved'>if</strong> (d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> == 0)
+<a id='L389' name='L389'></a>    d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> = 1;
+<a id='L390' name='L390'></a>
+<a id='L391' name='L391'></a>  d-&gt;__first_nonopt = d-&gt;__last_nonopt = d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>;
+<a id='L392' name='L392'></a>  d-&gt;__nextchar = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L393' name='L393'></a>
+<a id='L394' name='L394'></a>  <em class='comment'>/* Determine how to handle the ordering of options and nonoptions.  */</em>
+<a id='L395' name='L395'></a>  <strong class='reserved'>if</strong> (optstring[0] == '-')
+<a id='L396' name='L396'></a>    <em class='brace'>{</em>
+<a id='L397' name='L397'></a>      d-&gt;__ordering = <a href='../S/346.html#L57' title='Defined at 57 in lib/getopt_int.h.'>RETURN_IN_ORDER</a>;
+<a id='L398' name='L398'></a>      ++optstring;
+<a id='L399' name='L399'></a>    <em class='brace'>}</em>
+<a id='L400' name='L400'></a>  <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (optstring[0] == '+')
+<a id='L401' name='L401'></a>    <em class='brace'>{</em>
+<a id='L402' name='L402'></a>      d-&gt;__ordering = <a href='../S/346.html#L57' title='Defined at 57 in lib/getopt_int.h.'>REQUIRE_ORDER</a>;
+<a id='L403' name='L403'></a>      ++optstring;
+<a id='L404' name='L404'></a>    <em class='brace'>}</em>
+<a id='L405' name='L405'></a>  <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (posixly_correct || !!getenv ("POSIXLY_CORRECT"))
+<a id='L406' name='L406'></a>    d-&gt;__ordering = <a href='../S/346.html#L57' title='Defined at 57 in lib/getopt_int.h.'>REQUIRE_ORDER</a>;
+<a id='L407' name='L407'></a>  <strong class='reserved'>else</strong>
+<a id='L408' name='L408'></a>    d-&gt;__ordering = <a href='../S/346.html#L57' title='Defined at 57 in lib/getopt_int.h.'>PERMUTE</a>;
+<a id='L409' name='L409'></a>
+<a id='L410' name='L410'></a>  d-&gt;__initialized = 1;
+<a id='L411' name='L411'></a>  <strong class='reserved'>return</strong> optstring;
+<a id='L412' name='L412'></a><em class='brace'>}</em>
+<a id='L413' name='L413'></a>
+<a id='L414' name='L414'></a><em class='comment'>/* Scan elements of ARGV (whose length is ARGC) for option characters</em>
+<a id='L415' name='L415'></a><em class='comment'>   given in OPTSTRING.</em>
+<a id='L416' name='L416'></a><em class='comment'></em>
+<a id='L417' name='L417'></a><em class='comment'>   If an element of ARGV starts with '-', and is not exactly "-" or "--",</em>
+<a id='L418' name='L418'></a><em class='comment'>   then it is an option element.  The characters of this element</em>
+<a id='L419' name='L419'></a><em class='comment'>   (aside from the initial '-') are option characters.  If 'getopt'</em>
+<a id='L420' name='L420'></a><em class='comment'>   is called repeatedly, it returns successively each of the option characters</em>
+<a id='L421' name='L421'></a><em class='comment'>   from each of the option elements.</em>
+<a id='L422' name='L422'></a><em class='comment'></em>
+<a id='L423' name='L423'></a><em class='comment'>   If 'getopt' finds another option character, it returns that character,</em>
+<a id='L424' name='L424'></a><em class='comment'>   updating 'optind' and 'nextchar' so that the next call to 'getopt' can</em>
+<a id='L425' name='L425'></a><em class='comment'>   resume the scan with the following option character or ARGV-element.</em>
+<a id='L426' name='L426'></a><em class='comment'></em>
+<a id='L427' name='L427'></a><em class='comment'>   If there are no more option characters, 'getopt' returns -1.</em>
+<a id='L428' name='L428'></a><em class='comment'>   Then 'optind' is the index in ARGV of the first ARGV-element</em>
+<a id='L429' name='L429'></a><em class='comment'>   that is not an option.  (The ARGV-elements have been permuted</em>
+<a id='L430' name='L430'></a><em class='comment'>   so that those that are not options now come last.)</em>
+<a id='L431' name='L431'></a><em class='comment'></em>
+<a id='L432' name='L432'></a><em class='comment'>   OPTSTRING is a string containing the legitimate option characters.</em>
+<a id='L433' name='L433'></a><em class='comment'>   If an option character is seen that is not listed in OPTSTRING,</em>
+<a id='L434' name='L434'></a><em class='comment'>   return '?' after printing an error message.  If you set 'opterr' to</em>
+<a id='L435' name='L435'></a><em class='comment'>   zero, the error message is suppressed but we still return '?'.</em>
+<a id='L436' name='L436'></a><em class='comment'></em>
+<a id='L437' name='L437'></a><em class='comment'>   If a char in OPTSTRING is followed by a colon, that means it wants an arg,</em>
+<a id='L438' name='L438'></a><em class='comment'>   so the following text in the same ARGV-element, or the text of the following</em>
+<a id='L439' name='L439'></a><em class='comment'>   ARGV-element, is returned in 'optarg'.  Two colons mean an option that</em>
+<a id='L440' name='L440'></a><em class='comment'>   wants an optional arg; if there is text in the current ARGV-element,</em>
+<a id='L441' name='L441'></a><em class='comment'>   it is returned in 'optarg', otherwise 'optarg' is set to zero.</em>
+<a id='L442' name='L442'></a><em class='comment'></em>
+<a id='L443' name='L443'></a><em class='comment'>   If OPTSTRING starts with '-' or '+', it requests different methods of</em>
+<a id='L444' name='L444'></a><em class='comment'>   handling the non-option ARGV-elements.</em>
+<a id='L445' name='L445'></a><em class='comment'>   See the comments about RETURN_IN_ORDER and REQUIRE_ORDER, above.</em>
+<a id='L446' name='L446'></a><em class='comment'></em>
+<a id='L447' name='L447'></a><em class='comment'>   Long-named options begin with '--' instead of '-'.</em>
+<a id='L448' name='L448'></a><em class='comment'>   Their names may be abbreviated as long as the abbreviation is unique</em>
+<a id='L449' name='L449'></a><em class='comment'>   or is an exact match for some defined option.  If they have an</em>
+<a id='L450' name='L450'></a><em class='comment'>   argument, it follows the option name in the same ARGV-element, separated</em>
+<a id='L451' name='L451'></a><em class='comment'>   from the option name by a '=', or else the in next ARGV-element.</em>
+<a id='L452' name='L452'></a><em class='comment'>   When 'getopt' finds a long-named option, it returns 0 if that option's</em>
+<a id='L453' name='L453'></a><em class='comment'>   'flag' field is nonzero, the value of the option's 'val' field</em>
+<a id='L454' name='L454'></a><em class='comment'>   if the 'flag' field is zero.</em>
+<a id='L455' name='L455'></a><em class='comment'></em>
+<a id='L456' name='L456'></a><em class='comment'>   The elements of ARGV aren't really const, because we permute them.</em>
+<a id='L457' name='L457'></a><em class='comment'>   But we pretend they're const in the prototype to be compatible</em>
+<a id='L458' name='L458'></a><em class='comment'>   with other systems.</em>
+<a id='L459' name='L459'></a><em class='comment'></em>
+<a id='L460' name='L460'></a><em class='comment'>   LONGOPTS is a vector of 'struct option' terminated by an</em>
+<a id='L461' name='L461'></a><em class='comment'>   element containing a name which is zero.</em>
+<a id='L462' name='L462'></a><em class='comment'></em>
+<a id='L463' name='L463'></a><em class='comment'>   LONGIND returns the index in LONGOPT of the long-named option found.</em>
+<a id='L464' name='L464'></a><em class='comment'>   It is only valid when a long-named option has been found by the most</em>
+<a id='L465' name='L465'></a><em class='comment'>   recent call.</em>
+<a id='L466' name='L466'></a><em class='comment'></em>
+<a id='L467' name='L467'></a><em class='comment'>   If LONG_ONLY is nonzero, '-' as well as '--' can introduce</em>
+<a id='L468' name='L468'></a><em class='comment'>   long-named options.  */</em>
+<a id='L469' name='L469'></a>
+<a id='L470' name='L470'></a><strong class='reserved'>int</strong>
+<a id='L471' name='L471'></a><a href='../R/2087.html' title='Multiple referred from 4 places.'>_getopt_internal_r</a> (<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *optstring,
+<a id='L472' name='L472'></a>                    <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../D/4439.html' title='Multiple defined in 3 places.'>option</a> *longopts, <strong class='reserved'>int</strong> *longind,
+<a id='L473' name='L473'></a>                    <strong class='reserved'>int</strong> long_only, <strong class='reserved'>struct</strong> <a href='../S/346.html#L61' title='Defined at 61 in lib/getopt_int.h.'>_getopt_data</a> *d, <strong class='reserved'>int</strong> posixly_correct)
+<a id='L474' name='L474'></a><em class='brace'>{</em>
+<a id='L475' name='L475'></a>  <strong class='reserved'>int</strong> print_errors = d-&gt;<a href='../D/4437.html' title='Multiple defined in 2 places.'>opterr</a>;
+<a id='L476' name='L476'></a>
+<a id='L477' name='L477'></a>  <strong class='reserved'>if</strong> (argc &lt; 1)
+<a id='L478' name='L478'></a>    <strong class='reserved'>return</strong> -1;
+<a id='L479' name='L479'></a>
+<a id='L480' name='L480'></a>  d-&gt;<a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a> = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L481' name='L481'></a>
+<a id='L482' name='L482'></a>  <strong class='reserved'>if</strong> (d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> == 0 || !d-&gt;__initialized)
+<a id='L483' name='L483'></a>    optstring = <a href='../S/343.html#L381' title='Defined at 381 in lib/getopt.c.'>_getopt_initialize</a> (argc, argv, optstring, d, posixly_correct);
+<a id='L484' name='L484'></a>  <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (optstring[0] == '-' || optstring[0] == '+')
+<a id='L485' name='L485'></a>    optstring++;
+<a id='L486' name='L486'></a>
+<a id='L487' name='L487'></a>  <strong class='reserved'>if</strong> (optstring[0] == ':')
+<a id='L488' name='L488'></a>    print_errors = 0;
+<a id='L489' name='L489'></a>
+<a id='L490' name='L490'></a>  <em class='comment'>/* Test whether ARGV[optind] points to a non-option argument.  */</em>
+<a id='L491' name='L491'></a><em class='sharp'>#define</em> <a href='../R/898.html' title='Multiple referred from 2 places.'>NONOPTION_P</a> (argv[d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>][0] != '-' || argv[d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>][1] == '\0')
+<a id='L492' name='L492'></a>
+<a id='L493' name='L493'></a>  <strong class='reserved'>if</strong> (d-&gt;__nextchar == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a> || *d-&gt;__nextchar == '\0')
+<a id='L494' name='L494'></a>    <em class='brace'>{</em>
+<a id='L495' name='L495'></a>      <em class='comment'>/* Advance to the next ARGV-element.  */</em>
+<a id='L496' name='L496'></a>
+<a id='L497' name='L497'></a>      <em class='comment'>/* Give FIRST_NONOPT &amp; LAST_NONOPT rational values if OPTIND has been</em>
+<a id='L498' name='L498'></a><em class='comment'>         moved back by the user (who may also have changed the arguments).  */</em>
+<a id='L499' name='L499'></a>      <strong class='reserved'>if</strong> (d-&gt;__last_nonopt &gt; d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>)
+<a id='L500' name='L500'></a>        d-&gt;__last_nonopt = d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>;
+<a id='L501' name='L501'></a>      <strong class='reserved'>if</strong> (d-&gt;__first_nonopt &gt; d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>)
+<a id='L502' name='L502'></a>        d-&gt;__first_nonopt = d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>;
+<a id='L503' name='L503'></a>
+<a id='L504' name='L504'></a>      <strong class='reserved'>if</strong> (d-&gt;__ordering == <a href='../S/346.html#L57' title='Defined at 57 in lib/getopt_int.h.'>PERMUTE</a>)
+<a id='L505' name='L505'></a>        <em class='brace'>{</em>
+<a id='L506' name='L506'></a>          <em class='comment'>/* If we have just processed some options following some non-options,</em>
+<a id='L507' name='L507'></a><em class='comment'>             exchange them so that the options come first.  */</em>
+<a id='L508' name='L508'></a>
+<a id='L509' name='L509'></a>          <strong class='reserved'>if</strong> (d-&gt;__first_nonopt != d-&gt;__last_nonopt
+<a id='L510' name='L510'></a>              &amp;&amp; d-&gt;__last_nonopt != d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>)
+<a id='L511' name='L511'></a>            <a href='../S/343.html#L131' title='Defined at 131 in lib/getopt.c.'>exchange</a> (argv, d);
+<a id='L512' name='L512'></a>          <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (d-&gt;__last_nonopt != d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>)
+<a id='L513' name='L513'></a>            d-&gt;__first_nonopt = d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>;
+<a id='L514' name='L514'></a>
+<a id='L515' name='L515'></a>          <em class='comment'>/* Skip any additional non-options</em>
+<a id='L516' name='L516'></a><em class='comment'>             and extend the range of non-options previously skipped.  */</em>
+<a id='L517' name='L517'></a>
+<a id='L518' name='L518'></a>          <strong class='reserved'>while</strong> (d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> &lt; argc &amp;&amp; <a href='../S/343.html#L491' title='Defined at 491 in lib/getopt.c.'>NONOPTION_P</a>)
+<a id='L519' name='L519'></a>            d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>++;
+<a id='L520' name='L520'></a>          d-&gt;__last_nonopt = d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>;
+<a id='L521' name='L521'></a>        <em class='brace'>}</em>
+<a id='L522' name='L522'></a>
+<a id='L523' name='L523'></a>      <em class='comment'>/* The special ARGV-element '--' means premature end of options.</em>
+<a id='L524' name='L524'></a><em class='comment'>         Skip it like a null option,</em>
+<a id='L525' name='L525'></a><em class='comment'>         then exchange with previous non-options as if it were an option,</em>
+<a id='L526' name='L526'></a><em class='comment'>         then skip everything else like a non-option.  */</em>
+<a id='L527' name='L527'></a>
+<a id='L528' name='L528'></a>      <strong class='reserved'>if</strong> (d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> != argc &amp;&amp; !<a href='../S/487.html#L54' title='Defined at 54 in lib/relocatable.c.'>strcmp</a> (argv[d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>], "--"))
+<a id='L529' name='L529'></a>        <em class='brace'>{</em>
+<a id='L530' name='L530'></a>          d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>++;
+<a id='L531' name='L531'></a>
+<a id='L532' name='L532'></a>          <strong class='reserved'>if</strong> (d-&gt;__first_nonopt != d-&gt;__last_nonopt
+<a id='L533' name='L533'></a>              &amp;&amp; d-&gt;__last_nonopt != d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>)
+<a id='L534' name='L534'></a>            <a href='../S/343.html#L131' title='Defined at 131 in lib/getopt.c.'>exchange</a> (argv, d);
+<a id='L535' name='L535'></a>          <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (d-&gt;__first_nonopt == d-&gt;__last_nonopt)
+<a id='L536' name='L536'></a>            d-&gt;__first_nonopt = d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>;
+<a id='L537' name='L537'></a>          d-&gt;__last_nonopt = argc;
+<a id='L538' name='L538'></a>
+<a id='L539' name='L539'></a>          d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> = argc;
+<a id='L540' name='L540'></a>        <em class='brace'>}</em>
+<a id='L541' name='L541'></a>
+<a id='L542' name='L542'></a>      <em class='comment'>/* If we have done all the ARGV-elements, stop the scan</em>
+<a id='L543' name='L543'></a><em class='comment'>         and back over any non-options that we skipped and permuted.  */</em>
+<a id='L544' name='L544'></a>
+<a id='L545' name='L545'></a>      <strong class='reserved'>if</strong> (d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> == argc)
+<a id='L546' name='L546'></a>        <em class='brace'>{</em>
+<a id='L547' name='L547'></a>          <em class='comment'>/* Set the next-arg-index to point at the non-options</em>
+<a id='L548' name='L548'></a><em class='comment'>             that we previously skipped, so the caller will digest them.  */</em>
+<a id='L549' name='L549'></a>          <strong class='reserved'>if</strong> (d-&gt;__first_nonopt != d-&gt;__last_nonopt)
+<a id='L550' name='L550'></a>            d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> = d-&gt;__first_nonopt;
+<a id='L551' name='L551'></a>          <strong class='reserved'>return</strong> -1;
+<a id='L552' name='L552'></a>        <em class='brace'>}</em>
+<a id='L553' name='L553'></a>
+<a id='L554' name='L554'></a>      <em class='comment'>/* If we have come to a non-option and did not permute it,</em>
+<a id='L555' name='L555'></a><em class='comment'>         either stop the scan or describe it to the caller and pass it by.  */</em>
+<a id='L556' name='L556'></a>
+<a id='L557' name='L557'></a>      <strong class='reserved'>if</strong> (<a href='../S/343.html#L491' title='Defined at 491 in lib/getopt.c.'>NONOPTION_P</a>)
+<a id='L558' name='L558'></a>        <em class='brace'>{</em>
+<a id='L559' name='L559'></a>          <strong class='reserved'>if</strong> (d-&gt;__ordering == <a href='../S/346.html#L57' title='Defined at 57 in lib/getopt_int.h.'>REQUIRE_ORDER</a>)
+<a id='L560' name='L560'></a>            <strong class='reserved'>return</strong> -1;
+<a id='L561' name='L561'></a>          d-&gt;<a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a> = argv[d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>++];
+<a id='L562' name='L562'></a>          <strong class='reserved'>return</strong> 1;
+<a id='L563' name='L563'></a>        <em class='brace'>}</em>
+<a id='L564' name='L564'></a>
+<a id='L565' name='L565'></a>      <em class='comment'>/* We have found another option-ARGV-element.</em>
+<a id='L566' name='L566'></a><em class='comment'>         Check whether it might be a long option.  */</em>
+<a id='L567' name='L567'></a>      <strong class='reserved'>if</strong> (longopts)
+<a id='L568' name='L568'></a>        <em class='brace'>{</em>
+<a id='L569' name='L569'></a>          <strong class='reserved'>if</strong> (argv[d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>][1] == '-')
+<a id='L570' name='L570'></a>            <em class='brace'>{</em>
+<a id='L571' name='L571'></a>              <em class='comment'>/* "--foo" is always a long option.  The special option</em>
+<a id='L572' name='L572'></a><em class='comment'>                 "--" was handled above.  */</em>
+<a id='L573' name='L573'></a>              d-&gt;__nextchar = argv[d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>] + 2;
+<a id='L574' name='L574'></a>              <strong class='reserved'>return</strong> <a href='../S/343.html#L194' title='Defined at 194 in lib/getopt.c.'>process_long_option</a> (argc, argv, optstring, longopts,
+<a id='L575' name='L575'></a>                                          longind, long_only, d,
+<a id='L576' name='L576'></a>                                          print_errors, "--");
+<a id='L577' name='L577'></a>            <em class='brace'>}</em>
+<a id='L578' name='L578'></a>
+<a id='L579' name='L579'></a>          <em class='comment'>/* If long_only and the ARGV-element has the form "-f",</em>
+<a id='L580' name='L580'></a><em class='comment'>             where f is a valid short option, don't consider it an</em>
+<a id='L581' name='L581'></a><em class='comment'>             abbreviated form of a long option that starts with f.</em>
+<a id='L582' name='L582'></a><em class='comment'>             Otherwise there would be no way to give the -f short</em>
+<a id='L583' name='L583'></a><em class='comment'>             option.</em>
+<a id='L584' name='L584'></a><em class='comment'></em>
+<a id='L585' name='L585'></a><em class='comment'>             On the other hand, if there's a long option "fubar" and</em>
+<a id='L586' name='L586'></a><em class='comment'>             the ARGV-element is "-fu", do consider that an</em>
+<a id='L587' name='L587'></a><em class='comment'>             abbreviation of the long option, just like "--fu", and</em>
+<a id='L588' name='L588'></a><em class='comment'>             not "-f" with arg "u".</em>
+<a id='L589' name='L589'></a><em class='comment'></em>
+<a id='L590' name='L590'></a><em class='comment'>             This distinction seems to be the most useful approach.  */</em>
+<a id='L591' name='L591'></a>          <strong class='reserved'>if</strong> (long_only &amp;&amp; (argv[d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>][2]
+<a id='L592' name='L592'></a>                            || !<a href='../S/547.html#L336' title='Defined at 336 in lib/string.in.h.'>strchr</a> (optstring, argv[d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>][1])))
+<a id='L593' name='L593'></a>            <em class='brace'>{</em>
+<a id='L594' name='L594'></a>              <strong class='reserved'>int</strong> code;
+<a id='L595' name='L595'></a>              d-&gt;__nextchar = argv[d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>] + 1;
+<a id='L596' name='L596'></a>              code = <a href='../S/343.html#L194' title='Defined at 194 in lib/getopt.c.'>process_long_option</a> (argc, argv, optstring, longopts,
+<a id='L597' name='L597'></a>                                          longind, long_only, d,
+<a id='L598' name='L598'></a>                                          print_errors, "-");
+<a id='L599' name='L599'></a>              <strong class='reserved'>if</strong> (code != -1)
+<a id='L600' name='L600'></a>                <strong class='reserved'>return</strong> code;
+<a id='L601' name='L601'></a>            <em class='brace'>}</em>
+<a id='L602' name='L602'></a>        <em class='brace'>}</em>
+<a id='L603' name='L603'></a>
+<a id='L604' name='L604'></a>      <em class='comment'>/* It is not a long option.  Skip the initial punctuation.  */</em>
+<a id='L605' name='L605'></a>      d-&gt;__nextchar = argv[d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>] + 1;
+<a id='L606' name='L606'></a>    <em class='brace'>}</em>
+<a id='L607' name='L607'></a>
+<a id='L608' name='L608'></a>  <em class='comment'>/* Look at and handle the next short option-character.  */</em>
+<a id='L609' name='L609'></a>
+<a id='L610' name='L610'></a>  <em class='brace'>{</em>
+<a id='L611' name='L611'></a>    <strong class='reserved'>char</strong> c = *d-&gt;__nextchar++;
+<a id='L612' name='L612'></a>    <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *temp = <a href='../S/547.html#L336' title='Defined at 336 in lib/string.in.h.'>strchr</a> (optstring, c);
+<a id='L613' name='L613'></a>
+<a id='L614' name='L614'></a>    <em class='comment'>/* Increment 'optind' when we start to process its last character.  */</em>
+<a id='L615' name='L615'></a>    <strong class='reserved'>if</strong> (*d-&gt;__nextchar == '\0')
+<a id='L616' name='L616'></a>      ++d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>;
+<a id='L617' name='L617'></a>
+<a id='L618' name='L618'></a>    <strong class='reserved'>if</strong> (temp == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a> || c == ':' || c == ';')
+<a id='L619' name='L619'></a>      <em class='brace'>{</em>
+<a id='L620' name='L620'></a>        <strong class='reserved'>if</strong> (print_errors)
+<a id='L621' name='L621'></a>          <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, <a href='../D/2087.html' title='Multiple defined in 44 places.'>_</a>("%s: invalid option -- '%c'\n"), argv[0], c);
+<a id='L622' name='L622'></a>        d-&gt;<a href='../D/4441.html' title='Multiple defined in 2 places.'>optopt</a> = c;
+<a id='L623' name='L623'></a>        <strong class='reserved'>return</strong> '?';
+<a id='L624' name='L624'></a>      <em class='brace'>}</em>
+<a id='L625' name='L625'></a>
+<a id='L626' name='L626'></a>    <em class='comment'>/* Convenience. Treat POSIX -W foo same as long option --foo */</em>
+<a id='L627' name='L627'></a>    <strong class='reserved'>if</strong> (temp[0] == 'W' &amp;&amp; temp[1] == ';' &amp;&amp; longopts != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L628' name='L628'></a>      <em class='brace'>{</em>
+<a id='L629' name='L629'></a>        <em class='comment'>/* This is an option that requires an argument.  */</em>
+<a id='L630' name='L630'></a>        <strong class='reserved'>if</strong> (*d-&gt;__nextchar != '\0')
+<a id='L631' name='L631'></a>          d-&gt;<a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a> = d-&gt;__nextchar;
+<a id='L632' name='L632'></a>        <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> == argc)
+<a id='L633' name='L633'></a>          <em class='brace'>{</em>
+<a id='L634' name='L634'></a>            <strong class='reserved'>if</strong> (print_errors)
+<a id='L635' name='L635'></a>              <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr,
+<a id='L636' name='L636'></a>                       <a href='../D/2087.html' title='Multiple defined in 44 places.'>_</a>("%s: option requires an argument -- '%c'\n"),
+<a id='L637' name='L637'></a>                       argv[0], c);
+<a id='L638' name='L638'></a>
+<a id='L639' name='L639'></a>            d-&gt;<a href='../D/4441.html' title='Multiple defined in 2 places.'>optopt</a> = c;
+<a id='L640' name='L640'></a>            <strong class='reserved'>if</strong> (optstring[0] == ':')
+<a id='L641' name='L641'></a>              c = ':';
+<a id='L642' name='L642'></a>            <strong class='reserved'>else</strong>
+<a id='L643' name='L643'></a>              c = '?';
+<a id='L644' name='L644'></a>            <strong class='reserved'>return</strong> c;
+<a id='L645' name='L645'></a>          <em class='brace'>}</em>
+<a id='L646' name='L646'></a>        <strong class='reserved'>else</strong>
+<a id='L647' name='L647'></a>          d-&gt;<a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a> = argv[d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>];
+<a id='L648' name='L648'></a>
+<a id='L649' name='L649'></a>        d-&gt;__nextchar = d-&gt;<a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a>;
+<a id='L650' name='L650'></a>        d-&gt;<a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a> = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L651' name='L651'></a>        <strong class='reserved'>return</strong> <a href='../S/343.html#L194' title='Defined at 194 in lib/getopt.c.'>process_long_option</a> (argc, argv, optstring, longopts, longind,
+<a id='L652' name='L652'></a>                                    0 <em class='comment'>/* long_only */</em>, d, print_errors, "-W ");
+<a id='L653' name='L653'></a>      <em class='brace'>}</em>
+<a id='L654' name='L654'></a>    <strong class='reserved'>if</strong> (temp[1] == ':')
+<a id='L655' name='L655'></a>      <em class='brace'>{</em>
+<a id='L656' name='L656'></a>        <strong class='reserved'>if</strong> (temp[2] == ':')
+<a id='L657' name='L657'></a>          <em class='brace'>{</em>
+<a id='L658' name='L658'></a>            <em class='comment'>/* This is an option that accepts an argument optionally.  */</em>
+<a id='L659' name='L659'></a>            <strong class='reserved'>if</strong> (*d-&gt;__nextchar != '\0')
+<a id='L660' name='L660'></a>              <em class='brace'>{</em>
+<a id='L661' name='L661'></a>                d-&gt;<a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a> = d-&gt;__nextchar;
+<a id='L662' name='L662'></a>                d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>++;
+<a id='L663' name='L663'></a>              <em class='brace'>}</em>
+<a id='L664' name='L664'></a>            <strong class='reserved'>else</strong>
+<a id='L665' name='L665'></a>              d-&gt;<a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a> = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L666' name='L666'></a>            d-&gt;__nextchar = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L667' name='L667'></a>          <em class='brace'>}</em>
+<a id='L668' name='L668'></a>        <strong class='reserved'>else</strong>
+<a id='L669' name='L669'></a>          <em class='brace'>{</em>
+<a id='L670' name='L670'></a>            <em class='comment'>/* This is an option that requires an argument.  */</em>
+<a id='L671' name='L671'></a>            <strong class='reserved'>if</strong> (*d-&gt;__nextchar != '\0')
+<a id='L672' name='L672'></a>              <em class='brace'>{</em>
+<a id='L673' name='L673'></a>                d-&gt;<a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a> = d-&gt;__nextchar;
+<a id='L674' name='L674'></a>                <em class='comment'>/* If we end this ARGV-element by taking the rest as an arg,</em>
+<a id='L675' name='L675'></a><em class='comment'>                   we must advance to the next element now.  */</em>
+<a id='L676' name='L676'></a>                d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>++;
+<a id='L677' name='L677'></a>              <em class='brace'>}</em>
+<a id='L678' name='L678'></a>            <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> == argc)
+<a id='L679' name='L679'></a>              <em class='brace'>{</em>
+<a id='L680' name='L680'></a>                <strong class='reserved'>if</strong> (print_errors)
+<a id='L681' name='L681'></a>                  <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr,
+<a id='L682' name='L682'></a>                           <a href='../D/2087.html' title='Multiple defined in 44 places.'>_</a>("%s: option requires an argument -- '%c'\n"),
+<a id='L683' name='L683'></a>                           argv[0], c);
+<a id='L684' name='L684'></a>
+<a id='L685' name='L685'></a>                d-&gt;<a href='../D/4441.html' title='Multiple defined in 2 places.'>optopt</a> = c;
+<a id='L686' name='L686'></a>                <strong class='reserved'>if</strong> (optstring[0] == ':')
+<a id='L687' name='L687'></a>                  c = ':';
+<a id='L688' name='L688'></a>                <strong class='reserved'>else</strong>
+<a id='L689' name='L689'></a>                  c = '?';
+<a id='L690' name='L690'></a>              <em class='brace'>}</em>
+<a id='L691' name='L691'></a>            <strong class='reserved'>else</strong>
+<a id='L692' name='L692'></a>              <em class='comment'>/* We already incremented 'optind' once;</em>
+<a id='L693' name='L693'></a><em class='comment'>                 increment it again when taking next ARGV-elt as argument.  */</em>
+<a id='L694' name='L694'></a>              d-&gt;<a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a> = argv[d-&gt;<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>++];
+<a id='L695' name='L695'></a>            d-&gt;__nextchar = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L696' name='L696'></a>          <em class='brace'>}</em>
+<a id='L697' name='L697'></a>      <em class='brace'>}</em>
+<a id='L698' name='L698'></a>    <strong class='reserved'>return</strong> c;
+<a id='L699' name='L699'></a>  <em class='brace'>}</em>
+<a id='L700' name='L700'></a><em class='brace'>}</em>
+<a id='L701' name='L701'></a>
+<a id='L702' name='L702'></a><strong class='reserved'>int</strong>
+<a id='L703' name='L703'></a><a href='../R/2086.html' title='Multiple referred from 4 places.'>_getopt_internal</a> (<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *optstring,
+<a id='L704' name='L704'></a>                  <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../D/4439.html' title='Multiple defined in 3 places.'>option</a> *longopts, <strong class='reserved'>int</strong> *longind, <strong class='reserved'>int</strong> long_only,
+<a id='L705' name='L705'></a>                  <strong class='reserved'>int</strong> posixly_correct)
+<a id='L706' name='L706'></a><em class='brace'>{</em>
+<a id='L707' name='L707'></a>  <strong class='reserved'>int</strong> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>;
+<a id='L708' name='L708'></a>
+<a id='L709' name='L709'></a>  getopt_data.<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> = <a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>;
+<a id='L710' name='L710'></a>  getopt_data.<a href='../D/4437.html' title='Multiple defined in 2 places.'>opterr</a> = <a href='../D/4437.html' title='Multiple defined in 2 places.'>opterr</a>;
+<a id='L711' name='L711'></a>
+<a id='L712' name='L712'></a>  <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> = <a href='../S/343.html#L471' title='Defined at 471 in lib/getopt.c.'>_getopt_internal_r</a> (argc, argv, optstring, longopts,
+<a id='L713' name='L713'></a>                               longind, long_only, &amp;getopt_data,
+<a id='L714' name='L714'></a>                               posixly_correct);
+<a id='L715' name='L715'></a>
+<a id='L716' name='L716'></a>  <a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> = getopt_data.<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>;
+<a id='L717' name='L717'></a>  <a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a> = getopt_data.<a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a>;
+<a id='L718' name='L718'></a>  <a href='../D/4441.html' title='Multiple defined in 2 places.'>optopt</a> = getopt_data.<a href='../D/4441.html' title='Multiple defined in 2 places.'>optopt</a>;
+<a id='L719' name='L719'></a>
+<a id='L720' name='L720'></a>  <strong class='reserved'>return</strong> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>;
+<a id='L721' name='L721'></a><em class='brace'>}</em>
+<a id='L722' name='L722'></a>
+<a id='L723' name='L723'></a><em class='comment'>/* glibc gets a LSB-compliant getopt and a POSIX-complaint __posix_getopt.</em>
+<a id='L724' name='L724'></a><em class='comment'>   Standalone applications just get a POSIX-compliant getopt.</em>
+<a id='L725' name='L725'></a><em class='comment'>   POSIX and LSB both require these functions to take 'char *const *argv'</em>
+<a id='L726' name='L726'></a><em class='comment'>   even though this is incorrect (because of the permutation).  */</em>
+<a id='L727' name='L727'></a><em class='sharp'>#define</em> <a href='../R/369.html' title='Multiple referred from 2 places.'>GETOPT_ENTRY</a>(NAME, POSIXLY_CORRECT)                     \
+<a id='L728' name='L728'></a>  <strong class='reserved'>int</strong>                                                           \
+<a id='L729' name='L729'></a>  NAME (<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> *<strong class='reserved'>const</strong> *argv, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *optstring)     \
+<a id='L730' name='L730'></a>  <em class='brace'>{</em>                                                             \
+<a id='L731' name='L731'></a>    <strong class='reserved'>return</strong> <a href='../D/2564.html' title='Multiple defined in 3 places.'>_getopt_internal</a> (argc, (<strong class='reserved'>char</strong> **)argv, optstring,    \
+<a id='L732' name='L732'></a>                             0, 0, 0, POSIXLY_CORRECT);         \
+<a id='L733' name='L733'></a>  <em class='brace'>}</em>
+<a id='L734' name='L734'></a>
+<a id='L735' name='L735'></a><em class='sharp'>#ifdef</em> _LIBC
+<a id='L736' name='L736'></a><a href='../R/369.html' title='Multiple referred from 2 places.'>GETOPT_ENTRY</a>(<a href='../D/3442.html' title='Multiple defined in 2 places.'>getopt</a>, 0)
+<a id='L737' name='L737'></a><a href='../D/418.html' title='Multiple defined in 2 places.'>GETOPT_ENTRY</a>(__posix_getopt, 1)
+<a id='L738' name='L738'></a><em class='sharp'>#else</em>
+<a id='L739' name='L739'></a><a href='../D/418.html' title='Multiple defined in 2 places.'>GETOPT_ENTRY</a>(<a href='../D/3442.html' title='Multiple defined in 2 places.'>getopt</a>, 1)
+<a id='L740' name='L740'></a><em class='sharp'>#endif</em>
+<a id='L741' name='L741'></a>
+<a id='L742' name='L742'></a>
+<a id='L743' name='L743'></a><em class='sharp'>#ifdef</em> TEST
+<a id='L744' name='L744'></a>
+<a id='L745' name='L745'></a><em class='comment'>/* Compile with -DTEST to make an executable for use in testing</em>
+<a id='L746' name='L746'></a><em class='comment'>   the above definition of 'getopt'.  */</em>
+<a id='L747' name='L747'></a>
+<a id='L748' name='L748'></a><strong class='reserved'>int</strong>
+<a id='L749' name='L749'></a><a href='../D/4202.html' title='Multiple defined in 15 places.'>main</a> (<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv)
+<a id='L750' name='L750'></a><em class='brace'>{</em>
+<a id='L751' name='L751'></a>  <strong class='reserved'>int</strong> c;
+<a id='L752' name='L752'></a>  <strong class='reserved'>int</strong> digit_optind = 0;
+<a id='L753' name='L753'></a>
+<a id='L754' name='L754'></a>  <strong class='reserved'>while</strong> (1)
+<a id='L755' name='L755'></a>    <em class='brace'>{</em>
+<a id='L756' name='L756'></a>      <strong class='reserved'>int</strong> this_option_optind = <a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> ? <a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> : 1;
+<a id='L757' name='L757'></a>
+<a id='L758' name='L758'></a>      c = <a href='../D/3442.html' title='Multiple defined in 2 places.'>getopt</a> (argc, argv, "abc:d:0123456789");
+<a id='L759' name='L759'></a>      <strong class='reserved'>if</strong> (c == -1)
+<a id='L760' name='L760'></a>        <strong class='reserved'>break</strong>;
+<a id='L761' name='L761'></a>
+<a id='L762' name='L762'></a>      <strong class='reserved'>switch</strong> (c)
+<a id='L763' name='L763'></a>        <em class='brace'>{</em>
+<a id='L764' name='L764'></a>        <strong class='reserved'>case</strong> '0':
+<a id='L765' name='L765'></a>        <strong class='reserved'>case</strong> '1':
+<a id='L766' name='L766'></a>        <strong class='reserved'>case</strong> '2':
+<a id='L767' name='L767'></a>        <strong class='reserved'>case</strong> '3':
+<a id='L768' name='L768'></a>        <strong class='reserved'>case</strong> '4':
+<a id='L769' name='L769'></a>        <strong class='reserved'>case</strong> '5':
+<a id='L770' name='L770'></a>        <strong class='reserved'>case</strong> '6':
+<a id='L771' name='L771'></a>        <strong class='reserved'>case</strong> '7':
+<a id='L772' name='L772'></a>        <strong class='reserved'>case</strong> '8':
+<a id='L773' name='L773'></a>        <strong class='reserved'>case</strong> '9':
+<a id='L774' name='L774'></a>          <strong class='reserved'>if</strong> (digit_optind != 0 &amp;&amp; digit_optind != this_option_optind)
+<a id='L775' name='L775'></a>            <a href='../D/4585.html' title='Multiple defined in 4 places.'>printf</a> ("digits occur in two different argv-elements.\n");
+<a id='L776' name='L776'></a>          digit_optind = this_option_optind;
+<a id='L777' name='L777'></a>          <a href='../D/4585.html' title='Multiple defined in 4 places.'>printf</a> ("option %c\n", c);
+<a id='L778' name='L778'></a>          <strong class='reserved'>break</strong>;
+<a id='L779' name='L779'></a>
+<a id='L780' name='L780'></a>        <strong class='reserved'>case</strong> 'a':
+<a id='L781' name='L781'></a>          <a href='../D/4585.html' title='Multiple defined in 4 places.'>printf</a> ("option a\n");
+<a id='L782' name='L782'></a>          <strong class='reserved'>break</strong>;
+<a id='L783' name='L783'></a>
+<a id='L784' name='L784'></a>        <strong class='reserved'>case</strong> 'b':
+<a id='L785' name='L785'></a>          <a href='../D/4585.html' title='Multiple defined in 4 places.'>printf</a> ("option b\n");
+<a id='L786' name='L786'></a>          <strong class='reserved'>break</strong>;
+<a id='L787' name='L787'></a>
+<a id='L788' name='L788'></a>        <strong class='reserved'>case</strong> 'c':
+<a id='L789' name='L789'></a>          <a href='../D/4585.html' title='Multiple defined in 4 places.'>printf</a> ("option c with value '%s'\n", <a href='../D/4436.html' title='Multiple defined in 2 places.'>optarg</a>);
+<a id='L790' name='L790'></a>          <strong class='reserved'>break</strong>;
+<a id='L791' name='L791'></a>
+<a id='L792' name='L792'></a>        <strong class='reserved'>case</strong> '?':
+<a id='L793' name='L793'></a>          <strong class='reserved'>break</strong>;
+<a id='L794' name='L794'></a>
+<a id='L795' name='L795'></a>        <strong class='reserved'>default</strong>:
+<a id='L796' name='L796'></a>          <a href='../D/4585.html' title='Multiple defined in 4 places.'>printf</a> ("?? getopt returned character code 0%o ??\n", c);
+<a id='L797' name='L797'></a>        <em class='brace'>}</em>
+<a id='L798' name='L798'></a>    <em class='brace'>}</em>
+<a id='L799' name='L799'></a>
+<a id='L800' name='L800'></a>  <strong class='reserved'>if</strong> (<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> &lt; argc)
+<a id='L801' name='L801'></a>    <em class='brace'>{</em>
+<a id='L802' name='L802'></a>      <a href='../D/4585.html' title='Multiple defined in 4 places.'>printf</a> ("non-option ARGV-elements: ");
+<a id='L803' name='L803'></a>      <strong class='reserved'>while</strong> (<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a> &lt; argc)
+<a id='L804' name='L804'></a>        <a href='../D/4585.html' title='Multiple defined in 4 places.'>printf</a> ("%s ", argv[<a href='../D/4438.html' title='Multiple defined in 2 places.'>optind</a>++]);
+<a id='L805' name='L805'></a>      <a href='../D/4585.html' title='Multiple defined in 4 places.'>printf</a> ("\n");
+<a id='L806' name='L806'></a>    <em class='brace'>}</em>
+<a id='L807' name='L807'></a>
+<a id='L808' name='L808'></a>  exit (0);
+<a id='L809' name='L809'></a><em class='brace'>}</em>
+<a id='L810' name='L810'></a>
+<a id='L811' name='L811'></a><em class='sharp'>#endif</em> <em class='comment'>/* TEST */</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L131'>[^]</a><a href='#L736'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

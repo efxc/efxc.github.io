@@ -1,0 +1,480 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/strerror_r.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.5' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1107.html'>lib</a>/strerror_r.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L99'>[^]</a><a href='#L144'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L99' title='Defined at 99.'>gl_lock_define_initialized</a></li>
+<li><a href='#L130' title='Defined at 130.'>safe_copy</a></li>
+<li><a href='#L144' title='Defined at 144.'>strerror_r</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* strerror_r.c --- POSIX compatible system error routine</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Copyright (C) 2010-2020 Free Software Foundation, Inc.</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   This program is free software: you can redistribute it and/or modify</em>
+<a id='L6' name='L6'></a><em class='comment'>   it under the terms of the GNU General Public License as published by</em>
+<a id='L7' name='L7'></a><em class='comment'>   the Free Software Foundation; either version 3 of the License, or</em>
+<a id='L8' name='L8'></a><em class='comment'>   (at your option) any later version.</em>
+<a id='L9' name='L9'></a><em class='comment'></em>
+<a id='L10' name='L10'></a><em class='comment'>   This program is distributed in the hope that it will be useful,</em>
+<a id='L11' name='L11'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L12' name='L12'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</em>
+<a id='L13' name='L13'></a><em class='comment'>   GNU General Public License for more details.</em>
+<a id='L14' name='L14'></a><em class='comment'></em>
+<a id='L15' name='L15'></a><em class='comment'>   You should have received a copy of the GNU General Public License</em>
+<a id='L16' name='L16'></a><em class='comment'>   along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;.  */</em>
+<a id='L17' name='L17'></a>
+<a id='L18' name='L18'></a><em class='comment'>/* Written by Bruno Haible &lt;bruno@clisp.org&gt;, 2010.  */</em>
+<a id='L19' name='L19'></a>
+<a id='L20' name='L20'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L21' name='L21'></a>
+<a id='L22' name='L22'></a><em class='comment'>/* Enable declaration of sys_nerr and sys_errlist in &lt;errno.h&gt; on NetBSD.  */</em>
+<a id='L23' name='L23'></a><em class='sharp'>#define</em> <a href='../S/292.html#L1473' title='Referred from 1473 in lib/config.in.h.'>_NETBSD_SOURCE</a> 1
+<a id='L24' name='L24'></a>
+<a id='L25' name='L25'></a><em class='comment'>/* Specification.  */</em>
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L27' name='L27'></a>
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L31' name='L31'></a><em class='sharp'>#if</em> !<a href='../S/292.html#L933' title='Defined at 933 in lib/config.in.h.'>HAVE_SNPRINTF</a>
+<a id='L32' name='L32'></a><em class='sharp'># include</em> &lt;stdarg.h&gt;
+<a id='L33' name='L33'></a><em class='sharp'>#endif</em>
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> "<a href='544.html'>strerror-override.h</a>"
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a><em class='sharp'>#if</em> (__GLIBC__ &gt;= 2 || <strong class='reserved'>defined</strong> __UCLIBC__ || <strong class='reserved'>defined</strong> __CYGWIN__) &amp;&amp; <a href='../S/292.html#L1177' title='Defined at 1177 in lib/config.in.h.'>HAVE___XPG_STRERROR_R</a> <em class='comment'>/* glibc &gt;= 2.3.4, cygwin &gt;= 1.7.9 */</em>
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a><em class='sharp'># define</em> <a href='../S/546.html#L169' title='Referred from 169 in lib/strerror_r.c.'>USE_XPG_STRERROR_R</a> 1
+<a id='L40' name='L40'></a><strong class='reserved'>extern</strong>
+<a id='L41' name='L41'></a><em class='sharp'>#ifdef</em> __cplusplus
+<a id='L42' name='L42'></a>"C"
+<a id='L43' name='L43'></a><em class='sharp'>#endif</em>
+<a id='L44' name='L44'></a><strong class='reserved'>int</strong> __xpg_strerror_r (<strong class='reserved'>int</strong> errnum, <strong class='reserved'>char</strong> *buf, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> buflen);
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a><em class='sharp'>#elif</em> <a href='../S/292.html#L599' title='Defined at 599 in lib/config.in.h.'>HAVE_DECL_STRERROR_R</a> &amp;&amp; !(__GLIBC__ &gt;= 2 || <strong class='reserved'>defined</strong> __UCLIBC__ || <strong class='reserved'>defined</strong> __CYGWIN__)
+<a id='L47' name='L47'></a>
+<a id='L48' name='L48'></a><em class='comment'>/* The system's strerror_r function is OK, except that its third argument</em>
+<a id='L49' name='L49'></a><em class='comment'>   is 'int', not 'size_t', or its return type is wrong.  */</em>
+<a id='L50' name='L50'></a>
+<a id='L51' name='L51'></a><em class='sharp'># include</em> &lt;limits.h&gt;
+<a id='L52' name='L52'></a>
+<a id='L53' name='L53'></a><em class='sharp'># define</em> <a href='../S/546.html#L184' title='Referred from 184 in lib/strerror_r.c.'>USE_SYSTEM_STRERROR_R</a> 1
+<a id='L54' name='L54'></a>
+<a id='L55' name='L55'></a><em class='sharp'>#else</em> <em class='comment'>/* (__GLIBC__ &gt;= 2 || defined __UCLIBC__ || defined __CYGWIN__ ? !HAVE___XPG_STRERROR_R : !HAVE_DECL_STRERROR_R) */</em>
+<a id='L56' name='L56'></a>
+<a id='L57' name='L57'></a><em class='comment'>/* Use the system's strerror().  Exclude glibc and cygwin because the</em>
+<a id='L58' name='L58'></a><em class='comment'>   system strerror_r has the wrong return type, and cygwin 1.7.9</em>
+<a id='L59' name='L59'></a><em class='comment'>   strerror_r clobbers strerror.  */</em>
+<a id='L60' name='L60'></a><em class='sharp'># undef</em> <a href='../R/4318.html' title='Multiple referred from 12 places.'>strerror</a>
+<a id='L61' name='L61'></a>
+<a id='L62' name='L62'></a><em class='sharp'># define</em> USE_SYSTEM_STRERROR 1
+<a id='L63' name='L63'></a>
+<a id='L64' name='L64'></a><em class='sharp'># if</em> <strong class='reserved'>defined</strong> __NetBSD__ || <strong class='reserved'>defined</strong> __hpux || (<strong class='reserved'>defined</strong> _WIN32 &amp;&amp; !<strong class='reserved'>defined</strong> __CYGWIN__) || <strong class='reserved'>defined</strong> __sgi || (<strong class='reserved'>defined</strong> __sun &amp;&amp; !<strong class='reserved'>defined</strong> _LP64) || <strong class='reserved'>defined</strong> __CYGWIN__
+<a id='L65' name='L65'></a>
+<a id='L66' name='L66'></a><em class='comment'>/* No locking needed.  */</em>
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a><em class='comment'>/* Get catgets internationalization functions.  */</em>
+<a id='L69' name='L69'></a><em class='sharp'>#  if</em> <a href='../S/292.html#L428' title='Defined at 428 in lib/config.in.h.'>HAVE_CATGETS</a>
+<a id='L70' name='L70'></a><em class='sharp'>#   include</em> &lt;nl_types.h&gt;
+<a id='L71' name='L71'></a><em class='sharp'>#  endif</em>
+<a id='L72' name='L72'></a>
+<a id='L73' name='L73'></a><em class='sharp'>#ifdef</em> __cplusplus
+<a id='L74' name='L74'></a><strong class='reserved'>extern</strong> "C" <em class='brace'>{</em>
+<a id='L75' name='L75'></a><em class='sharp'>#endif</em>
+<a id='L76' name='L76'></a>
+<a id='L77' name='L77'></a><em class='comment'>/* Get sys_nerr, sys_errlist on HP-UX (otherwise only declared in C++ mode).</em>
+<a id='L78' name='L78'></a><em class='comment'>   Get sys_nerr, sys_errlist on IRIX (otherwise only declared with _SGIAPI).  */</em>
+<a id='L79' name='L79'></a><em class='sharp'>#  if</em> <strong class='reserved'>defined</strong> __hpux || <strong class='reserved'>defined</strong> __sgi
+<a id='L80' name='L80'></a><strong class='reserved'>extern</strong> <strong class='reserved'>int</strong> sys_nerr;
+<a id='L81' name='L81'></a><strong class='reserved'>extern</strong> <strong class='reserved'>char</strong> *sys_errlist[];
+<a id='L82' name='L82'></a><em class='sharp'>#  endif</em>
+<a id='L83' name='L83'></a>
+<a id='L84' name='L84'></a><em class='comment'>/* Get sys_nerr on Solaris.  */</em>
+<a id='L85' name='L85'></a><em class='sharp'>#  if</em> <strong class='reserved'>defined</strong> __sun &amp;&amp; !<strong class='reserved'>defined</strong> _LP64
+<a id='L86' name='L86'></a><strong class='reserved'>extern</strong> <strong class='reserved'>int</strong> sys_nerr;
+<a id='L87' name='L87'></a><em class='sharp'>#  endif</em>
+<a id='L88' name='L88'></a>
+<a id='L89' name='L89'></a><em class='sharp'>#ifdef</em> __cplusplus
+<a id='L90' name='L90'></a><em class='brace'>}</em>
+<a id='L91' name='L91'></a><em class='sharp'>#endif</em>
+<a id='L92' name='L92'></a>
+<a id='L93' name='L93'></a><em class='sharp'># else</em>
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a><em class='sharp'>#  include</em> "<a href='354.html'>glthread/lock.h</a>"
+<a id='L96' name='L96'></a>
+<a id='L97' name='L97'></a><em class='comment'>/* This lock protects the buffer returned by strerror().  We assume that</em>
+<a id='L98' name='L98'></a><em class='comment'>   no other uses of strerror() exist in the program.  */</em>
+<a id='L99' name='L99'></a><a href='../S/305.html#L299' title='Referred from 299 in lib/fatal-signal.c.'>gl_lock_define_initialized</a>(<strong class='reserved'>static</strong>, strerror_lock)
+<a id='L100' name='L100'></a>
+<a id='L101' name='L101'></a><em class='sharp'># endif</em>
+<a id='L102' name='L102'></a>
+<a id='L103' name='L103'></a><em class='sharp'>#endif</em>
+<a id='L104' name='L104'></a>
+<a id='L105' name='L105'></a><em class='comment'>/* On MSVC, there is no snprintf() function, just a _snprintf().</em>
+<a id='L106' name='L106'></a><em class='comment'>   It is of lower quality, but sufficient for the simple use here.</em>
+<a id='L107' name='L107'></a><em class='comment'>   We only have to make sure to NUL terminate the result (_snprintf</em>
+<a id='L108' name='L108'></a><em class='comment'>   does not NUL terminate, like strncpy).  */</em>
+<a id='L109' name='L109'></a><em class='sharp'>#if</em> !<a href='../S/292.html#L933' title='Defined at 933 in lib/config.in.h.'>HAVE_SNPRINTF</a>
+<a id='L110' name='L110'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L111' name='L111'></a>local_snprintf (<strong class='reserved'>char</strong> *buf, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> buflen, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *format, ...)
+<a id='L112' name='L112'></a><em class='brace'>{</em>
+<a id='L113' name='L113'></a>  va_list args;
+<a id='L114' name='L114'></a>  <strong class='reserved'>int</strong> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>;
+<a id='L115' name='L115'></a>
+<a id='L116' name='L116'></a>  va_start (args, format);
+<a id='L117' name='L117'></a>  <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> = _vsnprintf (buf, buflen, format, args);
+<a id='L118' name='L118'></a>  va_end (args);
+<a id='L119' name='L119'></a>  <strong class='reserved'>if</strong> (buflen &gt; 0 &amp;&amp; (<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> &lt; 0 || <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> &gt;= buflen))
+<a id='L120' name='L120'></a>    buf[buflen - 1] = '\0';
+<a id='L121' name='L121'></a>  <strong class='reserved'>return</strong> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>;
+<a id='L122' name='L122'></a><em class='brace'>}</em>
+<a id='L123' name='L123'></a><em class='sharp'># undef</em> <a href='../R/4215.html' title='Multiple referred from 15 places.'>snprintf</a>
+<a id='L124' name='L124'></a><em class='sharp'># define</em> <a href='../R/4215.html' title='Multiple referred from 15 places.'>snprintf</a> local_snprintf
+<a id='L125' name='L125'></a><em class='sharp'>#endif</em>
+<a id='L126' name='L126'></a>
+<a id='L127' name='L127'></a><em class='comment'>/* Copy as much of MSG into BUF as possible, without corrupting errno.</em>
+<a id='L128' name='L128'></a><em class='comment'>   Return 0 if MSG fit in BUFLEN, otherwise return ERANGE.  */</em>
+<a id='L129' name='L129'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L130' name='L130'></a><a href='../R/4082.html' title='Multiple referred from 8 places.'>safe_copy</a> (<strong class='reserved'>char</strong> *buf, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> buflen, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *msg)
+<a id='L131' name='L131'></a><em class='brace'>{</em>
+<a id='L132' name='L132'></a>  <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> len = strlen (msg);
+<a id='L133' name='L133'></a>  <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> moved = len &lt; buflen ? len : buflen - 1;
+<a id='L134' name='L134'></a>
+<a id='L135' name='L135'></a>  <em class='comment'>/* Although POSIX lets memmove corrupt errno, we don't</em>
+<a id='L136' name='L136'></a><em class='comment'>     know of any implementation where this is a real problem.  */</em>
+<a id='L137' name='L137'></a>  memmove (buf, msg, moved);
+<a id='L138' name='L138'></a>  buf[moved] = '\0';
+<a id='L139' name='L139'></a>  <strong class='reserved'>return</strong> len &lt; buflen ? 0 : ERANGE;
+<a id='L140' name='L140'></a><em class='brace'>}</em>
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a>
+<a id='L143' name='L143'></a><strong class='reserved'>int</strong>
+<a id='L144' name='L144'></a><a href='../R/4320.html' title='Multiple referred from 18 places.'>strerror_r</a> (<strong class='reserved'>int</strong> errnum, <strong class='reserved'>char</strong> *buf, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> buflen)
+<a id='L145' name='L145'></a><em class='sharp'>#undef</em> <a href='../D/5093.html' title='Multiple defined in 4 places.'>strerror_r</a>
+<a id='L146' name='L146'></a><em class='brace'>{</em>
+<a id='L147' name='L147'></a>  <em class='comment'>/* Filter this out now, so that rest of this replacement knows that</em>
+<a id='L148' name='L148'></a><em class='comment'>     there is room for a non-empty message and trailing NUL.  */</em>
+<a id='L149' name='L149'></a>  <strong class='reserved'>if</strong> (buflen &lt;= 1)
+<a id='L150' name='L150'></a>    <em class='brace'>{</em>
+<a id='L151' name='L151'></a>      <strong class='reserved'>if</strong> (buflen)
+<a id='L152' name='L152'></a>        *buf = '\0';
+<a id='L153' name='L153'></a>      <strong class='reserved'>return</strong> ERANGE;
+<a id='L154' name='L154'></a>    <em class='brace'>}</em>
+<a id='L155' name='L155'></a>  *buf = '\0';
+<a id='L156' name='L156'></a>
+<a id='L157' name='L157'></a>  <em class='comment'>/* Check for gnulib overrides.  */</em>
+<a id='L158' name='L158'></a>  <em class='brace'>{</em>
+<a id='L159' name='L159'></a>    <strong class='reserved'>char</strong> <strong class='reserved'>const</strong> *msg = <a href='../D/5092.html' title='Multiple defined in 2 places.'>strerror_override</a> (errnum);
+<a id='L160' name='L160'></a>
+<a id='L161' name='L161'></a>    <strong class='reserved'>if</strong> (msg)
+<a id='L162' name='L162'></a>      <strong class='reserved'>return</strong> <a href='../S/546.html#L130' title='Defined at 130 in lib/strerror_r.c.'>safe_copy</a> (buf, buflen, msg);
+<a id='L163' name='L163'></a>  <em class='brace'>}</em>
+<a id='L164' name='L164'></a>
+<a id='L165' name='L165'></a>  <em class='brace'>{</em>
+<a id='L166' name='L166'></a>    <strong class='reserved'>int</strong> ret;
+<a id='L167' name='L167'></a>    <strong class='reserved'>int</strong> saved_errno = errno;
+<a id='L168' name='L168'></a>
+<a id='L169' name='L169'></a><em class='sharp'>#if</em> <a href='../S/546.html#L39' title='Defined at 39 in lib/strerror_r.c.'>USE_XPG_STRERROR_R</a>
+<a id='L170' name='L170'></a>
+<a id='L171' name='L171'></a>    <em class='brace'>{</em>
+<a id='L172' name='L172'></a>      ret = __xpg_strerror_r (errnum, buf, buflen);
+<a id='L173' name='L173'></a>      <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L174' name='L174'></a>        ret = errno;
+<a id='L175' name='L175'></a>      <strong class='reserved'>if</strong> (!*buf)
+<a id='L176' name='L176'></a>        <em class='brace'>{</em>
+<a id='L177' name='L177'></a>          <em class='comment'>/* glibc 2.13 would not touch buf on err, so we have to fall</em>
+<a id='L178' name='L178'></a><em class='comment'>             back to GNU strerror_r which always returns a thread-safe</em>
+<a id='L179' name='L179'></a><em class='comment'>             untruncated string to (partially) copy into our buf.  */</em>
+<a id='L180' name='L180'></a>          <a href='../S/546.html#L130' title='Defined at 130 in lib/strerror_r.c.'>safe_copy</a> (buf, buflen, <a href='../D/5093.html' title='Multiple defined in 4 places.'>strerror_r</a> (errnum, buf, buflen));
+<a id='L181' name='L181'></a>        <em class='brace'>}</em>
+<a id='L182' name='L182'></a>    <em class='brace'>}</em>
+<a id='L183' name='L183'></a>
+<a id='L184' name='L184'></a><em class='sharp'>#elif</em> <a href='../S/546.html#L53' title='Defined at 53 in lib/strerror_r.c.'>USE_SYSTEM_STRERROR_R</a>
+<a id='L185' name='L185'></a>
+<a id='L186' name='L186'></a>    <strong class='reserved'>if</strong> (buflen &gt; INT_MAX)
+<a id='L187' name='L187'></a>      buflen = INT_MAX;
+<a id='L188' name='L188'></a>
+<a id='L189' name='L189'></a><em class='sharp'># ifdef</em> __hpux
+<a id='L190' name='L190'></a>    <em class='comment'>/* On HP-UX 11.31, strerror_r always fails when buflen &lt; 80; it</em>
+<a id='L191' name='L191'></a><em class='comment'>       also fails to change buf on EINVAL.  */</em>
+<a id='L192' name='L192'></a>    <em class='brace'>{</em>
+<a id='L193' name='L193'></a>      <strong class='reserved'>char</strong> stackbuf[80];
+<a id='L194' name='L194'></a>
+<a id='L195' name='L195'></a>      <strong class='reserved'>if</strong> (buflen &lt; <strong class='reserved'>sizeof</strong> stackbuf)
+<a id='L196' name='L196'></a>        <em class='brace'>{</em>
+<a id='L197' name='L197'></a>          ret = <a href='../D/5093.html' title='Multiple defined in 4 places.'>strerror_r</a> (errnum, stackbuf, <strong class='reserved'>sizeof</strong> stackbuf);
+<a id='L198' name='L198'></a>          <strong class='reserved'>if</strong> (ret == 0)
+<a id='L199' name='L199'></a>            ret = <a href='../S/546.html#L130' title='Defined at 130 in lib/strerror_r.c.'>safe_copy</a> (buf, buflen, stackbuf);
+<a id='L200' name='L200'></a>        <em class='brace'>}</em>
+<a id='L201' name='L201'></a>      <strong class='reserved'>else</strong>
+<a id='L202' name='L202'></a>        ret = <a href='../D/5093.html' title='Multiple defined in 4 places.'>strerror_r</a> (errnum, buf, buflen);
+<a id='L203' name='L203'></a>    <em class='brace'>}</em>
+<a id='L204' name='L204'></a><em class='sharp'># else</em>
+<a id='L205' name='L205'></a>    ret = <a href='../D/5093.html' title='Multiple defined in 4 places.'>strerror_r</a> (errnum, buf, buflen);
+<a id='L206' name='L206'></a>
+<a id='L207' name='L207'></a>    <em class='comment'>/* Some old implementations may return (-1, EINVAL) instead of EINVAL.</em>
+<a id='L208' name='L208'></a><em class='comment'>       But on Haiku, valid error numbers are negative.  */</em>
+<a id='L209' name='L209'></a><em class='sharp'>#  if</em> !<strong class='reserved'>defined</strong> __HAIKU__
+<a id='L210' name='L210'></a>    <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L211' name='L211'></a>      ret = errno;
+<a id='L212' name='L212'></a><em class='sharp'>#  endif</em>
+<a id='L213' name='L213'></a><em class='sharp'># endif</em>
+<a id='L214' name='L214'></a>
+<a id='L215' name='L215'></a><em class='sharp'># if</em> <strong class='reserved'>defined</strong> _AIX || <strong class='reserved'>defined</strong> __HAIKU__
+<a id='L216' name='L216'></a>    <em class='comment'>/* AIX and Haiku return 0 rather than ERANGE when truncating strings; try</em>
+<a id='L217' name='L217'></a><em class='comment'>       again until we are sure we got the entire string.  */</em>
+<a id='L218' name='L218'></a>    <strong class='reserved'>if</strong> (!ret &amp;&amp; strlen (buf) == buflen - 1)
+<a id='L219' name='L219'></a>      <em class='brace'>{</em>
+<a id='L220' name='L220'></a>        <strong class='reserved'>char</strong> stackbuf[<a href='../S/544.html#L27' title='Defined at 27 in lib/strerror-override.h.'>STACKBUF_LEN</a>];
+<a id='L221' name='L221'></a>        <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> len;
+<a id='L222' name='L222'></a>        <a href='../D/5093.html' title='Multiple defined in 4 places.'>strerror_r</a> (errnum, stackbuf, <strong class='reserved'>sizeof</strong> stackbuf);
+<a id='L223' name='L223'></a>        len = strlen (stackbuf);
+<a id='L224' name='L224'></a>        <em class='comment'>/* STACKBUF_LEN should have been large enough.  */</em>
+<a id='L225' name='L225'></a>        <strong class='reserved'>if</strong> (len + 1 == <strong class='reserved'>sizeof</strong> stackbuf)
+<a id='L226' name='L226'></a>          abort ();
+<a id='L227' name='L227'></a>        <strong class='reserved'>if</strong> (buflen &lt;= len)
+<a id='L228' name='L228'></a>          ret = ERANGE;
+<a id='L229' name='L229'></a>      <em class='brace'>}</em>
+<a id='L230' name='L230'></a><em class='sharp'># else</em>
+<a id='L231' name='L231'></a>    <em class='comment'>/* Solaris 10 does not populate buf on ERANGE.  OpenBSD 4.7</em>
+<a id='L232' name='L232'></a><em class='comment'>       truncates early on ERANGE rather than return a partial integer.</em>
+<a id='L233' name='L233'></a><em class='comment'>       We prefer the maximal string.  We set buf[0] earlier, and we</em>
+<a id='L234' name='L234'></a><em class='comment'>       know of no implementation that modifies buf to be an</em>
+<a id='L235' name='L235'></a><em class='comment'>       unterminated string, so this strlen should be portable in</em>
+<a id='L236' name='L236'></a><em class='comment'>       practice (rather than pulling in a safer strnlen).  */</em>
+<a id='L237' name='L237'></a>    <strong class='reserved'>if</strong> (ret == ERANGE &amp;&amp; strlen (buf) &lt; buflen - 1)
+<a id='L238' name='L238'></a>      <em class='brace'>{</em>
+<a id='L239' name='L239'></a>        <strong class='reserved'>char</strong> stackbuf[<a href='../S/544.html#L27' title='Defined at 27 in lib/strerror-override.h.'>STACKBUF_LEN</a>];
+<a id='L240' name='L240'></a>
+<a id='L241' name='L241'></a>        <em class='comment'>/* STACKBUF_LEN should have been large enough.  */</em>
+<a id='L242' name='L242'></a>        <strong class='reserved'>if</strong> (<a href='../D/5093.html' title='Multiple defined in 4 places.'>strerror_r</a> (errnum, stackbuf, <strong class='reserved'>sizeof</strong> stackbuf) == ERANGE)
+<a id='L243' name='L243'></a>          abort ();
+<a id='L244' name='L244'></a>        <a href='../S/546.html#L130' title='Defined at 130 in lib/strerror_r.c.'>safe_copy</a> (buf, buflen, stackbuf);
+<a id='L245' name='L245'></a>      <em class='brace'>}</em>
+<a id='L246' name='L246'></a><em class='sharp'># endif</em>
+<a id='L247' name='L247'></a>
+<a id='L248' name='L248'></a><em class='sharp'>#else</em> <em class='comment'>/* USE_SYSTEM_STRERROR */</em>
+<a id='L249' name='L249'></a>
+<a id='L250' name='L250'></a>    <em class='comment'>/* Try to do what strerror (errnum) does, but without clobbering the</em>
+<a id='L251' name='L251'></a><em class='comment'>       buffer used by strerror().  */</em>
+<a id='L252' name='L252'></a>
+<a id='L253' name='L253'></a><em class='sharp'># if</em> <strong class='reserved'>defined</strong> __NetBSD__ || <strong class='reserved'>defined</strong> __hpux || (<strong class='reserved'>defined</strong> _WIN32 &amp;&amp; !<strong class='reserved'>defined</strong> __CYGWIN__) || <strong class='reserved'>defined</strong> __CYGWIN__ <em class='comment'>/* NetBSD, HP-UX, native Windows, Cygwin */</em>
+<a id='L254' name='L254'></a>
+<a id='L255' name='L255'></a>    <em class='comment'>/* NetBSD:         sys_nerr, sys_errlist are declared through _NETBSD_SOURCE</em>
+<a id='L256' name='L256'></a><em class='comment'>                       and &lt;errno.h&gt; above.</em>
+<a id='L257' name='L257'></a><em class='comment'>       HP-UX:          sys_nerr, sys_errlist are declared explicitly above.</em>
+<a id='L258' name='L258'></a><em class='comment'>       native Windows: sys_nerr, sys_errlist are declared in &lt;stdlib.h&gt;.</em>
+<a id='L259' name='L259'></a><em class='comment'>       Cygwin:         sys_nerr, sys_errlist are declared in &lt;errno.h&gt;.  */</em>
+<a id='L260' name='L260'></a>    <strong class='reserved'>if</strong> (errnum &gt;= 0 &amp;&amp; errnum &lt; sys_nerr)
+<a id='L261' name='L261'></a>      <em class='brace'>{</em>
+<a id='L262' name='L262'></a><em class='sharp'>#  if</em> <a href='../S/292.html#L428' title='Defined at 428 in lib/config.in.h.'>HAVE_CATGETS</a> &amp;&amp; (<strong class='reserved'>defined</strong> __NetBSD__ || <strong class='reserved'>defined</strong> __hpux)
+<a id='L263' name='L263'></a><em class='sharp'>#   if</em> <strong class='reserved'>defined</strong> __NetBSD__
+<a id='L264' name='L264'></a>        nl_catd catd = catopen ("libc", NL_CAT_LOCALE);
+<a id='L265' name='L265'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *errmsg =
+<a id='L266' name='L266'></a>          (catd != (nl_catd)-1
+<a id='L267' name='L267'></a>           ? catgets (catd, 1, errnum, sys_errlist[errnum])
+<a id='L268' name='L268'></a>           : sys_errlist[errnum]);
+<a id='L269' name='L269'></a><em class='sharp'>#   endif</em>
+<a id='L270' name='L270'></a><em class='sharp'>#   if</em> <strong class='reserved'>defined</strong> __hpux
+<a id='L271' name='L271'></a>        nl_catd catd = catopen ("perror", NL_CAT_LOCALE);
+<a id='L272' name='L272'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *errmsg =
+<a id='L273' name='L273'></a>          (catd != (nl_catd)-1
+<a id='L274' name='L274'></a>           ? catgets (catd, 1, 1 + errnum, sys_errlist[errnum])
+<a id='L275' name='L275'></a>           : sys_errlist[errnum]);
+<a id='L276' name='L276'></a><em class='sharp'>#   endif</em>
+<a id='L277' name='L277'></a><em class='sharp'>#  else</em>
+<a id='L278' name='L278'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *errmsg = sys_errlist[errnum];
+<a id='L279' name='L279'></a><em class='sharp'>#  endif</em>
+<a id='L280' name='L280'></a>        <strong class='reserved'>if</strong> (errmsg == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a> || *errmsg == '\0')
+<a id='L281' name='L281'></a>          ret = EINVAL;
+<a id='L282' name='L282'></a>        <strong class='reserved'>else</strong>
+<a id='L283' name='L283'></a>          ret = <a href='../S/546.html#L130' title='Defined at 130 in lib/strerror_r.c.'>safe_copy</a> (buf, buflen, errmsg);
+<a id='L284' name='L284'></a><em class='sharp'>#  if</em> <a href='../S/292.html#L428' title='Defined at 428 in lib/config.in.h.'>HAVE_CATGETS</a> &amp;&amp; (<strong class='reserved'>defined</strong> __NetBSD__ || <strong class='reserved'>defined</strong> __hpux)
+<a id='L285' name='L285'></a>        <strong class='reserved'>if</strong> (catd != (nl_catd)-1)
+<a id='L286' name='L286'></a>          catclose (catd);
+<a id='L287' name='L287'></a><em class='sharp'>#  endif</em>
+<a id='L288' name='L288'></a>      <em class='brace'>}</em>
+<a id='L289' name='L289'></a>    <strong class='reserved'>else</strong>
+<a id='L290' name='L290'></a>      ret = EINVAL;
+<a id='L291' name='L291'></a>
+<a id='L292' name='L292'></a><em class='sharp'># elif</em> <strong class='reserved'>defined</strong> __sgi || (<strong class='reserved'>defined</strong> __sun &amp;&amp; !<strong class='reserved'>defined</strong> _LP64) <em class='comment'>/* IRIX, Solaris &lt;= 9 32-bit */</em>
+<a id='L293' name='L293'></a>
+<a id='L294' name='L294'></a>    <em class='comment'>/* For a valid error number, the system's strerror() function returns</em>
+<a id='L295' name='L295'></a><em class='comment'>       a pointer to a not copied string, not to a buffer.  */</em>
+<a id='L296' name='L296'></a>    <strong class='reserved'>if</strong> (errnum &gt;= 0 &amp;&amp; errnum &lt; sys_nerr)
+<a id='L297' name='L297'></a>      <em class='brace'>{</em>
+<a id='L298' name='L298'></a>        <strong class='reserved'>char</strong> *errmsg = <a href='../D/5091.html' title='Multiple defined in 5 places.'>strerror</a> (errnum);
+<a id='L299' name='L299'></a>
+<a id='L300' name='L300'></a>        <strong class='reserved'>if</strong> (errmsg == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a> || *errmsg == '\0')
+<a id='L301' name='L301'></a>          ret = EINVAL;
+<a id='L302' name='L302'></a>        <strong class='reserved'>else</strong>
+<a id='L303' name='L303'></a>          ret = <a href='../S/546.html#L130' title='Defined at 130 in lib/strerror_r.c.'>safe_copy</a> (buf, buflen, errmsg);
+<a id='L304' name='L304'></a>      <em class='brace'>}</em>
+<a id='L305' name='L305'></a>    <strong class='reserved'>else</strong>
+<a id='L306' name='L306'></a>      ret = EINVAL;
+<a id='L307' name='L307'></a>
+<a id='L308' name='L308'></a><em class='sharp'># else</em>
+<a id='L309' name='L309'></a>
+<a id='L310' name='L310'></a>    <a href='../S/354.html#L686' title='Defined at 686 in lib/glthread/lock.h.'>gl_lock_lock</a> (strerror_lock);
+<a id='L311' name='L311'></a>
+<a id='L312' name='L312'></a>    <em class='brace'>{</em>
+<a id='L313' name='L313'></a>      <strong class='reserved'>char</strong> *errmsg = <a href='../D/5091.html' title='Multiple defined in 5 places.'>strerror</a> (errnum);
+<a id='L314' name='L314'></a>
+<a id='L315' name='L315'></a>      <em class='comment'>/* For invalid error numbers, strerror() on</em>
+<a id='L316' name='L316'></a><em class='comment'>           - IRIX 6.5 returns NULL,</em>
+<a id='L317' name='L317'></a><em class='comment'>           - HP-UX 11 returns an empty string.  */</em>
+<a id='L318' name='L318'></a>      <strong class='reserved'>if</strong> (errmsg == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a> || *errmsg == '\0')
+<a id='L319' name='L319'></a>        ret = EINVAL;
+<a id='L320' name='L320'></a>      <strong class='reserved'>else</strong>
+<a id='L321' name='L321'></a>        ret = <a href='../S/546.html#L130' title='Defined at 130 in lib/strerror_r.c.'>safe_copy</a> (buf, buflen, errmsg);
+<a id='L322' name='L322'></a>    <em class='brace'>}</em>
+<a id='L323' name='L323'></a>
+<a id='L324' name='L324'></a>    <a href='../S/354.html#L693' title='Defined at 693 in lib/glthread/lock.h.'>gl_lock_unlock</a> (strerror_lock);
+<a id='L325' name='L325'></a>
+<a id='L326' name='L326'></a><em class='sharp'># endif</em>
+<a id='L327' name='L327'></a>
+<a id='L328' name='L328'></a><em class='sharp'>#endif</em>
+<a id='L329' name='L329'></a>
+<a id='L330' name='L330'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong> _WIN32 &amp;&amp; !<strong class='reserved'>defined</strong> __CYGWIN__
+<a id='L331' name='L331'></a>    <em class='comment'>/* MSVC 14 defines names for many error codes in the range 100..140,</em>
+<a id='L332' name='L332'></a><em class='comment'>       but _sys_errlist contains strings only for the error codes</em>
+<a id='L333' name='L333'></a><em class='comment'>       &lt; _sys_nerr = 43.  */</em>
+<a id='L334' name='L334'></a>    <strong class='reserved'>if</strong> (ret == EINVAL)
+<a id='L335' name='L335'></a>      <em class='brace'>{</em>
+<a id='L336' name='L336'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *errmsg;
+<a id='L337' name='L337'></a>
+<a id='L338' name='L338'></a>        <strong class='reserved'>switch</strong> (errnum)
+<a id='L339' name='L339'></a>          <em class='brace'>{</em>
+<a id='L340' name='L340'></a>          <strong class='reserved'>case</strong> 100 <em class='comment'>/* EADDRINUSE */</em>:
+<a id='L341' name='L341'></a>            errmsg = "Address already in use";
+<a id='L342' name='L342'></a>            <strong class='reserved'>break</strong>;
+<a id='L343' name='L343'></a>          <strong class='reserved'>case</strong> 101 <em class='comment'>/* EADDRNOTAVAIL */</em>:
+<a id='L344' name='L344'></a>            errmsg = "Cannot assign requested address";
+<a id='L345' name='L345'></a>            <strong class='reserved'>break</strong>;
+<a id='L346' name='L346'></a>          <strong class='reserved'>case</strong> 102 <em class='comment'>/* EAFNOSUPPORT */</em>:
+<a id='L347' name='L347'></a>            errmsg = "Address family not supported by protocol";
+<a id='L348' name='L348'></a>            <strong class='reserved'>break</strong>;
+<a id='L349' name='L349'></a>          <strong class='reserved'>case</strong> 103 <em class='comment'>/* EALREADY */</em>:
+<a id='L350' name='L350'></a>            errmsg = "Operation already in progress";
+<a id='L351' name='L351'></a>            <strong class='reserved'>break</strong>;
+<a id='L352' name='L352'></a>          <strong class='reserved'>case</strong> 105 <em class='comment'>/* ECANCELED */</em>:
+<a id='L353' name='L353'></a>            errmsg = "Operation canceled";
+<a id='L354' name='L354'></a>            <strong class='reserved'>break</strong>;
+<a id='L355' name='L355'></a>          <strong class='reserved'>case</strong> 106 <em class='comment'>/* ECONNABORTED */</em>:
+<a id='L356' name='L356'></a>            errmsg = "Software caused connection abort";
+<a id='L357' name='L357'></a>            <strong class='reserved'>break</strong>;
+<a id='L358' name='L358'></a>          <strong class='reserved'>case</strong> 107 <em class='comment'>/* ECONNREFUSED */</em>:
+<a id='L359' name='L359'></a>            errmsg = "Connection refused";
+<a id='L360' name='L360'></a>            <strong class='reserved'>break</strong>;
+<a id='L361' name='L361'></a>          <strong class='reserved'>case</strong> 108 <em class='comment'>/* ECONNRESET */</em>:
+<a id='L362' name='L362'></a>            errmsg = "Connection reset by peer";
+<a id='L363' name='L363'></a>            <strong class='reserved'>break</strong>;
+<a id='L364' name='L364'></a>          <strong class='reserved'>case</strong> 109 <em class='comment'>/* EDESTADDRREQ */</em>:
+<a id='L365' name='L365'></a>            errmsg = "Destination address required";
+<a id='L366' name='L366'></a>            <strong class='reserved'>break</strong>;
+<a id='L367' name='L367'></a>          <strong class='reserved'>case</strong> 110 <em class='comment'>/* EHOSTUNREACH */</em>:
+<a id='L368' name='L368'></a>            errmsg = "No route to host";
+<a id='L369' name='L369'></a>            <strong class='reserved'>break</strong>;
+<a id='L370' name='L370'></a>          <strong class='reserved'>case</strong> 112 <em class='comment'>/* EINPROGRESS */</em>:
+<a id='L371' name='L371'></a>            errmsg = "Operation now in progress";
+<a id='L372' name='L372'></a>            <strong class='reserved'>break</strong>;
+<a id='L373' name='L373'></a>          <strong class='reserved'>case</strong> 113 <em class='comment'>/* EISCONN */</em>:
+<a id='L374' name='L374'></a>            errmsg = "Transport endpoint is already connected";
+<a id='L375' name='L375'></a>            <strong class='reserved'>break</strong>;
+<a id='L376' name='L376'></a>          <strong class='reserved'>case</strong> 114 <em class='comment'>/* ELOOP */</em>:
+<a id='L377' name='L377'></a>            errmsg = "Too many levels of symbolic links";
+<a id='L378' name='L378'></a>            <strong class='reserved'>break</strong>;
+<a id='L379' name='L379'></a>          <strong class='reserved'>case</strong> 115 <em class='comment'>/* EMSGSIZE */</em>:
+<a id='L380' name='L380'></a>            errmsg = "Message too long";
+<a id='L381' name='L381'></a>            <strong class='reserved'>break</strong>;
+<a id='L382' name='L382'></a>          <strong class='reserved'>case</strong> 116 <em class='comment'>/* ENETDOWN */</em>:
+<a id='L383' name='L383'></a>            errmsg = "Network is down";
+<a id='L384' name='L384'></a>            <strong class='reserved'>break</strong>;
+<a id='L385' name='L385'></a>          <strong class='reserved'>case</strong> 117 <em class='comment'>/* ENETRESET */</em>:
+<a id='L386' name='L386'></a>            errmsg = "Network dropped connection on reset";
+<a id='L387' name='L387'></a>            <strong class='reserved'>break</strong>;
+<a id='L388' name='L388'></a>          <strong class='reserved'>case</strong> 118 <em class='comment'>/* ENETUNREACH */</em>:
+<a id='L389' name='L389'></a>            errmsg = "Network is unreachable";
+<a id='L390' name='L390'></a>            <strong class='reserved'>break</strong>;
+<a id='L391' name='L391'></a>          <strong class='reserved'>case</strong> 119 <em class='comment'>/* ENOBUFS */</em>:
+<a id='L392' name='L392'></a>            errmsg = "No buffer space available";
+<a id='L393' name='L393'></a>            <strong class='reserved'>break</strong>;
+<a id='L394' name='L394'></a>          <strong class='reserved'>case</strong> 123 <em class='comment'>/* ENOPROTOOPT */</em>:
+<a id='L395' name='L395'></a>            errmsg = "Protocol not available";
+<a id='L396' name='L396'></a>            <strong class='reserved'>break</strong>;
+<a id='L397' name='L397'></a>          <strong class='reserved'>case</strong> 126 <em class='comment'>/* ENOTCONN */</em>:
+<a id='L398' name='L398'></a>            errmsg = "Transport endpoint is not connected";
+<a id='L399' name='L399'></a>            <strong class='reserved'>break</strong>;
+<a id='L400' name='L400'></a>          <strong class='reserved'>case</strong> 128 <em class='comment'>/* ENOTSOCK */</em>:
+<a id='L401' name='L401'></a>            errmsg = "Socket operation on non-socket";
+<a id='L402' name='L402'></a>            <strong class='reserved'>break</strong>;
+<a id='L403' name='L403'></a>          <strong class='reserved'>case</strong> 129 <em class='comment'>/* ENOTSUP */</em>:
+<a id='L404' name='L404'></a>            errmsg = "Not supported";
+<a id='L405' name='L405'></a>            <strong class='reserved'>break</strong>;
+<a id='L406' name='L406'></a>          <strong class='reserved'>case</strong> 130 <em class='comment'>/* EOPNOTSUPP */</em>:
+<a id='L407' name='L407'></a>            errmsg = "Operation not supported";
+<a id='L408' name='L408'></a>            <strong class='reserved'>break</strong>;
+<a id='L409' name='L409'></a>          <strong class='reserved'>case</strong> 132 <em class='comment'>/* EOVERFLOW */</em>:
+<a id='L410' name='L410'></a>            errmsg = "Value too large for defined data type";
+<a id='L411' name='L411'></a>            <strong class='reserved'>break</strong>;
+<a id='L412' name='L412'></a>          <strong class='reserved'>case</strong> 133 <em class='comment'>/* EOWNERDEAD */</em>:
+<a id='L413' name='L413'></a>            errmsg = "Owner died";
+<a id='L414' name='L414'></a>            <strong class='reserved'>break</strong>;
+<a id='L415' name='L415'></a>          <strong class='reserved'>case</strong> 134 <em class='comment'>/* EPROTO */</em>:
+<a id='L416' name='L416'></a>            errmsg = "Protocol error";
+<a id='L417' name='L417'></a>            <strong class='reserved'>break</strong>;
+<a id='L418' name='L418'></a>          <strong class='reserved'>case</strong> 135 <em class='comment'>/* EPROTONOSUPPORT */</em>:
+<a id='L419' name='L419'></a>            errmsg = "Protocol not supported";
+<a id='L420' name='L420'></a>            <strong class='reserved'>break</strong>;
+<a id='L421' name='L421'></a>          <strong class='reserved'>case</strong> 136 <em class='comment'>/* EPROTOTYPE */</em>:
+<a id='L422' name='L422'></a>            errmsg = "Protocol wrong type for socket";
+<a id='L423' name='L423'></a>            <strong class='reserved'>break</strong>;
+<a id='L424' name='L424'></a>          <strong class='reserved'>case</strong> 138 <em class='comment'>/* ETIMEDOUT */</em>:
+<a id='L425' name='L425'></a>            errmsg = "Connection timed out";
+<a id='L426' name='L426'></a>            <strong class='reserved'>break</strong>;
+<a id='L427' name='L427'></a>          <strong class='reserved'>case</strong> 140 <em class='comment'>/* EWOULDBLOCK */</em>:
+<a id='L428' name='L428'></a>            errmsg = "Operation would block";
+<a id='L429' name='L429'></a>            <strong class='reserved'>break</strong>;
+<a id='L430' name='L430'></a>          <strong class='reserved'>default</strong>:
+<a id='L431' name='L431'></a>            errmsg = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L432' name='L432'></a>            <strong class='reserved'>break</strong>;
+<a id='L433' name='L433'></a>          <em class='brace'>}</em>
+<a id='L434' name='L434'></a>        <strong class='reserved'>if</strong> (errmsg != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L435' name='L435'></a>          ret = <a href='../S/546.html#L130' title='Defined at 130 in lib/strerror_r.c.'>safe_copy</a> (buf, buflen, errmsg);
+<a id='L436' name='L436'></a>      <em class='brace'>}</em>
+<a id='L437' name='L437'></a><em class='sharp'>#endif</em>
+<a id='L438' name='L438'></a>
+<a id='L439' name='L439'></a>    <strong class='reserved'>if</strong> (ret == EINVAL &amp;&amp; !*buf)
+<a id='L440' name='L440'></a>      <em class='brace'>{</em>
+<a id='L441' name='L441'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong> __HAIKU__
+<a id='L442' name='L442'></a>        <em class='comment'>/* For consistency with perror().  */</em>
+<a id='L443' name='L443'></a>        <a href='../D/4986.html' title='Multiple defined in 7 places.'>snprintf</a> (buf, buflen, "Unknown Application Error (%d)", errnum);
+<a id='L444' name='L444'></a><em class='sharp'>#else</em>
+<a id='L445' name='L445'></a>        <a href='../D/4986.html' title='Multiple defined in 7 places.'>snprintf</a> (buf, buflen, "Unknown error %d", errnum);
+<a id='L446' name='L446'></a><em class='sharp'>#endif</em>
+<a id='L447' name='L447'></a>      <em class='brace'>}</em>
+<a id='L448' name='L448'></a>
+<a id='L449' name='L449'></a>    errno = saved_errno;
+<a id='L450' name='L450'></a>    <strong class='reserved'>return</strong> ret;
+<a id='L451' name='L451'></a>  <em class='brace'>}</em>
+<a id='L452' name='L452'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L99'>[^]</a><a href='#L144'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

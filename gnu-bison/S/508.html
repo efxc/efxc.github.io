@@ -1,0 +1,484 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/spawn-pipe.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.5' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1107.html'>lib</a>/spawn-pipe.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L64'>[^]</a><a href='#L439'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L64' title='Defined at 64.'>nonintr_close</a></li>
+<li><a href='#L79' title='Defined at 79.'>nonintr_open</a></li>
+<li><a href='#L110' title='Defined at 110.'>create_pipe</a></li>
+<li><a href='#L394' title='Defined at 394.'>create_pipe_bidi</a></li>
+<li><a href='#L415' title='Defined at 415.'>create_pipe_in</a></li>
+<li><a href='#L439' title='Defined at 439.'>create_pipe_out</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* Creation of subprocesses, communicating via pipes.</em>
+<a id='L2' name='L2'></a><em class='comment'>   Copyright (C) 2001-2004, 2006-2020 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'>   Written by Bruno Haible &lt;haible@clisp.cons.org&gt;, 2001.</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   This program is free software: you can redistribute it and/or modify</em>
+<a id='L6' name='L6'></a><em class='comment'>   it under the terms of the GNU General Public License as published by</em>
+<a id='L7' name='L7'></a><em class='comment'>   the Free Software Foundation; either version 3 of the License, or</em>
+<a id='L8' name='L8'></a><em class='comment'>   (at your option) any later version.</em>
+<a id='L9' name='L9'></a><em class='comment'></em>
+<a id='L10' name='L10'></a><em class='comment'>   This program is distributed in the hope that it will be useful,</em>
+<a id='L11' name='L11'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L12' name='L12'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</em>
+<a id='L13' name='L13'></a><em class='comment'>   GNU General Public License for more details.</em>
+<a id='L14' name='L14'></a><em class='comment'></em>
+<a id='L15' name='L15'></a><em class='comment'>   You should have received a copy of the GNU General Public License</em>
+<a id='L16' name='L16'></a><em class='comment'>   along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;.  */</em>
+<a id='L17' name='L17'></a>
+<a id='L18' name='L18'></a>
+<a id='L19' name='L19'></a><em class='comment'>/* Tell clang not to warn about the 'child' variable, below.  */</em>
+<a id='L20' name='L20'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong> __clang__
+<a id='L21' name='L21'></a><em class='sharp'># pragma</em> clang diagnostic ignored "-Wconditional-uninitialized"
+<a id='L22' name='L22'></a><em class='sharp'>#endif</em>
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L25' name='L25'></a>
+<a id='L26' name='L26'></a><em class='comment'>/* Specification.  */</em>
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> "<a href='509.html'>spawn-pipe.h</a>"
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;fcntl.h&gt;
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> &lt;signal.h&gt;
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;unistd.h&gt;
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> "<a href='302.html'>error.h</a>"
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> "<a href='306.html'>fatal-signal.h</a>"
+<a id='L37' name='L37'></a><em class='sharp'>#include</em> "<a href='571.html'>unistd-safer.h</a>"
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> "<a href='595.html'>wait-process.h</a>"
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> "<a href='350.html'>gettext.h</a>"
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a><em class='sharp'>#define</em> <a href='../R/1704.html' title='Multiple referred from 358 places.'>_</a>(str) <a href='../D/3456.html' title='Multiple defined in 4 places.'>gettext</a> (str)
+<a id='L42' name='L42'></a>
+<a id='L43' name='L43'></a><em class='sharp'>#if</em> (<strong class='reserved'>defined</strong> _WIN32 &amp;&amp; ! <strong class='reserved'>defined</strong> __CYGWIN__) || <strong class='reserved'>defined</strong> __KLIBC__
+<a id='L44' name='L44'></a>
+<a id='L45' name='L45'></a><em class='comment'>/* Native Windows API.  */</em>
+<a id='L46' name='L46'></a><em class='sharp'># include</em> &lt;process.h&gt;
+<a id='L47' name='L47'></a><em class='sharp'># include</em> "<a href='593.html'>w32spawn.h</a>"
+<a id='L48' name='L48'></a>
+<a id='L49' name='L49'></a><em class='sharp'>#else</em>
+<a id='L50' name='L50'></a>
+<a id='L51' name='L51'></a><em class='comment'>/* Unix API.  */</em>
+<a id='L52' name='L52'></a><em class='sharp'># include</em> &lt;spawn.h&gt;
+<a id='L53' name='L53'></a>
+<a id='L54' name='L54'></a><em class='sharp'>#endif</em>
+<a id='L55' name='L55'></a>
+<a id='L56' name='L56'></a>
+<a id='L57' name='L57'></a><em class='sharp'>#ifdef</em> EINTR
+<a id='L58' name='L58'></a>
+<a id='L59' name='L59'></a><em class='comment'>/* EINTR handling for close().</em>
+<a id='L60' name='L60'></a><em class='comment'>   These functions can return -1/EINTR even though we don't have any</em>
+<a id='L61' name='L61'></a><em class='comment'>   signal handlers set up, namely when we get interrupted via SIGSTOP.  */</em>
+<a id='L62' name='L62'></a>
+<a id='L63' name='L63'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L64' name='L64'></a><a href='../S/508.html#L75' title='Referred from 75 in lib/spawn-pipe.c.'>nonintr_close</a> (<strong class='reserved'>int</strong> fd)
+<a id='L65' name='L65'></a><em class='brace'>{</em>
+<a id='L66' name='L66'></a>  <strong class='reserved'>int</strong> retval;
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a>  <strong class='reserved'>do</strong>
+<a id='L69' name='L69'></a>    retval = <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (fd);
+<a id='L70' name='L70'></a>  <strong class='reserved'>while</strong> (retval &lt; 0 &amp;&amp; errno == EINTR);
+<a id='L71' name='L71'></a>
+<a id='L72' name='L72'></a>  <strong class='reserved'>return</strong> retval;
+<a id='L73' name='L73'></a><em class='brace'>}</em>
+<a id='L74' name='L74'></a><em class='sharp'>#undef</em> <a href='../R/2434.html' title='Multiple referred from 51 places.'>close</a> <em class='comment'>/* avoid warning related to gnulib module unistd */</em>
+<a id='L75' name='L75'></a><em class='sharp'>#define</em> <a href='../R/2434.html' title='Multiple referred from 51 places.'>close</a> <a href='../S/508.html#L64' title='Defined at 64 in lib/spawn-pipe.c.'>nonintr_close</a>
+<a id='L76' name='L76'></a>
+<a id='L77' name='L77'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong> _WIN32 &amp;&amp; ! <strong class='reserved'>defined</strong> __CYGWIN__
+<a id='L78' name='L78'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L79' name='L79'></a><a href='../S/508.html#L90' title='Referred from 90 in lib/spawn-pipe.c.'>nonintr_open</a> (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *pathname, <strong class='reserved'>int</strong> oflag, <a href='../S/292.html#L2034' title='Defined at 2034 in lib/config.in.h.'>mode_t</a> mode)
+<a id='L80' name='L80'></a><em class='brace'>{</em>
+<a id='L81' name='L81'></a>  <strong class='reserved'>int</strong> retval;
+<a id='L82' name='L82'></a>
+<a id='L83' name='L83'></a>  <strong class='reserved'>do</strong>
+<a id='L84' name='L84'></a>    retval = <a href='../D/4433.html' title='Multiple defined in 10 places.'>open</a> (pathname, oflag, mode);
+<a id='L85' name='L85'></a>  <strong class='reserved'>while</strong> (retval &lt; 0 &amp;&amp; errno == EINTR);
+<a id='L86' name='L86'></a>
+<a id='L87' name='L87'></a>  <strong class='reserved'>return</strong> retval;
+<a id='L88' name='L88'></a><em class='brace'>}</em>
+<a id='L89' name='L89'></a><em class='sharp'># undef</em> <a href='../R/3723.html' title='Multiple referred from 25 places.'>open</a> <em class='comment'>/* avoid warning on VMS */</em>
+<a id='L90' name='L90'></a><em class='sharp'># define</em> <a href='../R/3723.html' title='Multiple referred from 25 places.'>open</a> <a href='../S/508.html#L79' title='Defined at 79 in lib/spawn-pipe.c.'>nonintr_open</a>
+<a id='L91' name='L91'></a><em class='sharp'>#endif</em>
+<a id='L92' name='L92'></a>
+<a id='L93' name='L93'></a><em class='sharp'>#endif</em>
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a>
+<a id='L96' name='L96'></a><em class='comment'>/* Open a pipe connected to a child process.</em>
+<a id='L97' name='L97'></a><em class='comment'> *</em>
+<a id='L98' name='L98'></a><em class='comment'> *           write       system                read</em>
+<a id='L99' name='L99'></a><em class='comment'> *    parent  -&gt;   fd[1]   -&gt;   STDIN_FILENO    -&gt;   child       if pipe_stdin</em>
+<a id='L100' name='L100'></a><em class='comment'> *    parent  &lt;-   fd[0]   &lt;-   STDOUT_FILENO   &lt;-   child       if pipe_stdout</em>
+<a id='L101' name='L101'></a><em class='comment'> *           read        system                write</em>
+<a id='L102' name='L102'></a><em class='comment'> *</em>
+<a id='L103' name='L103'></a><em class='comment'> * At least one of pipe_stdin, pipe_stdout must be true.</em>
+<a id='L104' name='L104'></a><em class='comment'> * pipe_stdin and prog_stdin together determine the child's standard input.</em>
+<a id='L105' name='L105'></a><em class='comment'> * pipe_stdout and prog_stdout together determine the child's standard output.</em>
+<a id='L106' name='L106'></a><em class='comment'> * If pipe_stdin is true, prog_stdin is ignored.</em>
+<a id='L107' name='L107'></a><em class='comment'> * If pipe_stdout is true, prog_stdout is ignored.</em>
+<a id='L108' name='L108'></a><em class='comment'> */</em>
+<a id='L109' name='L109'></a><strong class='reserved'>static</strong> <a href='../S/292.html#L2040' title='Defined at 2040 in lib/config.in.h.'>pid_t</a>
+<a id='L110' name='L110'></a><a href='../R/2543.html' title='Multiple referred from 3 places.'>create_pipe</a> (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *progname,
+<a id='L111' name='L111'></a>             <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *prog_path, <strong class='reserved'>char</strong> **prog_argv,
+<a id='L112' name='L112'></a>             <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> pipe_stdin, <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> pipe_stdout,
+<a id='L113' name='L113'></a>             <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *prog_stdin, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *prog_stdout,
+<a id='L114' name='L114'></a>             <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> null_stderr,
+<a id='L115' name='L115'></a>             <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> slave_process, <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> exit_on_error,
+<a id='L116' name='L116'></a>             <strong class='reserved'>int</strong> fd[2])
+<a id='L117' name='L117'></a><em class='brace'>{</em>
+<a id='L118' name='L118'></a><em class='sharp'>#if</em> (<strong class='reserved'>defined</strong> _WIN32 &amp;&amp; ! <strong class='reserved'>defined</strong> __CYGWIN__) || <strong class='reserved'>defined</strong> __KLIBC__
+<a id='L119' name='L119'></a>
+<a id='L120' name='L120'></a>  <em class='comment'>/* Native Windows API.</em>
+<a id='L121' name='L121'></a><em class='comment'>     This uses _pipe(), dup2(), and _spawnv().  It could also be implemented</em>
+<a id='L122' name='L122'></a><em class='comment'>     using the low-level functions CreatePipe(), DuplicateHandle(),</em>
+<a id='L123' name='L123'></a><em class='comment'>     CreateProcess() and _open_osfhandle(); see the GNU make and GNU clisp</em>
+<a id='L124' name='L124'></a><em class='comment'>     and cvs source code.  */</em>
+<a id='L125' name='L125'></a>  <strong class='reserved'>int</strong> ifd[2];
+<a id='L126' name='L126'></a>  <strong class='reserved'>int</strong> ofd[2];
+<a id='L127' name='L127'></a>  <strong class='reserved'>int</strong> orig_stdin;
+<a id='L128' name='L128'></a>  <strong class='reserved'>int</strong> orig_stdout;
+<a id='L129' name='L129'></a>  <strong class='reserved'>int</strong> orig_stderr;
+<a id='L130' name='L130'></a>  <strong class='reserved'>int</strong> child;
+<a id='L131' name='L131'></a>  <strong class='reserved'>int</strong> nulloutfd;
+<a id='L132' name='L132'></a>  <strong class='reserved'>int</strong> stdinfd;
+<a id='L133' name='L133'></a>  <strong class='reserved'>int</strong> stdoutfd;
+<a id='L134' name='L134'></a>  <strong class='reserved'>int</strong> saved_errno;
+<a id='L135' name='L135'></a>
+<a id='L136' name='L136'></a>  <em class='comment'>/* FIXME: Need to free memory allocated by prepare_spawn.  */</em>
+<a id='L137' name='L137'></a>  prog_argv = <a href='../S/593.html#L140' title='Defined at 140 in lib/w32spawn.h.'>prepare_spawn</a> (prog_argv);
+<a id='L138' name='L138'></a>
+<a id='L139' name='L139'></a>  <strong class='reserved'>if</strong> (pipe_stdout)
+<a id='L140' name='L140'></a>    <strong class='reserved'>if</strong> (<a href='../S/463.html#L31' title='Defined at 31 in lib/pipe2-safer.c.'>pipe2_safer</a> (ifd, <a href='../D/1162.html' title='Multiple defined in 3 places.'>O_BINARY</a> | <a href='../D/1163.html' title='Multiple defined in 5 places.'>O_CLOEXEC</a>) &lt; 0)
+<a id='L141' name='L141'></a>      <a href='../D/3207.html' title='Multiple defined in 4 places.'>error</a> (<a href='../D/349.html' title='Multiple defined in 3 places.'>EXIT_FAILURE</a>, errno, <a href='../D/2087.html' title='Multiple defined in 44 places.'>_</a>("cannot create pipe"));
+<a id='L142' name='L142'></a>  <strong class='reserved'>if</strong> (pipe_stdin)
+<a id='L143' name='L143'></a>    <strong class='reserved'>if</strong> (<a href='../S/463.html#L31' title='Defined at 31 in lib/pipe2-safer.c.'>pipe2_safer</a> (ofd, <a href='../D/1162.html' title='Multiple defined in 3 places.'>O_BINARY</a> | <a href='../D/1163.html' title='Multiple defined in 5 places.'>O_CLOEXEC</a>) &lt; 0)
+<a id='L144' name='L144'></a>      <a href='../D/3207.html' title='Multiple defined in 4 places.'>error</a> (<a href='../D/349.html' title='Multiple defined in 3 places.'>EXIT_FAILURE</a>, errno, <a href='../D/2087.html' title='Multiple defined in 44 places.'>_</a>("cannot create pipe"));
+<a id='L145' name='L145'></a><em class='comment'>/* Data flow diagram:</em>
+<a id='L146' name='L146'></a><em class='comment'> *</em>
+<a id='L147' name='L147'></a><em class='comment'> *           write        system         read</em>
+<a id='L148' name='L148'></a><em class='comment'> *    parent  -&gt;   ofd[1]   -&gt;   ofd[0]   -&gt;   child       if pipe_stdin</em>
+<a id='L149' name='L149'></a><em class='comment'> *    parent  &lt;-   ifd[0]   &lt;-   ifd[1]   &lt;-   child       if pipe_stdout</em>
+<a id='L150' name='L150'></a><em class='comment'> *           read         system         write</em>
+<a id='L151' name='L151'></a><em class='comment'> *</em>
+<a id='L152' name='L152'></a><em class='comment'> */</em>
+<a id='L153' name='L153'></a>
+<a id='L154' name='L154'></a>  <em class='comment'>/* Save standard file handles of parent process.  */</em>
+<a id='L155' name='L155'></a>  <strong class='reserved'>if</strong> (pipe_stdin || prog_stdin != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L156' name='L156'></a>    orig_stdin = <a href='../S/593.html#L78' title='Defined at 78 in lib/w32spawn.h.'>dup_safer_noinherit</a> (<a href='../S/573.html#L246' title='Defined at 246 in lib/unistd.in.h.'>STDIN_FILENO</a>);
+<a id='L157' name='L157'></a>  <strong class='reserved'>if</strong> (pipe_stdout || prog_stdout != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L158' name='L158'></a>    orig_stdout = <a href='../S/593.html#L78' title='Defined at 78 in lib/w32spawn.h.'>dup_safer_noinherit</a> (<a href='../S/573.html#L249' title='Defined at 249 in lib/unistd.in.h.'>STDOUT_FILENO</a>);
+<a id='L159' name='L159'></a>  <strong class='reserved'>if</strong> (null_stderr)
+<a id='L160' name='L160'></a>    orig_stderr = <a href='../S/593.html#L78' title='Defined at 78 in lib/w32spawn.h.'>dup_safer_noinherit</a> (<a href='../S/573.html#L252' title='Defined at 252 in lib/unistd.in.h.'>STDERR_FILENO</a>);
+<a id='L161' name='L161'></a>  child = -1;
+<a id='L162' name='L162'></a>
+<a id='L163' name='L163'></a>  <em class='comment'>/* Create standard file handles of child process.  */</em>
+<a id='L164' name='L164'></a>  nulloutfd = -1;
+<a id='L165' name='L165'></a>  stdinfd = -1;
+<a id='L166' name='L166'></a>  stdoutfd = -1;
+<a id='L167' name='L167'></a>  <strong class='reserved'>if</strong> ((!pipe_stdin || <a href='../D/3177.html' title='Multiple defined in 10 places.'>dup2</a> (ofd[0], <a href='../S/573.html#L246' title='Defined at 246 in lib/unistd.in.h.'>STDIN_FILENO</a>) &gt;= 0)
+<a id='L168' name='L168'></a>      &amp;&amp; (!pipe_stdout || <a href='../D/3177.html' title='Multiple defined in 10 places.'>dup2</a> (ifd[1], <a href='../S/573.html#L249' title='Defined at 249 in lib/unistd.in.h.'>STDOUT_FILENO</a>) &gt;= 0)
+<a id='L169' name='L169'></a>      &amp;&amp; (!null_stderr
+<a id='L170' name='L170'></a>          || ((nulloutfd = <a href='../D/4433.html' title='Multiple defined in 10 places.'>open</a> ("NUL", O_RDWR, 0)) &gt;= 0
+<a id='L171' name='L171'></a>              &amp;&amp; (nulloutfd == <a href='../S/573.html#L252' title='Defined at 252 in lib/unistd.in.h.'>STDERR_FILENO</a>
+<a id='L172' name='L172'></a>                  || (<a href='../D/3177.html' title='Multiple defined in 10 places.'>dup2</a> (nulloutfd, <a href='../S/573.html#L252' title='Defined at 252 in lib/unistd.in.h.'>STDERR_FILENO</a>) &gt;= 0
+<a id='L173' name='L173'></a>                      &amp;&amp; <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (nulloutfd) &gt;= 0))))
+<a id='L174' name='L174'></a>      &amp;&amp; (pipe_stdin
+<a id='L175' name='L175'></a>          || prog_stdin == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>
+<a id='L176' name='L176'></a>          || ((stdinfd = <a href='../D/4433.html' title='Multiple defined in 10 places.'>open</a> (prog_stdin, O_RDONLY, 0)) &gt;= 0
+<a id='L177' name='L177'></a>              &amp;&amp; (stdinfd == <a href='../S/573.html#L246' title='Defined at 246 in lib/unistd.in.h.'>STDIN_FILENO</a>
+<a id='L178' name='L178'></a>                  || (<a href='../D/3177.html' title='Multiple defined in 10 places.'>dup2</a> (stdinfd, <a href='../S/573.html#L246' title='Defined at 246 in lib/unistd.in.h.'>STDIN_FILENO</a>) &gt;= 0
+<a id='L179' name='L179'></a>                      &amp;&amp; <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (stdinfd) &gt;= 0))))
+<a id='L180' name='L180'></a>      &amp;&amp; (pipe_stdout
+<a id='L181' name='L181'></a>          || prog_stdout == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>
+<a id='L182' name='L182'></a>          || ((stdoutfd = <a href='../D/4433.html' title='Multiple defined in 10 places.'>open</a> (prog_stdout, O_WRONLY, 0)) &gt;= 0
+<a id='L183' name='L183'></a>              &amp;&amp; (stdoutfd == <a href='../S/573.html#L249' title='Defined at 249 in lib/unistd.in.h.'>STDOUT_FILENO</a>
+<a id='L184' name='L184'></a>                  || (<a href='../D/3177.html' title='Multiple defined in 10 places.'>dup2</a> (stdoutfd, <a href='../S/573.html#L249' title='Defined at 249 in lib/unistd.in.h.'>STDOUT_FILENO</a>) &gt;= 0
+<a id='L185' name='L185'></a>                      &amp;&amp; <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (stdoutfd) &gt;= 0)))))
+<a id='L186' name='L186'></a>    <em class='comment'>/* The child process doesn't inherit ifd[0], ifd[1], ofd[0], ofd[1],</em>
+<a id='L187' name='L187'></a><em class='comment'>       but it inherits all open()ed or dup2()ed file handles (which is what</em>
+<a id='L188' name='L188'></a><em class='comment'>       we want in the case of STD*_FILENO).  */</em>
+<a id='L189' name='L189'></a>    <em class='comment'>/* Use _spawnvpe and pass the environment explicitly.  This is needed if</em>
+<a id='L190' name='L190'></a><em class='comment'>       the program has modified the environment using putenv() or [un]setenv().</em>
+<a id='L191' name='L191'></a><em class='comment'>       On Windows, programs have two environments, one in the "environment</em>
+<a id='L192' name='L192'></a><em class='comment'>       block" of the process and managed through SetEnvironmentVariable(), and</em>
+<a id='L193' name='L193'></a><em class='comment'>       one inside the process, in the location retrieved by the 'environ'</em>
+<a id='L194' name='L194'></a><em class='comment'>       macro.  When using _spawnvp() without 'e', the child process inherits a</em>
+<a id='L195' name='L195'></a><em class='comment'>       copy of the environment block - ignoring the effects of putenv() and</em>
+<a id='L196' name='L196'></a><em class='comment'>       [un]setenv().  */</em>
+<a id='L197' name='L197'></a>    <em class='brace'>{</em>
+<a id='L198' name='L198'></a>      child = _spawnvpe (P_NOWAIT, prog_path, (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> **) prog_argv,
+<a id='L199' name='L199'></a>                         (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> **) <a href='../D/3205.html' title='Multiple defined in 3 places.'>environ</a>);
+<a id='L200' name='L200'></a>      <strong class='reserved'>if</strong> (child &lt; 0 &amp;&amp; errno == ENOEXEC)
+<a id='L201' name='L201'></a>        <em class='brace'>{</em>
+<a id='L202' name='L202'></a>          <em class='comment'>/* prog is not a native executable.  Try to execute it as a</em>
+<a id='L203' name='L203'></a><em class='comment'>             shell script.  Note that prepare_spawn() has already prepended</em>
+<a id='L204' name='L204'></a><em class='comment'>             a hidden element "sh.exe" to prog_argv.  */</em>
+<a id='L205' name='L205'></a>          --prog_argv;
+<a id='L206' name='L206'></a>          child = _spawnvpe (P_NOWAIT, prog_argv[0], (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> **) prog_argv,
+<a id='L207' name='L207'></a>                             (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> **) <a href='../D/3205.html' title='Multiple defined in 3 places.'>environ</a>);
+<a id='L208' name='L208'></a>        <em class='brace'>}</em>
+<a id='L209' name='L209'></a>    <em class='brace'>}</em>
+<a id='L210' name='L210'></a>  <strong class='reserved'>if</strong> (child == -1)
+<a id='L211' name='L211'></a>    saved_errno = errno;
+<a id='L212' name='L212'></a>  <strong class='reserved'>if</strong> (stdinfd &gt;= 0)
+<a id='L213' name='L213'></a>    <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (stdinfd);
+<a id='L214' name='L214'></a>  <strong class='reserved'>if</strong> (stdoutfd &gt;= 0)
+<a id='L215' name='L215'></a>    <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (stdoutfd);
+<a id='L216' name='L216'></a>  <strong class='reserved'>if</strong> (nulloutfd &gt;= 0)
+<a id='L217' name='L217'></a>    <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (nulloutfd);
+<a id='L218' name='L218'></a>
+<a id='L219' name='L219'></a>  <em class='comment'>/* Restore standard file handles of parent process.  */</em>
+<a id='L220' name='L220'></a>  <strong class='reserved'>if</strong> (null_stderr)
+<a id='L221' name='L221'></a>    <a href='../S/593.html#L85' title='Defined at 85 in lib/w32spawn.h.'>undup_safer_noinherit</a> (orig_stderr, <a href='../S/573.html#L252' title='Defined at 252 in lib/unistd.in.h.'>STDERR_FILENO</a>);
+<a id='L222' name='L222'></a>  <strong class='reserved'>if</strong> (pipe_stdout || prog_stdout != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L223' name='L223'></a>    <a href='../S/593.html#L85' title='Defined at 85 in lib/w32spawn.h.'>undup_safer_noinherit</a> (orig_stdout, <a href='../S/573.html#L249' title='Defined at 249 in lib/unistd.in.h.'>STDOUT_FILENO</a>);
+<a id='L224' name='L224'></a>  <strong class='reserved'>if</strong> (pipe_stdin || prog_stdin != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L225' name='L225'></a>    <a href='../S/593.html#L85' title='Defined at 85 in lib/w32spawn.h.'>undup_safer_noinherit</a> (orig_stdin, <a href='../S/573.html#L246' title='Defined at 246 in lib/unistd.in.h.'>STDIN_FILENO</a>);
+<a id='L226' name='L226'></a>
+<a id='L227' name='L227'></a>  <strong class='reserved'>if</strong> (pipe_stdin)
+<a id='L228' name='L228'></a>    <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (ofd[0]);
+<a id='L229' name='L229'></a>  <strong class='reserved'>if</strong> (pipe_stdout)
+<a id='L230' name='L230'></a>    <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (ifd[1]);
+<a id='L231' name='L231'></a>  <strong class='reserved'>if</strong> (child == -1)
+<a id='L232' name='L232'></a>    <em class='brace'>{</em>
+<a id='L233' name='L233'></a>      <strong class='reserved'>if</strong> (exit_on_error || !null_stderr)
+<a id='L234' name='L234'></a>        <a href='../D/3207.html' title='Multiple defined in 4 places.'>error</a> (exit_on_error ? <a href='../D/349.html' title='Multiple defined in 3 places.'>EXIT_FAILURE</a> : 0, saved_errno,
+<a id='L235' name='L235'></a>               <a href='../D/2087.html' title='Multiple defined in 44 places.'>_</a>("%s subprocess failed"), progname);
+<a id='L236' name='L236'></a>      <strong class='reserved'>if</strong> (pipe_stdout)
+<a id='L237' name='L237'></a>        <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (ifd[0]);
+<a id='L238' name='L238'></a>      <strong class='reserved'>if</strong> (pipe_stdin)
+<a id='L239' name='L239'></a>        <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (ofd[1]);
+<a id='L240' name='L240'></a>      errno = saved_errno;
+<a id='L241' name='L241'></a>      <strong class='reserved'>return</strong> -1;
+<a id='L242' name='L242'></a>    <em class='brace'>}</em>
+<a id='L243' name='L243'></a>
+<a id='L244' name='L244'></a>  <strong class='reserved'>if</strong> (pipe_stdout)
+<a id='L245' name='L245'></a>    fd[0] = ifd[0];
+<a id='L246' name='L246'></a>  <strong class='reserved'>if</strong> (pipe_stdin)
+<a id='L247' name='L247'></a>    fd[1] = ofd[1];
+<a id='L248' name='L248'></a>  <strong class='reserved'>return</strong> child;
+<a id='L249' name='L249'></a>
+<a id='L250' name='L250'></a><em class='sharp'>#else</em>
+<a id='L251' name='L251'></a>
+<a id='L252' name='L252'></a>  <em class='comment'>/* Unix API.  */</em>
+<a id='L253' name='L253'></a>  <strong class='reserved'>int</strong> ifd[2];
+<a id='L254' name='L254'></a>  <strong class='reserved'>int</strong> ofd[2];
+<a id='L255' name='L255'></a>  <a href='../S/501.html#L90' title='Defined at 90 in lib/signal.in.h.'>sigset_t</a> blocked_signals;
+<a id='L256' name='L256'></a>  <a href='../D/4527.html' title='Multiple defined in 2 places.'>posix_spawn_file_actions_t</a> actions;
+<a id='L257' name='L257'></a>  <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> actions_allocated;
+<a id='L258' name='L258'></a>  <a href='../D/4542.html' title='Multiple defined in 2 places.'>posix_spawnattr_t</a> attrs;
+<a id='L259' name='L259'></a>  <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> attrs_allocated;
+<a id='L260' name='L260'></a>  <strong class='reserved'>int</strong> err;
+<a id='L261' name='L261'></a>  <a href='../S/292.html#L2040' title='Defined at 2040 in lib/config.in.h.'>pid_t</a> child;
+<a id='L262' name='L262'></a>
+<a id='L263' name='L263'></a>  <strong class='reserved'>if</strong> (pipe_stdout)
+<a id='L264' name='L264'></a>    <strong class='reserved'>if</strong> (<a href='../S/462.html#L31' title='Defined at 31 in lib/pipe-safer.c.'>pipe_safer</a> (ifd) &lt; 0)
+<a id='L265' name='L265'></a>      <a href='../D/3207.html' title='Multiple defined in 4 places.'>error</a> (<a href='../D/349.html' title='Multiple defined in 3 places.'>EXIT_FAILURE</a>, errno, <a href='../D/2087.html' title='Multiple defined in 44 places.'>_</a>("cannot create pipe"));
+<a id='L266' name='L266'></a>  <strong class='reserved'>if</strong> (pipe_stdin)
+<a id='L267' name='L267'></a>    <strong class='reserved'>if</strong> (<a href='../S/462.html#L31' title='Defined at 31 in lib/pipe-safer.c.'>pipe_safer</a> (ofd) &lt; 0)
+<a id='L268' name='L268'></a>      <a href='../D/3207.html' title='Multiple defined in 4 places.'>error</a> (<a href='../D/349.html' title='Multiple defined in 3 places.'>EXIT_FAILURE</a>, errno, <a href='../D/2087.html' title='Multiple defined in 44 places.'>_</a>("cannot create pipe"));
+<a id='L269' name='L269'></a><em class='comment'>/* Data flow diagram:</em>
+<a id='L270' name='L270'></a><em class='comment'> *</em>
+<a id='L271' name='L271'></a><em class='comment'> *           write        system         read</em>
+<a id='L272' name='L272'></a><em class='comment'> *    parent  -&gt;   ofd[1]   -&gt;   ofd[0]   -&gt;   child       if pipe_stdin</em>
+<a id='L273' name='L273'></a><em class='comment'> *    parent  &lt;-   ifd[0]   &lt;-   ifd[1]   &lt;-   child       if pipe_stdout</em>
+<a id='L274' name='L274'></a><em class='comment'> *           read         system         write</em>
+<a id='L275' name='L275'></a><em class='comment'> *</em>
+<a id='L276' name='L276'></a><em class='comment'> */</em>
+<a id='L277' name='L277'></a>
+<a id='L278' name='L278'></a>  <strong class='reserved'>if</strong> (slave_process)
+<a id='L279' name='L279'></a>    <em class='brace'>{</em>
+<a id='L280' name='L280'></a>      <a href='../D/4923.html' title='Multiple defined in 3 places.'>sigprocmask</a> (<a href='../S/501.html#L303' title='Defined at 303 in lib/signal.in.h.'>SIG_SETMASK</a>, <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>, &amp;blocked_signals);
+<a id='L281' name='L281'></a>      <a href='../S/305.html#L304' title='Defined at 304 in lib/fatal-signal.c.'>block_fatal_signals</a> ();
+<a id='L282' name='L282'></a>    <em class='brace'>}</em>
+<a id='L283' name='L283'></a>  actions_allocated = <a href='../D/3258.html' title='Multiple defined in 6 places.'>false</a>;
+<a id='L284' name='L284'></a>  attrs_allocated = <a href='../D/3258.html' title='Multiple defined in 6 places.'>false</a>;
+<a id='L285' name='L285'></a>  <strong class='reserved'>if</strong> ((err = <a href='../D/4526.html' title='Multiple defined in 3 places.'>posix_spawn_file_actions_init</a> (&amp;actions)) != 0
+<a id='L286' name='L286'></a>      || (actions_allocated = <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>,
+<a id='L287' name='L287'></a>          (pipe_stdin
+<a id='L288' name='L288'></a>           &amp;&amp; (err = <a href='../D/4522.html' title='Multiple defined in 3 places.'>posix_spawn_file_actions_adddup2</a> (&amp;actions,
+<a id='L289' name='L289'></a>                                                       ofd[0], <a href='../S/573.html#L246' title='Defined at 246 in lib/unistd.in.h.'>STDIN_FILENO</a>))
+<a id='L290' name='L290'></a>              != 0)
+<a id='L291' name='L291'></a>          || (pipe_stdout
+<a id='L292' name='L292'></a>              &amp;&amp; (err = <a href='../D/4522.html' title='Multiple defined in 3 places.'>posix_spawn_file_actions_adddup2</a> (&amp;actions,
+<a id='L293' name='L293'></a>                                                          ifd[1], <a href='../S/573.html#L249' title='Defined at 249 in lib/unistd.in.h.'>STDOUT_FILENO</a>))
+<a id='L294' name='L294'></a>                 != 0)
+<a id='L295' name='L295'></a>          || (pipe_stdin
+<a id='L296' name='L296'></a>              &amp;&amp; (err = <a href='../D/4521.html' title='Multiple defined in 3 places.'>posix_spawn_file_actions_addclose</a> (&amp;actions, ofd[0]))
+<a id='L297' name='L297'></a>                 != 0)
+<a id='L298' name='L298'></a>          || (pipe_stdout
+<a id='L299' name='L299'></a>              &amp;&amp; (err = <a href='../D/4521.html' title='Multiple defined in 3 places.'>posix_spawn_file_actions_addclose</a> (&amp;actions, ifd[1]))
+<a id='L300' name='L300'></a>                 != 0)
+<a id='L301' name='L301'></a>          || (pipe_stdin
+<a id='L302' name='L302'></a>              &amp;&amp; (err = <a href='../D/4521.html' title='Multiple defined in 3 places.'>posix_spawn_file_actions_addclose</a> (&amp;actions, ofd[1]))
+<a id='L303' name='L303'></a>                 != 0)
+<a id='L304' name='L304'></a>          || (pipe_stdout
+<a id='L305' name='L305'></a>              &amp;&amp; (err = <a href='../D/4521.html' title='Multiple defined in 3 places.'>posix_spawn_file_actions_addclose</a> (&amp;actions, ifd[0]))
+<a id='L306' name='L306'></a>                 != 0)
+<a id='L307' name='L307'></a>          || (null_stderr
+<a id='L308' name='L308'></a>              &amp;&amp; (err = <a href='../D/4524.html' title='Multiple defined in 3 places.'>posix_spawn_file_actions_addopen</a> (&amp;actions,
+<a id='L309' name='L309'></a>                                                          <a href='../S/573.html#L252' title='Defined at 252 in lib/unistd.in.h.'>STDERR_FILENO</a>,
+<a id='L310' name='L310'></a>                                                          "/dev/null", O_RDWR,
+<a id='L311' name='L311'></a>                                                          0))
+<a id='L312' name='L312'></a>                 != 0)
+<a id='L313' name='L313'></a>          || (!pipe_stdin
+<a id='L314' name='L314'></a>              &amp;&amp; prog_stdin != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>
+<a id='L315' name='L315'></a>              &amp;&amp; (err = <a href='../D/4524.html' title='Multiple defined in 3 places.'>posix_spawn_file_actions_addopen</a> (&amp;actions,
+<a id='L316' name='L316'></a>                                                          <a href='../S/573.html#L246' title='Defined at 246 in lib/unistd.in.h.'>STDIN_FILENO</a>,
+<a id='L317' name='L317'></a>                                                          prog_stdin, O_RDONLY,
+<a id='L318' name='L318'></a>                                                          0))
+<a id='L319' name='L319'></a>                 != 0)
+<a id='L320' name='L320'></a>          || (!pipe_stdout
+<a id='L321' name='L321'></a>              &amp;&amp; prog_stdout != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>
+<a id='L322' name='L322'></a>              &amp;&amp; (err = <a href='../D/4524.html' title='Multiple defined in 3 places.'>posix_spawn_file_actions_addopen</a> (&amp;actions,
+<a id='L323' name='L323'></a>                                                          <a href='../S/573.html#L249' title='Defined at 249 in lib/unistd.in.h.'>STDOUT_FILENO</a>,
+<a id='L324' name='L324'></a>                                                          prog_stdout, O_WRONLY,
+<a id='L325' name='L325'></a>                                                          0))
+<a id='L326' name='L326'></a>                 != 0)
+<a id='L327' name='L327'></a>          || (slave_process
+<a id='L328' name='L328'></a>              &amp;&amp; ((err = <a href='../D/4535.html' title='Multiple defined in 3 places.'>posix_spawnattr_init</a> (&amp;attrs)) != 0
+<a id='L329' name='L329'></a>                  || (attrs_allocated = <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>,
+<a id='L330' name='L330'></a>                      (err = <a href='../D/4541.html' title='Multiple defined in 3 places.'>posix_spawnattr_setsigmask</a> (&amp;attrs,
+<a id='L331' name='L331'></a>                                                         &amp;blocked_signals))
+<a id='L332' name='L332'></a>                      != 0
+<a id='L333' name='L333'></a>                      || (err = <a href='../D/4536.html' title='Multiple defined in 3 places.'>posix_spawnattr_setflags</a> (&amp;attrs,
+<a id='L334' name='L334'></a>                                                        <a href='../S/510.html#L146' title='Defined at 146 in lib/spawn.in.h.'>POSIX_SPAWN_SETSIGMASK</a>))
+<a id='L335' name='L335'></a>                         != 0)))
+<a id='L336' name='L336'></a>          || (err = <a href='../D/4543.html' title='Multiple defined in 3 places.'>posix_spawnp</a> (&amp;child, prog_path, &amp;actions,
+<a id='L337' name='L337'></a>                                  attrs_allocated ? &amp;attrs : <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>, prog_argv,
+<a id='L338' name='L338'></a>                                  <a href='../D/3205.html' title='Multiple defined in 3 places.'>environ</a>))
+<a id='L339' name='L339'></a>             != 0))
+<a id='L340' name='L340'></a>    <em class='brace'>{</em>
+<a id='L341' name='L341'></a>      <strong class='reserved'>if</strong> (actions_allocated)
+<a id='L342' name='L342'></a>        <a href='../D/4525.html' title='Multiple defined in 3 places.'>posix_spawn_file_actions_destroy</a> (&amp;actions);
+<a id='L343' name='L343'></a>      <strong class='reserved'>if</strong> (attrs_allocated)
+<a id='L344' name='L344'></a>        <a href='../D/4528.html' title='Multiple defined in 3 places.'>posix_spawnattr_destroy</a> (&amp;attrs);
+<a id='L345' name='L345'></a>      <strong class='reserved'>if</strong> (slave_process)
+<a id='L346' name='L346'></a>        <a href='../S/305.html#L321' title='Defined at 321 in lib/fatal-signal.c.'>unblock_fatal_signals</a> ();
+<a id='L347' name='L347'></a>      <strong class='reserved'>if</strong> (exit_on_error || !null_stderr)
+<a id='L348' name='L348'></a>        <a href='../D/3207.html' title='Multiple defined in 4 places.'>error</a> (exit_on_error ? <a href='../D/349.html' title='Multiple defined in 3 places.'>EXIT_FAILURE</a> : 0, err,
+<a id='L349' name='L349'></a>               <a href='../D/2087.html' title='Multiple defined in 44 places.'>_</a>("%s subprocess failed"), progname);
+<a id='L350' name='L350'></a>      <strong class='reserved'>if</strong> (pipe_stdout)
+<a id='L351' name='L351'></a>        <em class='brace'>{</em>
+<a id='L352' name='L352'></a>          <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (ifd[0]);
+<a id='L353' name='L353'></a>          <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (ifd[1]);
+<a id='L354' name='L354'></a>        <em class='brace'>}</em>
+<a id='L355' name='L355'></a>      <strong class='reserved'>if</strong> (pipe_stdin)
+<a id='L356' name='L356'></a>        <em class='brace'>{</em>
+<a id='L357' name='L357'></a>          <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (ofd[0]);
+<a id='L358' name='L358'></a>          <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (ofd[1]);
+<a id='L359' name='L359'></a>        <em class='brace'>}</em>
+<a id='L360' name='L360'></a>      errno = err;
+<a id='L361' name='L361'></a>      <strong class='reserved'>return</strong> -1;
+<a id='L362' name='L362'></a>    <em class='brace'>}</em>
+<a id='L363' name='L363'></a>  <a href='../D/4525.html' title='Multiple defined in 3 places.'>posix_spawn_file_actions_destroy</a> (&amp;actions);
+<a id='L364' name='L364'></a>  <strong class='reserved'>if</strong> (attrs_allocated)
+<a id='L365' name='L365'></a>    <a href='../D/4528.html' title='Multiple defined in 3 places.'>posix_spawnattr_destroy</a> (&amp;attrs);
+<a id='L366' name='L366'></a>  <strong class='reserved'>if</strong> (slave_process)
+<a id='L367' name='L367'></a>    <em class='brace'>{</em>
+<a id='L368' name='L368'></a>      <a href='../S/594.html#L118' title='Defined at 118 in lib/wait-process.c.'>register_slave_subprocess</a> (child);
+<a id='L369' name='L369'></a>      <a href='../S/305.html#L321' title='Defined at 321 in lib/fatal-signal.c.'>unblock_fatal_signals</a> ();
+<a id='L370' name='L370'></a>    <em class='brace'>}</em>
+<a id='L371' name='L371'></a>  <strong class='reserved'>if</strong> (pipe_stdin)
+<a id='L372' name='L372'></a>    <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (ofd[0]);
+<a id='L373' name='L373'></a>  <strong class='reserved'>if</strong> (pipe_stdout)
+<a id='L374' name='L374'></a>    <a href='../D/2946.html' title='Multiple defined in 14 places.'>close</a> (ifd[1]);
+<a id='L375' name='L375'></a>
+<a id='L376' name='L376'></a>  <strong class='reserved'>if</strong> (pipe_stdout)
+<a id='L377' name='L377'></a>    fd[0] = ifd[0];
+<a id='L378' name='L378'></a>  <strong class='reserved'>if</strong> (pipe_stdin)
+<a id='L379' name='L379'></a>    fd[1] = ofd[1];
+<a id='L380' name='L380'></a>  <strong class='reserved'>return</strong> child;
+<a id='L381' name='L381'></a>
+<a id='L382' name='L382'></a><em class='sharp'>#endif</em>
+<a id='L383' name='L383'></a><em class='brace'>}</em>
+<a id='L384' name='L384'></a>
+<a id='L385' name='L385'></a><em class='comment'>/* Open a bidirectional pipe.</em>
+<a id='L386' name='L386'></a><em class='comment'> *</em>
+<a id='L387' name='L387'></a><em class='comment'> *           write       system                read</em>
+<a id='L388' name='L388'></a><em class='comment'> *    parent  -&gt;   fd[1]   -&gt;   STDIN_FILENO    -&gt;   child</em>
+<a id='L389' name='L389'></a><em class='comment'> *    parent  &lt;-   fd[0]   &lt;-   STDOUT_FILENO   &lt;-   child</em>
+<a id='L390' name='L390'></a><em class='comment'> *           read        system                write</em>
+<a id='L391' name='L391'></a><em class='comment'> *</em>
+<a id='L392' name='L392'></a><em class='comment'> */</em>
+<a id='L393' name='L393'></a><a href='../S/292.html#L2040' title='Defined at 2040 in lib/config.in.h.'>pid_t</a>
+<a id='L394' name='L394'></a><a href='../R/2544.html' title='Multiple referred from 2 places.'>create_pipe_bidi</a> (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *progname,
+<a id='L395' name='L395'></a>                  <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *prog_path, <strong class='reserved'>char</strong> **prog_argv,
+<a id='L396' name='L396'></a>                  <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> null_stderr,
+<a id='L397' name='L397'></a>                  <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> slave_process, <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> exit_on_error,
+<a id='L398' name='L398'></a>                  <strong class='reserved'>int</strong> fd[2])
+<a id='L399' name='L399'></a><em class='brace'>{</em>
+<a id='L400' name='L400'></a>  <a href='../S/292.html#L2040' title='Defined at 2040 in lib/config.in.h.'>pid_t</a> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> = <a href='../S/508.html#L110' title='Defined at 110 in lib/spawn-pipe.c.'>create_pipe</a> (progname, prog_path, prog_argv,
+<a id='L401' name='L401'></a>                              <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>, <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>, <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>, <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>,
+<a id='L402' name='L402'></a>                              null_stderr, slave_process, exit_on_error,
+<a id='L403' name='L403'></a>                              fd);
+<a id='L404' name='L404'></a>  <strong class='reserved'>return</strong> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>;
+<a id='L405' name='L405'></a><em class='brace'>}</em>
+<a id='L406' name='L406'></a>
+<a id='L407' name='L407'></a><em class='comment'>/* Open a pipe for input from a child process.</em>
+<a id='L408' name='L408'></a><em class='comment'> * The child's stdin comes from a file.</em>
+<a id='L409' name='L409'></a><em class='comment'> *</em>
+<a id='L410' name='L410'></a><em class='comment'> *           read        system                write</em>
+<a id='L411' name='L411'></a><em class='comment'> *    parent  &lt;-   fd[0]   &lt;-   STDOUT_FILENO   &lt;-   child</em>
+<a id='L412' name='L412'></a><em class='comment'> *</em>
+<a id='L413' name='L413'></a><em class='comment'> */</em>
+<a id='L414' name='L414'></a><a href='../S/292.html#L2040' title='Defined at 2040 in lib/config.in.h.'>pid_t</a>
+<a id='L415' name='L415'></a><a href='../S/509.html#L98' title='Referred from 98 in lib/spawn-pipe.h.'>create_pipe_in</a> (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *progname,
+<a id='L416' name='L416'></a>                <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *prog_path, <strong class='reserved'>char</strong> **prog_argv,
+<a id='L417' name='L417'></a>                <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *prog_stdin, <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> null_stderr,
+<a id='L418' name='L418'></a>                <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> slave_process, <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> exit_on_error,
+<a id='L419' name='L419'></a>                <strong class='reserved'>int</strong> fd[1])
+<a id='L420' name='L420'></a><em class='brace'>{</em>
+<a id='L421' name='L421'></a>  <strong class='reserved'>int</strong> iofd[2];
+<a id='L422' name='L422'></a>  <a href='../S/292.html#L2040' title='Defined at 2040 in lib/config.in.h.'>pid_t</a> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> = <a href='../S/508.html#L110' title='Defined at 110 in lib/spawn-pipe.c.'>create_pipe</a> (progname, prog_path, prog_argv,
+<a id='L423' name='L423'></a>                              <a href='../D/3258.html' title='Multiple defined in 6 places.'>false</a>, <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>, prog_stdin, <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>,
+<a id='L424' name='L424'></a>                              null_stderr, slave_process, exit_on_error,
+<a id='L425' name='L425'></a>                              iofd);
+<a id='L426' name='L426'></a>  <strong class='reserved'>if</strong> (<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> != -1)
+<a id='L427' name='L427'></a>    fd[0] = iofd[0];
+<a id='L428' name='L428'></a>  <strong class='reserved'>return</strong> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>;
+<a id='L429' name='L429'></a><em class='brace'>}</em>
+<a id='L430' name='L430'></a>
+<a id='L431' name='L431'></a><em class='comment'>/* Open a pipe for output to a child process.</em>
+<a id='L432' name='L432'></a><em class='comment'> * The child's stdout goes to a file.</em>
+<a id='L433' name='L433'></a><em class='comment'> *</em>
+<a id='L434' name='L434'></a><em class='comment'> *           write       system                read</em>
+<a id='L435' name='L435'></a><em class='comment'> *    parent  -&gt;   fd[0]   -&gt;   STDIN_FILENO    -&gt;   child</em>
+<a id='L436' name='L436'></a><em class='comment'> *</em>
+<a id='L437' name='L437'></a><em class='comment'> */</em>
+<a id='L438' name='L438'></a><a href='../S/292.html#L2040' title='Defined at 2040 in lib/config.in.h.'>pid_t</a>
+<a id='L439' name='L439'></a><a href='../S/509.html#L85' title='Referred from 85 in lib/spawn-pipe.h.'>create_pipe_out</a> (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *progname,
+<a id='L440' name='L440'></a>                 <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *prog_path, <strong class='reserved'>char</strong> **prog_argv,
+<a id='L441' name='L441'></a>                 <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *prog_stdout, <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> null_stderr,
+<a id='L442' name='L442'></a>                 <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> slave_process, <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> exit_on_error,
+<a id='L443' name='L443'></a>                 <strong class='reserved'>int</strong> fd[1])
+<a id='L444' name='L444'></a><em class='brace'>{</em>
+<a id='L445' name='L445'></a>  <strong class='reserved'>int</strong> iofd[2];
+<a id='L446' name='L446'></a>  <a href='../S/292.html#L2040' title='Defined at 2040 in lib/config.in.h.'>pid_t</a> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> = <a href='../S/508.html#L110' title='Defined at 110 in lib/spawn-pipe.c.'>create_pipe</a> (progname, prog_path, prog_argv,
+<a id='L447' name='L447'></a>                              <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>, <a href='../D/3258.html' title='Multiple defined in 6 places.'>false</a>, <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>, prog_stdout,
+<a id='L448' name='L448'></a>                              null_stderr, slave_process, exit_on_error,
+<a id='L449' name='L449'></a>                              iofd);
+<a id='L450' name='L450'></a>  <strong class='reserved'>if</strong> (<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> != -1)
+<a id='L451' name='L451'></a>    fd[0] = iofd[1];
+<a id='L452' name='L452'></a>  <strong class='reserved'>return</strong> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>;
+<a id='L453' name='L453'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L64'>[^]</a><a href='#L439'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

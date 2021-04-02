@@ -1,0 +1,174 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/getdelim.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.5' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1107.html'>lib</a>/getdelim.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L51'>[^]</a><a href='#L67'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L51' title='Defined at 51.'>alloc_failed</a></li>
+<li><a href='#L67' title='Defined at 67.'>getdelim</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* getdelim.c --- Implementation of replacement getdelim function.</em>
+<a id='L2' name='L2'></a><em class='comment'>   Copyright (C) 1994, 1996-1998, 2001, 2003, 2005-2020 Free Software</em>
+<a id='L3' name='L3'></a><em class='comment'>   Foundation, Inc.</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   This program is free software; you can redistribute it and/or</em>
+<a id='L6' name='L6'></a><em class='comment'>   modify it under the terms of the GNU General Public License as</em>
+<a id='L7' name='L7'></a><em class='comment'>   published by the Free Software Foundation; either version 3, or (at</em>
+<a id='L8' name='L8'></a><em class='comment'>   your option) any later version.</em>
+<a id='L9' name='L9'></a><em class='comment'></em>
+<a id='L10' name='L10'></a><em class='comment'>   This program is distributed in the hope that it will be useful, but</em>
+<a id='L11' name='L11'></a><em class='comment'>   WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L12' name='L12'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L13' name='L13'></a><em class='comment'>   General Public License for more details.</em>
+<a id='L14' name='L14'></a><em class='comment'></em>
+<a id='L15' name='L15'></a><em class='comment'>   You should have received a copy of the GNU General Public License</em>
+<a id='L16' name='L16'></a><em class='comment'>   along with this program; if not, see &lt;https://www.gnu.org/licenses/&gt;.  */</em>
+<a id='L17' name='L17'></a>
+<a id='L18' name='L18'></a><em class='comment'>/* Ported from glibc by Simon Josefsson. */</em>
+<a id='L19' name='L19'></a>
+<a id='L20' name='L20'></a><em class='comment'>/* Don't use __attribute__ __nonnull__ in this compilation unit.  Otherwise gcc</em>
+<a id='L21' name='L21'></a><em class='comment'>   optimizes away the lineptr == NULL || n == NULL || fp == NULL tests below.  */</em>
+<a id='L22' name='L22'></a><em class='sharp'>#define</em> <a href='../R/1752.html' title='Multiple referred from 332 places.'>_GL_ARG_NONNULL</a>(params)
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L25' name='L25'></a>
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L27' name='L27'></a>
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> &lt;limits.h&gt;
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;stdint.h&gt;
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L32' name='L32'></a>
+<a id='L33' name='L33'></a><em class='sharp'>#ifndef</em> <a href='../D/1538.html' title='Multiple defined in 2 places.'>SSIZE_MAX</a>
+<a id='L34' name='L34'></a><em class='sharp'># define</em> <a href='../R/1280.html' title='Multiple referred from 4 places.'>SSIZE_MAX</a> ((<a href='../S/292.html#L2069' title='Defined at 2069 in lib/config.in.h.'>ssize_t</a>) (<a href='../D/1528.html' title='Multiple defined in 13 places.'>SIZE_MAX</a> / 2))
+<a id='L35' name='L35'></a><em class='sharp'>#endif</em>
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a><em class='sharp'>#if</em> <a href='../D/1766.html' title='Multiple defined in 2 places.'>USE_UNLOCKED_IO</a>
+<a id='L38' name='L38'></a><em class='sharp'># include</em> "<a href='583.html'>unlocked-io.h</a>"
+<a id='L39' name='L39'></a><em class='sharp'># define</em> <a href='../S/333.html#L98' title='Referred from 98 in lib/getdelim.c.'>getc_maybe_unlocked</a>(fp)        <a href='../D/3424.html' title='Multiple defined in 4 places.'>getc</a>(fp)
+<a id='L40' name='L40'></a><em class='sharp'>#elif</em> !<a href='../S/292.html#L647' title='Defined at 647 in lib/config.in.h.'>HAVE_FLOCKFILE</a> || !<a href='../S/292.html#L659' title='Defined at 659 in lib/config.in.h.'>HAVE_FUNLOCKFILE</a> || !<a href='../S/292.html#L527' title='Defined at 527 in lib/config.in.h.'>HAVE_DECL_GETC_UNLOCKED</a>
+<a id='L41' name='L41'></a><em class='sharp'># undef</em> <a href='../R/2749.html' title='Multiple referred from 2 places.'>flockfile</a>
+<a id='L42' name='L42'></a><em class='sharp'># undef</em> <a href='../R/2807.html' title='Multiple referred from 2 places.'>funlockfile</a>
+<a id='L43' name='L43'></a><em class='sharp'># define</em> <a href='../R/2749.html' title='Multiple referred from 2 places.'>flockfile</a>(x) ((<strong class='reserved'>void</strong>) 0)
+<a id='L44' name='L44'></a><em class='sharp'># define</em> <a href='../R/2807.html' title='Multiple referred from 2 places.'>funlockfile</a>(x) ((<strong class='reserved'>void</strong>) 0)
+<a id='L45' name='L45'></a><em class='sharp'># define</em> <a href='../S/333.html#L98' title='Referred from 98 in lib/getdelim.c.'>getc_maybe_unlocked</a>(fp)        <a href='../D/3424.html' title='Multiple defined in 4 places.'>getc</a>(fp)
+<a id='L46' name='L46'></a><em class='sharp'>#else</em>
+<a id='L47' name='L47'></a><em class='sharp'># define</em> <a href='../S/333.html#L98' title='Referred from 98 in lib/getdelim.c.'>getc_maybe_unlocked</a>(fp)        <a href='../S/583.html#L103' title='Defined at 103 in lib/unlocked-io.h.'>getc_unlocked</a>(fp)
+<a id='L48' name='L48'></a><em class='sharp'>#endif</em>
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L51' name='L51'></a><a href='../R/2170.html' title='Multiple referred from 6 places.'>alloc_failed</a> (<strong class='reserved'>void</strong>)
+<a id='L52' name='L52'></a><em class='brace'>{</em>
+<a id='L53' name='L53'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong> _WIN32 &amp;&amp; ! <strong class='reserved'>defined</strong> __CYGWIN__
+<a id='L54' name='L54'></a>  <em class='comment'>/* Avoid errno problem without using the realloc module; see:</em>
+<a id='L55' name='L55'></a><em class='comment'>     https://lists.gnu.org/r/bug-gnulib/2016-08/msg00025.html  */</em>
+<a id='L56' name='L56'></a>  errno = ENOMEM;
+<a id='L57' name='L57'></a><em class='sharp'>#endif</em>
+<a id='L58' name='L58'></a><em class='brace'>}</em>
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a><em class='comment'>/* Read up to (and including) a DELIMITER from FP into *LINEPTR (and</em>
+<a id='L61' name='L61'></a><em class='comment'>   NUL-terminate it).  *LINEPTR is a pointer returned from malloc (or</em>
+<a id='L62' name='L62'></a><em class='comment'>   NULL), pointing to *N characters of space.  It is realloc'ed as</em>
+<a id='L63' name='L63'></a><em class='comment'>   necessary.  Returns the number of characters read (not including</em>
+<a id='L64' name='L64'></a><em class='comment'>   the null terminator), or -1 on error or EOF.  */</em>
+<a id='L65' name='L65'></a>
+<a id='L66' name='L66'></a><a href='../S/292.html#L2069' title='Defined at 2069 in lib/config.in.h.'>ssize_t</a>
+<a id='L67' name='L67'></a><a href='../R/2844.html' title='Multiple referred from 7 places.'>getdelim</a> (<strong class='reserved'>char</strong> **lineptr, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> *n, <strong class='reserved'>int</strong> delimiter, FILE *fp)
+<a id='L68' name='L68'></a><em class='brace'>{</em>
+<a id='L69' name='L69'></a>  <a href='../S/292.html#L2069' title='Defined at 2069 in lib/config.in.h.'>ssize_t</a> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>;
+<a id='L70' name='L70'></a>  <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> cur_len = 0;
+<a id='L71' name='L71'></a>
+<a id='L72' name='L72'></a>  <strong class='reserved'>if</strong> (lineptr == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a> || n == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a> || fp == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L73' name='L73'></a>    <em class='brace'>{</em>
+<a id='L74' name='L74'></a>      errno = EINVAL;
+<a id='L75' name='L75'></a>      <strong class='reserved'>return</strong> -1;
+<a id='L76' name='L76'></a>    <em class='brace'>}</em>
+<a id='L77' name='L77'></a>
+<a id='L78' name='L78'></a>  <a href='../D/3328.html' title='Multiple defined in 6 places.'>flockfile</a> (fp);
+<a id='L79' name='L79'></a>
+<a id='L80' name='L80'></a>  <strong class='reserved'>if</strong> (*lineptr == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a> || *n == 0)
+<a id='L81' name='L81'></a>    <em class='brace'>{</em>
+<a id='L82' name='L82'></a>      <strong class='reserved'>char</strong> *new_lineptr;
+<a id='L83' name='L83'></a>      *n = 120;
+<a id='L84' name='L84'></a>      new_lineptr = (<strong class='reserved'>char</strong> *) <a href='../D/4661.html' title='Multiple defined in 3 places.'>realloc</a> (*lineptr, *n);
+<a id='L85' name='L85'></a>      <strong class='reserved'>if</strong> (new_lineptr == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L86' name='L86'></a>        <em class='brace'>{</em>
+<a id='L87' name='L87'></a>          <a href='../D/2655.html' title='Multiple defined in 2 places.'>alloc_failed</a> ();
+<a id='L88' name='L88'></a>          <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> = -1;
+<a id='L89' name='L89'></a>          <strong class='reserved'>goto</strong> unlock_return;
+<a id='L90' name='L90'></a>        <em class='brace'>}</em>
+<a id='L91' name='L91'></a>      *lineptr = new_lineptr;
+<a id='L92' name='L92'></a>    <em class='brace'>}</em>
+<a id='L93' name='L93'></a>
+<a id='L94' name='L94'></a>  <strong class='reserved'>for</strong> (;;)
+<a id='L95' name='L95'></a>    <em class='brace'>{</em>
+<a id='L96' name='L96'></a>      <strong class='reserved'>int</strong> i;
+<a id='L97' name='L97'></a>
+<a id='L98' name='L98'></a>      i = <a href='../D/3425.html' title='Multiple defined in 3 places.'>getc_maybe_unlocked</a> (fp);
+<a id='L99' name='L99'></a>      <strong class='reserved'>if</strong> (i == EOF)
+<a id='L100' name='L100'></a>        <em class='brace'>{</em>
+<a id='L101' name='L101'></a>          <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> = -1;
+<a id='L102' name='L102'></a>          <strong class='reserved'>break</strong>;
+<a id='L103' name='L103'></a>        <em class='brace'>}</em>
+<a id='L104' name='L104'></a>
+<a id='L105' name='L105'></a>      <em class='comment'>/* Make enough space for len+1 (for final NUL) bytes.  */</em>
+<a id='L106' name='L106'></a>      <strong class='reserved'>if</strong> (cur_len + 1 &gt;= *n)
+<a id='L107' name='L107'></a>        <em class='brace'>{</em>
+<a id='L108' name='L108'></a>          <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> needed_max =
+<a id='L109' name='L109'></a>            <a href='../D/1538.html' title='Multiple defined in 2 places.'>SSIZE_MAX</a> &lt; <a href='../D/1528.html' title='Multiple defined in 13 places.'>SIZE_MAX</a> ? (<a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a>) <a href='../D/1538.html' title='Multiple defined in 2 places.'>SSIZE_MAX</a> + 1 : <a href='../D/1528.html' title='Multiple defined in 13 places.'>SIZE_MAX</a>;
+<a id='L110' name='L110'></a>          <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> <a href='../S/1046.html#L78' title='Defined at 78 in src/symtab.h.'>needed</a> = 2 * *n + 1;   <em class='comment'>/* Be generous. */</em>
+<a id='L111' name='L111'></a>          <strong class='reserved'>char</strong> *new_lineptr;
+<a id='L112' name='L112'></a>
+<a id='L113' name='L113'></a>          <strong class='reserved'>if</strong> (needed_max &lt; <a href='../S/1046.html#L78' title='Defined at 78 in src/symtab.h.'>needed</a>)
+<a id='L114' name='L114'></a>            <a href='../S/1046.html#L78' title='Defined at 78 in src/symtab.h.'>needed</a> = needed_max;
+<a id='L115' name='L115'></a>          <strong class='reserved'>if</strong> (cur_len + 1 &gt;= <a href='../S/1046.html#L78' title='Defined at 78 in src/symtab.h.'>needed</a>)
+<a id='L116' name='L116'></a>            <em class='brace'>{</em>
+<a id='L117' name='L117'></a>              <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> = -1;
+<a id='L118' name='L118'></a>              errno = <a href='../D/329.html' title='Multiple defined in 3 places.'>EOVERFLOW</a>;
+<a id='L119' name='L119'></a>              <strong class='reserved'>goto</strong> unlock_return;
+<a id='L120' name='L120'></a>            <em class='brace'>}</em>
+<a id='L121' name='L121'></a>
+<a id='L122' name='L122'></a>          new_lineptr = (<strong class='reserved'>char</strong> *) <a href='../D/4661.html' title='Multiple defined in 3 places.'>realloc</a> (*lineptr, <a href='../S/1046.html#L78' title='Defined at 78 in src/symtab.h.'>needed</a>);
+<a id='L123' name='L123'></a>          <strong class='reserved'>if</strong> (new_lineptr == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L124' name='L124'></a>            <em class='brace'>{</em>
+<a id='L125' name='L125'></a>              <a href='../D/2655.html' title='Multiple defined in 2 places.'>alloc_failed</a> ();
+<a id='L126' name='L126'></a>              <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> = -1;
+<a id='L127' name='L127'></a>              <strong class='reserved'>goto</strong> unlock_return;
+<a id='L128' name='L128'></a>            <em class='brace'>}</em>
+<a id='L129' name='L129'></a>
+<a id='L130' name='L130'></a>          *lineptr = new_lineptr;
+<a id='L131' name='L131'></a>          *n = <a href='../S/1046.html#L78' title='Defined at 78 in src/symtab.h.'>needed</a>;
+<a id='L132' name='L132'></a>        <em class='brace'>}</em>
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a>      (*lineptr)[cur_len] = i;
+<a id='L135' name='L135'></a>      cur_len++;
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a>      <strong class='reserved'>if</strong> (i == delimiter)
+<a id='L138' name='L138'></a>        <strong class='reserved'>break</strong>;
+<a id='L139' name='L139'></a>    <em class='brace'>}</em>
+<a id='L140' name='L140'></a>  (*lineptr)[cur_len] = '\0';
+<a id='L141' name='L141'></a>  <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> = cur_len ? cur_len : <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>;
+<a id='L142' name='L142'></a>
+<a id='L143' name='L143'></a> unlock_return:
+<a id='L144' name='L144'></a>  <a href='../D/3387.html' title='Multiple defined in 6 places.'>funlockfile</a> (fp); <em class='comment'>/* doesn't set errno */</em>
+<a id='L145' name='L145'></a>
+<a id='L146' name='L146'></a>  <strong class='reserved'>return</strong> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>;
+<a id='L147' name='L147'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L51'>[^]</a><a href='#L67'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

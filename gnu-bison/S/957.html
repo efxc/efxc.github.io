@@ -1,0 +1,268 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src/closure.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.5' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1112.html'>src</a>/closure.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L57'>[^]</a><a href='#L230'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L57' title='Defined at 57.'>closure_print</a></li>
+<li><a href='#L73' title='Defined at 73.'>print_firsts</a></li>
+<li><a href='#L89' title='Defined at 89.'>print_fderives</a></li>
+<li><a href='#L119' title='Defined at 119.'>set_firsts</a></li>
+<li><a href='#L152' title='Defined at 152.'>set_fderives</a></li>
+<li><a href='#L173' title='Defined at 173.'>closure_new</a></li>
+<li><a href='#L185' title='Defined at 185.'>closure</a></li>
+<li><a href='#L230' title='Defined at 230.'>closure_free</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* Closures for Bison</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Copyright (C) 1984, 1989, 2000-2002, 2004-2005, 2007, 2009-2015,</em>
+<a id='L4' name='L4'></a><em class='comment'>   2018-2021 Free Software Foundation, Inc.</em>
+<a id='L5' name='L5'></a><em class='comment'></em>
+<a id='L6' name='L6'></a><em class='comment'>   This file is part of Bison, the GNU Compiler Compiler.</em>
+<a id='L7' name='L7'></a><em class='comment'></em>
+<a id='L8' name='L8'></a><em class='comment'>   This program is free software: you can redistribute it and/or modify</em>
+<a id='L9' name='L9'></a><em class='comment'>   it under the terms of the GNU General Public License as published by</em>
+<a id='L10' name='L10'></a><em class='comment'>   the Free Software Foundation, either version 3 of the License, or</em>
+<a id='L11' name='L11'></a><em class='comment'>   (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'></em>
+<a id='L13' name='L13'></a><em class='comment'>   This program is distributed in the hope that it will be useful,</em>
+<a id='L14' name='L14'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</em>
+<a id='L16' name='L16'></a><em class='comment'>   GNU General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'></em>
+<a id='L18' name='L18'></a><em class='comment'>   You should have received a copy of the GNU General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'>   along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;.  */</em>
+<a id='L20' name='L20'></a>
+<a id='L21' name='L21'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L22' name='L22'></a><em class='sharp'>#include</em> "<a href='1047.html'>system.h</a>"
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> &lt;<a href='268.html'>bitset.h</a>&gt;
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> &lt;<a href='270.html'>bitsetv.h</a>&gt;
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> "<a href='958.html'>closure.h</a>"
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> "<a href='968.html'>derives.h</a>"
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> "<a href='975.html'>getargs.h</a>"
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> "<a href='979.html'>gram.h</a>"
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> "<a href='1018.html'>reader.h</a>"
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> "<a href='1046.html'>symtab.h</a>"
+<a id='L33' name='L33'></a>
+<a id='L34' name='L34'></a><em class='comment'>/* NITEMSET is the size of the array ITEMSET.  */</em>
+<a id='L35' name='L35'></a><a href='../S/979.html#L123' title='Defined at 123 in src/gram.h.'>item_index</a> *itemset;
+<a id='L36' name='L36'></a><a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> nitemset;
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a><em class='comment'>/* RULESET contains a bit for each rule.  CLOSURE sets the bits for</em>
+<a id='L39' name='L39'></a><em class='comment'>   all rules which could potentially describe the next input to be</em>
+<a id='L40' name='L40'></a><em class='comment'>   read.  */</em>
+<a id='L41' name='L41'></a><strong class='reserved'>static</strong> <a href='../S/258.html#L101' title='Defined at 101 in lib/bitset/base.h.'>bitset</a> ruleset;
+<a id='L42' name='L42'></a>
+<a id='L43' name='L43'></a><em class='comment'>/* internal data.  See comments before set_fderives and set_firsts.  */</em>
+<a id='L44' name='L44'></a><strong class='reserved'>static</strong> <a href='../S/270.html#L26' title='Defined at 26 in lib/bitsetv.h.'>bitsetv</a> fderives = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L45' name='L45'></a><strong class='reserved'>static</strong> <a href='../S/270.html#L26' title='Defined at 26 in lib/bitsetv.h.'>bitsetv</a> firsts = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L46' name='L46'></a>
+<a id='L47' name='L47'></a><em class='comment'>/* Retrieve the FDERIVES/FIRSTS sets of the nonterminals numbered Var.  */</em>
+<a id='L48' name='L48'></a><em class='sharp'>#define</em> <a href='../R/319.html' title='Multiple referred from 3 places.'>FDERIVES</a>(Var)   fderives[(Var) - ntokens]
+<a id='L49' name='L49'></a><em class='sharp'>#define</em> <a href='../R/325.html' title='Multiple referred from 15 places.'>FIRSTS</a>(Var)   firsts[(Var) - ntokens]
+<a id='L50' name='L50'></a>
+<a id='L51' name='L51'></a>
+<a id='L52' name='L52'></a><em class='comment'>/*-----------------.</em>
+<a id='L53' name='L53'></a><em class='comment'>| Debugging code.  |</em>
+<a id='L54' name='L54'></a><em class='comment'>`-----------------*/</em>
+<a id='L55' name='L55'></a>
+<a id='L56' name='L56'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L57' name='L57'></a><a href='../R/2444.html' title='Multiple referred from 2 places.'>closure_print</a> (<strong class='reserved'>char</strong> <strong class='reserved'>const</strong> *title, <a href='../S/979.html#L123' title='Defined at 123 in src/gram.h.'>item_index</a> <strong class='reserved'>const</strong> *array, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> <a href='../D/4934.html' title='Multiple defined in 2 places.'>size</a>)
+<a id='L58' name='L58'></a><em class='brace'>{</em>
+<a id='L59' name='L59'></a>  <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, "Closure: %s\n", title);
+<a id='L60' name='L60'></a>  <strong class='reserved'>for</strong> (<a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> i = 0; i &lt; <a href='../D/4934.html' title='Multiple defined in 2 places.'>size</a>; ++i)
+<a id='L61' name='L61'></a>    <em class='brace'>{</em>
+<a id='L62' name='L62'></a>      <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, "  %2d: .", array[i]);
+<a id='L63' name='L63'></a>      <a href='../S/979.html#L117' title='Defined at 117 in src/gram.h.'>item_number</a> *rp;
+<a id='L64' name='L64'></a>      <strong class='reserved'>for</strong> (rp = &amp;ritem[array[i]]; 0 &lt;= *rp; ++rp)
+<a id='L65' name='L65'></a>        <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, " %s", symbols[*rp]-&gt;tag);
+<a id='L66' name='L66'></a>      <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, "  (rule %d)\n", <a href='../S/979.html#L162' title='Defined at 162 in src/gram.h.'>item_number_as_rule_number</a> (*rp));
+<a id='L67' name='L67'></a>    <em class='brace'>}</em>
+<a id='L68' name='L68'></a>  <a href='../D/3355.html' title='Multiple defined in 4 places.'>fputs</a> ("\n\n", stderr);
+<a id='L69' name='L69'></a><em class='brace'>}</em>
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a>
+<a id='L72' name='L72'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L73' name='L73'></a><a href='../S/957.html#L138' title='Referred from 138 in src/closure.c.'>print_firsts</a> (<strong class='reserved'>void</strong>)
+<a id='L74' name='L74'></a><em class='brace'>{</em>
+<a id='L75' name='L75'></a>  <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, "FIRSTS\n");
+<a id='L76' name='L76'></a>  <strong class='reserved'>for</strong> (<a href='../S/1046.html#L54' title='Defined at 54 in src/symtab.h.'>symbol_number</a> i = ntokens; i &lt; nsyms; ++i)
+<a id='L77' name='L77'></a>    <em class='brace'>{</em>
+<a id='L78' name='L78'></a>      <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, "  %s firsts\n", symbols[i]-&gt;tag);
+<a id='L79' name='L79'></a>      <a href='../S/268.html#L96' title='Defined at 96 in lib/bitset.h.'>bitset_iterator</a> iter;
+<a id='L80' name='L80'></a>      <a href='../S/1046.html#L54' title='Defined at 54 in src/symtab.h.'>symbol_number</a> j;
+<a id='L81' name='L81'></a>      <a href='../S/268.html#L313' title='Defined at 313 in lib/bitset.h.'>BITSET_FOR_EACH</a> (iter, <a href='../D/368.html' title='Multiple defined in 2 places.'>FIRSTS</a> (i), j, 0)
+<a id='L82' name='L82'></a>        <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, "    %s\n", symbols[j + ntokens]-&gt;tag);
+<a id='L83' name='L83'></a>    <em class='brace'>}</em>
+<a id='L84' name='L84'></a>  <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, "\n\n");
+<a id='L85' name='L85'></a><em class='brace'>}</em>
+<a id='L86' name='L86'></a>
+<a id='L87' name='L87'></a>
+<a id='L88' name='L88'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L89' name='L89'></a><a href='../S/957.html#L165' title='Referred from 165 in src/closure.c.'>print_fderives</a> (<strong class='reserved'>void</strong>)
+<a id='L90' name='L90'></a><em class='brace'>{</em>
+<a id='L91' name='L91'></a>  <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, "FDERIVES\n");
+<a id='L92' name='L92'></a>  <strong class='reserved'>for</strong> (<a href='../S/1046.html#L54' title='Defined at 54 in src/symtab.h.'>symbol_number</a> i = ntokens; i &lt; nsyms; ++i)
+<a id='L93' name='L93'></a>    <em class='brace'>{</em>
+<a id='L94' name='L94'></a>      <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, "  %s derives\n", symbols[i]-&gt;tag);
+<a id='L95' name='L95'></a>      <a href='../S/268.html#L96' title='Defined at 96 in lib/bitset.h.'>bitset_iterator</a> iter;
+<a id='L96' name='L96'></a>      <a href='../S/979.html#L152' title='Defined at 152 in src/gram.h.'>rule_number</a> r;
+<a id='L97' name='L97'></a>      <a href='../S/268.html#L313' title='Defined at 313 in lib/bitset.h.'>BITSET_FOR_EACH</a> (iter, <a href='../S/957.html#L48' title='Defined at 48 in src/closure.c.'>FDERIVES</a> (i), r, 0)
+<a id='L98' name='L98'></a>        <em class='brace'>{</em>
+<a id='L99' name='L99'></a>          <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, "    %3d ", r);
+<a id='L100' name='L100'></a>          <a href='../S/978.html#L119' title='Defined at 119 in src/gram.c.'>rule_rhs_print</a> (&amp;rules[r], stderr);
+<a id='L101' name='L101'></a>          <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, "\n");
+<a id='L102' name='L102'></a>        <em class='brace'>}</em>
+<a id='L103' name='L103'></a>    <em class='brace'>}</em>
+<a id='L104' name='L104'></a>  <a href='../D/3350.html' title='Multiple defined in 6 places.'>fprintf</a> (stderr, "\n\n");
+<a id='L105' name='L105'></a><em class='brace'>}</em>
+<a id='L106' name='L106'></a>
+<a id='L107' name='L107'></a><em class='comment'>/*-------------------------------------------------------------------.</em>
+<a id='L108' name='L108'></a><em class='comment'>| Set FIRSTS to be an NNTERMS array of NNTERMS bitsets indicating    |</em>
+<a id='L109' name='L109'></a><em class='comment'>| which items can represent the beginning of the input corresponding |</em>
+<a id='L110' name='L110'></a><em class='comment'>| to which other items.                                              |</em>
+<a id='L111' name='L111'></a><em class='comment'>|                                                                    |</em>
+<a id='L112' name='L112'></a><em class='comment'>| For example, if some rule expands symbol 5 into the sequence of    |</em>
+<a id='L113' name='L113'></a><em class='comment'>| symbols 8 3 20, the symbol 8 can be the beginning of the data for  |</em>
+<a id='L114' name='L114'></a><em class='comment'>| symbol 5, so the bit [8 - ntokens] in first[5 - ntokens] (= FIRST  |</em>
+<a id='L115' name='L115'></a><em class='comment'>| (5)) is set.                                                       |</em>
+<a id='L116' name='L116'></a><em class='comment'>`-------------------------------------------------------------------*/</em>
+<a id='L117' name='L117'></a>
+<a id='L118' name='L118'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L119' name='L119'></a><a href='../S/957.html#L156' title='Referred from 156 in src/closure.c.'>set_firsts</a> (<strong class='reserved'>void</strong>)
+<a id='L120' name='L120'></a><em class='brace'>{</em>
+<a id='L121' name='L121'></a>  firsts = <a href='../S/269.html#L63' title='Defined at 63 in lib/bitsetv.c.'>bitsetv_create</a> (nnterms, nnterms, <a href='../S/268.html#L35' title='Defined at 35 in lib/bitset.h.'>BITSET_FIXED</a>);
+<a id='L122' name='L122'></a>
+<a id='L123' name='L123'></a>  <strong class='reserved'>for</strong> (<a href='../S/1046.html#L54' title='Defined at 54 in src/symtab.h.'>symbol_number</a> i = ntokens; i &lt; nsyms; ++i)
+<a id='L124' name='L124'></a>    <strong class='reserved'>for</strong> (<a href='../S/1046.html#L54' title='Defined at 54 in src/symtab.h.'>symbol_number</a> j = 0; derives[i - ntokens][j]; ++j)
+<a id='L125' name='L125'></a>      <em class='brace'>{</em>
+<a id='L126' name='L126'></a>        <a href='../S/979.html#L117' title='Defined at 117 in src/gram.h.'>item_number</a> sym = derives[i - ntokens][j]-&gt;rhs[0];
+<a id='L127' name='L127'></a>        <strong class='reserved'>if</strong> (<a href='../S/979.html#L110' title='Defined at 110 in src/gram.h.'>ISVAR</a> (sym))
+<a id='L128' name='L128'></a>          <a href='../S/268.html#L135' title='Defined at 135 in lib/bitset.h.'>bitset_set</a> (<a href='../D/368.html' title='Multiple defined in 2 places.'>FIRSTS</a> (i), sym - ntokens);
+<a id='L129' name='L129'></a>      <em class='brace'>}</em>
+<a id='L130' name='L130'></a>
+<a id='L131' name='L131'></a>  <strong class='reserved'>if</strong> (trace_flag &amp; <a href='../S/975.html#L97' title='Defined at 97 in src/getargs.h.'>trace_sets</a>)
+<a id='L132' name='L132'></a>    <a href='../S/269.html#L161' title='Defined at 161 in lib/bitsetv.c.'>bitsetv_matrix_dump</a> (stderr, "RTC: Firsts Input", firsts);
+<a id='L133' name='L133'></a>  <a href='../S/269.html#L118' title='Defined at 118 in lib/bitsetv.c.'>bitsetv_reflexive_transitive_closure</a> (firsts);
+<a id='L134' name='L134'></a>  <strong class='reserved'>if</strong> (trace_flag &amp; <a href='../S/975.html#L97' title='Defined at 97 in src/getargs.h.'>trace_sets</a>)
+<a id='L135' name='L135'></a>    <a href='../S/269.html#L161' title='Defined at 161 in lib/bitsetv.c.'>bitsetv_matrix_dump</a> (stderr, "RTC: Firsts Output", firsts);
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a>  <strong class='reserved'>if</strong> (trace_flag &amp; <a href='../S/975.html#L97' title='Defined at 97 in src/getargs.h.'>trace_sets</a>)
+<a id='L138' name='L138'></a>    <a href='../S/957.html#L73' title='Defined at 73 in src/closure.c.'>print_firsts</a> ();
+<a id='L139' name='L139'></a><em class='brace'>}</em>
+<a id='L140' name='L140'></a>
+<a id='L141' name='L141'></a><em class='comment'>/*-------------------------------------------------------------------.</em>
+<a id='L142' name='L142'></a><em class='comment'>| Set FDERIVES to an NNTERMS by NRULES matrix of bits indicating     |</em>
+<a id='L143' name='L143'></a><em class='comment'>| which rules can help derive the beginning of the data for each     |</em>
+<a id='L144' name='L144'></a><em class='comment'>| nonterminal.                                                       |</em>
+<a id='L145' name='L145'></a><em class='comment'>|                                                                    |</em>
+<a id='L146' name='L146'></a><em class='comment'>| For example, if symbol 5 can be derived as the sequence of symbols |</em>
+<a id='L147' name='L147'></a><em class='comment'>| 8 3 20, and one of the rules for deriving symbol 8 is rule 4, then |</em>
+<a id='L148' name='L148'></a><em class='comment'>| the [5 - NTOKENS, 4] bit in FDERIVES is set.                       |</em>
+<a id='L149' name='L149'></a><em class='comment'>`-------------------------------------------------------------------*/</em>
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L152' name='L152'></a><a href='../S/957.html#L179' title='Referred from 179 in src/closure.c.'>set_fderives</a> (<strong class='reserved'>void</strong>)
+<a id='L153' name='L153'></a><em class='brace'>{</em>
+<a id='L154' name='L154'></a>  fderives = <a href='../S/269.html#L63' title='Defined at 63 in lib/bitsetv.c.'>bitsetv_create</a> (nnterms, nrules, <a href='../S/268.html#L35' title='Defined at 35 in lib/bitset.h.'>BITSET_FIXED</a>);
+<a id='L155' name='L155'></a>
+<a id='L156' name='L156'></a>  <a href='../S/957.html#L119' title='Defined at 119 in src/closure.c.'>set_firsts</a> ();
+<a id='L157' name='L157'></a>
+<a id='L158' name='L158'></a>  <strong class='reserved'>for</strong> (<a href='../S/1046.html#L54' title='Defined at 54 in src/symtab.h.'>symbol_number</a> i = ntokens; i &lt; nsyms; ++i)
+<a id='L159' name='L159'></a>    <strong class='reserved'>for</strong> (<a href='../S/1046.html#L54' title='Defined at 54 in src/symtab.h.'>symbol_number</a> j = ntokens; j &lt; nsyms; ++j)
+<a id='L160' name='L160'></a>      <strong class='reserved'>if</strong> (<a href='../S/268.html#L163' title='Defined at 163 in lib/bitset.h.'>bitset_test</a> (<a href='../D/368.html' title='Multiple defined in 2 places.'>FIRSTS</a> (i), j - ntokens))
+<a id='L161' name='L161'></a>        <strong class='reserved'>for</strong> (<a href='../S/979.html#L152' title='Defined at 152 in src/gram.h.'>rule_number</a> k = 0; derives[j - ntokens][k]; ++k)
+<a id='L162' name='L162'></a>          <a href='../S/268.html#L135' title='Defined at 135 in lib/bitset.h.'>bitset_set</a> (<a href='../S/957.html#L48' title='Defined at 48 in src/closure.c.'>FDERIVES</a> (i), derives[j - ntokens][k]-&gt;number);
+<a id='L163' name='L163'></a>
+<a id='L164' name='L164'></a>  <strong class='reserved'>if</strong> (trace_flag &amp; <a href='../S/975.html#L97' title='Defined at 97 in src/getargs.h.'>trace_sets</a>)
+<a id='L165' name='L165'></a>    <a href='../S/957.html#L89' title='Defined at 89 in src/closure.c.'>print_fderives</a> ();
+<a id='L166' name='L166'></a>
+<a id='L167' name='L167'></a>  <a href='../S/269.html#L72' title='Defined at 72 in lib/bitsetv.c.'>bitsetv_free</a> (firsts);
+<a id='L168' name='L168'></a><em class='brace'>}</em>
+<a id='L169' name='L169'></a>
+<a id='L170' name='L170'></a>
+<a id='L171' name='L171'></a>
+<a id='L172' name='L172'></a><strong class='reserved'>void</strong>
+<a id='L173' name='L173'></a><a href='../R/2443.html' title='Multiple referred from 2 places.'>closure_new</a> (<strong class='reserved'>int</strong> n)
+<a id='L174' name='L174'></a><em class='brace'>{</em>
+<a id='L175' name='L175'></a>  itemset = <a href='../S/615.html#L96' title='Defined at 96 in lib/xalloc.h.'>xnmalloc</a> (n, <strong class='reserved'>sizeof</strong> *itemset);
+<a id='L176' name='L176'></a>
+<a id='L177' name='L177'></a>  ruleset = <a href='../S/267.html#L159' title='Defined at 159 in lib/bitset.c.'>bitset_create</a> (nrules, <a href='../S/268.html#L35' title='Defined at 35 in lib/bitset.h.'>BITSET_FIXED</a>);
+<a id='L178' name='L178'></a>
+<a id='L179' name='L179'></a>  <a href='../S/957.html#L152' title='Defined at 152 in src/closure.c.'>set_fderives</a> ();
+<a id='L180' name='L180'></a><em class='brace'>}</em>
+<a id='L181' name='L181'></a>
+<a id='L182' name='L182'></a>
+<a id='L183' name='L183'></a>
+<a id='L184' name='L184'></a><strong class='reserved'>void</strong>
+<a id='L185' name='L185'></a><a href='../R/2441.html' title='Multiple referred from 6 places.'>closure</a> (<a href='../S/979.html#L123' title='Defined at 123 in src/gram.h.'>item_index</a> <strong class='reserved'>const</strong> *core, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> n)
+<a id='L186' name='L186'></a><em class='brace'>{</em>
+<a id='L187' name='L187'></a>  <strong class='reserved'>if</strong> (trace_flag &amp; <a href='../S/975.html#L108' title='Defined at 108 in src/getargs.h.'>trace_closure</a>)
+<a id='L188' name='L188'></a>    <a href='../S/957.html#L57' title='Defined at 57 in src/closure.c.'>closure_print</a> ("input", core, n);
+<a id='L189' name='L189'></a>
+<a id='L190' name='L190'></a>  <a href='../S/268.html#L196' title='Defined at 196 in lib/bitset.h.'>bitset_zero</a> (ruleset);
+<a id='L191' name='L191'></a>
+<a id='L192' name='L192'></a>  <strong class='reserved'>for</strong> (<a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> c = 0; c &lt; n; ++c)
+<a id='L193' name='L193'></a>    <strong class='reserved'>if</strong> (<a href='../S/979.html#L110' title='Defined at 110 in src/gram.h.'>ISVAR</a> (ritem[core[c]]))
+<a id='L194' name='L194'></a>      <a href='../S/268.html#L230' title='Defined at 230 in lib/bitset.h.'>bitset_or</a> (ruleset, ruleset, <a href='../S/957.html#L48' title='Defined at 48 in src/closure.c.'>FDERIVES</a> (ritem[core[c]]));
+<a id='L195' name='L195'></a>
+<a id='L196' name='L196'></a>  <em class='comment'>/* core is sorted on item index in ritem, which is sorted on rule number.</em>
+<a id='L197' name='L197'></a><em class='comment'>     Compute itemset with the same sort.  */</em>
+<a id='L198' name='L198'></a>  nitemset = 0;
+<a id='L199' name='L199'></a>  <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> c = 0;
+<a id='L200' name='L200'></a>
+<a id='L201' name='L201'></a>  <em class='comment'>/* A bit index over RULESET. */</em>
+<a id='L202' name='L202'></a>  <a href='../S/979.html#L152' title='Defined at 152 in src/gram.h.'>rule_number</a> ruleno;
+<a id='L203' name='L203'></a>  <a href='../S/268.html#L96' title='Defined at 96 in lib/bitset.h.'>bitset_iterator</a> iter;
+<a id='L204' name='L204'></a>  <a href='../S/268.html#L313' title='Defined at 313 in lib/bitset.h.'>BITSET_FOR_EACH</a> (iter, ruleset, ruleno, 0)
+<a id='L205' name='L205'></a>    <em class='brace'>{</em>
+<a id='L206' name='L206'></a>      <a href='../S/979.html#L123' title='Defined at 123 in src/gram.h.'>item_index</a> itemno = rules[ruleno].rhs - ritem;
+<a id='L207' name='L207'></a>      <strong class='reserved'>while</strong> (c &lt; n &amp;&amp; core[c] &lt; itemno)
+<a id='L208' name='L208'></a>        <em class='brace'>{</em>
+<a id='L209' name='L209'></a>          itemset[nitemset] = core[c];
+<a id='L210' name='L210'></a>          nitemset++;
+<a id='L211' name='L211'></a>          c++;
+<a id='L212' name='L212'></a>        <em class='brace'>}</em>
+<a id='L213' name='L213'></a>      itemset[nitemset] = itemno;
+<a id='L214' name='L214'></a>      nitemset++;
+<a id='L215' name='L215'></a>    <em class='brace'>}</em>;
+<a id='L216' name='L216'></a>
+<a id='L217' name='L217'></a>  <strong class='reserved'>while</strong> (c &lt; n)
+<a id='L218' name='L218'></a>    <em class='brace'>{</em>
+<a id='L219' name='L219'></a>      itemset[nitemset] = core[c];
+<a id='L220' name='L220'></a>      nitemset++;
+<a id='L221' name='L221'></a>      c++;
+<a id='L222' name='L222'></a>    <em class='brace'>}</em>
+<a id='L223' name='L223'></a>
+<a id='L224' name='L224'></a>  <strong class='reserved'>if</strong> (trace_flag &amp; <a href='../S/975.html#L108' title='Defined at 108 in src/getargs.h.'>trace_closure</a>)
+<a id='L225' name='L225'></a>    <a href='../S/957.html#L57' title='Defined at 57 in src/closure.c.'>closure_print</a> ("output", itemset, nitemset);
+<a id='L226' name='L226'></a><em class='brace'>}</em>
+<a id='L227' name='L227'></a>
+<a id='L228' name='L228'></a>
+<a id='L229' name='L229'></a><strong class='reserved'>void</strong>
+<a id='L230' name='L230'></a><a href='../R/2442.html' title='Multiple referred from 2 places.'>closure_free</a> (<strong class='reserved'>void</strong>)
+<a id='L231' name='L231'></a><em class='brace'>{</em>
+<a id='L232' name='L232'></a>  free (itemset);
+<a id='L233' name='L233'></a>  <a href='../S/267.html#L169' title='Defined at 169 in lib/bitset.c.'>bitset_free</a> (ruleset);
+<a id='L234' name='L234'></a>  <a href='../S/269.html#L72' title='Defined at 72 in lib/bitsetv.c.'>bitsetv_free</a> (fderives);
+<a id='L235' name='L235'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L57'>[^]</a><a href='#L230'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

@@ -1,0 +1,157 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/windows-recmutex.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.5' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1107.html'>lib</a>/windows-recmutex.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L28'>[^]</a><a href='#L120'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L28' title='Defined at 28.'>glwthread_recmutex_init</a></li>
+<li><a href='#L37' title='Defined at 37.'>glwthread_recmutex_lock</a></li>
+<li><a href='#L71' title='Defined at 71.'>glwthread_recmutex_trylock</a></li>
+<li><a href='#L105' title='Defined at 105.'>glwthread_recmutex_unlock</a></li>
+<li><a href='#L120' title='Defined at 120.'>glwthread_recmutex_destroy</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* Plain recursive mutexes (native Windows implementation).</em>
+<a id='L2' name='L2'></a><em class='comment'>   Copyright (C) 2005-2020 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'></em>
+<a id='L4' name='L4'></a><em class='comment'>   This program is free software; you can redistribute it and/or modify</em>
+<a id='L5' name='L5'></a><em class='comment'>   it under the terms of the GNU General Public License as published by</em>
+<a id='L6' name='L6'></a><em class='comment'>   the Free Software Foundation; either version 3, or (at your option)</em>
+<a id='L7' name='L7'></a><em class='comment'>   any later version.</em>
+<a id='L8' name='L8'></a><em class='comment'></em>
+<a id='L9' name='L9'></a><em class='comment'>   This program is distributed in the hope that it will be useful,</em>
+<a id='L10' name='L10'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L11' name='L11'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</em>
+<a id='L12' name='L12'></a><em class='comment'>   GNU General Public License for more details.</em>
+<a id='L13' name='L13'></a><em class='comment'></em>
+<a id='L14' name='L14'></a><em class='comment'>   You should have received a copy of the GNU General Public License</em>
+<a id='L15' name='L15'></a><em class='comment'>   along with this program; if not, see &lt;https://www.gnu.org/licenses/&gt;.  */</em>
+<a id='L16' name='L16'></a>
+<a id='L17' name='L17'></a><em class='comment'>/* Written by Bruno Haible &lt;bruno@clisp.org&gt;, 2005.</em>
+<a id='L18' name='L18'></a><em class='comment'>   Based on GCC's gthr-win32.h.  */</em>
+<a id='L19' name='L19'></a>
+<a id='L20' name='L20'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L21' name='L21'></a>
+<a id='L22' name='L22'></a><em class='comment'>/* Specification.  */</em>
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> "<a href='608.html'>windows-recmutex.h</a>"
+<a id='L24' name='L24'></a>
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a><strong class='reserved'>void</strong>
+<a id='L28' name='L28'></a><a href='../R/3149.html' title='Multiple referred from 4 places.'>glwthread_recmutex_init</a> (<a href='../S/608.html#L39' title='Defined at 39 in lib/windows-recmutex.h.'>glwthread_recmutex_t</a> *mutex)
+<a id='L29' name='L29'></a><em class='brace'>{</em>
+<a id='L30' name='L30'></a>  mutex-&gt;owner = 0;
+<a id='L31' name='L31'></a>  mutex-&gt;depth = 0;
+<a id='L32' name='L32'></a>  InitializeCriticalSection (&amp;mutex-&gt;lock);
+<a id='L33' name='L33'></a>  mutex-&gt;guard.done = 1;
+<a id='L34' name='L34'></a><em class='brace'>}</em>
+<a id='L35' name='L35'></a>
+<a id='L36' name='L36'></a><strong class='reserved'>int</strong>
+<a id='L37' name='L37'></a><a href='../R/3150.html' title='Multiple referred from 2 places.'>glwthread_recmutex_lock</a> (<a href='../S/608.html#L39' title='Defined at 39 in lib/windows-recmutex.h.'>glwthread_recmutex_t</a> *mutex)
+<a id='L38' name='L38'></a><em class='brace'>{</em>
+<a id='L39' name='L39'></a>  <strong class='reserved'>if</strong> (!mutex-&gt;guard.done)
+<a id='L40' name='L40'></a>    <em class='brace'>{</em>
+<a id='L41' name='L41'></a>      <strong class='reserved'>if</strong> (InterlockedIncrement (&amp;mutex-&gt;guard.started) == 0)
+<a id='L42' name='L42'></a>        <em class='comment'>/* This thread is the first one to need this mutex.  Initialize it.  */</em>
+<a id='L43' name='L43'></a>        <a href='../S/607.html#L28' title='Defined at 28 in lib/windows-recmutex.c.'>glwthread_recmutex_init</a> (mutex);
+<a id='L44' name='L44'></a>      <strong class='reserved'>else</strong>
+<a id='L45' name='L45'></a>        <em class='brace'>{</em>
+<a id='L46' name='L46'></a>          <em class='comment'>/* Don't let mutex-&gt;guard.started grow and wrap around.  */</em>
+<a id='L47' name='L47'></a>          InterlockedDecrement (&amp;mutex-&gt;guard.started);
+<a id='L48' name='L48'></a>          <em class='comment'>/* Yield the CPU while waiting for another thread to finish</em>
+<a id='L49' name='L49'></a><em class='comment'>             initializing this mutex.  */</em>
+<a id='L50' name='L50'></a>          <strong class='reserved'>while</strong> (!mutex-&gt;guard.done)
+<a id='L51' name='L51'></a>            Sleep (0);
+<a id='L52' name='L52'></a>        <em class='brace'>}</em>
+<a id='L53' name='L53'></a>    <em class='brace'>}</em>
+<a id='L54' name='L54'></a>  <em class='brace'>{</em>
+<a id='L55' name='L55'></a>    DWORD self = GetCurrentThreadId ();
+<a id='L56' name='L56'></a>    <strong class='reserved'>if</strong> (mutex-&gt;owner != self)
+<a id='L57' name='L57'></a>      <em class='brace'>{</em>
+<a id='L58' name='L58'></a>        EnterCriticalSection (&amp;mutex-&gt;lock);
+<a id='L59' name='L59'></a>        mutex-&gt;owner = self;
+<a id='L60' name='L60'></a>      <em class='brace'>}</em>
+<a id='L61' name='L61'></a>    <strong class='reserved'>if</strong> (++(mutex-&gt;depth) == 0) <em class='comment'>/* wraparound? */</em>
+<a id='L62' name='L62'></a>      <em class='brace'>{</em>
+<a id='L63' name='L63'></a>        mutex-&gt;depth--;
+<a id='L64' name='L64'></a>        <strong class='reserved'>return</strong> EAGAIN;
+<a id='L65' name='L65'></a>      <em class='brace'>}</em>
+<a id='L66' name='L66'></a>  <em class='brace'>}</em>
+<a id='L67' name='L67'></a>  <strong class='reserved'>return</strong> 0;
+<a id='L68' name='L68'></a><em class='brace'>}</em>
+<a id='L69' name='L69'></a>
+<a id='L70' name='L70'></a><strong class='reserved'>int</strong>
+<a id='L71' name='L71'></a><a href='../S/608.html#L49' title='Referred from 49 in lib/windows-recmutex.h.'>glwthread_recmutex_trylock</a> (<a href='../S/608.html#L39' title='Defined at 39 in lib/windows-recmutex.h.'>glwthread_recmutex_t</a> *mutex)
+<a id='L72' name='L72'></a><em class='brace'>{</em>
+<a id='L73' name='L73'></a>  <strong class='reserved'>if</strong> (!mutex-&gt;guard.done)
+<a id='L74' name='L74'></a>    <em class='brace'>{</em>
+<a id='L75' name='L75'></a>      <strong class='reserved'>if</strong> (InterlockedIncrement (&amp;mutex-&gt;guard.started) == 0)
+<a id='L76' name='L76'></a>        <em class='comment'>/* This thread is the first one to need this mutex.  Initialize it.  */</em>
+<a id='L77' name='L77'></a>        <a href='../S/607.html#L28' title='Defined at 28 in lib/windows-recmutex.c.'>glwthread_recmutex_init</a> (mutex);
+<a id='L78' name='L78'></a>      <strong class='reserved'>else</strong>
+<a id='L79' name='L79'></a>        <em class='brace'>{</em>
+<a id='L80' name='L80'></a>          <em class='comment'>/* Don't let mutex-&gt;guard.started grow and wrap around.  */</em>
+<a id='L81' name='L81'></a>          InterlockedDecrement (&amp;mutex-&gt;guard.started);
+<a id='L82' name='L82'></a>          <em class='comment'>/* Let another thread finish initializing this mutex, and let it also</em>
+<a id='L83' name='L83'></a><em class='comment'>             lock this mutex.  */</em>
+<a id='L84' name='L84'></a>          <strong class='reserved'>return</strong> EBUSY;
+<a id='L85' name='L85'></a>        <em class='brace'>}</em>
+<a id='L86' name='L86'></a>    <em class='brace'>}</em>
+<a id='L87' name='L87'></a>  <em class='brace'>{</em>
+<a id='L88' name='L88'></a>    DWORD self = GetCurrentThreadId ();
+<a id='L89' name='L89'></a>    <strong class='reserved'>if</strong> (mutex-&gt;owner != self)
+<a id='L90' name='L90'></a>      <em class='brace'>{</em>
+<a id='L91' name='L91'></a>        <strong class='reserved'>if</strong> (!TryEnterCriticalSection (&amp;mutex-&gt;lock))
+<a id='L92' name='L92'></a>          <strong class='reserved'>return</strong> EBUSY;
+<a id='L93' name='L93'></a>        mutex-&gt;owner = self;
+<a id='L94' name='L94'></a>      <em class='brace'>}</em>
+<a id='L95' name='L95'></a>    <strong class='reserved'>if</strong> (++(mutex-&gt;depth) == 0) <em class='comment'>/* wraparound? */</em>
+<a id='L96' name='L96'></a>      <em class='brace'>{</em>
+<a id='L97' name='L97'></a>        mutex-&gt;depth--;
+<a id='L98' name='L98'></a>        <strong class='reserved'>return</strong> EAGAIN;
+<a id='L99' name='L99'></a>      <em class='brace'>}</em>
+<a id='L100' name='L100'></a>  <em class='brace'>}</em>
+<a id='L101' name='L101'></a>  <strong class='reserved'>return</strong> 0;
+<a id='L102' name='L102'></a><em class='brace'>}</em>
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a><strong class='reserved'>int</strong>
+<a id='L105' name='L105'></a><a href='../R/3153.html' title='Multiple referred from 2 places.'>glwthread_recmutex_unlock</a> (<a href='../S/608.html#L39' title='Defined at 39 in lib/windows-recmutex.h.'>glwthread_recmutex_t</a> *mutex)
+<a id='L106' name='L106'></a><em class='brace'>{</em>
+<a id='L107' name='L107'></a>  <strong class='reserved'>if</strong> (mutex-&gt;owner != GetCurrentThreadId ())
+<a id='L108' name='L108'></a>    <strong class='reserved'>return</strong> EPERM;
+<a id='L109' name='L109'></a>  <strong class='reserved'>if</strong> (mutex-&gt;depth == 0)
+<a id='L110' name='L110'></a>    <strong class='reserved'>return</strong> EINVAL;
+<a id='L111' name='L111'></a>  <strong class='reserved'>if</strong> (--(mutex-&gt;depth) == 0)
+<a id='L112' name='L112'></a>    <em class='brace'>{</em>
+<a id='L113' name='L113'></a>      mutex-&gt;owner = 0;
+<a id='L114' name='L114'></a>      LeaveCriticalSection (&amp;mutex-&gt;lock);
+<a id='L115' name='L115'></a>    <em class='brace'>}</em>
+<a id='L116' name='L116'></a>  <strong class='reserved'>return</strong> 0;
+<a id='L117' name='L117'></a><em class='brace'>}</em>
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a><strong class='reserved'>int</strong>
+<a id='L120' name='L120'></a><a href='../R/3148.html' title='Multiple referred from 2 places.'>glwthread_recmutex_destroy</a> (<a href='../S/608.html#L39' title='Defined at 39 in lib/windows-recmutex.h.'>glwthread_recmutex_t</a> *mutex)
+<a id='L121' name='L121'></a><em class='brace'>{</em>
+<a id='L122' name='L122'></a>  <strong class='reserved'>if</strong> (mutex-&gt;owner != 0)
+<a id='L123' name='L123'></a>    <strong class='reserved'>return</strong> EBUSY;
+<a id='L124' name='L124'></a>  DeleteCriticalSection (&amp;mutex-&gt;lock);
+<a id='L125' name='L125'></a>  mutex-&gt;guard.done = 0;
+<a id='L126' name='L126'></a>  <strong class='reserved'>return</strong> 0;
+<a id='L127' name='L127'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L28'>[^]</a><a href='#L120'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

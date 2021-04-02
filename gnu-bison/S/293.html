@@ -1,0 +1,598 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/diffseq.h</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.5' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1107.html'>lib</a>/diffseq.h</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L180'>[^]</a><a href='#L460'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'><a href='328.html#L53' title='Included from 53 in lib/fstrcmp.c.'>INCLUDED FROM</a></h2>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L180' title='Defined at 180.'>diag</a></li>
+<li><a href='#L460' title='Defined at 460.'>compareseq</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* Analyze differences between two vectors.</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Copyright (C) 1988-1989, 1992-1995, 2001-2004, 2006-2020 Free Software</em>
+<a id='L4' name='L4'></a><em class='comment'>   Foundation, Inc.</em>
+<a id='L5' name='L5'></a><em class='comment'></em>
+<a id='L6' name='L6'></a><em class='comment'>   This program is free software: you can redistribute it and/or modify</em>
+<a id='L7' name='L7'></a><em class='comment'>   it under the terms of the GNU General Public License as published by</em>
+<a id='L8' name='L8'></a><em class='comment'>   the Free Software Foundation; either version 3 of the License, or</em>
+<a id='L9' name='L9'></a><em class='comment'>   (at your option) any later version.</em>
+<a id='L10' name='L10'></a><em class='comment'></em>
+<a id='L11' name='L11'></a><em class='comment'>   This program is distributed in the hope that it will be useful,</em>
+<a id='L12' name='L12'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L13' name='L13'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</em>
+<a id='L14' name='L14'></a><em class='comment'>   GNU General Public License for more details.</em>
+<a id='L15' name='L15'></a><em class='comment'></em>
+<a id='L16' name='L16'></a><em class='comment'>   You should have received a copy of the GNU General Public License</em>
+<a id='L17' name='L17'></a><em class='comment'>   along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;.  */</em>
+<a id='L18' name='L18'></a>
+<a id='L19' name='L19'></a>
+<a id='L20' name='L20'></a><em class='comment'>/* The basic idea is to consider two vectors as similar if, when</em>
+<a id='L21' name='L21'></a><em class='comment'>   transforming the first vector into the second vector through a</em>
+<a id='L22' name='L22'></a><em class='comment'>   sequence of edits (inserts and deletes of one element each),</em>
+<a id='L23' name='L23'></a><em class='comment'>   this sequence is short - or equivalently, if the ordered list</em>
+<a id='L24' name='L24'></a><em class='comment'>   of elements that are untouched by these edits is long.  For a</em>
+<a id='L25' name='L25'></a><em class='comment'>   good introduction to the subject, read about the "Levenshtein</em>
+<a id='L26' name='L26'></a><em class='comment'>   distance" in Wikipedia.</em>
+<a id='L27' name='L27'></a><em class='comment'></em>
+<a id='L28' name='L28'></a><em class='comment'>   The basic algorithm is described in:</em>
+<a id='L29' name='L29'></a><em class='comment'>   "An O(ND) Difference Algorithm and its Variations", Eugene W. Myers,</em>
+<a id='L30' name='L30'></a><em class='comment'>   Algorithmica Vol. 1, 1986, pp. 251-266,</em>
+<a id='L31' name='L31'></a><em class='comment'>   &lt;https://doi.org/10.1007/BF01840446&gt;.</em>
+<a id='L32' name='L32'></a><em class='comment'>   See especially section 4.2, which describes the variation used below.</em>
+<a id='L33' name='L33'></a><em class='comment'></em>
+<a id='L34' name='L34'></a><em class='comment'>   The basic algorithm was independently discovered as described in:</em>
+<a id='L35' name='L35'></a><em class='comment'>   "Algorithms for Approximate String Matching", Esko Ukkonen,</em>
+<a id='L36' name='L36'></a><em class='comment'>   Information and Control Vol. 64, 1985, pp. 100-118,</em>
+<a id='L37' name='L37'></a><em class='comment'>   &lt;https://doi.org/10.1016/S0019-9958(85)80046-2&gt;.</em>
+<a id='L38' name='L38'></a><em class='comment'></em>
+<a id='L39' name='L39'></a><em class='comment'>   Unless the 'find_minimal' flag is set, this code uses the TOO_EXPENSIVE</em>
+<a id='L40' name='L40'></a><em class='comment'>   heuristic, by Paul Eggert, to limit the cost to O(N**1.5 log N)</em>
+<a id='L41' name='L41'></a><em class='comment'>   at the price of producing suboptimal output for large inputs with</em>
+<a id='L42' name='L42'></a><em class='comment'>   many differences.  */</em>
+<a id='L43' name='L43'></a>
+<a id='L44' name='L44'></a><em class='comment'>/* Before including this file, you need to define:</em>
+<a id='L45' name='L45'></a><em class='comment'>     ELEMENT                 The element type of the vectors being compared.</em>
+<a id='L46' name='L46'></a><em class='comment'>     EQUAL                   A two-argument macro that tests two elements for</em>
+<a id='L47' name='L47'></a><em class='comment'>                             equality.</em>
+<a id='L48' name='L48'></a><em class='comment'>     OFFSET                  A signed integer type sufficient to hold the</em>
+<a id='L49' name='L49'></a><em class='comment'>                             difference between two indices.  Usually</em>
+<a id='L50' name='L50'></a><em class='comment'>                             something like ptrdiff_t.</em>
+<a id='L51' name='L51'></a><em class='comment'>     EXTRA_CONTEXT_FIELDS    Declarations of fields for 'struct context'.</em>
+<a id='L52' name='L52'></a><em class='comment'>     NOTE_DELETE(ctxt, xoff) Record the removal of the object xvec[xoff].</em>
+<a id='L53' name='L53'></a><em class='comment'>     NOTE_INSERT(ctxt, yoff) Record the insertion of the object yvec[yoff].</em>
+<a id='L54' name='L54'></a><em class='comment'>     NOTE_ORDERED            (Optional) A boolean expression saying that</em>
+<a id='L55' name='L55'></a><em class='comment'>                             NOTE_DELETE and NOTE_INSERT calls must be</em>
+<a id='L56' name='L56'></a><em class='comment'>                             issued in offset order.</em>
+<a id='L57' name='L57'></a><em class='comment'>     EARLY_ABORT(ctxt)       (Optional) A boolean expression that triggers an</em>
+<a id='L58' name='L58'></a><em class='comment'>                             early abort of the computation.</em>
+<a id='L59' name='L59'></a><em class='comment'>     USE_HEURISTIC           (Optional) Define if you want to support the</em>
+<a id='L60' name='L60'></a><em class='comment'>                             heuristic for large vectors.</em>
+<a id='L61' name='L61'></a><em class='comment'></em>
+<a id='L62' name='L62'></a><em class='comment'>   It is also possible to use this file with abstract arrays.  In this case,</em>
+<a id='L63' name='L63'></a><em class='comment'>   xvec and yvec are not represented in memory.  They only exist conceptually.</em>
+<a id='L64' name='L64'></a><em class='comment'>   In this case, the list of defines above is amended as follows:</em>
+<a id='L65' name='L65'></a><em class='comment'>     ELEMENT                 Undefined.</em>
+<a id='L66' name='L66'></a><em class='comment'>     EQUAL                   Undefined.</em>
+<a id='L67' name='L67'></a><em class='comment'>     XVECREF_YVECREF_EQUAL(ctxt, xoff, yoff)</em>
+<a id='L68' name='L68'></a><em class='comment'>                             A three-argument macro: References xvec[xoff] and</em>
+<a id='L69' name='L69'></a><em class='comment'>                             yvec[yoff] and tests these elements for equality.</em>
+<a id='L70' name='L70'></a><em class='comment'></em>
+<a id='L71' name='L71'></a><em class='comment'>   Before including this file, you also need to include:</em>
+<a id='L72' name='L72'></a><em class='comment'>     #include &lt;limits.h&gt;</em>
+<a id='L73' name='L73'></a><em class='comment'>     #include &lt;stdbool.h&gt;</em>
+<a id='L74' name='L74'></a><em class='comment'>     #include "minmax.h"</em>
+<a id='L75' name='L75'></a><em class='comment'> */</em>
+<a id='L76' name='L76'></a>
+<a id='L77' name='L77'></a><em class='comment'>/* Maximum value of type OFFSET.  */</em>
+<a id='L78' name='L78'></a><em class='sharp'>#define</em> <a href='../R/914.html' title='Multiple referred from 3 places.'>OFFSET_MAX</a> \
+<a id='L79' name='L79'></a>  ((((<a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a>)1 &lt;&lt; (<strong class='reserved'>sizeof</strong> (<a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a>) * CHAR_BIT - 2)) - 1) * 2 + 1)
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a><em class='comment'>/* Default to no early abort.  */</em>
+<a id='L82' name='L82'></a><em class='sharp'>#ifndef</em> <a href='../D/265.html' title='Multiple defined in 3 places.'>EARLY_ABORT</a>
+<a id='L83' name='L83'></a><em class='sharp'># define</em> <a href='../R/222.html' title='Multiple referred from 3 places.'>EARLY_ABORT</a>(ctxt) <a href='../D/3258.html' title='Multiple defined in 6 places.'>false</a>
+<a id='L84' name='L84'></a><em class='sharp'>#endif</em>
+<a id='L85' name='L85'></a>
+<a id='L86' name='L86'></a><em class='sharp'>#ifndef</em> <a href='../D/1141.html' title='Multiple defined in 2 places.'>NOTE_ORDERED</a>
+<a id='L87' name='L87'></a><em class='sharp'># define</em> <a href='../R/901.html' title='Multiple referred from 2 places.'>NOTE_ORDERED</a> <a href='../D/3258.html' title='Multiple defined in 6 places.'>false</a>
+<a id='L88' name='L88'></a><em class='sharp'>#endif</em>
+<a id='L89' name='L89'></a>
+<a id='L90' name='L90'></a><em class='comment'>/* Use this to suppress gcc's "...may be used before initialized" warnings.</em>
+<a id='L91' name='L91'></a><em class='comment'>   Beware: The Code argument must not contain commas.  */</em>
+<a id='L92' name='L92'></a><em class='sharp'>#ifndef</em> <a href='../D/899.html' title='Multiple defined in 4 places.'>IF_LINT</a>
+<a id='L93' name='L93'></a><em class='sharp'># if</em> <strong class='reserved'>defined</strong> GCC_LINT || <strong class='reserved'>defined</strong> lint
+<a id='L94' name='L94'></a><em class='sharp'>#  define</em> <a href='../R/702.html' title='Multiple referred from 6 places.'>IF_LINT</a>(Code) Code
+<a id='L95' name='L95'></a><em class='sharp'># else</em>
+<a id='L96' name='L96'></a><em class='sharp'>#  define</em> <a href='../R/702.html' title='Multiple referred from 6 places.'>IF_LINT</a>(Code) <em class='comment'>/* empty */</em>
+<a id='L97' name='L97'></a><em class='sharp'># endif</em>
+<a id='L98' name='L98'></a><em class='sharp'>#endif</em>
+<a id='L99' name='L99'></a>
+<a id='L100' name='L100'></a><em class='comment'>/*</em>
+<a id='L101' name='L101'></a><em class='comment'> * Context of comparison operation.</em>
+<a id='L102' name='L102'></a><em class='comment'> */</em>
+<a id='L103' name='L103'></a><strong class='reserved'>struct</strong> <a href='../R/2512.html' title='Multiple referred from 29 places.'>context</a>
+<a id='L104' name='L104'></a><em class='brace'>{</em>
+<a id='L105' name='L105'></a><em class='sharp'>  #ifdef</em> <a href='../D/297.html' title='Multiple defined in 2 places.'>ELEMENT</a>
+<a id='L106' name='L106'></a>  <em class='comment'>/* Vectors being compared.  */</em>
+<a id='L107' name='L107'></a>  <a href='../D/297.html' title='Multiple defined in 2 places.'>ELEMENT</a> <strong class='reserved'>const</strong> *xvec;
+<a id='L108' name='L108'></a>  <a href='../D/297.html' title='Multiple defined in 2 places.'>ELEMENT</a> <strong class='reserved'>const</strong> *yvec;
+<a id='L109' name='L109'></a><em class='sharp'>  #endif</em>
+<a id='L110' name='L110'></a>
+<a id='L111' name='L111'></a>  <em class='comment'>/* Extra fields.  */</em>
+<a id='L112' name='L112'></a>  <a href='../D/357.html' title='Multiple defined in 2 places.'>EXTRA_CONTEXT_FIELDS</a>
+<a id='L113' name='L113'></a>
+<a id='L114' name='L114'></a>  <em class='comment'>/* Vector, indexed by diagonal, containing 1 + the X coordinate of the point</em>
+<a id='L115' name='L115'></a><em class='comment'>     furthest along the given diagonal in the forward search of the edit</em>
+<a id='L116' name='L116'></a><em class='comment'>     matrix.  */</em>
+<a id='L117' name='L117'></a>  <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> *fdiag;
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a>  <em class='comment'>/* Vector, indexed by diagonal, containing the X coordinate of the point</em>
+<a id='L120' name='L120'></a><em class='comment'>     furthest along the given diagonal in the backward search of the edit</em>
+<a id='L121' name='L121'></a><em class='comment'>     matrix.  */</em>
+<a id='L122' name='L122'></a>  <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> *bdiag;
+<a id='L123' name='L123'></a>
+<a id='L124' name='L124'></a><em class='sharp'>  #ifdef</em> <a href='../S/293.html#L567' title='Defined at 567 in lib/diffseq.h.'>USE_HEURISTIC</a>
+<a id='L125' name='L125'></a>  <em class='comment'>/* This corresponds to the diff --speed-large-files flag.  With this</em>
+<a id='L126' name='L126'></a><em class='comment'>     heuristic, for vectors with a constant small density of changes,</em>
+<a id='L127' name='L127'></a><em class='comment'>     the algorithm is linear in the vector size.  */</em>
+<a id='L128' name='L128'></a>  <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> heuristic;
+<a id='L129' name='L129'></a><em class='sharp'>  #endif</em>
+<a id='L130' name='L130'></a>
+<a id='L131' name='L131'></a>  <em class='comment'>/* Edit scripts longer than this are too expensive to compute.  */</em>
+<a id='L132' name='L132'></a>  <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> too_expensive;
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a>  <em class='comment'>/* Snakes bigger than this are considered "big".  */</em>
+<a id='L135' name='L135'></a><em class='sharp'>  #define</em> <a href='../R/1276.html' title='Multiple referred from 8 places.'>SNAKE_LIMIT</a> 20
+<a id='L136' name='L136'></a><em class='brace'>}</em>;
+<a id='L137' name='L137'></a>
+<a id='L138' name='L138'></a><strong class='reserved'>struct</strong> <a href='../R/3787.html' title='Multiple referred from 2 places.'>partition</a>
+<a id='L139' name='L139'></a><em class='brace'>{</em>
+<a id='L140' name='L140'></a>  <em class='comment'>/* Midpoints of this partition.  */</em>
+<a id='L141' name='L141'></a>  <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> xmid;
+<a id='L142' name='L142'></a>  <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> ymid;
+<a id='L143' name='L143'></a>
+<a id='L144' name='L144'></a>  <em class='comment'>/* True if low half will be analyzed minimally.  */</em>
+<a id='L145' name='L145'></a>  <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> lo_minimal;
+<a id='L146' name='L146'></a>
+<a id='L147' name='L147'></a>  <em class='comment'>/* Likewise for high half.  */</em>
+<a id='L148' name='L148'></a>  <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> hi_minimal;
+<a id='L149' name='L149'></a><em class='brace'>}</em>;
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a>
+<a id='L152' name='L152'></a><em class='comment'>/* Find the midpoint of the shortest edit script for a specified portion</em>
+<a id='L153' name='L153'></a><em class='comment'>   of the two vectors.</em>
+<a id='L154' name='L154'></a><em class='comment'></em>
+<a id='L155' name='L155'></a><em class='comment'>   Scan from the beginnings of the vectors, and simultaneously from the ends,</em>
+<a id='L156' name='L156'></a><em class='comment'>   doing a breadth-first search through the space of edit-sequence.</em>
+<a id='L157' name='L157'></a><em class='comment'>   When the two searches meet, we have found the midpoint of the shortest</em>
+<a id='L158' name='L158'></a><em class='comment'>   edit sequence.</em>
+<a id='L159' name='L159'></a><em class='comment'></em>
+<a id='L160' name='L160'></a><em class='comment'>   If FIND_MINIMAL is true, find the minimal edit script regardless of</em>
+<a id='L161' name='L161'></a><em class='comment'>   expense.  Otherwise, if the search is too expensive, use heuristics to</em>
+<a id='L162' name='L162'></a><em class='comment'>   stop the search and report a suboptimal answer.</em>
+<a id='L163' name='L163'></a><em class='comment'></em>
+<a id='L164' name='L164'></a><em class='comment'>   Set PART-&gt;(xmid,ymid) to the midpoint (XMID,YMID).  The diagonal number</em>
+<a id='L165' name='L165'></a><em class='comment'>   XMID - YMID equals the number of inserted elements minus the number</em>
+<a id='L166' name='L166'></a><em class='comment'>   of deleted elements (counting only elements before the midpoint).</em>
+<a id='L167' name='L167'></a><em class='comment'></em>
+<a id='L168' name='L168'></a><em class='comment'>   Set PART-&gt;lo_minimal to true iff the minimal edit script for the</em>
+<a id='L169' name='L169'></a><em class='comment'>   left half of the partition is known; similarly for PART-&gt;hi_minimal.</em>
+<a id='L170' name='L170'></a><em class='comment'></em>
+<a id='L171' name='L171'></a><em class='comment'>   This function assumes that the first elements of the specified portions</em>
+<a id='L172' name='L172'></a><em class='comment'>   of the two vectors do not match, and likewise that the last elements do not</em>
+<a id='L173' name='L173'></a><em class='comment'>   match.  The caller must trim matching elements from the beginning and end</em>
+<a id='L174' name='L174'></a><em class='comment'>   of the portions it is going to specify.</em>
+<a id='L175' name='L175'></a><em class='comment'></em>
+<a id='L176' name='L176'></a><em class='comment'>   If we return the "wrong" partitions, the worst this can do is cause</em>
+<a id='L177' name='L177'></a><em class='comment'>   suboptimal diff output.  It cannot cause incorrect diff output.  */</em>
+<a id='L178' name='L178'></a>
+<a id='L179' name='L179'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L180' name='L180'></a><a href='../S/293.html#L514' title='Referred from 514 in lib/diffseq.h.'>diag</a> (<a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> xoff, <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> xlim, <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> yoff, <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> ylim, <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> find_minimal,
+<a id='L181' name='L181'></a>      <strong class='reserved'>struct</strong> <a href='../S/293.html#L138' title='Defined at 138 in lib/diffseq.h.'>partition</a> *part, <strong class='reserved'>struct</strong> <a href='../D/3065.html' title='Multiple defined in 2 places.'>context</a> *ctxt)
+<a id='L182' name='L182'></a><em class='brace'>{</em>
+<a id='L183' name='L183'></a>  <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> *<strong class='reserved'>const</strong> fd = ctxt-&gt;fdiag;       <em class='comment'>/* Give the compiler a chance. */</em>
+<a id='L184' name='L184'></a>  <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> *<strong class='reserved'>const</strong> bd = ctxt-&gt;bdiag;       <em class='comment'>/* Additional help for the compiler. */</em>
+<a id='L185' name='L185'></a><em class='sharp'>#ifdef</em> <a href='../D/297.html' title='Multiple defined in 2 places.'>ELEMENT</a>
+<a id='L186' name='L186'></a>  <a href='../D/297.html' title='Multiple defined in 2 places.'>ELEMENT</a> <strong class='reserved'>const</strong> *<strong class='reserved'>const</strong> xv = ctxt-&gt;xvec; <em class='comment'>/* Still more help for the compiler. */</em>
+<a id='L187' name='L187'></a>  <a href='../D/297.html' title='Multiple defined in 2 places.'>ELEMENT</a> <strong class='reserved'>const</strong> *<strong class='reserved'>const</strong> yv = ctxt-&gt;yvec; <em class='comment'>/* And more and more . . . */</em>
+<a id='L188' name='L188'></a><em class='sharp'>  #define</em> <a href='../R/1530.html' title='Multiple referred from 6 places.'>XREF_YREF_EQUAL</a>(x,y)  <a href='../D/337.html' title='Multiple defined in 3 places.'>EQUAL</a> (xv[x], yv[y])
+<a id='L189' name='L189'></a><em class='sharp'>#else</em>
+<a id='L190' name='L190'></a><em class='sharp'>  #define</em> <a href='../R/1530.html' title='Multiple referred from 6 places.'>XREF_YREF_EQUAL</a>(x,y)  <a href='../S/293.html#L568' title='Defined at 568 in lib/diffseq.h.'>XVECREF_YVECREF_EQUAL</a> (ctxt, x, y)
+<a id='L191' name='L191'></a><em class='sharp'>#endif</em>
+<a id='L192' name='L192'></a>  <strong class='reserved'>const</strong> <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> dmin = xoff - ylim;      <em class='comment'>/* Minimum valid diagonal. */</em>
+<a id='L193' name='L193'></a>  <strong class='reserved'>const</strong> <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> dmax = xlim - yoff;      <em class='comment'>/* Maximum valid diagonal. */</em>
+<a id='L194' name='L194'></a>  <strong class='reserved'>const</strong> <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> fmid = xoff - yoff;      <em class='comment'>/* Center diagonal of top-down search. */</em>
+<a id='L195' name='L195'></a>  <strong class='reserved'>const</strong> <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> bmid = xlim - ylim;      <em class='comment'>/* Center diagonal of bottom-up search. */</em>
+<a id='L196' name='L196'></a>  <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> fmin = fmid;
+<a id='L197' name='L197'></a>  <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> fmax = fmid;           <em class='comment'>/* Limits of top-down search. */</em>
+<a id='L198' name='L198'></a>  <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> bmin = bmid;
+<a id='L199' name='L199'></a>  <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> bmax = bmid;           <em class='comment'>/* Limits of bottom-up search. */</em>
+<a id='L200' name='L200'></a>  <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> c;                     <em class='comment'>/* Cost. */</em>
+<a id='L201' name='L201'></a>  <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> odd = (fmid - bmid) &amp; 1; <em class='comment'>/* True if southeast corner is on an odd</em>
+<a id='L202' name='L202'></a><em class='comment'>                                   diagonal with respect to the northwest. */</em>
+<a id='L203' name='L203'></a>
+<a id='L204' name='L204'></a>  fd[fmid] = xoff;
+<a id='L205' name='L205'></a>  bd[bmid] = xlim;
+<a id='L206' name='L206'></a>
+<a id='L207' name='L207'></a>  <strong class='reserved'>for</strong> (c = 1;; ++c)
+<a id='L208' name='L208'></a>    <em class='brace'>{</em>
+<a id='L209' name='L209'></a>      <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> d;                 <em class='comment'>/* Active diagonal. */</em>
+<a id='L210' name='L210'></a>      <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> big_snake = <a href='../D/3258.html' title='Multiple defined in 6 places.'>false</a>;
+<a id='L211' name='L211'></a>
+<a id='L212' name='L212'></a>      <em class='comment'>/* Extend the top-down search by an edit step in each diagonal. */</em>
+<a id='L213' name='L213'></a>      <strong class='reserved'>if</strong> (fmin &gt; dmin)
+<a id='L214' name='L214'></a>        fd[--fmin - 1] = -1;
+<a id='L215' name='L215'></a>      <strong class='reserved'>else</strong>
+<a id='L216' name='L216'></a>        ++fmin;
+<a id='L217' name='L217'></a>      <strong class='reserved'>if</strong> (fmax &lt; dmax)
+<a id='L218' name='L218'></a>        fd[++fmax + 1] = -1;
+<a id='L219' name='L219'></a>      <strong class='reserved'>else</strong>
+<a id='L220' name='L220'></a>        --fmax;
+<a id='L221' name='L221'></a>      <strong class='reserved'>for</strong> (d = fmax; d &gt;= fmin; d -= 2)
+<a id='L222' name='L222'></a>        <em class='brace'>{</em>
+<a id='L223' name='L223'></a>          <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> x;
+<a id='L224' name='L224'></a>          <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> y;
+<a id='L225' name='L225'></a>          <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> tlo = fd[d - 1];
+<a id='L226' name='L226'></a>          <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> thi = fd[d + 1];
+<a id='L227' name='L227'></a>          <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> x0 = tlo &lt; thi ? thi : tlo + 1;
+<a id='L228' name='L228'></a>
+<a id='L229' name='L229'></a>          <strong class='reserved'>for</strong> (x = x0, y = x0 - d;
+<a id='L230' name='L230'></a>               x &lt; xlim &amp;&amp; y &lt; ylim &amp;&amp; <a href='../D/1834.html' title='Multiple defined in 6 places.'>XREF_YREF_EQUAL</a> (x, y);
+<a id='L231' name='L231'></a>               x++, y++)
+<a id='L232' name='L232'></a>            <strong class='reserved'>continue</strong>;
+<a id='L233' name='L233'></a>          <strong class='reserved'>if</strong> (x - x0 &gt; <a href='../S/293.html#L135' title='Defined at 135 in lib/diffseq.h.'>SNAKE_LIMIT</a>)
+<a id='L234' name='L234'></a>            big_snake = <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>;
+<a id='L235' name='L235'></a>          fd[d] = x;
+<a id='L236' name='L236'></a>          <strong class='reserved'>if</strong> (odd &amp;&amp; bmin &lt;= d &amp;&amp; d &lt;= bmax &amp;&amp; bd[d] &lt;= x)
+<a id='L237' name='L237'></a>            <em class='brace'>{</em>
+<a id='L238' name='L238'></a>              part-&gt;xmid = x;
+<a id='L239' name='L239'></a>              part-&gt;ymid = y;
+<a id='L240' name='L240'></a>              part-&gt;lo_minimal = part-&gt;hi_minimal = <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>;
+<a id='L241' name='L241'></a>              <strong class='reserved'>return</strong>;
+<a id='L242' name='L242'></a>            <em class='brace'>}</em>
+<a id='L243' name='L243'></a>        <em class='brace'>}</em>
+<a id='L244' name='L244'></a>
+<a id='L245' name='L245'></a>      <em class='comment'>/* Similarly extend the bottom-up search.  */</em>
+<a id='L246' name='L246'></a>      <strong class='reserved'>if</strong> (bmin &gt; dmin)
+<a id='L247' name='L247'></a>        bd[--bmin - 1] = <a href='../D/1154.html' title='Multiple defined in 2 places.'>OFFSET_MAX</a>;
+<a id='L248' name='L248'></a>      <strong class='reserved'>else</strong>
+<a id='L249' name='L249'></a>        ++bmin;
+<a id='L250' name='L250'></a>      <strong class='reserved'>if</strong> (bmax &lt; dmax)
+<a id='L251' name='L251'></a>        bd[++bmax + 1] = <a href='../D/1154.html' title='Multiple defined in 2 places.'>OFFSET_MAX</a>;
+<a id='L252' name='L252'></a>      <strong class='reserved'>else</strong>
+<a id='L253' name='L253'></a>        --bmax;
+<a id='L254' name='L254'></a>      <strong class='reserved'>for</strong> (d = bmax; d &gt;= bmin; d -= 2)
+<a id='L255' name='L255'></a>        <em class='brace'>{</em>
+<a id='L256' name='L256'></a>          <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> x;
+<a id='L257' name='L257'></a>          <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> y;
+<a id='L258' name='L258'></a>          <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> tlo = bd[d - 1];
+<a id='L259' name='L259'></a>          <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> thi = bd[d + 1];
+<a id='L260' name='L260'></a>          <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> x0 = tlo &lt; thi ? tlo : thi - 1;
+<a id='L261' name='L261'></a>
+<a id='L262' name='L262'></a>          <strong class='reserved'>for</strong> (x = x0, y = x0 - d;
+<a id='L263' name='L263'></a>               xoff &lt; x &amp;&amp; yoff &lt; y &amp;&amp; <a href='../D/1834.html' title='Multiple defined in 6 places.'>XREF_YREF_EQUAL</a> (x - 1, y - 1);
+<a id='L264' name='L264'></a>               x--, y--)
+<a id='L265' name='L265'></a>            <strong class='reserved'>continue</strong>;
+<a id='L266' name='L266'></a>          <strong class='reserved'>if</strong> (x0 - x &gt; <a href='../S/293.html#L135' title='Defined at 135 in lib/diffseq.h.'>SNAKE_LIMIT</a>)
+<a id='L267' name='L267'></a>            big_snake = <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>;
+<a id='L268' name='L268'></a>          bd[d] = x;
+<a id='L269' name='L269'></a>          <strong class='reserved'>if</strong> (!odd &amp;&amp; fmin &lt;= d &amp;&amp; d &lt;= fmax &amp;&amp; x &lt;= fd[d])
+<a id='L270' name='L270'></a>            <em class='brace'>{</em>
+<a id='L271' name='L271'></a>              part-&gt;xmid = x;
+<a id='L272' name='L272'></a>              part-&gt;ymid = y;
+<a id='L273' name='L273'></a>              part-&gt;lo_minimal = part-&gt;hi_minimal = <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>;
+<a id='L274' name='L274'></a>              <strong class='reserved'>return</strong>;
+<a id='L275' name='L275'></a>            <em class='brace'>}</em>
+<a id='L276' name='L276'></a>        <em class='brace'>}</em>
+<a id='L277' name='L277'></a>
+<a id='L278' name='L278'></a>      <strong class='reserved'>if</strong> (find_minimal)
+<a id='L279' name='L279'></a>        <strong class='reserved'>continue</strong>;
+<a id='L280' name='L280'></a>
+<a id='L281' name='L281'></a><em class='sharp'>#ifdef</em> <a href='../S/293.html#L567' title='Defined at 567 in lib/diffseq.h.'>USE_HEURISTIC</a>
+<a id='L282' name='L282'></a>      <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> heuristic = ctxt-&gt;heuristic;
+<a id='L283' name='L283'></a><em class='sharp'>#else</em>
+<a id='L284' name='L284'></a>      <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> heuristic = <a href='../D/3258.html' title='Multiple defined in 6 places.'>false</a>;
+<a id='L285' name='L285'></a><em class='sharp'>#endif</em>
+<a id='L286' name='L286'></a>
+<a id='L287' name='L287'></a>      <em class='comment'>/* Heuristic: check occasionally for a diagonal that has made lots</em>
+<a id='L288' name='L288'></a><em class='comment'>         of progress compared with the edit distance.  If we have any</em>
+<a id='L289' name='L289'></a><em class='comment'>         such, find the one that has made the most progress and return it</em>
+<a id='L290' name='L290'></a><em class='comment'>         as if it had succeeded.</em>
+<a id='L291' name='L291'></a><em class='comment'></em>
+<a id='L292' name='L292'></a><em class='comment'>         With this heuristic, for vectors with a constant small density</em>
+<a id='L293' name='L293'></a><em class='comment'>         of changes, the algorithm is linear in the vector size.  */</em>
+<a id='L294' name='L294'></a>
+<a id='L295' name='L295'></a>      <strong class='reserved'>if</strong> (200 &lt; c &amp;&amp; big_snake &amp;&amp; heuristic)
+<a id='L296' name='L296'></a>        <em class='brace'>{</em>
+<a id='L297' name='L297'></a>          <em class='brace'>{</em>
+<a id='L298' name='L298'></a>            <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> best = 0;
+<a id='L299' name='L299'></a>
+<a id='L300' name='L300'></a>            <strong class='reserved'>for</strong> (d = fmax; d &gt;= fmin; d -= 2)
+<a id='L301' name='L301'></a>              <em class='brace'>{</em>
+<a id='L302' name='L302'></a>                <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> dd = d - fmid;
+<a id='L303' name='L303'></a>                <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> x = fd[d];
+<a id='L304' name='L304'></a>                <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> y = x - d;
+<a id='L305' name='L305'></a>                <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> v = (x - xoff) * 2 - dd;
+<a id='L306' name='L306'></a>
+<a id='L307' name='L307'></a>                <strong class='reserved'>if</strong> (v &gt; 12 * (c + (dd &lt; 0 ? -dd : dd)))
+<a id='L308' name='L308'></a>                  <em class='brace'>{</em>
+<a id='L309' name='L309'></a>                    <strong class='reserved'>if</strong> (v &gt; best
+<a id='L310' name='L310'></a>                        &amp;&amp; xoff + <a href='../S/293.html#L135' title='Defined at 135 in lib/diffseq.h.'>SNAKE_LIMIT</a> &lt;= x &amp;&amp; x &lt; xlim
+<a id='L311' name='L311'></a>                        &amp;&amp; yoff + <a href='../S/293.html#L135' title='Defined at 135 in lib/diffseq.h.'>SNAKE_LIMIT</a> &lt;= y &amp;&amp; y &lt; ylim)
+<a id='L312' name='L312'></a>                      <em class='brace'>{</em>
+<a id='L313' name='L313'></a>                        <em class='comment'>/* We have a good enough best diagonal; now insist</em>
+<a id='L314' name='L314'></a><em class='comment'>                           that it end with a significant snake.  */</em>
+<a id='L315' name='L315'></a>                        <strong class='reserved'>int</strong> k;
+<a id='L316' name='L316'></a>
+<a id='L317' name='L317'></a>                        <strong class='reserved'>for</strong> (k = 1; <a href='../D/1834.html' title='Multiple defined in 6 places.'>XREF_YREF_EQUAL</a> (x - k, y - k); k++)
+<a id='L318' name='L318'></a>                          <strong class='reserved'>if</strong> (k == <a href='../S/293.html#L135' title='Defined at 135 in lib/diffseq.h.'>SNAKE_LIMIT</a>)
+<a id='L319' name='L319'></a>                            <em class='brace'>{</em>
+<a id='L320' name='L320'></a>                              best = v;
+<a id='L321' name='L321'></a>                              part-&gt;xmid = x;
+<a id='L322' name='L322'></a>                              part-&gt;ymid = y;
+<a id='L323' name='L323'></a>                              <strong class='reserved'>break</strong>;
+<a id='L324' name='L324'></a>                            <em class='brace'>}</em>
+<a id='L325' name='L325'></a>                      <em class='brace'>}</em>
+<a id='L326' name='L326'></a>                  <em class='brace'>}</em>
+<a id='L327' name='L327'></a>              <em class='brace'>}</em>
+<a id='L328' name='L328'></a>            <strong class='reserved'>if</strong> (best &gt; 0)
+<a id='L329' name='L329'></a>              <em class='brace'>{</em>
+<a id='L330' name='L330'></a>                part-&gt;lo_minimal = <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>;
+<a id='L331' name='L331'></a>                part-&gt;hi_minimal = <a href='../D/3258.html' title='Multiple defined in 6 places.'>false</a>;
+<a id='L332' name='L332'></a>                <strong class='reserved'>return</strong>;
+<a id='L333' name='L333'></a>              <em class='brace'>}</em>
+<a id='L334' name='L334'></a>          <em class='brace'>}</em>
+<a id='L335' name='L335'></a>
+<a id='L336' name='L336'></a>          <em class='brace'>{</em>
+<a id='L337' name='L337'></a>            <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> best = 0;
+<a id='L338' name='L338'></a>
+<a id='L339' name='L339'></a>            <strong class='reserved'>for</strong> (d = bmax; d &gt;= bmin; d -= 2)
+<a id='L340' name='L340'></a>              <em class='brace'>{</em>
+<a id='L341' name='L341'></a>                <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> dd = d - bmid;
+<a id='L342' name='L342'></a>                <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> x = bd[d];
+<a id='L343' name='L343'></a>                <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> y = x - d;
+<a id='L344' name='L344'></a>                <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> v = (xlim - x) * 2 + dd;
+<a id='L345' name='L345'></a>
+<a id='L346' name='L346'></a>                <strong class='reserved'>if</strong> (v &gt; 12 * (c + (dd &lt; 0 ? -dd : dd)))
+<a id='L347' name='L347'></a>                  <em class='brace'>{</em>
+<a id='L348' name='L348'></a>                    <strong class='reserved'>if</strong> (v &gt; best
+<a id='L349' name='L349'></a>                        &amp;&amp; xoff &lt; x &amp;&amp; x &lt;= xlim - <a href='../S/293.html#L135' title='Defined at 135 in lib/diffseq.h.'>SNAKE_LIMIT</a>
+<a id='L350' name='L350'></a>                        &amp;&amp; yoff &lt; y &amp;&amp; y &lt;= ylim - <a href='../S/293.html#L135' title='Defined at 135 in lib/diffseq.h.'>SNAKE_LIMIT</a>)
+<a id='L351' name='L351'></a>                      <em class='brace'>{</em>
+<a id='L352' name='L352'></a>                        <em class='comment'>/* We have a good enough best diagonal; now insist</em>
+<a id='L353' name='L353'></a><em class='comment'>                           that it end with a significant snake.  */</em>
+<a id='L354' name='L354'></a>                        <strong class='reserved'>int</strong> k;
+<a id='L355' name='L355'></a>
+<a id='L356' name='L356'></a>                        <strong class='reserved'>for</strong> (k = 0; <a href='../D/1834.html' title='Multiple defined in 6 places.'>XREF_YREF_EQUAL</a> (x + k, y + k); k++)
+<a id='L357' name='L357'></a>                          <strong class='reserved'>if</strong> (k == <a href='../S/293.html#L135' title='Defined at 135 in lib/diffseq.h.'>SNAKE_LIMIT</a> - 1)
+<a id='L358' name='L358'></a>                            <em class='brace'>{</em>
+<a id='L359' name='L359'></a>                              best = v;
+<a id='L360' name='L360'></a>                              part-&gt;xmid = x;
+<a id='L361' name='L361'></a>                              part-&gt;ymid = y;
+<a id='L362' name='L362'></a>                              <strong class='reserved'>break</strong>;
+<a id='L363' name='L363'></a>                            <em class='brace'>}</em>
+<a id='L364' name='L364'></a>                      <em class='brace'>}</em>
+<a id='L365' name='L365'></a>                  <em class='brace'>}</em>
+<a id='L366' name='L366'></a>              <em class='brace'>}</em>
+<a id='L367' name='L367'></a>            <strong class='reserved'>if</strong> (best &gt; 0)
+<a id='L368' name='L368'></a>              <em class='brace'>{</em>
+<a id='L369' name='L369'></a>                part-&gt;lo_minimal = <a href='../D/3258.html' title='Multiple defined in 6 places.'>false</a>;
+<a id='L370' name='L370'></a>                part-&gt;hi_minimal = <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>;
+<a id='L371' name='L371'></a>                <strong class='reserved'>return</strong>;
+<a id='L372' name='L372'></a>              <em class='brace'>}</em>
+<a id='L373' name='L373'></a>          <em class='brace'>}</em>
+<a id='L374' name='L374'></a>        <em class='brace'>}</em>
+<a id='L375' name='L375'></a>
+<a id='L376' name='L376'></a>      <em class='comment'>/* Heuristic: if we've gone well beyond the call of duty, give up</em>
+<a id='L377' name='L377'></a><em class='comment'>         and report halfway between our best results so far.  */</em>
+<a id='L378' name='L378'></a>      <strong class='reserved'>if</strong> (c &gt;= ctxt-&gt;too_expensive)
+<a id='L379' name='L379'></a>        <em class='brace'>{</em>
+<a id='L380' name='L380'></a>          <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> fxybest;
+<a id='L381' name='L381'></a>          <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> fxbest <a href='../D/899.html' title='Multiple defined in 4 places.'>IF_LINT</a> (= 0);
+<a id='L382' name='L382'></a>          <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> bxybest;
+<a id='L383' name='L383'></a>          <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> bxbest <a href='../D/899.html' title='Multiple defined in 4 places.'>IF_LINT</a> (= 0);
+<a id='L384' name='L384'></a>
+<a id='L385' name='L385'></a>          <em class='comment'>/* Find forward diagonal that maximizes X + Y.  */</em>
+<a id='L386' name='L386'></a>          fxybest = -1;
+<a id='L387' name='L387'></a>          <strong class='reserved'>for</strong> (d = fmax; d &gt;= fmin; d -= 2)
+<a id='L388' name='L388'></a>            <em class='brace'>{</em>
+<a id='L389' name='L389'></a>              <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> x = <a href='../S/449.html#L57' title='Defined at 57 in lib/minmax.h.'>MIN</a> (fd[d], xlim);
+<a id='L390' name='L390'></a>              <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> y = x - d;
+<a id='L391' name='L391'></a>              <strong class='reserved'>if</strong> (ylim &lt; y)
+<a id='L392' name='L392'></a>                <em class='brace'>{</em>
+<a id='L393' name='L393'></a>                  x = ylim + d;
+<a id='L394' name='L394'></a>                  y = ylim;
+<a id='L395' name='L395'></a>                <em class='brace'>}</em>
+<a id='L396' name='L396'></a>              <strong class='reserved'>if</strong> (fxybest &lt; x + y)
+<a id='L397' name='L397'></a>                <em class='brace'>{</em>
+<a id='L398' name='L398'></a>                  fxybest = x + y;
+<a id='L399' name='L399'></a>                  fxbest = x;
+<a id='L400' name='L400'></a>                <em class='brace'>}</em>
+<a id='L401' name='L401'></a>            <em class='brace'>}</em>
+<a id='L402' name='L402'></a>
+<a id='L403' name='L403'></a>          <em class='comment'>/* Find backward diagonal that minimizes X + Y.  */</em>
+<a id='L404' name='L404'></a>          bxybest = <a href='../D/1154.html' title='Multiple defined in 2 places.'>OFFSET_MAX</a>;
+<a id='L405' name='L405'></a>          <strong class='reserved'>for</strong> (d = bmax; d &gt;= bmin; d -= 2)
+<a id='L406' name='L406'></a>            <em class='brace'>{</em>
+<a id='L407' name='L407'></a>              <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> x = <a href='../D/1073.html' title='Multiple defined in 2 places.'>MAX</a> (xoff, bd[d]);
+<a id='L408' name='L408'></a>              <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> y = x - d;
+<a id='L409' name='L409'></a>              <strong class='reserved'>if</strong> (y &lt; yoff)
+<a id='L410' name='L410'></a>                <em class='brace'>{</em>
+<a id='L411' name='L411'></a>                  x = yoff + d;
+<a id='L412' name='L412'></a>                  y = yoff;
+<a id='L413' name='L413'></a>                <em class='brace'>}</em>
+<a id='L414' name='L414'></a>              <strong class='reserved'>if</strong> (x + y &lt; bxybest)
+<a id='L415' name='L415'></a>                <em class='brace'>{</em>
+<a id='L416' name='L416'></a>                  bxybest = x + y;
+<a id='L417' name='L417'></a>                  bxbest = x;
+<a id='L418' name='L418'></a>                <em class='brace'>}</em>
+<a id='L419' name='L419'></a>            <em class='brace'>}</em>
+<a id='L420' name='L420'></a>
+<a id='L421' name='L421'></a>          <em class='comment'>/* Use the better of the two diagonals.  */</em>
+<a id='L422' name='L422'></a>          <strong class='reserved'>if</strong> ((xlim + ylim) - bxybest &lt; fxybest - (xoff + yoff))
+<a id='L423' name='L423'></a>            <em class='brace'>{</em>
+<a id='L424' name='L424'></a>              part-&gt;xmid = fxbest;
+<a id='L425' name='L425'></a>              part-&gt;ymid = fxybest - fxbest;
+<a id='L426' name='L426'></a>              part-&gt;lo_minimal = <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>;
+<a id='L427' name='L427'></a>              part-&gt;hi_minimal = <a href='../D/3258.html' title='Multiple defined in 6 places.'>false</a>;
+<a id='L428' name='L428'></a>            <em class='brace'>}</em>
+<a id='L429' name='L429'></a>          <strong class='reserved'>else</strong>
+<a id='L430' name='L430'></a>            <em class='brace'>{</em>
+<a id='L431' name='L431'></a>              part-&gt;xmid = bxbest;
+<a id='L432' name='L432'></a>              part-&gt;ymid = bxybest - bxbest;
+<a id='L433' name='L433'></a>              part-&gt;lo_minimal = <a href='../D/3258.html' title='Multiple defined in 6 places.'>false</a>;
+<a id='L434' name='L434'></a>              part-&gt;hi_minimal = <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>;
+<a id='L435' name='L435'></a>            <em class='brace'>}</em>
+<a id='L436' name='L436'></a>          <strong class='reserved'>return</strong>;
+<a id='L437' name='L437'></a>        <em class='brace'>}</em>
+<a id='L438' name='L438'></a>    <em class='brace'>}</em>
+<a id='L439' name='L439'></a><em class='sharp'>  #undef</em> <a href='../R/1530.html' title='Multiple referred from 6 places.'>XREF_YREF_EQUAL</a>
+<a id='L440' name='L440'></a><em class='brace'>}</em>
+<a id='L441' name='L441'></a>
+<a id='L442' name='L442'></a>
+<a id='L443' name='L443'></a><em class='comment'>/* Compare in detail contiguous subsequences of the two vectors</em>
+<a id='L444' name='L444'></a><em class='comment'>   which are known, as a whole, to match each other.</em>
+<a id='L445' name='L445'></a><em class='comment'></em>
+<a id='L446' name='L446'></a><em class='comment'>   The subsequence of vector 0 is [XOFF, XLIM) and likewise for vector 1.</em>
+<a id='L447' name='L447'></a><em class='comment'></em>
+<a id='L448' name='L448'></a><em class='comment'>   Note that XLIM, YLIM are exclusive bounds.  All indices into the vectors</em>
+<a id='L449' name='L449'></a><em class='comment'>   are origin-0.</em>
+<a id='L450' name='L450'></a><em class='comment'></em>
+<a id='L451' name='L451'></a><em class='comment'>   If FIND_MINIMAL, find a minimal difference no matter how</em>
+<a id='L452' name='L452'></a><em class='comment'>   expensive it is.</em>
+<a id='L453' name='L453'></a><em class='comment'></em>
+<a id='L454' name='L454'></a><em class='comment'>   The results are recorded by invoking NOTE_DELETE and NOTE_INSERT.</em>
+<a id='L455' name='L455'></a><em class='comment'></em>
+<a id='L456' name='L456'></a><em class='comment'>   Return false if terminated normally, or true if terminated through early</em>
+<a id='L457' name='L457'></a><em class='comment'>   abort.  */</em>
+<a id='L458' name='L458'></a>
+<a id='L459' name='L459'></a><strong class='reserved'>static</strong> <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a>
+<a id='L460' name='L460'></a><a href='../R/2471.html' title='Multiple referred from 2 places.'>compareseq</a> (<a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> xoff, <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> xlim, <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> yoff, <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> ylim,
+<a id='L461' name='L461'></a>            <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> find_minimal, <strong class='reserved'>struct</strong> <a href='../D/3065.html' title='Multiple defined in 2 places.'>context</a> *ctxt)
+<a id='L462' name='L462'></a><em class='brace'>{</em>
+<a id='L463' name='L463'></a><em class='sharp'>#ifdef</em> <a href='../D/297.html' title='Multiple defined in 2 places.'>ELEMENT</a>
+<a id='L464' name='L464'></a>  <a href='../D/297.html' title='Multiple defined in 2 places.'>ELEMENT</a> <strong class='reserved'>const</strong> *xv = ctxt-&gt;xvec; <em class='comment'>/* Help the compiler.  */</em>
+<a id='L465' name='L465'></a>  <a href='../D/297.html' title='Multiple defined in 2 places.'>ELEMENT</a> <strong class='reserved'>const</strong> *yv = ctxt-&gt;yvec;
+<a id='L466' name='L466'></a><em class='sharp'>  #define</em> <a href='../R/1530.html' title='Multiple referred from 6 places.'>XREF_YREF_EQUAL</a>(x,y)  <a href='../D/337.html' title='Multiple defined in 3 places.'>EQUAL</a> (xv[x], yv[y])
+<a id='L467' name='L467'></a><em class='sharp'>#else</em>
+<a id='L468' name='L468'></a><em class='sharp'>  #define</em> <a href='../R/1530.html' title='Multiple referred from 6 places.'>XREF_YREF_EQUAL</a>(x,y)  <a href='../S/293.html#L568' title='Defined at 568 in lib/diffseq.h.'>XVECREF_YVECREF_EQUAL</a> (ctxt, x, y)
+<a id='L469' name='L469'></a><em class='sharp'>#endif</em>
+<a id='L470' name='L470'></a>
+<a id='L471' name='L471'></a>  <strong class='reserved'>while</strong> (<a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>)
+<a id='L472' name='L472'></a>    <em class='brace'>{</em>
+<a id='L473' name='L473'></a>      <em class='comment'>/* Slide down the bottom initial diagonal.  */</em>
+<a id='L474' name='L474'></a>      <strong class='reserved'>while</strong> (xoff &lt; xlim &amp;&amp; yoff &lt; ylim &amp;&amp; <a href='../D/1834.html' title='Multiple defined in 6 places.'>XREF_YREF_EQUAL</a> (xoff, yoff))
+<a id='L475' name='L475'></a>        <em class='brace'>{</em>
+<a id='L476' name='L476'></a>          xoff++;
+<a id='L477' name='L477'></a>          yoff++;
+<a id='L478' name='L478'></a>        <em class='brace'>}</em>
+<a id='L479' name='L479'></a>
+<a id='L480' name='L480'></a>      <em class='comment'>/* Slide up the top initial diagonal. */</em>
+<a id='L481' name='L481'></a>      <strong class='reserved'>while</strong> (xoff &lt; xlim &amp;&amp; yoff &lt; ylim &amp;&amp; <a href='../D/1834.html' title='Multiple defined in 6 places.'>XREF_YREF_EQUAL</a> (xlim - 1, ylim - 1))
+<a id='L482' name='L482'></a>        <em class='brace'>{</em>
+<a id='L483' name='L483'></a>          xlim--;
+<a id='L484' name='L484'></a>          ylim--;
+<a id='L485' name='L485'></a>        <em class='brace'>}</em>
+<a id='L486' name='L486'></a>
+<a id='L487' name='L487'></a>      <em class='comment'>/* Handle simple cases. */</em>
+<a id='L488' name='L488'></a>      <strong class='reserved'>if</strong> (xoff == xlim)
+<a id='L489' name='L489'></a>        <em class='brace'>{</em>
+<a id='L490' name='L490'></a>          <strong class='reserved'>while</strong> (yoff &lt; ylim)
+<a id='L491' name='L491'></a>            <em class='brace'>{</em>
+<a id='L492' name='L492'></a>              <a href='../D/1140.html' title='Multiple defined in 2 places.'>NOTE_INSERT</a> (ctxt, yoff);
+<a id='L493' name='L493'></a>              <strong class='reserved'>if</strong> (<a href='../D/265.html' title='Multiple defined in 3 places.'>EARLY_ABORT</a> (ctxt))
+<a id='L494' name='L494'></a>                <strong class='reserved'>return</strong> <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>;
+<a id='L495' name='L495'></a>              yoff++;
+<a id='L496' name='L496'></a>            <em class='brace'>}</em>
+<a id='L497' name='L497'></a>          <strong class='reserved'>break</strong>;
+<a id='L498' name='L498'></a>        <em class='brace'>}</em>
+<a id='L499' name='L499'></a>      <strong class='reserved'>if</strong> (yoff == ylim)
+<a id='L500' name='L500'></a>        <em class='brace'>{</em>
+<a id='L501' name='L501'></a>          <strong class='reserved'>while</strong> (xoff &lt; xlim)
+<a id='L502' name='L502'></a>            <em class='brace'>{</em>
+<a id='L503' name='L503'></a>              <a href='../D/1139.html' title='Multiple defined in 2 places.'>NOTE_DELETE</a> (ctxt, xoff);
+<a id='L504' name='L504'></a>              <strong class='reserved'>if</strong> (<a href='../D/265.html' title='Multiple defined in 3 places.'>EARLY_ABORT</a> (ctxt))
+<a id='L505' name='L505'></a>                <strong class='reserved'>return</strong> <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>;
+<a id='L506' name='L506'></a>              xoff++;
+<a id='L507' name='L507'></a>            <em class='brace'>}</em>
+<a id='L508' name='L508'></a>          <strong class='reserved'>break</strong>;
+<a id='L509' name='L509'></a>        <em class='brace'>}</em>
+<a id='L510' name='L510'></a>
+<a id='L511' name='L511'></a>      <strong class='reserved'>struct</strong> <a href='../S/293.html#L138' title='Defined at 138 in lib/diffseq.h.'>partition</a> part;
+<a id='L512' name='L512'></a>
+<a id='L513' name='L513'></a>      <em class='comment'>/* Find a point of correspondence in the middle of the vectors.  */</em>
+<a id='L514' name='L514'></a>      <a href='../S/293.html#L180' title='Defined at 180 in lib/diffseq.h.'>diag</a> (xoff, xlim, yoff, ylim, find_minimal, &amp;part, ctxt);
+<a id='L515' name='L515'></a>
+<a id='L516' name='L516'></a>      <em class='comment'>/* Use the partitions to split this problem into subproblems.  */</em>
+<a id='L517' name='L517'></a>      <a href='../D/1153.html' title='Multiple defined in 2 places.'>OFFSET</a> xoff1, xlim1, yoff1, ylim1, xoff2, xlim2, yoff2, ylim2;
+<a id='L518' name='L518'></a>      <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> find_minimal1, find_minimal2;
+<a id='L519' name='L519'></a>      <strong class='reserved'>if</strong> (!<a href='../D/1141.html' title='Multiple defined in 2 places.'>NOTE_ORDERED</a>
+<a id='L520' name='L520'></a>          &amp;&amp; ((xlim + ylim) - (part.xmid + part.ymid)
+<a id='L521' name='L521'></a>              &lt; (part.xmid + part.ymid) - (xoff + yoff)))
+<a id='L522' name='L522'></a>        <em class='brace'>{</em>
+<a id='L523' name='L523'></a>          <em class='comment'>/* The second problem is smaller and the caller doesn't</em>
+<a id='L524' name='L524'></a><em class='comment'>             care about order, so do the second problem first to</em>
+<a id='L525' name='L525'></a><em class='comment'>             lessen recursion.  */</em>
+<a id='L526' name='L526'></a>          xoff1 = part.xmid; xlim1 = xlim;
+<a id='L527' name='L527'></a>          yoff1 = part.ymid; ylim1 = ylim;
+<a id='L528' name='L528'></a>          find_minimal1 = part.hi_minimal;
+<a id='L529' name='L529'></a>
+<a id='L530' name='L530'></a>          xoff2 = xoff; xlim2 = part.xmid;
+<a id='L531' name='L531'></a>          yoff2 = yoff; ylim2 = part.ymid;
+<a id='L532' name='L532'></a>          find_minimal2 = part.lo_minimal;
+<a id='L533' name='L533'></a>        <em class='brace'>}</em>
+<a id='L534' name='L534'></a>      <strong class='reserved'>else</strong>
+<a id='L535' name='L535'></a>        <em class='brace'>{</em>
+<a id='L536' name='L536'></a>          xoff1 = xoff; xlim1 = part.xmid;
+<a id='L537' name='L537'></a>          yoff1 = yoff; ylim1 = part.ymid;
+<a id='L538' name='L538'></a>          find_minimal1 = part.lo_minimal;
+<a id='L539' name='L539'></a>
+<a id='L540' name='L540'></a>          xoff2 = part.xmid; xlim2 = xlim;
+<a id='L541' name='L541'></a>          yoff2 = part.ymid; ylim2 = ylim;
+<a id='L542' name='L542'></a>          find_minimal2 = part.hi_minimal;
+<a id='L543' name='L543'></a>        <em class='brace'>}</em>
+<a id='L544' name='L544'></a>
+<a id='L545' name='L545'></a>      <em class='comment'>/* Recurse to do one subproblem.  */</em>
+<a id='L546' name='L546'></a>      <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> early = <a href='../S/293.html#L460' title='Defined at 460 in lib/diffseq.h.'>compareseq</a> (xoff1, xlim1, yoff1, ylim1, find_minimal1, ctxt);
+<a id='L547' name='L547'></a>      <strong class='reserved'>if</strong> (early)
+<a id='L548' name='L548'></a>        <strong class='reserved'>return</strong> early;
+<a id='L549' name='L549'></a>
+<a id='L550' name='L550'></a>      <em class='comment'>/* Iterate to do the other subproblem.  */</em>
+<a id='L551' name='L551'></a>      xoff = xoff2; xlim = xlim2;
+<a id='L552' name='L552'></a>      yoff = yoff2; ylim = ylim2;
+<a id='L553' name='L553'></a>      find_minimal = find_minimal2;
+<a id='L554' name='L554'></a>    <em class='brace'>}</em>
+<a id='L555' name='L555'></a>
+<a id='L556' name='L556'></a>  <strong class='reserved'>return</strong> <a href='../D/3258.html' title='Multiple defined in 6 places.'>false</a>;
+<a id='L557' name='L557'></a><em class='sharp'>  #undef</em> <a href='../R/1530.html' title='Multiple referred from 6 places.'>XREF_YREF_EQUAL</a>
+<a id='L558' name='L558'></a><em class='brace'>}</em>
+<a id='L559' name='L559'></a>
+<a id='L560' name='L560'></a><em class='sharp'>#undef</em> <a href='../R/254.html' title='Multiple referred from 9 places.'>ELEMENT</a>
+<a id='L561' name='L561'></a><em class='sharp'>#undef</em> <a href='../R/294.html' title='Multiple referred from 7 places.'>EQUAL</a>
+<a id='L562' name='L562'></a><em class='sharp'>#undef</em> <a href='../R/913.html' title='Multiple referred from 49 places.'>OFFSET</a>
+<a id='L563' name='L563'></a><em class='sharp'>#undef</em> <a href='../S/293.html#L112' title='Referred from 112 in lib/diffseq.h.'>EXTRA_CONTEXT_FIELDS</a>
+<a id='L564' name='L564'></a><em class='sharp'>#undef</em> <a href='../S/293.html#L503' title='Referred from 503 in lib/diffseq.h.'>NOTE_DELETE</a>
+<a id='L565' name='L565'></a><em class='sharp'>#undef</em> <a href='../S/293.html#L492' title='Referred from 492 in lib/diffseq.h.'>NOTE_INSERT</a>
+<a id='L566' name='L566'></a><em class='sharp'>#undef</em> <a href='../R/222.html' title='Multiple referred from 3 places.'>EARLY_ABORT</a>
+<a id='L567' name='L567'></a><em class='sharp'>#undef</em> <a href='../R/1462.html' title='Multiple referred from 2 places.'>USE_HEURISTIC</a>
+<a id='L568' name='L568'></a><em class='sharp'>#undef</em> <a href='../R/1535.html' title='Multiple referred from 2 places.'>XVECREF_YVECREF_EQUAL</a>
+<a id='L569' name='L569'></a><em class='sharp'>#undef</em> <a href='../R/914.html' title='Multiple referred from 3 places.'>OFFSET_MAX</a>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L180'>[^]</a><a href='#L460'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

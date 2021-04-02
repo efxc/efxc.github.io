@@ -1,0 +1,628 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/relocatable.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.5' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1107.html'>lib</a>/relocatable.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L130'>[^]</a><a href='#L587'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L130' title='Defined at 130.'>set_this_relocation_prefix</a></li>
+<li><a href='#L168' title='Defined at 168.'>set_relocation_prefix</a></li>
+<li><a href='#L196' title='Defined at 196.'>compute_curr_prefix</a></li>
+<li><a href='#L329' title='Defined at 329.'>DllMain</a></li>
+<li><a href='#L360' title='Defined at 360.'>_DLL_InitTerm</a></li>
+<li><a href='#L394' title='Defined at 394.'>find_shared_library_fullname</a></li>
+<li><a href='#L452' title='Defined at 452.'>get_shared_library_fullname</a></li>
+<li><a href='#L472' title='Defined at 472.'>relocate</a></li>
+<li><a href='#L587' title='Defined at 587.'>relocate2</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* Provide relocatable packages.</em>
+<a id='L2' name='L2'></a><em class='comment'>   Copyright (C) 2003-2006, 2008-2020 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'>   Written by Bruno Haible &lt;bruno@clisp.org&gt;, 2003.</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   This program is free software: you can redistribute it and/or modify</em>
+<a id='L6' name='L6'></a><em class='comment'>   it under the terms of the GNU General Public License as published by</em>
+<a id='L7' name='L7'></a><em class='comment'>   the Free Software Foundation; either version 3 of the License, or</em>
+<a id='L8' name='L8'></a><em class='comment'>   (at your option) any later version.</em>
+<a id='L9' name='L9'></a><em class='comment'></em>
+<a id='L10' name='L10'></a><em class='comment'>   This program is distributed in the hope that it will be useful,</em>
+<a id='L11' name='L11'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L12' name='L12'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</em>
+<a id='L13' name='L13'></a><em class='comment'>   GNU General Public License for more details.</em>
+<a id='L14' name='L14'></a><em class='comment'></em>
+<a id='L15' name='L15'></a><em class='comment'>   You should have received a copy of the GNU General Public License</em>
+<a id='L16' name='L16'></a><em class='comment'>   along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;.  */</em>
+<a id='L17' name='L17'></a>
+<a id='L18' name='L18'></a>
+<a id='L19' name='L19'></a><em class='comment'>/* Tell glibc's &lt;stdio.h&gt; to provide a prototype for getline().</em>
+<a id='L20' name='L20'></a><em class='comment'>   This must come before &lt;config.h&gt; because &lt;config.h&gt; may include</em>
+<a id='L21' name='L21'></a><em class='comment'>   &lt;features.h&gt;, and once &lt;features.h&gt; has been included, it's too late.  */</em>
+<a id='L22' name='L22'></a><em class='sharp'>#ifndef</em> <a href='../D/2324.html' title='Multiple defined in 3 places.'>_GNU_SOURCE</a>
+<a id='L23' name='L23'></a><em class='sharp'># define</em> <a href='../R/1909.html' title='Multiple referred from 8 places.'>_GNU_SOURCE</a> 1
+<a id='L24' name='L24'></a><em class='sharp'>#endif</em>
+<a id='L25' name='L25'></a>
+<a id='L26' name='L26'></a><em class='sharp'>#define</em> <a href='../R/1893.html' title='Multiple referred from 4 places.'>_GL_USE_STDLIB_ALLOC</a> 1
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a><em class='comment'>/* Specification.  */</em>
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> "<a href='488.html'>relocatable.h</a>"
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a><em class='sharp'>#if</em> <a href='../D/304.html' title='Multiple defined in 2 places.'>ENABLE_RELOCATABLE</a>
+<a id='L33' name='L33'></a>
+<a id='L34' name='L34'></a><em class='sharp'>#include</em> &lt;stddef.h&gt;
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L37' name='L37'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a><em class='sharp'>#ifdef</em> NO_XMALLOC
+<a id='L40' name='L40'></a><em class='sharp'># define</em> <a href='../R/4763.html' title='Multiple referred from 58 places.'>xmalloc</a> <a href='../D/4204.html' title='Multiple defined in 4 places.'>malloc</a>
+<a id='L41' name='L41'></a><em class='sharp'>#else</em>
+<a id='L42' name='L42'></a><em class='sharp'># include</em> "<a href='615.html'>xalloc.h</a>"
+<a id='L43' name='L43'></a><em class='sharp'>#endif</em>
+<a id='L44' name='L44'></a>
+<a id='L45' name='L45'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong> _WIN32 &amp;&amp; !<strong class='reserved'>defined</strong> __CYGWIN__
+<a id='L46' name='L46'></a><em class='sharp'># define</em> WIN32_LEAN_AND_MEAN
+<a id='L47' name='L47'></a><em class='sharp'># include</em> &lt;windows.h&gt;
+<a id='L48' name='L48'></a><em class='sharp'>#endif</em>
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a><em class='sharp'>#ifdef</em> __EMX__
+<a id='L51' name='L51'></a><em class='sharp'># define</em> INCL_DOS
+<a id='L52' name='L52'></a><em class='sharp'># include</em> &lt;os2.h&gt;
+<a id='L53' name='L53'></a>
+<a id='L54' name='L54'></a><em class='sharp'># define</em> <a href='../R/4305.html' title='Multiple referred from 39 places.'>strcmp</a>  stricmp
+<a id='L55' name='L55'></a><em class='sharp'># define</em> <a href='../R/4330.html' title='Multiple referred from 19 places.'>strncmp</a> strnicmp
+<a id='L56' name='L56'></a><em class='sharp'>#endif</em>
+<a id='L57' name='L57'></a>
+<a id='L58' name='L58'></a><em class='sharp'>#if</em> DEPENDS_ON_LIBCHARSET
+<a id='L59' name='L59'></a><em class='sharp'># include</em> &lt;libcharset.h&gt;
+<a id='L60' name='L60'></a><em class='sharp'>#endif</em>
+<a id='L61' name='L61'></a><em class='sharp'>#if</em> DEPENDS_ON_LIBICONV &amp;&amp; <a href='../S/292.html#L692' title='Defined at 692 in lib/config.in.h.'>HAVE_ICONV</a>
+<a id='L62' name='L62'></a><em class='sharp'># include</em> &lt;iconv.h&gt;
+<a id='L63' name='L63'></a><em class='sharp'>#endif</em>
+<a id='L64' name='L64'></a><em class='sharp'>#if</em> <a href='../S/996.html#L66' title='Defined at 66 in src/main.c.'>DEPENDS_ON_LIBINTL</a> &amp;&amp; <a href='../S/292.html#L46' title='Defined at 46 in lib/config.in.h.'>ENABLE_NLS</a>
+<a id='L65' name='L65'></a><em class='sharp'># include</em> &lt;libintl.h&gt;
+<a id='L66' name='L66'></a><em class='sharp'>#endif</em>
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong> _WIN32 &amp;&amp; !<strong class='reserved'>defined</strong> __CYGWIN__
+<a id='L69' name='L69'></a><em class='comment'>/* Don't assume that UNICODE is not defined.  */</em>
+<a id='L70' name='L70'></a><em class='sharp'># undef</em> <a href='../R/495.html' title='Multiple referred from 2 places.'>GetModuleFileName</a>
+<a id='L71' name='L71'></a><em class='sharp'># define</em> <a href='../R/495.html' title='Multiple referred from 2 places.'>GetModuleFileName</a> GetModuleFileNameA
+<a id='L72' name='L72'></a><em class='sharp'>#endif</em>
+<a id='L73' name='L73'></a>
+<a id='L74' name='L74'></a><em class='comment'>/* Faked cheap 'bool'.  */</em>
+<a id='L75' name='L75'></a><em class='sharp'>#undef</em> <a href='../R/2374.html' title='Multiple referred from 593 places.'>bool</a>
+<a id='L76' name='L76'></a><em class='sharp'>#undef</em> <a href='../R/2690.html' title='Multiple referred from 341 places.'>false</a>
+<a id='L77' name='L77'></a><em class='sharp'>#undef</em> <a href='../R/4542.html' title='Multiple referred from 372 places.'>true</a>
+<a id='L78' name='L78'></a><em class='sharp'>#define</em> <a href='../R/2374.html' title='Multiple referred from 593 places.'>bool</a> <strong class='reserved'>int</strong>
+<a id='L79' name='L79'></a><em class='sharp'>#define</em> <a href='../R/2690.html' title='Multiple referred from 341 places.'>false</a> 0
+<a id='L80' name='L80'></a><em class='sharp'>#define</em> <a href='../R/4542.html' title='Multiple referred from 372 places.'>true</a> 1
+<a id='L81' name='L81'></a>
+<a id='L82' name='L82'></a><em class='comment'>/* Pathname support.</em>
+<a id='L83' name='L83'></a><em class='comment'>   ISSLASH(C)                tests whether C is a directory separator character.</em>
+<a id='L84' name='L84'></a><em class='comment'>   IS_FILE_NAME_WITH_DIR(P)  tests whether P contains a directory specification.</em>
+<a id='L85' name='L85'></a><em class='comment'> */</em>
+<a id='L86' name='L86'></a><em class='sharp'>#if</em> (<strong class='reserved'>defined</strong> _WIN32 &amp;&amp; !<strong class='reserved'>defined</strong> __CYGWIN__) || <strong class='reserved'>defined</strong> __EMX__ || <strong class='reserved'>defined</strong> __DJGPP__
+<a id='L87' name='L87'></a>  <em class='comment'>/* Native Windows, OS/2, DOS */</em>
+<a id='L88' name='L88'></a><em class='sharp'># define</em> <a href='../R/757.html' title='Multiple referred from 51 places.'>ISSLASH</a>(C) ((C) == '/' || (C) == '\\')
+<a id='L89' name='L89'></a><em class='sharp'># define</em> <a href='../R/501.html' title='Multiple referred from 10 places.'>HAS_DEVICE</a>(P) \
+<a id='L90' name='L90'></a>    ((((P)[0] &gt;= 'A' &amp;&amp; (P)[0] &lt;= 'Z') || ((P)[0] &gt;= 'a' &amp;&amp; (P)[0] &lt;= 'z')) \
+<a id='L91' name='L91'></a>     &amp;&amp; (P)[1] == ':')
+<a id='L92' name='L92'></a><em class='sharp'># define</em> <a href='../R/763.html' title='Multiple referred from 3 places.'>IS_FILE_NAME_WITH_DIR</a>(P) \
+<a id='L93' name='L93'></a>    (<a href='../S/547.html#L336' title='Defined at 336 in lib/string.in.h.'>strchr</a> (P, '/') != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a> || <a href='../S/547.html#L336' title='Defined at 336 in lib/string.in.h.'>strchr</a> (P, '\\') != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a> || <a href='../D/641.html' title='Multiple defined in 4 places.'>HAS_DEVICE</a> (P))
+<a id='L94' name='L94'></a><em class='sharp'># define</em> <a href='../R/324.html' title='Multiple referred from 12 places.'>FILE_SYSTEM_PREFIX_LEN</a>(P) (<a href='../D/641.html' title='Multiple defined in 4 places.'>HAS_DEVICE</a> (P) ? 2 : 0)
+<a id='L95' name='L95'></a><em class='sharp'>#else</em>
+<a id='L96' name='L96'></a>  <em class='comment'>/* Unix */</em>
+<a id='L97' name='L97'></a><em class='sharp'># define</em> <a href='../R/757.html' title='Multiple referred from 51 places.'>ISSLASH</a>(C) ((C) == '/')
+<a id='L98' name='L98'></a><em class='sharp'># define</em> <a href='../R/763.html' title='Multiple referred from 3 places.'>IS_FILE_NAME_WITH_DIR</a>(P) (<a href='../S/547.html#L336' title='Defined at 336 in lib/string.in.h.'>strchr</a> (P, '/') != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L99' name='L99'></a><em class='sharp'># define</em> <a href='../R/324.html' title='Multiple referred from 12 places.'>FILE_SYSTEM_PREFIX_LEN</a>(P) 0
+<a id='L100' name='L100'></a><em class='sharp'>#endif</em>
+<a id='L101' name='L101'></a>
+<a id='L102' name='L102'></a><em class='comment'>/* Whether to enable the more costly support for relocatable libraries.</em>
+<a id='L103' name='L103'></a><em class='comment'>   It allows libraries to be have been installed with a different original</em>
+<a id='L104' name='L104'></a><em class='comment'>   prefix than the program.  But it is quite costly, especially on Cygwin</em>
+<a id='L105' name='L105'></a><em class='comment'>   platforms, see below.  Therefore we enable it by default only on native</em>
+<a id='L106' name='L106'></a><em class='comment'>   Windows platforms.  */</em>
+<a id='L107' name='L107'></a><em class='sharp'>#ifndef</em> <a href='../D/302.html' title='Multiple defined in 2 places.'>ENABLE_COSTLY_RELOCATABLE</a>
+<a id='L108' name='L108'></a><em class='sharp'># if</em> <strong class='reserved'>defined</strong> _WIN32 &amp;&amp; !<strong class='reserved'>defined</strong> __CYGWIN__
+<a id='L109' name='L109'></a><em class='sharp'>#  define</em> <a href='../R/259.html' title='Multiple referred from 4 places.'>ENABLE_COSTLY_RELOCATABLE</a> 1
+<a id='L110' name='L110'></a><em class='sharp'># else</em>
+<a id='L111' name='L111'></a><em class='sharp'>#  define</em> <a href='../R/259.html' title='Multiple referred from 4 places.'>ENABLE_COSTLY_RELOCATABLE</a> 0
+<a id='L112' name='L112'></a><em class='sharp'># endif</em>
+<a id='L113' name='L113'></a><em class='sharp'>#endif</em>
+<a id='L114' name='L114'></a>
+<a id='L115' name='L115'></a><em class='comment'>/* Original installation prefix.  */</em>
+<a id='L116' name='L116'></a><strong class='reserved'>static</strong> <strong class='reserved'>char</strong> *orig_prefix;
+<a id='L117' name='L117'></a><strong class='reserved'>static</strong> <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> orig_prefix_len;
+<a id='L118' name='L118'></a><em class='comment'>/* Current installation prefix.  */</em>
+<a id='L119' name='L119'></a><strong class='reserved'>static</strong> <strong class='reserved'>char</strong> *curr_prefix;
+<a id='L120' name='L120'></a><strong class='reserved'>static</strong> <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> curr_prefix_len;
+<a id='L121' name='L121'></a><em class='comment'>/* These prefixes do not end in a slash.  Anything that will be concatenated</em>
+<a id='L122' name='L122'></a><em class='comment'>   to them must start with a slash.  */</em>
+<a id='L123' name='L123'></a>
+<a id='L124' name='L124'></a><em class='comment'>/* Sets the original and the current installation prefix of this module.</em>
+<a id='L125' name='L125'></a><em class='comment'>   Relocation simply replaces a pathname starting with the original prefix</em>
+<a id='L126' name='L126'></a><em class='comment'>   by the corresponding pathname with the current prefix instead.  Both</em>
+<a id='L127' name='L127'></a><em class='comment'>   prefixes should be directory names without trailing slash (i.e. use ""</em>
+<a id='L128' name='L128'></a><em class='comment'>   instead of "/").  */</em>
+<a id='L129' name='L129'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L130' name='L130'></a><a href='../S/487.html#L170' title='Referred from 170 in lib/relocatable.c.'>set_this_relocation_prefix</a> (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *orig_prefix_arg,
+<a id='L131' name='L131'></a>                            <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *curr_prefix_arg)
+<a id='L132' name='L132'></a><em class='brace'>{</em>
+<a id='L133' name='L133'></a>  <strong class='reserved'>if</strong> (orig_prefix_arg != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a> &amp;&amp; curr_prefix_arg != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>
+<a id='L134' name='L134'></a>      <em class='comment'>/* Optimization: if orig_prefix and curr_prefix are equal, the</em>
+<a id='L135' name='L135'></a><em class='comment'>         relocation is a nop.  */</em>
+<a id='L136' name='L136'></a>      &amp;&amp; <a href='../S/487.html#L54' title='Defined at 54 in lib/relocatable.c.'>strcmp</a> (orig_prefix_arg, curr_prefix_arg) != 0)
+<a id='L137' name='L137'></a>    <em class='brace'>{</em>
+<a id='L138' name='L138'></a>      <em class='comment'>/* Duplicate the argument strings.  */</em>
+<a id='L139' name='L139'></a>      <strong class='reserved'>char</strong> *memory;
+<a id='L140' name='L140'></a>
+<a id='L141' name='L141'></a>      orig_prefix_len = strlen (orig_prefix_arg);
+<a id='L142' name='L142'></a>      curr_prefix_len = strlen (curr_prefix_arg);
+<a id='L143' name='L143'></a>      memory = (<strong class='reserved'>char</strong> *) <a href='../D/5583.html' title='Multiple defined in 3 places.'>xmalloc</a> (orig_prefix_len + 1 + curr_prefix_len + 1);
+<a id='L144' name='L144'></a><em class='sharp'>#ifdef</em> NO_XMALLOC
+<a id='L145' name='L145'></a>      <strong class='reserved'>if</strong> (memory != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L146' name='L146'></a><em class='sharp'>#endif</em>
+<a id='L147' name='L147'></a>        <em class='brace'>{</em>
+<a id='L148' name='L148'></a>          memcpy (memory, orig_prefix_arg, orig_prefix_len + 1);
+<a id='L149' name='L149'></a>          orig_prefix = memory;
+<a id='L150' name='L150'></a>          memory += orig_prefix_len + 1;
+<a id='L151' name='L151'></a>          memcpy (memory, curr_prefix_arg, curr_prefix_len + 1);
+<a id='L152' name='L152'></a>          curr_prefix = memory;
+<a id='L153' name='L153'></a>          <strong class='reserved'>return</strong>;
+<a id='L154' name='L154'></a>        <em class='brace'>}</em>
+<a id='L155' name='L155'></a>    <em class='brace'>}</em>
+<a id='L156' name='L156'></a>  orig_prefix = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L157' name='L157'></a>  curr_prefix = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L158' name='L158'></a>  <em class='comment'>/* Don't worry about wasted memory here - this function is usually only</em>
+<a id='L159' name='L159'></a><em class='comment'>     called once.  */</em>
+<a id='L160' name='L160'></a><em class='brace'>}</em>
+<a id='L161' name='L161'></a>
+<a id='L162' name='L162'></a><em class='comment'>/* Sets the original and the current installation prefix of the package.</em>
+<a id='L163' name='L163'></a><em class='comment'>   Relocation simply replaces a pathname starting with the original prefix</em>
+<a id='L164' name='L164'></a><em class='comment'>   by the corresponding pathname with the current prefix instead.  Both</em>
+<a id='L165' name='L165'></a><em class='comment'>   prefixes should be directory names without trailing slash (i.e. use ""</em>
+<a id='L166' name='L166'></a><em class='comment'>   instead of "/").  */</em>
+<a id='L167' name='L167'></a><strong class='reserved'>void</strong>
+<a id='L168' name='L168'></a><a href='../R/4134.html' title='Multiple referred from 3 places.'>set_relocation_prefix</a> (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *orig_prefix_arg, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *curr_prefix_arg)
+<a id='L169' name='L169'></a><em class='brace'>{</em>
+<a id='L170' name='L170'></a>  <a href='../S/487.html#L130' title='Defined at 130 in lib/relocatable.c.'>set_this_relocation_prefix</a> (orig_prefix_arg, curr_prefix_arg);
+<a id='L171' name='L171'></a>
+<a id='L172' name='L172'></a>  <em class='comment'>/* Now notify all dependent libraries.  */</em>
+<a id='L173' name='L173'></a><em class='sharp'>#if</em> DEPENDS_ON_LIBCHARSET
+<a id='L174' name='L174'></a>  libcharset_set_relocation_prefix (orig_prefix_arg, curr_prefix_arg);
+<a id='L175' name='L175'></a><em class='sharp'>#endif</em>
+<a id='L176' name='L176'></a><em class='sharp'>#if</em> DEPENDS_ON_LIBICONV &amp;&amp; <a href='../S/292.html#L692' title='Defined at 692 in lib/config.in.h.'>HAVE_ICONV</a> &amp;&amp; _LIBICONV_VERSION &gt;= 0x0109
+<a id='L177' name='L177'></a>  libiconv_set_relocation_prefix (orig_prefix_arg, curr_prefix_arg);
+<a id='L178' name='L178'></a><em class='sharp'>#endif</em>
+<a id='L179' name='L179'></a><em class='sharp'>#if</em> <a href='../S/996.html#L66' title='Defined at 66 in src/main.c.'>DEPENDS_ON_LIBINTL</a> &amp;&amp; <a href='../S/292.html#L46' title='Defined at 46 in lib/config.in.h.'>ENABLE_NLS</a> &amp;&amp; <strong class='reserved'>defined</strong> libintl_set_relocation_prefix
+<a id='L180' name='L180'></a>  libintl_set_relocation_prefix (orig_prefix_arg, curr_prefix_arg);
+<a id='L181' name='L181'></a><em class='sharp'>#endif</em>
+<a id='L182' name='L182'></a><em class='brace'>}</em>
+<a id='L183' name='L183'></a>
+<a id='L184' name='L184'></a><em class='sharp'>#if</em> !<strong class='reserved'>defined</strong> IN_LIBRARY || (<strong class='reserved'>defined</strong> PIC &amp;&amp; <strong class='reserved'>defined</strong> INSTALLDIR &amp;&amp; <a href='../D/302.html' title='Multiple defined in 2 places.'>ENABLE_COSTLY_RELOCATABLE</a>)
+<a id='L185' name='L185'></a>
+<a id='L186' name='L186'></a><em class='comment'>/* Convenience function:</em>
+<a id='L187' name='L187'></a><em class='comment'>   Computes the current installation prefix, based on the original</em>
+<a id='L188' name='L188'></a><em class='comment'>   installation prefix, the original installation directory of a particular</em>
+<a id='L189' name='L189'></a><em class='comment'>   file, and the current pathname of this file.</em>
+<a id='L190' name='L190'></a><em class='comment'>   Returns it, freshly allocated.  Returns NULL upon failure.  */</em>
+<a id='L191' name='L191'></a><em class='sharp'>#ifdef</em> IN_LIBRARY
+<a id='L192' name='L192'></a><em class='sharp'>#define</em> <a href='../R/2491.html' title='Multiple referred from 3 places.'>compute_curr_prefix</a> local_compute_curr_prefix
+<a id='L193' name='L193'></a><strong class='reserved'>static</strong>
+<a id='L194' name='L194'></a><em class='sharp'>#endif</em>
+<a id='L195' name='L195'></a><strong class='reserved'>char</strong> *
+<a id='L196' name='L196'></a><a href='../R/2491.html' title='Multiple referred from 3 places.'>compute_curr_prefix</a> (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *orig_installprefix,
+<a id='L197' name='L197'></a>                     <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *orig_installdir,
+<a id='L198' name='L198'></a>                     <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *curr_pathname)
+<a id='L199' name='L199'></a><em class='brace'>{</em>
+<a id='L200' name='L200'></a>  <strong class='reserved'>char</strong> *curr_installdir;
+<a id='L201' name='L201'></a>  <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *rel_installdir;
+<a id='L202' name='L202'></a>
+<a id='L203' name='L203'></a>  <strong class='reserved'>if</strong> (curr_pathname == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L204' name='L204'></a>    <strong class='reserved'>return</strong> <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L205' name='L205'></a>
+<a id='L206' name='L206'></a>  <em class='comment'>/* Determine the relative installation directory, relative to the prefix.</em>
+<a id='L207' name='L207'></a><em class='comment'>     This is simply the difference between orig_installprefix and</em>
+<a id='L208' name='L208'></a><em class='comment'>     orig_installdir.  */</em>
+<a id='L209' name='L209'></a>  <strong class='reserved'>if</strong> (<a href='../D/5103.html' title='Multiple defined in 2 places.'>strncmp</a> (orig_installprefix, orig_installdir, strlen (orig_installprefix))
+<a id='L210' name='L210'></a>      != 0)
+<a id='L211' name='L211'></a>    <em class='comment'>/* Shouldn't happen - nothing should be installed outside $(prefix).  */</em>
+<a id='L212' name='L212'></a>    <strong class='reserved'>return</strong> <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L213' name='L213'></a>  rel_installdir = orig_installdir + strlen (orig_installprefix);
+<a id='L214' name='L214'></a>
+<a id='L215' name='L215'></a>  <em class='comment'>/* Determine the current installation directory.  */</em>
+<a id='L216' name='L216'></a>  <em class='brace'>{</em>
+<a id='L217' name='L217'></a>    <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *p_base = curr_pathname + <a href='../D/367.html' title='Multiple defined in 6 places.'>FILE_SYSTEM_PREFIX_LEN</a> (curr_pathname);
+<a id='L218' name='L218'></a>    <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *p = curr_pathname + strlen (curr_pathname);
+<a id='L219' name='L219'></a>    <strong class='reserved'>char</strong> *q;
+<a id='L220' name='L220'></a>
+<a id='L221' name='L221'></a>    <strong class='reserved'>while</strong> (p &gt; p_base)
+<a id='L222' name='L222'></a>      <em class='brace'>{</em>
+<a id='L223' name='L223'></a>        p--;
+<a id='L224' name='L224'></a>        <strong class='reserved'>if</strong> (<a href='../D/981.html' title='Multiple defined in 6 places.'>ISSLASH</a> (*p))
+<a id='L225' name='L225'></a>          <strong class='reserved'>break</strong>;
+<a id='L226' name='L226'></a>      <em class='brace'>}</em>
+<a id='L227' name='L227'></a>
+<a id='L228' name='L228'></a>    q = (<strong class='reserved'>char</strong> *) <a href='../D/5583.html' title='Multiple defined in 3 places.'>xmalloc</a> (p - curr_pathname + 1);
+<a id='L229' name='L229'></a><em class='sharp'>#ifdef</em> NO_XMALLOC
+<a id='L230' name='L230'></a>    <strong class='reserved'>if</strong> (q == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L231' name='L231'></a>      <strong class='reserved'>return</strong> <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L232' name='L232'></a><em class='sharp'>#endif</em>
+<a id='L233' name='L233'></a>    memcpy (q, curr_pathname, p - curr_pathname);
+<a id='L234' name='L234'></a>    q[p - curr_pathname] = '\0';
+<a id='L235' name='L235'></a>    curr_installdir = q;
+<a id='L236' name='L236'></a>  <em class='brace'>}</em>
+<a id='L237' name='L237'></a>
+<a id='L238' name='L238'></a>  <em class='comment'>/* Compute the current installation prefix by removing the trailing</em>
+<a id='L239' name='L239'></a><em class='comment'>     rel_installdir from it.  */</em>
+<a id='L240' name='L240'></a>  <em class='brace'>{</em>
+<a id='L241' name='L241'></a>    <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *rp = rel_installdir + strlen (rel_installdir);
+<a id='L242' name='L242'></a>    <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *cp = curr_installdir + strlen (curr_installdir);
+<a id='L243' name='L243'></a>    <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *cp_base =
+<a id='L244' name='L244'></a>      curr_installdir + <a href='../D/367.html' title='Multiple defined in 6 places.'>FILE_SYSTEM_PREFIX_LEN</a> (curr_installdir);
+<a id='L245' name='L245'></a>
+<a id='L246' name='L246'></a>    <strong class='reserved'>while</strong> (rp &gt; rel_installdir &amp;&amp; cp &gt; cp_base)
+<a id='L247' name='L247'></a>      <em class='brace'>{</em>
+<a id='L248' name='L248'></a>        <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> same = <a href='../D/3258.html' title='Multiple defined in 6 places.'>false</a>;
+<a id='L249' name='L249'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *rpi = rp;
+<a id='L250' name='L250'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *cpi = cp;
+<a id='L251' name='L251'></a>
+<a id='L252' name='L252'></a>        <strong class='reserved'>while</strong> (rpi &gt; rel_installdir &amp;&amp; cpi &gt; cp_base)
+<a id='L253' name='L253'></a>          <em class='brace'>{</em>
+<a id='L254' name='L254'></a>            rpi--;
+<a id='L255' name='L255'></a>            cpi--;
+<a id='L256' name='L256'></a>            <strong class='reserved'>if</strong> (<a href='../D/981.html' title='Multiple defined in 6 places.'>ISSLASH</a> (*rpi) || <a href='../D/981.html' title='Multiple defined in 6 places.'>ISSLASH</a> (*cpi))
+<a id='L257' name='L257'></a>              <em class='brace'>{</em>
+<a id='L258' name='L258'></a>                <strong class='reserved'>if</strong> (<a href='../D/981.html' title='Multiple defined in 6 places.'>ISSLASH</a> (*rpi) &amp;&amp; <a href='../D/981.html' title='Multiple defined in 6 places.'>ISSLASH</a> (*cpi))
+<a id='L259' name='L259'></a>                  same = <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>;
+<a id='L260' name='L260'></a>                <strong class='reserved'>break</strong>;
+<a id='L261' name='L261'></a>              <em class='brace'>}</em>
+<a id='L262' name='L262'></a>            <em class='comment'>/* Do case-insensitive comparison if the file system is always or</em>
+<a id='L263' name='L263'></a><em class='comment'>               often case-insensitive.  It's better to accept the comparison</em>
+<a id='L264' name='L264'></a><em class='comment'>               if the difference is only in case, rather than to fail.  */</em>
+<a id='L265' name='L265'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong> _WIN32 || <strong class='reserved'>defined</strong> __CYGWIN__ || <strong class='reserved'>defined</strong> __EMX__ || <strong class='reserved'>defined</strong> __DJGPP__
+<a id='L266' name='L266'></a>            <em class='comment'>/* Native Windows, Cygwin, OS/2, DOS - case insignificant file system */</em>
+<a id='L267' name='L267'></a>            <strong class='reserved'>if</strong> ((*rpi &gt;= 'a' &amp;&amp; *rpi &lt;= 'z' ? *rpi - 'a' + 'A' : *rpi)
+<a id='L268' name='L268'></a>                != (*cpi &gt;= 'a' &amp;&amp; *cpi &lt;= 'z' ? *cpi - 'a' + 'A' : *cpi))
+<a id='L269' name='L269'></a>              <strong class='reserved'>break</strong>;
+<a id='L270' name='L270'></a><em class='sharp'>#else</em>
+<a id='L271' name='L271'></a>            <strong class='reserved'>if</strong> (*rpi != *cpi)
+<a id='L272' name='L272'></a>              <strong class='reserved'>break</strong>;
+<a id='L273' name='L273'></a><em class='sharp'>#endif</em>
+<a id='L274' name='L274'></a>          <em class='brace'>}</em>
+<a id='L275' name='L275'></a>        <strong class='reserved'>if</strong> (!same)
+<a id='L276' name='L276'></a>          <strong class='reserved'>break</strong>;
+<a id='L277' name='L277'></a>        <em class='comment'>/* The last pathname component was the same.  rpi and cpi now point</em>
+<a id='L278' name='L278'></a><em class='comment'>           to the slash before it.  */</em>
+<a id='L279' name='L279'></a>        rp = rpi;
+<a id='L280' name='L280'></a>        cp = cpi;
+<a id='L281' name='L281'></a>      <em class='brace'>}</em>
+<a id='L282' name='L282'></a>
+<a id='L283' name='L283'></a>    <strong class='reserved'>if</strong> (rp &gt; rel_installdir)
+<a id='L284' name='L284'></a>      <em class='brace'>{</em>
+<a id='L285' name='L285'></a>        <em class='comment'>/* Unexpected: The curr_installdir does not end with rel_installdir.  */</em>
+<a id='L286' name='L286'></a>        free (curr_installdir);
+<a id='L287' name='L287'></a>        <strong class='reserved'>return</strong> <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L288' name='L288'></a>      <em class='brace'>}</em>
+<a id='L289' name='L289'></a>
+<a id='L290' name='L290'></a>    <em class='brace'>{</em>
+<a id='L291' name='L291'></a>      <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> computed_curr_prefix_len = cp - curr_installdir;
+<a id='L292' name='L292'></a>      <strong class='reserved'>char</strong> *computed_curr_prefix;
+<a id='L293' name='L293'></a>
+<a id='L294' name='L294'></a>      computed_curr_prefix = (<strong class='reserved'>char</strong> *) <a href='../D/5583.html' title='Multiple defined in 3 places.'>xmalloc</a> (computed_curr_prefix_len + 1);
+<a id='L295' name='L295'></a><em class='sharp'>#ifdef</em> NO_XMALLOC
+<a id='L296' name='L296'></a>      <strong class='reserved'>if</strong> (computed_curr_prefix == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L297' name='L297'></a>        <em class='brace'>{</em>
+<a id='L298' name='L298'></a>          free (curr_installdir);
+<a id='L299' name='L299'></a>          <strong class='reserved'>return</strong> <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>;
+<a id='L300' name='L300'></a>        <em class='brace'>}</em>
+<a id='L301' name='L301'></a><em class='sharp'>#endif</em>
+<a id='L302' name='L302'></a>      memcpy (computed_curr_prefix, curr_installdir, computed_curr_prefix_len);
+<a id='L303' name='L303'></a>      computed_curr_prefix[computed_curr_prefix_len] = '\0';
+<a id='L304' name='L304'></a>
+<a id='L305' name='L305'></a>      free (curr_installdir);
+<a id='L306' name='L306'></a>
+<a id='L307' name='L307'></a>      <strong class='reserved'>return</strong> computed_curr_prefix;
+<a id='L308' name='L308'></a>    <em class='brace'>}</em>
+<a id='L309' name='L309'></a>  <em class='brace'>}</em>
+<a id='L310' name='L310'></a><em class='brace'>}</em>
+<a id='L311' name='L311'></a>
+<a id='L312' name='L312'></a><em class='sharp'>#endif</em> <em class='comment'>/* !IN_LIBRARY || PIC */</em>
+<a id='L313' name='L313'></a>
+<a id='L314' name='L314'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong> PIC &amp;&amp; <strong class='reserved'>defined</strong> INSTALLDIR &amp;&amp; <a href='../D/302.html' title='Multiple defined in 2 places.'>ENABLE_COSTLY_RELOCATABLE</a>
+<a id='L315' name='L315'></a>
+<a id='L316' name='L316'></a><em class='comment'>/* Full pathname of shared library, or NULL.  */</em>
+<a id='L317' name='L317'></a><strong class='reserved'>static</strong> <strong class='reserved'>char</strong> *shared_library_fullname;
+<a id='L318' name='L318'></a>
+<a id='L319' name='L319'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong> _WIN32 &amp;&amp; !<strong class='reserved'>defined</strong> __CYGWIN__
+<a id='L320' name='L320'></a><em class='comment'>/* Native Windows only.</em>
+<a id='L321' name='L321'></a><em class='comment'>   On Cygwin, it is better to use the Cygwin provided /proc interface, than</em>
+<a id='L322' name='L322'></a><em class='comment'>   to use native Windows API and cygwin_conv_to_posix_path, because it</em>
+<a id='L323' name='L323'></a><em class='comment'>   supports longer file names</em>
+<a id='L324' name='L324'></a><em class='comment'>   (see &lt;https://cygwin.com/ml/cygwin/2011-01/msg00410.html&gt;).  */</em>
+<a id='L325' name='L325'></a>
+<a id='L326' name='L326'></a><em class='comment'>/* Determine the full pathname of the shared library when it is loaded.  */</em>
+<a id='L327' name='L327'></a>
+<a id='L328' name='L328'></a>BOOL WINAPI
+<a id='L329' name='L329'></a>DllMain (HINSTANCE module_handle, DWORD event, LPVOID reserved)
+<a id='L330' name='L330'></a><em class='brace'>{</em>
+<a id='L331' name='L331'></a>  (<strong class='reserved'>void</strong>) reserved;
+<a id='L332' name='L332'></a>
+<a id='L333' name='L333'></a>  <strong class='reserved'>if</strong> (event == DLL_PROCESS_ATTACH)
+<a id='L334' name='L334'></a>    <em class='brace'>{</em>
+<a id='L335' name='L335'></a>      <em class='comment'>/* The DLL is being loaded into an application's address range.  */</em>
+<a id='L336' name='L336'></a>      <strong class='reserved'>static</strong> <strong class='reserved'>char</strong> <a href='../D/4153.html' title='Multiple defined in 4 places.'>location</a>[MAX_PATH];
+<a id='L337' name='L337'></a>
+<a id='L338' name='L338'></a>      <strong class='reserved'>if</strong> (!<a href='../D/633.html' title='Multiple defined in 4 places.'>GetModuleFileName</a> (module_handle, <a href='../D/4153.html' title='Multiple defined in 4 places.'>location</a>, <strong class='reserved'>sizeof</strong> (<a href='../D/4153.html' title='Multiple defined in 4 places.'>location</a>)))
+<a id='L339' name='L339'></a>        <em class='comment'>/* Shouldn't happen.  */</em>
+<a id='L340' name='L340'></a>        <strong class='reserved'>return</strong> FALSE;
+<a id='L341' name='L341'></a>
+<a id='L342' name='L342'></a>      <strong class='reserved'>if</strong> (!<a href='../D/987.html' title='Multiple defined in 6 places.'>IS_FILE_NAME_WITH_DIR</a> (<a href='../D/4153.html' title='Multiple defined in 4 places.'>location</a>))
+<a id='L343' name='L343'></a>        <em class='comment'>/* Shouldn't happen.  */</em>
+<a id='L344' name='L344'></a>        <strong class='reserved'>return</strong> FALSE;
+<a id='L345' name='L345'></a>
+<a id='L346' name='L346'></a>      shared_library_fullname = <a href='../D/5080.html' title='Multiple defined in 9 places.'>strdup</a> (<a href='../D/4153.html' title='Multiple defined in 4 places.'>location</a>);
+<a id='L347' name='L347'></a>    <em class='brace'>}</em>
+<a id='L348' name='L348'></a>
+<a id='L349' name='L349'></a>  <strong class='reserved'>return</strong> TRUE;
+<a id='L350' name='L350'></a><em class='brace'>}</em>
+<a id='L351' name='L351'></a>
+<a id='L352' name='L352'></a><em class='sharp'>#elif</em> <strong class='reserved'>defined</strong> __EMX__
+<a id='L353' name='L353'></a>
+<a id='L354' name='L354'></a><strong class='reserved'>extern</strong> <strong class='reserved'>int</strong>  _CRT_init (<strong class='reserved'>void</strong>);
+<a id='L355' name='L355'></a><strong class='reserved'>extern</strong> <strong class='reserved'>void</strong> _CRT_term (<strong class='reserved'>void</strong>);
+<a id='L356' name='L356'></a><strong class='reserved'>extern</strong> <strong class='reserved'>void</strong> __ctordtorInit (<strong class='reserved'>void</strong>);
+<a id='L357' name='L357'></a><strong class='reserved'>extern</strong> <strong class='reserved'>void</strong> __ctordtorTerm (<strong class='reserved'>void</strong>);
+<a id='L358' name='L358'></a>
+<a id='L359' name='L359'></a><strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> _System
+<a id='L360' name='L360'></a>_DLL_InitTerm (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> hModule, <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> ulFlag)
+<a id='L361' name='L361'></a><em class='brace'>{</em>
+<a id='L362' name='L362'></a>  <strong class='reserved'>static</strong> <strong class='reserved'>char</strong> <a href='../D/4153.html' title='Multiple defined in 4 places.'>location</a>[CCHMAXPATH];
+<a id='L363' name='L363'></a>
+<a id='L364' name='L364'></a>  <strong class='reserved'>switch</strong> (ulFlag)
+<a id='L365' name='L365'></a>    <em class='brace'>{</em>
+<a id='L366' name='L366'></a>      <strong class='reserved'>case</strong> 0:
+<a id='L367' name='L367'></a>        <strong class='reserved'>if</strong> (_CRT_init () == -1)
+<a id='L368' name='L368'></a>          <strong class='reserved'>return</strong> 0;
+<a id='L369' name='L369'></a>
+<a id='L370' name='L370'></a>        __ctordtorInit();
+<a id='L371' name='L371'></a>
+<a id='L372' name='L372'></a>        <em class='comment'>/* See http://cyberkinetica.homeunix.net/os2tk45/cp1/1247_L2H_DosQueryModuleNameSy.html</em>
+<a id='L373' name='L373'></a><em class='comment'>           for specification of DosQueryModuleName(). */</em>
+<a id='L374' name='L374'></a>        <strong class='reserved'>if</strong> (DosQueryModuleName (hModule, <strong class='reserved'>sizeof</strong> (<a href='../D/4153.html' title='Multiple defined in 4 places.'>location</a>), <a href='../D/4153.html' title='Multiple defined in 4 places.'>location</a>))
+<a id='L375' name='L375'></a>          <strong class='reserved'>return</strong> 0;
+<a id='L376' name='L376'></a>
+<a id='L377' name='L377'></a>        _fnslashify (<a href='../D/4153.html' title='Multiple defined in 4 places.'>location</a>);
+<a id='L378' name='L378'></a>        shared_library_fullname = <a href='../D/5080.html' title='Multiple defined in 9 places.'>strdup</a> (<a href='../D/4153.html' title='Multiple defined in 4 places.'>location</a>);
+<a id='L379' name='L379'></a>        <strong class='reserved'>break</strong>;
+<a id='L380' name='L380'></a>
+<a id='L381' name='L381'></a>      <strong class='reserved'>case</strong> 1:
+<a id='L382' name='L382'></a>        __ctordtorTerm();
+<a id='L383' name='L383'></a>
+<a id='L384' name='L384'></a>        _CRT_term ();
+<a id='L385' name='L385'></a>        <strong class='reserved'>break</strong>;
+<a id='L386' name='L386'></a>    <em class='brace'>}</em>
+<a id='L387' name='L387'></a>
+<a id='L388' name='L388'></a>  <strong class='reserved'>return</strong> 1;
+<a id='L389' name='L389'></a><em class='brace'>}</em>
+<a id='L390' name='L390'></a>
+<a id='L391' name='L391'></a><em class='sharp'>#else</em> <em class='comment'>/* Unix */</em>
+<a id='L392' name='L392'></a>
+<a id='L393' name='L393'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L394' name='L394'></a><a href='../R/2730.html' title='Multiple referred from 2 places.'>find_shared_library_fullname</a> ()
+<a id='L395' name='L395'></a><em class='brace'>{</em>
+<a id='L396' name='L396'></a><em class='sharp'>#if</em> (<strong class='reserved'>defined</strong> __linux__ &amp;&amp; (__GLIBC__ &gt;= 2 || <strong class='reserved'>defined</strong> __UCLIBC__)) || <strong class='reserved'>defined</strong> __CYGWIN__
+<a id='L397' name='L397'></a>  <em class='comment'>/* Linux has /proc/self/maps. glibc 2 and uClibc have the getline()</em>
+<a id='L398' name='L398'></a><em class='comment'>     function.</em>
+<a id='L399' name='L399'></a><em class='comment'>     Cygwin &gt;= 1.5 has /proc/self/maps and the getline() function too.</em>
+<a id='L400' name='L400'></a><em class='comment'>     But it is costly: ca. 0.3 ms on Linux, 3 ms on Cygwin 1.5, and 5 ms on</em>
+<a id='L401' name='L401'></a><em class='comment'>     Cygwin 1.7.  */</em>
+<a id='L402' name='L402'></a>  FILE *fp;
+<a id='L403' name='L403'></a>
+<a id='L404' name='L404'></a>  <em class='comment'>/* Open the current process' maps file.  It describes one VMA per line.  */</em>
+<a id='L405' name='L405'></a>  fp = <a href='../D/3345.html' title='Multiple defined in 5 places.'>fopen</a> ("/proc/self/maps", "r");
+<a id='L406' name='L406'></a>  <strong class='reserved'>if</strong> (fp)
+<a id='L407' name='L407'></a>    <em class='brace'>{</em>
+<a id='L408' name='L408'></a>      <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> address = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>) &amp;<a href='../S/487.html#L394' title='Defined at 394 in lib/relocatable.c.'>find_shared_library_fullname</a>;
+<a id='L409' name='L409'></a>      <strong class='reserved'>for</strong> (;;)
+<a id='L410' name='L410'></a>        <em class='brace'>{</em>
+<a id='L411' name='L411'></a>          <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> start, <a href='../S/69.html#L110' title='Defined at 110 in data/skeletons/stack.hh.'>end</a>;
+<a id='L412' name='L412'></a>          <strong class='reserved'>int</strong> c;
+<a id='L413' name='L413'></a>
+<a id='L414' name='L414'></a>          <strong class='reserved'>if</strong> (<a href='../D/3373.html' title='Multiple defined in 2 places.'>fscanf</a> (fp, "%lx-%lx", &amp;start, &amp;<a href='../S/69.html#L110' title='Defined at 110 in data/skeletons/stack.hh.'>end</a>) != 2)
+<a id='L415' name='L415'></a>            <strong class='reserved'>break</strong>;
+<a id='L416' name='L416'></a>          <strong class='reserved'>if</strong> (address &gt;= start &amp;&amp; address &lt;= <a href='../S/69.html#L110' title='Defined at 110 in data/skeletons/stack.hh.'>end</a> - 1)
+<a id='L417' name='L417'></a>            <em class='brace'>{</em>
+<a id='L418' name='L418'></a>              <em class='comment'>/* Found it.  Now see if this line contains a filename.  */</em>
+<a id='L419' name='L419'></a>              <strong class='reserved'>while</strong> (c = <a href='../D/3424.html' title='Multiple defined in 4 places.'>getc</a> (fp), c != EOF &amp;&amp; c != '\n' &amp;&amp; c != '/')
+<a id='L420' name='L420'></a>                <strong class='reserved'>continue</strong>;
+<a id='L421' name='L421'></a>              <strong class='reserved'>if</strong> (c == '/')
+<a id='L422' name='L422'></a>                <em class='brace'>{</em>
+<a id='L423' name='L423'></a>                  <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> <a href='../D/4934.html' title='Multiple defined in 2 places.'>size</a>;
+<a id='L424' name='L424'></a>                  <strong class='reserved'>int</strong> len;
+<a id='L425' name='L425'></a>
+<a id='L426' name='L426'></a>                  ungetc (c, fp);
+<a id='L427' name='L427'></a>                  shared_library_fullname = <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>; <a href='../D/4934.html' title='Multiple defined in 2 places.'>size</a> = 0;
+<a id='L428' name='L428'></a>                  len = <a href='../D/3438.html' title='Multiple defined in 4 places.'>getline</a> (&amp;shared_library_fullname, &amp;<a href='../D/4934.html' title='Multiple defined in 2 places.'>size</a>, fp);
+<a id='L429' name='L429'></a>                  <strong class='reserved'>if</strong> (len &gt;= 0)
+<a id='L430' name='L430'></a>                    <em class='brace'>{</em>
+<a id='L431' name='L431'></a>                      <em class='comment'>/* Success: filled shared_library_fullname.  */</em>
+<a id='L432' name='L432'></a>                      <strong class='reserved'>if</strong> (len &gt; 0 &amp;&amp; shared_library_fullname[len - 1] == '\n')
+<a id='L433' name='L433'></a>                        shared_library_fullname[len - 1] = '\0';
+<a id='L434' name='L434'></a>                    <em class='brace'>}</em>
+<a id='L435' name='L435'></a>                <em class='brace'>}</em>
+<a id='L436' name='L436'></a>              <strong class='reserved'>break</strong>;
+<a id='L437' name='L437'></a>            <em class='brace'>}</em>
+<a id='L438' name='L438'></a>          <strong class='reserved'>while</strong> (c = <a href='../D/3424.html' title='Multiple defined in 4 places.'>getc</a> (fp), c != EOF &amp;&amp; c != '\n')
+<a id='L439' name='L439'></a>            <strong class='reserved'>continue</strong>;
+<a id='L440' name='L440'></a>        <em class='brace'>}</em>
+<a id='L441' name='L441'></a>      <a href='../D/3263.html' title='Multiple defined in 2 places.'>fclose</a> (fp);
+<a id='L442' name='L442'></a>    <em class='brace'>}</em>
+<a id='L443' name='L443'></a><em class='sharp'>#endif</em>
+<a id='L444' name='L444'></a><em class='brace'>}</em>
+<a id='L445' name='L445'></a>
+<a id='L446' name='L446'></a><em class='sharp'>#endif</em> <em class='comment'>/* Native Windows / EMX / Unix */</em>
+<a id='L447' name='L447'></a>
+<a id='L448' name='L448'></a><em class='comment'>/* Return the full pathname of the current shared library.</em>
+<a id='L449' name='L449'></a><em class='comment'>   Return NULL if unknown.</em>
+<a id='L450' name='L450'></a><em class='comment'>   Guaranteed to work only on Linux, EMX, Cygwin, and native Windows.  */</em>
+<a id='L451' name='L451'></a><strong class='reserved'>static</strong> <strong class='reserved'>char</strong> *
+<a id='L452' name='L452'></a><a href='../S/487.html#L494' title='Referred from 494 in lib/relocatable.c.'>get_shared_library_fullname</a> ()
+<a id='L453' name='L453'></a><em class='brace'>{</em>
+<a id='L454' name='L454'></a><em class='sharp'>#if</em> !(<strong class='reserved'>defined</strong> _WIN32 &amp;&amp; !<strong class='reserved'>defined</strong> __CYGWIN__) &amp;&amp; !<strong class='reserved'>defined</strong> __EMX__
+<a id='L455' name='L455'></a>  <strong class='reserved'>static</strong> <a href='../D/2878.html' title='Multiple defined in 4 places.'>bool</a> tried_find_shared_library_fullname;
+<a id='L456' name='L456'></a>  <strong class='reserved'>if</strong> (!tried_find_shared_library_fullname)
+<a id='L457' name='L457'></a>    <em class='brace'>{</em>
+<a id='L458' name='L458'></a>      <a href='../S/487.html#L394' title='Defined at 394 in lib/relocatable.c.'>find_shared_library_fullname</a> ();
+<a id='L459' name='L459'></a>      tried_find_shared_library_fullname = <a href='../D/5351.html' title='Multiple defined in 6 places.'>true</a>;
+<a id='L460' name='L460'></a>    <em class='brace'>}</em>
+<a id='L461' name='L461'></a><em class='sharp'>#endif</em>
+<a id='L462' name='L462'></a>  <strong class='reserved'>return</strong> shared_library_fullname;
+<a id='L463' name='L463'></a><em class='brace'>}</em>
+<a id='L464' name='L464'></a>
+<a id='L465' name='L465'></a><em class='sharp'>#endif</em> <em class='comment'>/* PIC */</em>
+<a id='L466' name='L466'></a>
+<a id='L467' name='L467'></a><em class='comment'>/* Returns the pathname, relocated according to the current installation</em>
+<a id='L468' name='L468'></a><em class='comment'>   directory.</em>
+<a id='L469' name='L469'></a><em class='comment'>   The returned string is either PATHNAME unmodified or a freshly allocated</em>
+<a id='L470' name='L470'></a><em class='comment'>   string that you can free with free() after casting it to 'char *'.  */</em>
+<a id='L471' name='L471'></a><strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *
+<a id='L472' name='L472'></a><a href='../R/3975.html' title='Multiple referred from 4 places.'>relocate</a> (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *pathname)
+<a id='L473' name='L473'></a><em class='brace'>{</em>
+<a id='L474' name='L474'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong> PIC &amp;&amp; <strong class='reserved'>defined</strong> INSTALLDIR &amp;&amp; <a href='../D/302.html' title='Multiple defined in 2 places.'>ENABLE_COSTLY_RELOCATABLE</a>
+<a id='L475' name='L475'></a>  <strong class='reserved'>static</strong> <strong class='reserved'>int</strong> initialized;
+<a id='L476' name='L476'></a>
+<a id='L477' name='L477'></a>  <em class='comment'>/* Initialization code for a shared library.  */</em>
+<a id='L478' name='L478'></a>  <strong class='reserved'>if</strong> (!initialized)
+<a id='L479' name='L479'></a>    <em class='brace'>{</em>
+<a id='L480' name='L480'></a>      <em class='comment'>/* At this point, orig_prefix and curr_prefix likely have already been</em>
+<a id='L481' name='L481'></a><em class='comment'>         set through the main program's set_program_name_and_installdir</em>
+<a id='L482' name='L482'></a><em class='comment'>         function.  This is sufficient in the case that the library has</em>
+<a id='L483' name='L483'></a><em class='comment'>         initially been installed in the same orig_prefix.  But we can do</em>
+<a id='L484' name='L484'></a><em class='comment'>         better, to also cover the cases that 1. it has been installed</em>
+<a id='L485' name='L485'></a><em class='comment'>         in a different prefix before being moved to orig_prefix and (later)</em>
+<a id='L486' name='L486'></a><em class='comment'>         to curr_prefix, 2. unlike the program, it has not moved away from</em>
+<a id='L487' name='L487'></a><em class='comment'>         orig_prefix.  */</em>
+<a id='L488' name='L488'></a>      <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *orig_installprefix = <a href='../S/292.html#L1187' title='Defined at 1187 in lib/config.in.h.'>INSTALLPREFIX</a>;
+<a id='L489' name='L489'></a>      <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *orig_installdir = INSTALLDIR;
+<a id='L490' name='L490'></a>      <strong class='reserved'>char</strong> *curr_prefix_better;
+<a id='L491' name='L491'></a>
+<a id='L492' name='L492'></a>      curr_prefix_better =
+<a id='L493' name='L493'></a>        <a href='../D/3044.html' title='Multiple defined in 2 places.'>compute_curr_prefix</a> (orig_installprefix, orig_installdir,
+<a id='L494' name='L494'></a>                             <a href='../S/487.html#L452' title='Defined at 452 in lib/relocatable.c.'>get_shared_library_fullname</a> ());
+<a id='L495' name='L495'></a>
+<a id='L496' name='L496'></a>      <a href='../S/487.html#L168' title='Defined at 168 in lib/relocatable.c.'>set_relocation_prefix</a> (orig_installprefix,
+<a id='L497' name='L497'></a>                             curr_prefix_better != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>
+<a id='L498' name='L498'></a>                             ? curr_prefix_better
+<a id='L499' name='L499'></a>                             : curr_prefix);
+<a id='L500' name='L500'></a>
+<a id='L501' name='L501'></a>      <strong class='reserved'>if</strong> (curr_prefix_better != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L502' name='L502'></a>        free (curr_prefix_better);
+<a id='L503' name='L503'></a>
+<a id='L504' name='L504'></a>      initialized = 1;
+<a id='L505' name='L505'></a>    <em class='brace'>}</em>
+<a id='L506' name='L506'></a><em class='sharp'>#endif</em>
+<a id='L507' name='L507'></a>
+<a id='L508' name='L508'></a>  <em class='comment'>/* Note: It is not necessary to perform case insensitive comparison here,</em>
+<a id='L509' name='L509'></a><em class='comment'>     even for DOS-like file systems, because the pathname argument was</em>
+<a id='L510' name='L510'></a><em class='comment'>     typically created from the same Makefile variable as orig_prefix came</em>
+<a id='L511' name='L511'></a><em class='comment'>     from.  */</em>
+<a id='L512' name='L512'></a>  <strong class='reserved'>if</strong> (orig_prefix != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a> &amp;&amp; curr_prefix != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>
+<a id='L513' name='L513'></a>      &amp;&amp; <a href='../D/5103.html' title='Multiple defined in 2 places.'>strncmp</a> (pathname, orig_prefix, orig_prefix_len) == 0)
+<a id='L514' name='L514'></a>    <em class='brace'>{</em>
+<a id='L515' name='L515'></a>      <strong class='reserved'>if</strong> (pathname[orig_prefix_len] == '\0')
+<a id='L516' name='L516'></a>        <em class='brace'>{</em>
+<a id='L517' name='L517'></a>          <em class='comment'>/* pathname equals orig_prefix.  */</em>
+<a id='L518' name='L518'></a>          <strong class='reserved'>char</strong> *<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> = (<strong class='reserved'>char</strong> *) <a href='../D/5583.html' title='Multiple defined in 3 places.'>xmalloc</a> (strlen (curr_prefix) + 1);
+<a id='L519' name='L519'></a>
+<a id='L520' name='L520'></a><em class='sharp'>#ifdef</em> NO_XMALLOC
+<a id='L521' name='L521'></a>          <strong class='reserved'>if</strong> (<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L522' name='L522'></a><em class='sharp'>#endif</em>
+<a id='L523' name='L523'></a>            <em class='brace'>{</em>
+<a id='L524' name='L524'></a>              strcpy (<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>, curr_prefix);
+<a id='L525' name='L525'></a>              <strong class='reserved'>return</strong> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>;
+<a id='L526' name='L526'></a>            <em class='brace'>}</em>
+<a id='L527' name='L527'></a>        <em class='brace'>}</em>
+<a id='L528' name='L528'></a>      <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../D/981.html' title='Multiple defined in 6 places.'>ISSLASH</a> (pathname[orig_prefix_len]))
+<a id='L529' name='L529'></a>        <em class='brace'>{</em>
+<a id='L530' name='L530'></a>          <em class='comment'>/* pathname starts with orig_prefix.  */</em>
+<a id='L531' name='L531'></a>          <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *pathname_tail = &amp;pathname[orig_prefix_len];
+<a id='L532' name='L532'></a>          <strong class='reserved'>char</strong> *<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> =
+<a id='L533' name='L533'></a>            (<strong class='reserved'>char</strong> *) <a href='../D/5583.html' title='Multiple defined in 3 places.'>xmalloc</a> (curr_prefix_len + strlen (pathname_tail) + 1);
+<a id='L534' name='L534'></a>
+<a id='L535' name='L535'></a><em class='sharp'>#ifdef</em> NO_XMALLOC
+<a id='L536' name='L536'></a>          <strong class='reserved'>if</strong> (<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L537' name='L537'></a><em class='sharp'>#endif</em>
+<a id='L538' name='L538'></a>            <em class='brace'>{</em>
+<a id='L539' name='L539'></a>              memcpy (<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>, curr_prefix, curr_prefix_len);
+<a id='L540' name='L540'></a>              strcpy (<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> + curr_prefix_len, pathname_tail);
+<a id='L541' name='L541'></a>              <strong class='reserved'>return</strong> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>;
+<a id='L542' name='L542'></a>            <em class='brace'>}</em>
+<a id='L543' name='L543'></a>        <em class='brace'>}</em>
+<a id='L544' name='L544'></a>    <em class='brace'>}</em>
+<a id='L545' name='L545'></a>
+<a id='L546' name='L546'></a><em class='sharp'>#ifdef</em> __EMX__
+<a id='L547' name='L547'></a><em class='sharp'># ifdef</em> __KLIBC__
+<a id='L548' name='L548'></a><em class='sharp'>#  undef</em> <a href='../R/4330.html' title='Multiple referred from 19 places.'>strncmp</a>
+<a id='L549' name='L549'></a>
+<a id='L550' name='L550'></a>  <strong class='reserved'>if</strong> (<a href='../D/5103.html' title='Multiple defined in 2 places.'>strncmp</a> (pathname, "/@unixroot", 10) == 0
+<a id='L551' name='L551'></a>      &amp;&amp; (pathname[10] == '\0' || <a href='../D/981.html' title='Multiple defined in 6 places.'>ISSLASH</a> (pathname[10])))
+<a id='L552' name='L552'></a>    <em class='brace'>{</em>
+<a id='L553' name='L553'></a>      <em class='comment'>/* kLIBC itself processes /@unixroot prefix */</em>
+<a id='L554' name='L554'></a>      <strong class='reserved'>return</strong> pathname;
+<a id='L555' name='L555'></a>    <em class='brace'>}</em>
+<a id='L556' name='L556'></a>  <strong class='reserved'>else</strong>
+<a id='L557' name='L557'></a><em class='sharp'># endif</em>
+<a id='L558' name='L558'></a>  <strong class='reserved'>if</strong> (<a href='../D/981.html' title='Multiple defined in 6 places.'>ISSLASH</a> (pathname[0]))
+<a id='L559' name='L559'></a>    <em class='brace'>{</em>
+<a id='L560' name='L560'></a>      <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *unixroot = getenv ("UNIXROOT");
+<a id='L561' name='L561'></a>
+<a id='L562' name='L562'></a>      <strong class='reserved'>if</strong> (unixroot &amp;&amp; <a href='../D/641.html' title='Multiple defined in 4 places.'>HAS_DEVICE</a> (unixroot) &amp;&amp; unixroot[2] == '\0')
+<a id='L563' name='L563'></a>        <em class='brace'>{</em>
+<a id='L564' name='L564'></a>          <strong class='reserved'>char</strong> *<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> = (<strong class='reserved'>char</strong> *) <a href='../D/5583.html' title='Multiple defined in 3 places.'>xmalloc</a> (2 + strlen (pathname) + 1);
+<a id='L565' name='L565'></a><em class='sharp'>#ifdef</em> NO_XMALLOC
+<a id='L566' name='L566'></a>          <strong class='reserved'>if</strong> (<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> != <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L567' name='L567'></a><em class='sharp'>#endif</em>
+<a id='L568' name='L568'></a>            <em class='brace'>{</em>
+<a id='L569' name='L569'></a>              memcpy (<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>, unixroot, 2);
+<a id='L570' name='L570'></a>              strcpy (<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> + 2, pathname);
+<a id='L571' name='L571'></a>              <strong class='reserved'>return</strong> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>;
+<a id='L572' name='L572'></a>            <em class='brace'>}</em>
+<a id='L573' name='L573'></a>        <em class='brace'>}</em>
+<a id='L574' name='L574'></a>    <em class='brace'>}</em>
+<a id='L575' name='L575'></a><em class='sharp'>#endif</em>
+<a id='L576' name='L576'></a>
+<a id='L577' name='L577'></a>  <em class='comment'>/* Nothing to relocate.  */</em>
+<a id='L578' name='L578'></a>  <strong class='reserved'>return</strong> pathname;
+<a id='L579' name='L579'></a><em class='brace'>}</em>
+<a id='L580' name='L580'></a>
+<a id='L581' name='L581'></a><em class='comment'>/* Returns the pathname, relocated according to the current installation</em>
+<a id='L582' name='L582'></a><em class='comment'>   directory.</em>
+<a id='L583' name='L583'></a><em class='comment'>   This function sets *ALLOCATEDP to the allocated memory, or to NULL if</em>
+<a id='L584' name='L584'></a><em class='comment'>   no memory allocation occurs.  So that, after you're done with the return</em>
+<a id='L585' name='L585'></a><em class='comment'>   value, to reclaim allocated memory, you can do: free (*ALLOCATEDP).  */</em>
+<a id='L586' name='L586'></a><strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *
+<a id='L587' name='L587'></a><a href='../R/3976.html' title='Multiple referred from 3 places.'>relocate2</a> (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *pathname, <strong class='reserved'>char</strong> **allocatedp)
+<a id='L588' name='L588'></a><em class='brace'>{</em>
+<a id='L589' name='L589'></a>  <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> = <a href='../D/4693.html' title='Multiple defined in 2 places.'>relocate</a> (pathname);
+<a id='L590' name='L590'></a>  *allocatedp = (<a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> != pathname ? (<strong class='reserved'>char</strong> *) <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a> : <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>);
+<a id='L591' name='L591'></a>  <strong class='reserved'>return</strong> <a href='../S/137.html#L39' title='Defined at 39 in examples/c/reccalc/parse.y.'>result</a>;
+<a id='L592' name='L592'></a><em class='brace'>}</em>
+<a id='L593' name='L593'></a>
+<a id='L594' name='L594'></a><em class='sharp'>#endif</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L130'>[^]</a><a href='#L587'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

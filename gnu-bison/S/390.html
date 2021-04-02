@@ -1,0 +1,480 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/iconv.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.5' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1107.html'>lib</a>/iconv.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L52'>[^]</a><a href='#L274'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L52' title='Defined at 52.'>utf16be_mbtowc</a></li>
+<li><a href='#L82' title='Defined at 82.'>utf16be_wctomb</a></li>
+<li><a href='#L123' title='Defined at 123.'>utf16le_mbtowc</a></li>
+<li><a href='#L153' title='Defined at 153.'>utf16le_wctomb</a></li>
+<li><a href='#L194' title='Defined at 194.'>utf32be_mbtowc</a></li>
+<li><a href='#L211' title='Defined at 211.'>utf32be_wctomb</a></li>
+<li><a href='#L236' title='Defined at 236.'>utf32le_mbtowc</a></li>
+<li><a href='#L253' title='Defined at 253.'>utf32le_wctomb</a></li>
+<li><a href='#L274' title='Defined at 274.'>rpl_iconv</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* Character set conversion.</em>
+<a id='L2' name='L2'></a><em class='comment'>   Copyright (C) 1999-2001, 2007, 2009-2020 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'></em>
+<a id='L4' name='L4'></a><em class='comment'>   This program is free software; you can redistribute it and/or modify</em>
+<a id='L5' name='L5'></a><em class='comment'>   it under the terms of the GNU General Public License as published by</em>
+<a id='L6' name='L6'></a><em class='comment'>   the Free Software Foundation; either version 3, or (at your option)</em>
+<a id='L7' name='L7'></a><em class='comment'>   any later version.</em>
+<a id='L8' name='L8'></a><em class='comment'></em>
+<a id='L9' name='L9'></a><em class='comment'>   This program is distributed in the hope that it will be useful,</em>
+<a id='L10' name='L10'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L11' name='L11'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</em>
+<a id='L12' name='L12'></a><em class='comment'>   GNU General Public License for more details.</em>
+<a id='L13' name='L13'></a><em class='comment'></em>
+<a id='L14' name='L14'></a><em class='comment'>   You should have received a copy of the GNU General Public License along</em>
+<a id='L15' name='L15'></a><em class='comment'>   with this program; if not, see &lt;https://www.gnu.org/licenses/&gt;.  */</em>
+<a id='L16' name='L16'></a>
+<a id='L17' name='L17'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L18' name='L18'></a>
+<a id='L19' name='L19'></a><em class='comment'>/* Specification.  */</em>
+<a id='L20' name='L20'></a><em class='sharp'>#include</em> &lt;iconv.h&gt;
+<a id='L21' name='L21'></a>
+<a id='L22' name='L22'></a><em class='sharp'>#include</em> &lt;stddef.h&gt;
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><em class='sharp'>#if</em> REPLACE_ICONV_UTF
+<a id='L25' name='L25'></a><em class='sharp'># include</em> &lt;errno.h&gt;
+<a id='L26' name='L26'></a><em class='sharp'># include</em> &lt;stdint.h&gt;
+<a id='L27' name='L27'></a><em class='sharp'># include</em> &lt;stdlib.h&gt;
+<a id='L28' name='L28'></a><em class='sharp'># include</em> "unistr.h"
+<a id='L29' name='L29'></a><em class='sharp'>#endif</em>
+<a id='L30' name='L30'></a>
+<a id='L31' name='L31'></a><em class='sharp'>#if</em> REPLACE_ICONV_UTF
+<a id='L32' name='L32'></a>
+<a id='L33' name='L33'></a><em class='comment'>/* UTF-{16,32}{BE,LE} converters taken from GNU libiconv 1.11.  */</em>
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='comment'>/* Return code if invalid. (xxx_mbtowc) */</em>
+<a id='L36' name='L36'></a><em class='sharp'># define</em> <a href='../R/1128.html' title='Multiple referred from 7 places.'>RET_ILSEQ</a>      -1
+<a id='L37' name='L37'></a><em class='comment'>/* Return code if no bytes were read. (xxx_mbtowc) */</em>
+<a id='L38' name='L38'></a><em class='sharp'># define</em> <a href='../R/1130.html' title='Multiple referred from 5 places.'>RET_TOOFEW</a>     -2
+<a id='L39' name='L39'></a>
+<a id='L40' name='L40'></a><em class='comment'>/* Return code if invalid. (xxx_wctomb) */</em>
+<a id='L41' name='L41'></a><em class='sharp'># define</em> <a href='../R/1129.html' title='Multiple referred from 5 places.'>RET_ILUNI</a>      -1
+<a id='L42' name='L42'></a><em class='comment'>/* Return code if output buffer is too small. (xxx_wctomb, xxx_reset) */</em>
+<a id='L43' name='L43'></a><em class='sharp'># define</em> <a href='../R/1131.html' title='Multiple referred from 7 places.'>RET_TOOSMALL</a>   -2
+<a id='L44' name='L44'></a>
+<a id='L45' name='L45'></a><em class='comment'>/*</em>
+<a id='L46' name='L46'></a><em class='comment'> * UTF-16BE</em>
+<a id='L47' name='L47'></a><em class='comment'> */</em>
+<a id='L48' name='L48'></a>
+<a id='L49' name='L49'></a><em class='comment'>/* Specification: RFC 2781 */</em>
+<a id='L50' name='L50'></a>
+<a id='L51' name='L51'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L52' name='L52'></a><a href='../S/390.html#L367' title='Referred from 367 in lib/iconv.c.'>utf16be_mbtowc</a> (<a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> *pwc, <strong class='reserved'>const</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *s, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> n)
+<a id='L53' name='L53'></a><em class='brace'>{</em>
+<a id='L54' name='L54'></a>  <strong class='reserved'>if</strong> (n &gt;= 2)
+<a id='L55' name='L55'></a>    <em class='brace'>{</em>
+<a id='L56' name='L56'></a>      <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> wc = (s[0] &lt;&lt; 8) + s[1];
+<a id='L57' name='L57'></a>      <strong class='reserved'>if</strong> (wc &gt;= 0xd800 &amp;&amp; wc &lt; 0xdc00)
+<a id='L58' name='L58'></a>        <em class='brace'>{</em>
+<a id='L59' name='L59'></a>          <strong class='reserved'>if</strong> (n &gt;= 4)
+<a id='L60' name='L60'></a>            <em class='brace'>{</em>
+<a id='L61' name='L61'></a>              <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> wc2 = (s[2] &lt;&lt; 8) + s[3];
+<a id='L62' name='L62'></a>              <strong class='reserved'>if</strong> (!(wc2 &gt;= 0xdc00 &amp;&amp; wc2 &lt; 0xe000))
+<a id='L63' name='L63'></a>                <strong class='reserved'>return</strong> <a href='../S/390.html#L36' title='Defined at 36 in lib/iconv.c.'>RET_ILSEQ</a>;
+<a id='L64' name='L64'></a>              *pwc = 0x10000 + ((wc - 0xd800) &lt;&lt; 10) + (wc2 - 0xdc00);
+<a id='L65' name='L65'></a>              <strong class='reserved'>return</strong> 4;
+<a id='L66' name='L66'></a>            <em class='brace'>}</em>
+<a id='L67' name='L67'></a>        <em class='brace'>}</em>
+<a id='L68' name='L68'></a>      <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (wc &gt;= 0xdc00 &amp;&amp; wc &lt; 0xe000)
+<a id='L69' name='L69'></a>        <em class='brace'>{</em>
+<a id='L70' name='L70'></a>          <strong class='reserved'>return</strong> <a href='../S/390.html#L36' title='Defined at 36 in lib/iconv.c.'>RET_ILSEQ</a>;
+<a id='L71' name='L71'></a>        <em class='brace'>}</em>
+<a id='L72' name='L72'></a>      <strong class='reserved'>else</strong>
+<a id='L73' name='L73'></a>        <em class='brace'>{</em>
+<a id='L74' name='L74'></a>          *pwc = wc;
+<a id='L75' name='L75'></a>          <strong class='reserved'>return</strong> 2;
+<a id='L76' name='L76'></a>        <em class='brace'>}</em>
+<a id='L77' name='L77'></a>    <em class='brace'>}</em>
+<a id='L78' name='L78'></a>  <strong class='reserved'>return</strong> <a href='../S/390.html#L38' title='Defined at 38 in lib/iconv.c.'>RET_TOOFEW</a>;
+<a id='L79' name='L79'></a><em class='brace'>}</em>
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L82' name='L82'></a><a href='../S/390.html#L286' title='Referred from 286 in lib/iconv.c.'>utf16be_wctomb</a> (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *r, <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> wc, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> n)
+<a id='L83' name='L83'></a><em class='brace'>{</em>
+<a id='L84' name='L84'></a>  <strong class='reserved'>if</strong> (!(wc &gt;= 0xd800 &amp;&amp; wc &lt; 0xe000))
+<a id='L85' name='L85'></a>    <em class='brace'>{</em>
+<a id='L86' name='L86'></a>      <strong class='reserved'>if</strong> (wc &lt; 0x10000)
+<a id='L87' name='L87'></a>        <em class='brace'>{</em>
+<a id='L88' name='L88'></a>          <strong class='reserved'>if</strong> (n &gt;= 2)
+<a id='L89' name='L89'></a>            <em class='brace'>{</em>
+<a id='L90' name='L90'></a>              r[0] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) (wc &gt;&gt; 8);
+<a id='L91' name='L91'></a>              r[1] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) wc;
+<a id='L92' name='L92'></a>              <strong class='reserved'>return</strong> 2;
+<a id='L93' name='L93'></a>            <em class='brace'>}</em>
+<a id='L94' name='L94'></a>          <strong class='reserved'>else</strong>
+<a id='L95' name='L95'></a>            <strong class='reserved'>return</strong> <a href='../S/390.html#L43' title='Defined at 43 in lib/iconv.c.'>RET_TOOSMALL</a>;
+<a id='L96' name='L96'></a>        <em class='brace'>}</em>
+<a id='L97' name='L97'></a>      <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (wc &lt; 0x110000)
+<a id='L98' name='L98'></a>        <em class='brace'>{</em>
+<a id='L99' name='L99'></a>          <strong class='reserved'>if</strong> (n &gt;= 4)
+<a id='L100' name='L100'></a>            <em class='brace'>{</em>
+<a id='L101' name='L101'></a>              <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> wc1 = 0xd800 + ((wc - 0x10000) &gt;&gt; 10);
+<a id='L102' name='L102'></a>              <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> wc2 = 0xdc00 + ((wc - 0x10000) &amp; 0x3ff);
+<a id='L103' name='L103'></a>              r[0] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) (wc1 &gt;&gt; 8);
+<a id='L104' name='L104'></a>              r[1] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) wc1;
+<a id='L105' name='L105'></a>              r[2] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) (wc2 &gt;&gt; 8);
+<a id='L106' name='L106'></a>              r[3] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) wc2;
+<a id='L107' name='L107'></a>              <strong class='reserved'>return</strong> 4;
+<a id='L108' name='L108'></a>            <em class='brace'>}</em>
+<a id='L109' name='L109'></a>          <strong class='reserved'>else</strong>
+<a id='L110' name='L110'></a>            <strong class='reserved'>return</strong> <a href='../S/390.html#L43' title='Defined at 43 in lib/iconv.c.'>RET_TOOSMALL</a>;
+<a id='L111' name='L111'></a>        <em class='brace'>}</em>
+<a id='L112' name='L112'></a>    <em class='brace'>}</em>
+<a id='L113' name='L113'></a>  <strong class='reserved'>return</strong> <a href='../S/390.html#L41' title='Defined at 41 in lib/iconv.c.'>RET_ILUNI</a>;
+<a id='L114' name='L114'></a><em class='brace'>}</em>
+<a id='L115' name='L115'></a>
+<a id='L116' name='L116'></a><em class='comment'>/*</em>
+<a id='L117' name='L117'></a><em class='comment'> * UTF-16LE</em>
+<a id='L118' name='L118'></a><em class='comment'> */</em>
+<a id='L119' name='L119'></a>
+<a id='L120' name='L120'></a><em class='comment'>/* Specification: RFC 2781 */</em>
+<a id='L121' name='L121'></a>
+<a id='L122' name='L122'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L123' name='L123'></a><a href='../S/390.html#L370' title='Referred from 370 in lib/iconv.c.'>utf16le_mbtowc</a> (<a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> *pwc, <strong class='reserved'>const</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *s, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> n)
+<a id='L124' name='L124'></a><em class='brace'>{</em>
+<a id='L125' name='L125'></a>  <strong class='reserved'>if</strong> (n &gt;= 2)
+<a id='L126' name='L126'></a>    <em class='brace'>{</em>
+<a id='L127' name='L127'></a>      <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> wc = s[0] + (s[1] &lt;&lt; 8);
+<a id='L128' name='L128'></a>      <strong class='reserved'>if</strong> (wc &gt;= 0xd800 &amp;&amp; wc &lt; 0xdc00)
+<a id='L129' name='L129'></a>        <em class='brace'>{</em>
+<a id='L130' name='L130'></a>          <strong class='reserved'>if</strong> (n &gt;= 4)
+<a id='L131' name='L131'></a>            <em class='brace'>{</em>
+<a id='L132' name='L132'></a>              <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> wc2 = s[2] + (s[3] &lt;&lt; 8);
+<a id='L133' name='L133'></a>              <strong class='reserved'>if</strong> (!(wc2 &gt;= 0xdc00 &amp;&amp; wc2 &lt; 0xe000))
+<a id='L134' name='L134'></a>                <strong class='reserved'>return</strong> <a href='../S/390.html#L36' title='Defined at 36 in lib/iconv.c.'>RET_ILSEQ</a>;
+<a id='L135' name='L135'></a>              *pwc = 0x10000 + ((wc - 0xd800) &lt;&lt; 10) + (wc2 - 0xdc00);
+<a id='L136' name='L136'></a>              <strong class='reserved'>return</strong> 4;
+<a id='L137' name='L137'></a>            <em class='brace'>}</em>
+<a id='L138' name='L138'></a>        <em class='brace'>}</em>
+<a id='L139' name='L139'></a>      <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (wc &gt;= 0xdc00 &amp;&amp; wc &lt; 0xe000)
+<a id='L140' name='L140'></a>        <em class='brace'>{</em>
+<a id='L141' name='L141'></a>          <strong class='reserved'>return</strong> <a href='../S/390.html#L36' title='Defined at 36 in lib/iconv.c.'>RET_ILSEQ</a>;
+<a id='L142' name='L142'></a>        <em class='brace'>}</em>
+<a id='L143' name='L143'></a>      <strong class='reserved'>else</strong>
+<a id='L144' name='L144'></a>        <em class='brace'>{</em>
+<a id='L145' name='L145'></a>          *pwc = wc;
+<a id='L146' name='L146'></a>          <strong class='reserved'>return</strong> 2;
+<a id='L147' name='L147'></a>        <em class='brace'>}</em>
+<a id='L148' name='L148'></a>    <em class='brace'>}</em>
+<a id='L149' name='L149'></a>  <strong class='reserved'>return</strong> <a href='../S/390.html#L38' title='Defined at 38 in lib/iconv.c.'>RET_TOOFEW</a>;
+<a id='L150' name='L150'></a><em class='brace'>}</em>
+<a id='L151' name='L151'></a>
+<a id='L152' name='L152'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L153' name='L153'></a><a href='../S/390.html#L289' title='Referred from 289 in lib/iconv.c.'>utf16le_wctomb</a> (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *r, <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> wc, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> n)
+<a id='L154' name='L154'></a><em class='brace'>{</em>
+<a id='L155' name='L155'></a>  <strong class='reserved'>if</strong> (!(wc &gt;= 0xd800 &amp;&amp; wc &lt; 0xe000))
+<a id='L156' name='L156'></a>    <em class='brace'>{</em>
+<a id='L157' name='L157'></a>      <strong class='reserved'>if</strong> (wc &lt; 0x10000)
+<a id='L158' name='L158'></a>        <em class='brace'>{</em>
+<a id='L159' name='L159'></a>          <strong class='reserved'>if</strong> (n &gt;= 2)
+<a id='L160' name='L160'></a>            <em class='brace'>{</em>
+<a id='L161' name='L161'></a>              r[0] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) wc;
+<a id='L162' name='L162'></a>              r[1] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) (wc &gt;&gt; 8);
+<a id='L163' name='L163'></a>              <strong class='reserved'>return</strong> 2;
+<a id='L164' name='L164'></a>            <em class='brace'>}</em>
+<a id='L165' name='L165'></a>          <strong class='reserved'>else</strong>
+<a id='L166' name='L166'></a>            <strong class='reserved'>return</strong> <a href='../S/390.html#L43' title='Defined at 43 in lib/iconv.c.'>RET_TOOSMALL</a>;
+<a id='L167' name='L167'></a>        <em class='brace'>}</em>
+<a id='L168' name='L168'></a>      <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (wc &lt; 0x110000)
+<a id='L169' name='L169'></a>        <em class='brace'>{</em>
+<a id='L170' name='L170'></a>          <strong class='reserved'>if</strong> (n &gt;= 4)
+<a id='L171' name='L171'></a>            <em class='brace'>{</em>
+<a id='L172' name='L172'></a>              <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> wc1 = 0xd800 + ((wc - 0x10000) &gt;&gt; 10);
+<a id='L173' name='L173'></a>              <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> wc2 = 0xdc00 + ((wc - 0x10000) &amp; 0x3ff);
+<a id='L174' name='L174'></a>              r[0] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) wc1;
+<a id='L175' name='L175'></a>              r[1] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) (wc1 &gt;&gt; 8);
+<a id='L176' name='L176'></a>              r[2] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) wc2;
+<a id='L177' name='L177'></a>              r[3] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) (wc2 &gt;&gt; 8);
+<a id='L178' name='L178'></a>              <strong class='reserved'>return</strong> 4;
+<a id='L179' name='L179'></a>            <em class='brace'>}</em>
+<a id='L180' name='L180'></a>          <strong class='reserved'>else</strong>
+<a id='L181' name='L181'></a>            <strong class='reserved'>return</strong> <a href='../S/390.html#L43' title='Defined at 43 in lib/iconv.c.'>RET_TOOSMALL</a>;
+<a id='L182' name='L182'></a>        <em class='brace'>}</em>
+<a id='L183' name='L183'></a>    <em class='brace'>}</em>
+<a id='L184' name='L184'></a>  <strong class='reserved'>return</strong> <a href='../S/390.html#L41' title='Defined at 41 in lib/iconv.c.'>RET_ILUNI</a>;
+<a id='L185' name='L185'></a><em class='brace'>}</em>
+<a id='L186' name='L186'></a>
+<a id='L187' name='L187'></a><em class='comment'>/*</em>
+<a id='L188' name='L188'></a><em class='comment'> * UTF-32BE</em>
+<a id='L189' name='L189'></a><em class='comment'> */</em>
+<a id='L190' name='L190'></a>
+<a id='L191' name='L191'></a><em class='comment'>/* Specification: Unicode 3.1 Standard Annex #19 */</em>
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L194' name='L194'></a><a href='../S/390.html#L373' title='Referred from 373 in lib/iconv.c.'>utf32be_mbtowc</a> (<a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> *pwc, <strong class='reserved'>const</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *s, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> n)
+<a id='L195' name='L195'></a><em class='brace'>{</em>
+<a id='L196' name='L196'></a>  <strong class='reserved'>if</strong> (n &gt;= 4)
+<a id='L197' name='L197'></a>    <em class='brace'>{</em>
+<a id='L198' name='L198'></a>      <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> wc = (s[0] &lt;&lt; 24) + (s[1] &lt;&lt; 16) + (s[2] &lt;&lt; 8) + s[3];
+<a id='L199' name='L199'></a>      <strong class='reserved'>if</strong> (wc &lt; 0x110000 &amp;&amp; !(wc &gt;= 0xd800 &amp;&amp; wc &lt; 0xe000))
+<a id='L200' name='L200'></a>        <em class='brace'>{</em>
+<a id='L201' name='L201'></a>          *pwc = wc;
+<a id='L202' name='L202'></a>          <strong class='reserved'>return</strong> 4;
+<a id='L203' name='L203'></a>        <em class='brace'>}</em>
+<a id='L204' name='L204'></a>      <strong class='reserved'>else</strong>
+<a id='L205' name='L205'></a>        <strong class='reserved'>return</strong> <a href='../S/390.html#L36' title='Defined at 36 in lib/iconv.c.'>RET_ILSEQ</a>;
+<a id='L206' name='L206'></a>    <em class='brace'>}</em>
+<a id='L207' name='L207'></a>  <strong class='reserved'>return</strong> <a href='../S/390.html#L38' title='Defined at 38 in lib/iconv.c.'>RET_TOOFEW</a>;
+<a id='L208' name='L208'></a><em class='brace'>}</em>
+<a id='L209' name='L209'></a>
+<a id='L210' name='L210'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L211' name='L211'></a><a href='../S/390.html#L292' title='Referred from 292 in lib/iconv.c.'>utf32be_wctomb</a> (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *r, <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> wc, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> n)
+<a id='L212' name='L212'></a><em class='brace'>{</em>
+<a id='L213' name='L213'></a>  <strong class='reserved'>if</strong> (wc &lt; 0x110000 &amp;&amp; !(wc &gt;= 0xd800 &amp;&amp; wc &lt; 0xe000))
+<a id='L214' name='L214'></a>    <em class='brace'>{</em>
+<a id='L215' name='L215'></a>      <strong class='reserved'>if</strong> (n &gt;= 4)
+<a id='L216' name='L216'></a>        <em class='brace'>{</em>
+<a id='L217' name='L217'></a>          r[0] = 0;
+<a id='L218' name='L218'></a>          r[1] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) (wc &gt;&gt; 16);
+<a id='L219' name='L219'></a>          r[2] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) (wc &gt;&gt; 8);
+<a id='L220' name='L220'></a>          r[3] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) wc;
+<a id='L221' name='L221'></a>          <strong class='reserved'>return</strong> 4;
+<a id='L222' name='L222'></a>        <em class='brace'>}</em>
+<a id='L223' name='L223'></a>      <strong class='reserved'>else</strong>
+<a id='L224' name='L224'></a>        <strong class='reserved'>return</strong> <a href='../S/390.html#L43' title='Defined at 43 in lib/iconv.c.'>RET_TOOSMALL</a>;
+<a id='L225' name='L225'></a>    <em class='brace'>}</em>
+<a id='L226' name='L226'></a>  <strong class='reserved'>return</strong> <a href='../S/390.html#L41' title='Defined at 41 in lib/iconv.c.'>RET_ILUNI</a>;
+<a id='L227' name='L227'></a><em class='brace'>}</em>
+<a id='L228' name='L228'></a>
+<a id='L229' name='L229'></a><em class='comment'>/*</em>
+<a id='L230' name='L230'></a><em class='comment'> * UTF-32LE</em>
+<a id='L231' name='L231'></a><em class='comment'> */</em>
+<a id='L232' name='L232'></a>
+<a id='L233' name='L233'></a><em class='comment'>/* Specification: Unicode 3.1 Standard Annex #19 */</em>
+<a id='L234' name='L234'></a>
+<a id='L235' name='L235'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L236' name='L236'></a><a href='../S/390.html#L376' title='Referred from 376 in lib/iconv.c.'>utf32le_mbtowc</a> (<a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> *pwc, <strong class='reserved'>const</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *s, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> n)
+<a id='L237' name='L237'></a><em class='brace'>{</em>
+<a id='L238' name='L238'></a>  <strong class='reserved'>if</strong> (n &gt;= 4)
+<a id='L239' name='L239'></a>    <em class='brace'>{</em>
+<a id='L240' name='L240'></a>      <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> wc = s[0] + (s[1] &lt;&lt; 8) + (s[2] &lt;&lt; 16) + (s[3] &lt;&lt; 24);
+<a id='L241' name='L241'></a>      <strong class='reserved'>if</strong> (wc &lt; 0x110000 &amp;&amp; !(wc &gt;= 0xd800 &amp;&amp; wc &lt; 0xe000))
+<a id='L242' name='L242'></a>        <em class='brace'>{</em>
+<a id='L243' name='L243'></a>          *pwc = wc;
+<a id='L244' name='L244'></a>          <strong class='reserved'>return</strong> 4;
+<a id='L245' name='L245'></a>        <em class='brace'>}</em>
+<a id='L246' name='L246'></a>      <strong class='reserved'>else</strong>
+<a id='L247' name='L247'></a>        <strong class='reserved'>return</strong> <a href='../S/390.html#L36' title='Defined at 36 in lib/iconv.c.'>RET_ILSEQ</a>;
+<a id='L248' name='L248'></a>    <em class='brace'>}</em>
+<a id='L249' name='L249'></a>  <strong class='reserved'>return</strong> <a href='../S/390.html#L38' title='Defined at 38 in lib/iconv.c.'>RET_TOOFEW</a>;
+<a id='L250' name='L250'></a><em class='brace'>}</em>
+<a id='L251' name='L251'></a>
+<a id='L252' name='L252'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L253' name='L253'></a><a href='../S/390.html#L295' title='Referred from 295 in lib/iconv.c.'>utf32le_wctomb</a> (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *r, <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> wc, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> n)
+<a id='L254' name='L254'></a><em class='brace'>{</em>
+<a id='L255' name='L255'></a>  <strong class='reserved'>if</strong> (wc &lt; 0x110000 &amp;&amp; !(wc &gt;= 0xd800 &amp;&amp; wc &lt; 0xe000))
+<a id='L256' name='L256'></a>    <em class='brace'>{</em>
+<a id='L257' name='L257'></a>      <strong class='reserved'>if</strong> (n &gt;= 4)
+<a id='L258' name='L258'></a>        <em class='brace'>{</em>
+<a id='L259' name='L259'></a>          r[0] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) wc;
+<a id='L260' name='L260'></a>          r[1] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) (wc &gt;&gt; 8);
+<a id='L261' name='L261'></a>          r[2] = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) (wc &gt;&gt; 16);
+<a id='L262' name='L262'></a>          r[3] = 0;
+<a id='L263' name='L263'></a>          <strong class='reserved'>return</strong> 4;
+<a id='L264' name='L264'></a>        <em class='brace'>}</em>
+<a id='L265' name='L265'></a>      <strong class='reserved'>else</strong>
+<a id='L266' name='L266'></a>        <strong class='reserved'>return</strong> <a href='../S/390.html#L43' title='Defined at 43 in lib/iconv.c.'>RET_TOOSMALL</a>;
+<a id='L267' name='L267'></a>    <em class='brace'>}</em>
+<a id='L268' name='L268'></a>  <strong class='reserved'>return</strong> <a href='../S/390.html#L41' title='Defined at 41 in lib/iconv.c.'>RET_ILUNI</a>;
+<a id='L269' name='L269'></a><em class='brace'>}</em>
+<a id='L270' name='L270'></a>
+<a id='L271' name='L271'></a><em class='sharp'>#endif</em>
+<a id='L272' name='L272'></a>
+<a id='L273' name='L273'></a><a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a>
+<a id='L274' name='L274'></a><a href='../S/391.html#L79' title='Referred from 79 in lib/iconv.in.h.'>rpl_iconv</a> (iconv_t cd,
+<a id='L275' name='L275'></a>           <a href='../D/887.html' title='Multiple defined in 2 places.'>ICONV_CONST</a> <strong class='reserved'>char</strong> **inbuf, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> *inbytesleft,
+<a id='L276' name='L276'></a>           <strong class='reserved'>char</strong> **outbuf, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> *outbytesleft)
+<a id='L277' name='L277'></a><em class='sharp'>#undef</em> <a href='../D/3937.html' title='Multiple defined in 2 places.'>iconv</a>
+<a id='L278' name='L278'></a><em class='brace'>{</em>
+<a id='L279' name='L279'></a><em class='sharp'>#if</em> REPLACE_ICONV_UTF
+<a id='L280' name='L280'></a>  <strong class='reserved'>switch</strong> ((<a href='../D/5395.html' title='Multiple defined in 3 places.'>uintptr_t</a>) cd)
+<a id='L281' name='L281'></a>    <em class='brace'>{</em>
+<a id='L282' name='L282'></a>      <em class='brace'>{</em>
+<a id='L283' name='L283'></a>        <strong class='reserved'>int</strong> (*xxx_wctomb) (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *, <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a>, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a>);
+<a id='L284' name='L284'></a>
+<a id='L285' name='L285'></a>        <strong class='reserved'>case</strong> (<a href='../D/5395.html' title='Multiple defined in 3 places.'>uintptr_t</a>) <a href='../S/391.html#L66' title='Defined at 66 in lib/iconv.in.h.'>_ICONV_UTF8_UTF16BE</a>:
+<a id='L286' name='L286'></a>          xxx_wctomb = <a href='../S/390.html#L82' title='Defined at 82 in lib/iconv.c.'>utf16be_wctomb</a>;
+<a id='L287' name='L287'></a>          <strong class='reserved'>goto</strong> loop_from_utf8;
+<a id='L288' name='L288'></a>        <strong class='reserved'>case</strong> (<a href='../D/5395.html' title='Multiple defined in 3 places.'>uintptr_t</a>) <a href='../S/391.html#L67' title='Defined at 67 in lib/iconv.in.h.'>_ICONV_UTF8_UTF16LE</a>:
+<a id='L289' name='L289'></a>          xxx_wctomb = <a href='../S/390.html#L153' title='Defined at 153 in lib/iconv.c.'>utf16le_wctomb</a>;
+<a id='L290' name='L290'></a>          <strong class='reserved'>goto</strong> loop_from_utf8;
+<a id='L291' name='L291'></a>        <strong class='reserved'>case</strong> (<a href='../D/5395.html' title='Multiple defined in 3 places.'>uintptr_t</a>) <a href='../S/391.html#L68' title='Defined at 68 in lib/iconv.in.h.'>_ICONV_UTF8_UTF32BE</a>:
+<a id='L292' name='L292'></a>          xxx_wctomb = <a href='../S/390.html#L211' title='Defined at 211 in lib/iconv.c.'>utf32be_wctomb</a>;
+<a id='L293' name='L293'></a>          <strong class='reserved'>goto</strong> loop_from_utf8;
+<a id='L294' name='L294'></a>        <strong class='reserved'>case</strong> (<a href='../D/5395.html' title='Multiple defined in 3 places.'>uintptr_t</a>) <a href='../S/391.html#L69' title='Defined at 69 in lib/iconv.in.h.'>_ICONV_UTF8_UTF32LE</a>:
+<a id='L295' name='L295'></a>          xxx_wctomb = <a href='../S/390.html#L253' title='Defined at 253 in lib/iconv.c.'>utf32le_wctomb</a>;
+<a id='L296' name='L296'></a>          <strong class='reserved'>goto</strong> loop_from_utf8;
+<a id='L297' name='L297'></a>
+<a id='L298' name='L298'></a>       loop_from_utf8:
+<a id='L299' name='L299'></a>        <strong class='reserved'>if</strong> (inbuf == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a> || *inbuf == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L300' name='L300'></a>          <strong class='reserved'>return</strong> 0;
+<a id='L301' name='L301'></a>        <em class='brace'>{</em>
+<a id='L302' name='L302'></a>          <a href='../D/887.html' title='Multiple defined in 2 places.'>ICONV_CONST</a> <strong class='reserved'>char</strong> *inptr = *inbuf;
+<a id='L303' name='L303'></a>          <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> inleft = *inbytesleft;
+<a id='L304' name='L304'></a>          <strong class='reserved'>char</strong> *outptr = *outbuf;
+<a id='L305' name='L305'></a>          <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> outleft = *outbytesleft;
+<a id='L306' name='L306'></a>          <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> res = 0;
+<a id='L307' name='L307'></a>          <strong class='reserved'>while</strong> (inleft &gt; 0)
+<a id='L308' name='L308'></a>            <em class='brace'>{</em>
+<a id='L309' name='L309'></a>              <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> uc;
+<a id='L310' name='L310'></a>              <strong class='reserved'>int</strong> m = <a href='../S/574.html#L24' title='Defined at 24 in lib/unistr/u8-mbtoucr.c.'>u8_mbtoucr</a> (&amp;uc, (<strong class='reserved'>const</strong> <a href='../D/5385.html' title='Multiple defined in 2 places.'>uint8_t</a> *) inptr, inleft);
+<a id='L311' name='L311'></a>              <strong class='reserved'>if</strong> (m &lt;= 0)
+<a id='L312' name='L312'></a>                <em class='brace'>{</em>
+<a id='L313' name='L313'></a>                  <strong class='reserved'>if</strong> (m == -1)
+<a id='L314' name='L314'></a>                    <em class='brace'>{</em>
+<a id='L315' name='L315'></a>                      errno = <a href='../S/300.html#L274' title='Defined at 274 in lib/errno.in.h.'>EILSEQ</a>;
+<a id='L316' name='L316'></a>                      res = (<a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a>)(-1);
+<a id='L317' name='L317'></a>                      <strong class='reserved'>break</strong>;
+<a id='L318' name='L318'></a>                    <em class='brace'>}</em>
+<a id='L319' name='L319'></a>                  <strong class='reserved'>if</strong> (m == -2)
+<a id='L320' name='L320'></a>                    <em class='brace'>{</em>
+<a id='L321' name='L321'></a>                      errno = EINVAL;
+<a id='L322' name='L322'></a>                      res = (<a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a>)(-1);
+<a id='L323' name='L323'></a>                      <strong class='reserved'>break</strong>;
+<a id='L324' name='L324'></a>                    <em class='brace'>}</em>
+<a id='L325' name='L325'></a>                  abort ();
+<a id='L326' name='L326'></a>                <em class='brace'>}</em>
+<a id='L327' name='L327'></a>              <strong class='reserved'>else</strong>
+<a id='L328' name='L328'></a>                <em class='brace'>{</em>
+<a id='L329' name='L329'></a>                  <strong class='reserved'>int</strong> n = xxx_wctomb ((<a href='../D/5385.html' title='Multiple defined in 2 places.'>uint8_t</a> *) outptr, uc, outleft);
+<a id='L330' name='L330'></a>                  <strong class='reserved'>if</strong> (n &lt; 0)
+<a id='L331' name='L331'></a>                    <em class='brace'>{</em>
+<a id='L332' name='L332'></a>                      <strong class='reserved'>if</strong> (n == <a href='../S/390.html#L41' title='Defined at 41 in lib/iconv.c.'>RET_ILUNI</a>)
+<a id='L333' name='L333'></a>                        <em class='brace'>{</em>
+<a id='L334' name='L334'></a>                          errno = <a href='../S/300.html#L274' title='Defined at 274 in lib/errno.in.h.'>EILSEQ</a>;
+<a id='L335' name='L335'></a>                          res = (<a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a>)(-1);
+<a id='L336' name='L336'></a>                          <strong class='reserved'>break</strong>;
+<a id='L337' name='L337'></a>                        <em class='brace'>}</em>
+<a id='L338' name='L338'></a>                      <strong class='reserved'>if</strong> (n == <a href='../S/390.html#L43' title='Defined at 43 in lib/iconv.c.'>RET_TOOSMALL</a>)
+<a id='L339' name='L339'></a>                        <em class='brace'>{</em>
+<a id='L340' name='L340'></a>                          errno = E2BIG;
+<a id='L341' name='L341'></a>                          res = (<a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a>)(-1);
+<a id='L342' name='L342'></a>                          <strong class='reserved'>break</strong>;
+<a id='L343' name='L343'></a>                        <em class='brace'>}</em>
+<a id='L344' name='L344'></a>                      abort ();
+<a id='L345' name='L345'></a>                    <em class='brace'>}</em>
+<a id='L346' name='L346'></a>                  <strong class='reserved'>else</strong>
+<a id='L347' name='L347'></a>                    <em class='brace'>{</em>
+<a id='L348' name='L348'></a>                      inptr += m;
+<a id='L349' name='L349'></a>                      inleft -= m;
+<a id='L350' name='L350'></a>                      outptr += n;
+<a id='L351' name='L351'></a>                      outleft -= n;
+<a id='L352' name='L352'></a>                    <em class='brace'>}</em>
+<a id='L353' name='L353'></a>                <em class='brace'>}</em>
+<a id='L354' name='L354'></a>            <em class='brace'>}</em>
+<a id='L355' name='L355'></a>          *inbuf = inptr;
+<a id='L356' name='L356'></a>          *inbytesleft = inleft;
+<a id='L357' name='L357'></a>          *outbuf = outptr;
+<a id='L358' name='L358'></a>          *outbytesleft = outleft;
+<a id='L359' name='L359'></a>          <strong class='reserved'>return</strong> res;
+<a id='L360' name='L360'></a>        <em class='brace'>}</em>
+<a id='L361' name='L361'></a>      <em class='brace'>}</em>
+<a id='L362' name='L362'></a>
+<a id='L363' name='L363'></a>      <em class='brace'>{</em>
+<a id='L364' name='L364'></a>        <strong class='reserved'>int</strong> (*xxx_mbtowc) (<a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> *, <strong class='reserved'>const</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *, <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a>);
+<a id='L365' name='L365'></a>
+<a id='L366' name='L366'></a>        <strong class='reserved'>case</strong> (<a href='../D/5395.html' title='Multiple defined in 3 places.'>uintptr_t</a>) <a href='../S/391.html#L70' title='Defined at 70 in lib/iconv.in.h.'>_ICONV_UTF16BE_UTF8</a>:
+<a id='L367' name='L367'></a>          xxx_mbtowc = <a href='../S/390.html#L52' title='Defined at 52 in lib/iconv.c.'>utf16be_mbtowc</a>;
+<a id='L368' name='L368'></a>          <strong class='reserved'>goto</strong> loop_to_utf8;
+<a id='L369' name='L369'></a>        <strong class='reserved'>case</strong> (<a href='../D/5395.html' title='Multiple defined in 3 places.'>uintptr_t</a>) <a href='../S/391.html#L71' title='Defined at 71 in lib/iconv.in.h.'>_ICONV_UTF16LE_UTF8</a>:
+<a id='L370' name='L370'></a>          xxx_mbtowc = <a href='../S/390.html#L123' title='Defined at 123 in lib/iconv.c.'>utf16le_mbtowc</a>;
+<a id='L371' name='L371'></a>          <strong class='reserved'>goto</strong> loop_to_utf8;
+<a id='L372' name='L372'></a>        <strong class='reserved'>case</strong> (<a href='../D/5395.html' title='Multiple defined in 3 places.'>uintptr_t</a>) <a href='../S/391.html#L72' title='Defined at 72 in lib/iconv.in.h.'>_ICONV_UTF32BE_UTF8</a>:
+<a id='L373' name='L373'></a>          xxx_mbtowc = <a href='../S/390.html#L194' title='Defined at 194 in lib/iconv.c.'>utf32be_mbtowc</a>;
+<a id='L374' name='L374'></a>          <strong class='reserved'>goto</strong> loop_to_utf8;
+<a id='L375' name='L375'></a>        <strong class='reserved'>case</strong> (<a href='../D/5395.html' title='Multiple defined in 3 places.'>uintptr_t</a>) <a href='../S/391.html#L73' title='Defined at 73 in lib/iconv.in.h.'>_ICONV_UTF32LE_UTF8</a>:
+<a id='L376' name='L376'></a>          xxx_mbtowc = <a href='../S/390.html#L236' title='Defined at 236 in lib/iconv.c.'>utf32le_mbtowc</a>;
+<a id='L377' name='L377'></a>          <strong class='reserved'>goto</strong> loop_to_utf8;
+<a id='L378' name='L378'></a>
+<a id='L379' name='L379'></a>       loop_to_utf8:
+<a id='L380' name='L380'></a>        <strong class='reserved'>if</strong> (inbuf == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a> || *inbuf == <a href='../D/1143.html' title='Multiple defined in 4 places.'>NULL</a>)
+<a id='L381' name='L381'></a>          <strong class='reserved'>return</strong> 0;
+<a id='L382' name='L382'></a>        <em class='brace'>{</em>
+<a id='L383' name='L383'></a>          <a href='../D/887.html' title='Multiple defined in 2 places.'>ICONV_CONST</a> <strong class='reserved'>char</strong> *inptr = *inbuf;
+<a id='L384' name='L384'></a>          <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> inleft = *inbytesleft;
+<a id='L385' name='L385'></a>          <strong class='reserved'>char</strong> *outptr = *outbuf;
+<a id='L386' name='L386'></a>          <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> outleft = *outbytesleft;
+<a id='L387' name='L387'></a>          <a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a> res = 0;
+<a id='L388' name='L388'></a>          <strong class='reserved'>while</strong> (inleft &gt; 0)
+<a id='L389' name='L389'></a>            <em class='brace'>{</em>
+<a id='L390' name='L390'></a>              <a href='../S/578.html#L24' title='Defined at 24 in lib/unitypes.in.h.'>ucs4_t</a> uc;
+<a id='L391' name='L391'></a>              <strong class='reserved'>int</strong> m = xxx_mbtowc (&amp;uc, (<strong class='reserved'>const</strong> <a href='../D/5385.html' title='Multiple defined in 2 places.'>uint8_t</a> *) inptr, inleft);
+<a id='L392' name='L392'></a>              <strong class='reserved'>if</strong> (m &lt;= 0)
+<a id='L393' name='L393'></a>                <em class='brace'>{</em>
+<a id='L394' name='L394'></a>                  <strong class='reserved'>if</strong> (m == <a href='../S/390.html#L36' title='Defined at 36 in lib/iconv.c.'>RET_ILSEQ</a>)
+<a id='L395' name='L395'></a>                    <em class='brace'>{</em>
+<a id='L396' name='L396'></a>                      errno = <a href='../S/300.html#L274' title='Defined at 274 in lib/errno.in.h.'>EILSEQ</a>;
+<a id='L397' name='L397'></a>                      res = (<a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a>)(-1);
+<a id='L398' name='L398'></a>                      <strong class='reserved'>break</strong>;
+<a id='L399' name='L399'></a>                    <em class='brace'>}</em>
+<a id='L400' name='L400'></a>                  <strong class='reserved'>if</strong> (m == <a href='../S/390.html#L38' title='Defined at 38 in lib/iconv.c.'>RET_TOOFEW</a>)
+<a id='L401' name='L401'></a>                    <em class='brace'>{</em>
+<a id='L402' name='L402'></a>                      errno = EINVAL;
+<a id='L403' name='L403'></a>                      res = (<a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a>)(-1);
+<a id='L404' name='L404'></a>                      <strong class='reserved'>break</strong>;
+<a id='L405' name='L405'></a>                    <em class='brace'>}</em>
+<a id='L406' name='L406'></a>                  abort ();
+<a id='L407' name='L407'></a>                <em class='brace'>}</em>
+<a id='L408' name='L408'></a>              <strong class='reserved'>else</strong>
+<a id='L409' name='L409'></a>                <em class='brace'>{</em>
+<a id='L410' name='L410'></a>                  <strong class='reserved'>int</strong> n = <a href='../D/5377.html' title='Multiple defined in 2 places.'>u8_uctomb</a> ((<a href='../D/5385.html' title='Multiple defined in 2 places.'>uint8_t</a> *) outptr, uc, outleft);
+<a id='L411' name='L411'></a>                  <strong class='reserved'>if</strong> (n &lt; 0)
+<a id='L412' name='L412'></a>                    <em class='brace'>{</em>
+<a id='L413' name='L413'></a>                      <strong class='reserved'>if</strong> (n == -1)
+<a id='L414' name='L414'></a>                        <em class='brace'>{</em>
+<a id='L415' name='L415'></a>                          errno = <a href='../S/300.html#L274' title='Defined at 274 in lib/errno.in.h.'>EILSEQ</a>;
+<a id='L416' name='L416'></a>                          res = (<a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a>)(-1);
+<a id='L417' name='L417'></a>                          <strong class='reserved'>break</strong>;
+<a id='L418' name='L418'></a>                        <em class='brace'>}</em>
+<a id='L419' name='L419'></a>                      <strong class='reserved'>if</strong> (n == -2)
+<a id='L420' name='L420'></a>                        <em class='brace'>{</em>
+<a id='L421' name='L421'></a>                          errno = E2BIG;
+<a id='L422' name='L422'></a>                          res = (<a href='../S/292.html#L2066' title='Defined at 2066 in lib/config.in.h.'>size_t</a>)(-1);
+<a id='L423' name='L423'></a>                          <strong class='reserved'>break</strong>;
+<a id='L424' name='L424'></a>                        <em class='brace'>}</em>
+<a id='L425' name='L425'></a>                      abort ();
+<a id='L426' name='L426'></a>                    <em class='brace'>}</em>
+<a id='L427' name='L427'></a>                  <strong class='reserved'>else</strong>
+<a id='L428' name='L428'></a>                    <em class='brace'>{</em>
+<a id='L429' name='L429'></a>                      inptr += m;
+<a id='L430' name='L430'></a>                      inleft -= m;
+<a id='L431' name='L431'></a>                      outptr += n;
+<a id='L432' name='L432'></a>                      outleft -= n;
+<a id='L433' name='L433'></a>                    <em class='brace'>}</em>
+<a id='L434' name='L434'></a>                <em class='brace'>}</em>
+<a id='L435' name='L435'></a>            <em class='brace'>}</em>
+<a id='L436' name='L436'></a>          *inbuf = inptr;
+<a id='L437' name='L437'></a>          *inbytesleft = inleft;
+<a id='L438' name='L438'></a>          *outbuf = outptr;
+<a id='L439' name='L439'></a>          *outbytesleft = outleft;
+<a id='L440' name='L440'></a>          <strong class='reserved'>return</strong> res;
+<a id='L441' name='L441'></a>        <em class='brace'>}</em>
+<a id='L442' name='L442'></a>      <em class='brace'>}</em>
+<a id='L443' name='L443'></a>    <em class='brace'>}</em>
+<a id='L444' name='L444'></a><em class='sharp'>#endif</em>
+<a id='L445' name='L445'></a>  <strong class='reserved'>return</strong> <a href='../D/3937.html' title='Multiple defined in 2 places.'>iconv</a> (cd, inbuf, inbytesleft, outbuf, outbytesleft);
+<a id='L446' name='L446'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L52'>[^]</a><a href='#L274'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>
