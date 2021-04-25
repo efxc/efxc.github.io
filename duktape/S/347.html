@@ -1,0 +1,662 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>examples/eventloop/c_eventloop.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1004.html'>examples</a>/<a href='../files/1015.html'>eventloop</a>/c_eventloop.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L64'>[^]</a><a href='#L609'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L64' title='Defined at 64.'>get_now</a></li>
+<li><a href='#L76' title='Defined at 76.'>find_nearest_timer</a></li>
+<li><a href='#L87' title='Defined at 87.'>bubble_last_timer</a></li>
+<li><a href='#L110' title='Defined at 110.'>expire_timers</a></li>
+<li><a href='#L223' title='Defined at 223.'>compact_poll_list</a></li>
+<li><a href='#L263' title='Defined at 263.'>eventloop_run</a></li>
+<li><a href='#L405' title='Defined at 405.'>create_timer</a></li>
+<li><a href='#L465' title='Defined at 465.'>delete_timer</a></li>
+<li><a href='#L546' title='Defined at 546.'>listen_fd</a></li>
+<li><a href='#L595' title='Defined at 595.'>request_exit</a></li>
+<li><a href='#L609' title='Defined at 609.'>eventloop_register</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  C eventloop example.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> *  Timer management is similar to eventloop.js but implemented in C.</em>
+<a id='L5' name='L5'></a><em class='comment'> *  In particular, timer insertion is an O(n) operation; in a real world</em>
+<a id='L6' name='L6'></a><em class='comment'> *  eventloop based on a heap insertion would be O(log N).</em>
+<a id='L7' name='L7'></a><em class='comment'> */</em>
+<a id='L8' name='L8'></a>
+<a id='L9' name='L9'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L10' name='L10'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L11' name='L11'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L12' name='L12'></a><em class='sharp'>#include</em> &lt;stdint.h&gt;
+<a id='L13' name='L13'></a><em class='sharp'>#include</em> &lt;sys/time.h&gt;
+<a id='L14' name='L14'></a><em class='sharp'>#include</em> &lt;poll.h&gt;
+<a id='L15' name='L15'></a>
+<a id='L16' name='L16'></a><em class='sharp'>#include</em> "<a href='../I/204.html'>duktape.h</a>"
+<a id='L17' name='L17'></a><em class='sharp'>#include</em> "<a href='352.html'>c_eventloop.h</a>"
+<a id='L18' name='L18'></a>
+<a id='L19' name='L19'></a><em class='sharp'>#if</em> !<strong class='reserved'>defined</strong>(<a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a>)
+<a id='L20' name='L20'></a><em class='sharp'>#define</em> <a href='../R/12.html' title='Multiple referred from 21 places.'>DUKTAPE_EVENTLOOP_DEBUG</a> 0       <em class='comment'>/* set to 1 to debug with printf */</em>
+<a id='L21' name='L21'></a><em class='sharp'>#endif</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#define</em>  <a href='../R/2960.html' title='Multiple referred from 4 places.'>TIMERS_SLOT_NAME</a>       "eventTimers"
+<a id='L24' name='L24'></a><em class='sharp'>#define</em>  <a href='../R/2953.html' title='Multiple referred from 2 places.'>MIN_DELAY</a>              1.0
+<a id='L25' name='L25'></a><em class='sharp'>#define</em>  <a href='../R/2954.html' title='Multiple referred from 2 places.'>MIN_WAIT</a>               1.0
+<a id='L26' name='L26'></a><em class='sharp'>#define</em>  <a href='../R/2950.html' title='Multiple referred from 3 places.'>MAX_WAIT</a>               60000.0
+<a id='L27' name='L27'></a><em class='sharp'>#define</em>  <a href='../S/347.html#L112' title='Referred from 112 in examples/eventloop/c_eventloop.c.'>MAX_EXPIRIES</a>           10
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a><em class='sharp'>#define</em>  <a href='../R/2948.html' title='Multiple referred from 3 places.'>MAX_FDS</a>                256
+<a id='L30' name='L30'></a><em class='sharp'>#define</em>  <a href='../R/2949.html' title='Multiple referred from 4 places.'>MAX_TIMERS</a>             4096     <em class='comment'>/* this is quite excessive for embedded use, but good for testing */</em>
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>struct</strong> <em class='brace'>{</em>
+<a id='L33' name='L33'></a>        int64_t id;       <em class='comment'>/* numeric ID (returned from e.g. setTimeout); zero if unused */</em>
+<a id='L34' name='L34'></a>        <strong class='reserved'>double</strong> target;    <em class='comment'>/* next target time */</em>
+<a id='L35' name='L35'></a>        <strong class='reserved'>double</strong> delay;     <em class='comment'>/* delay/interval */</em>
+<a id='L36' name='L36'></a>        <strong class='reserved'>int</strong> oneshot;      <em class='comment'>/* oneshot=1 (setTimeout), repeated=0 (setInterval) */</em>
+<a id='L37' name='L37'></a>        <strong class='reserved'>int</strong> removed;      <em class='comment'>/* timer has been requested for removal */</em>
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a>        <em class='comment'>/* The callback associated with the timer is held in the "global stash",</em>
+<a id='L40' name='L40'></a><em class='comment'>         * in &lt;stash&gt;.eventTimers[String(id)].  The references must be deleted</em>
+<a id='L41' name='L41'></a><em class='comment'>         * when a timer struct is deleted.</em>
+<a id='L42' name='L42'></a><em class='comment'>         */</em>
+<a id='L43' name='L43'></a><em class='brace'>}</em> <a href='../R/5121.html' title='Multiple referred from 21 places.'>ev_timer</a>;
+<a id='L44' name='L44'></a>
+<a id='L45' name='L45'></a><em class='comment'>/* Active timers.  Dense list, terminates to end of list or first unused timer.</em>
+<a id='L46' name='L46'></a><em class='comment'> * The list is sorted by 'target', with lowest 'target' (earliest expiry) last</em>
+<a id='L47' name='L47'></a><em class='comment'> * in the list.  When a timer's callback is being called, the timer is moved</em>
+<a id='L48' name='L48'></a><em class='comment'> * to 'timer_expiring' as it needs special handling should the user callback</em>
+<a id='L49' name='L49'></a><em class='comment'> * delete that particular timer.</em>
+<a id='L50' name='L50'></a><em class='comment'> */</em>
+<a id='L51' name='L51'></a><strong class='reserved'>static</strong> <a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a> timer_list[<a href='../S/347.html#L30' title='Defined at 30 in examples/eventloop/c_eventloop.c.'>MAX_TIMERS</a>];
+<a id='L52' name='L52'></a><strong class='reserved'>static</strong> <a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a> timer_expiring;
+<a id='L53' name='L53'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> timer_count;  <em class='comment'>/* last timer at timer_count - 1 */</em>
+<a id='L54' name='L54'></a><strong class='reserved'>static</strong> int64_t timer_next_id = 1;
+<a id='L55' name='L55'></a>
+<a id='L56' name='L56'></a><em class='comment'>/* Socket poll state. */</em>
+<a id='L57' name='L57'></a><strong class='reserved'>static</strong> <strong class='reserved'>struct</strong> pollfd poll_list[<a href='../S/347.html#L29' title='Defined at 29 in examples/eventloop/c_eventloop.c.'>MAX_FDS</a>];
+<a id='L58' name='L58'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> poll_count = 0;
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a><em class='comment'>/* Misc */</em>
+<a id='L61' name='L61'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> exit_requested = 0;
+<a id='L62' name='L62'></a>
+<a id='L63' name='L63'></a><em class='comment'>/* Get Javascript compatible 'now' timestamp (millisecs since 1970). */</em>
+<a id='L64' name='L64'></a><strong class='reserved'>static</strong> <strong class='reserved'>double</strong> <a href='../R/5132.html' title='Multiple referred from 3 places.'>get_now</a>(<strong class='reserved'>void</strong>) <em class='brace'>{</em>
+<a id='L65' name='L65'></a>        <strong class='reserved'>struct</strong> timeval tv;
+<a id='L66' name='L66'></a>        <strong class='reserved'>int</strong> rc;
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a>        rc = gettimeofday(&amp;tv, NULL);
+<a id='L69' name='L69'></a>        <strong class='reserved'>if</strong> (rc != 0) <em class='brace'>{</em>
+<a id='L70' name='L70'></a>                <em class='comment'>/* Should never happen, so return whatever. */</em>
+<a id='L71' name='L71'></a>                <strong class='reserved'>return</strong> 0.0;
+<a id='L72' name='L72'></a>        <em class='brace'>}</em>
+<a id='L73' name='L73'></a>        <strong class='reserved'>return</strong> ((<strong class='reserved'>double</strong>) tv.tv_sec) * 1000.0 + ((<strong class='reserved'>double</strong>) tv.tv_usec) / 1000.0;
+<a id='L74' name='L74'></a><em class='brace'>}</em>
+<a id='L75' name='L75'></a>
+<a id='L76' name='L76'></a><strong class='reserved'>static</strong> <a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a> *<a href='../S/347.html#L315' title='Referred from 315 in examples/eventloop/c_eventloop.c.'>find_nearest_timer</a>(<strong class='reserved'>void</strong>) <em class='brace'>{</em>
+<a id='L77' name='L77'></a>        <em class='comment'>/* Last timer expires first (list is always kept sorted). */</em>
+<a id='L78' name='L78'></a>        <strong class='reserved'>if</strong> (timer_count &lt;= 0) <em class='brace'>{</em>
+<a id='L79' name='L79'></a>                <strong class='reserved'>return</strong> NULL;
+<a id='L80' name='L80'></a>        <em class='brace'>}</em>
+<a id='L81' name='L81'></a>        <strong class='reserved'>return</strong> timer_list + timer_count - 1;
+<a id='L82' name='L82'></a><em class='brace'>}</em>
+<a id='L83' name='L83'></a>
+<a id='L84' name='L84'></a><em class='comment'>/* Bubble last timer on timer list backwards until it has been moved to</em>
+<a id='L85' name='L85'></a><em class='comment'> * its proper sorted position (based on 'target' time).</em>
+<a id='L86' name='L86'></a><em class='comment'> */</em>
+<a id='L87' name='L87'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/2972.html' title='Multiple referred from 2 places.'>bubble_last_timer</a>(<strong class='reserved'>void</strong>) <em class='brace'>{</em>
+<a id='L88' name='L88'></a>        <strong class='reserved'>int</strong> i;
+<a id='L89' name='L89'></a>        <strong class='reserved'>int</strong> n = timer_count;
+<a id='L90' name='L90'></a>        <a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a> *t;
+<a id='L91' name='L91'></a>        <a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a> tmp;
+<a id='L92' name='L92'></a>
+<a id='L93' name='L93'></a>        <strong class='reserved'>for</strong> (i = n - 1; i &gt; 0; i--) <em class='brace'>{</em>
+<a id='L94' name='L94'></a>                <em class='comment'>/* Timer to bubble is at index i, timer to compare to is</em>
+<a id='L95' name='L95'></a><em class='comment'>                 * at i-1 (both guaranteed to exist).</em>
+<a id='L96' name='L96'></a><em class='comment'>                 */</em>
+<a id='L97' name='L97'></a>                t = timer_list + i;
+<a id='L98' name='L98'></a>                <strong class='reserved'>if</strong> (t-&gt;target &lt;= (t-1)-&gt;target) <em class='brace'>{</em>
+<a id='L99' name='L99'></a>                        <em class='comment'>/* 't' expires earlier than (or same time as) 't-1', so we're done. */</em>
+<a id='L100' name='L100'></a>                        <strong class='reserved'>break</strong>;
+<a id='L101' name='L101'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L102' name='L102'></a>                        <em class='comment'>/* 't' expires later than 't-1', so swap them and repeat. */</em>
+<a id='L103' name='L103'></a>                        memcpy((<strong class='reserved'>void</strong> *) &amp;tmp, (<strong class='reserved'>void</strong> *) (t - 1), <strong class='reserved'>sizeof</strong>(<a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a>));
+<a id='L104' name='L104'></a>                        memcpy((<strong class='reserved'>void</strong> *) (t - 1), (<strong class='reserved'>void</strong> *) t, <strong class='reserved'>sizeof</strong>(<a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a>));
+<a id='L105' name='L105'></a>                        memcpy((<strong class='reserved'>void</strong> *) t, (<strong class='reserved'>void</strong> *) &amp;tmp, <strong class='reserved'>sizeof</strong>(<a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a>));
+<a id='L106' name='L106'></a>                <em class='brace'>}</em>
+<a id='L107' name='L107'></a>        <em class='brace'>}</em>
+<a id='L108' name='L108'></a><em class='brace'>}</em>
+<a id='L109' name='L109'></a>
+<a id='L110' name='L110'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../S/347.html#L289' title='Referred from 289 in examples/eventloop/c_eventloop.c.'>expire_timers</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L111' name='L111'></a>        <a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a> *t;
+<a id='L112' name='L112'></a>        <strong class='reserved'>int</strong> sanity = <a href='../S/347.html#L27' title='Defined at 27 in examples/eventloop/c_eventloop.c.'>MAX_EXPIRIES</a>;
+<a id='L113' name='L113'></a>        <strong class='reserved'>double</strong> now;
+<a id='L114' name='L114'></a>        <strong class='reserved'>int</strong> rc;
+<a id='L115' name='L115'></a>
+<a id='L116' name='L116'></a>        <em class='comment'>/* Because a user callback can mutate the timer list (by adding or deleting</em>
+<a id='L117' name='L117'></a><em class='comment'>         * a timer), we expire one timer and then rescan from the end again.  There</em>
+<a id='L118' name='L118'></a><em class='comment'>         * is a sanity limit on how many times we do this per expiry round.</em>
+<a id='L119' name='L119'></a><em class='comment'>         */</em>
+<a id='L120' name='L120'></a>
+<a id='L121' name='L121'></a>        <a href='../D/5569.html' title='Multiple defined in 4 places.'>duk_push_global_stash</a>(ctx);
+<a id='L122' name='L122'></a>        <a href='../D/5117.html' title='Multiple defined in 4 places.'>duk_get_prop_string</a>(ctx, -1, <a href='../S/347.html#L23' title='Defined at 23 in examples/eventloop/c_eventloop.c.'>TIMERS_SLOT_NAME</a>);
+<a id='L123' name='L123'></a>
+<a id='L124' name='L124'></a>        <em class='comment'>/* [ ... stash eventTimers ] */</em>
+<a id='L125' name='L125'></a>
+<a id='L126' name='L126'></a>        now = <a href='../S/347.html#L64' title='Defined at 64 in examples/eventloop/c_eventloop.c.'>get_now</a>();
+<a id='L127' name='L127'></a>        <strong class='reserved'>while</strong> (sanity-- &gt; 0) <em class='brace'>{</em>
+<a id='L128' name='L128'></a>                <em class='comment'>/*</em>
+<a id='L129' name='L129'></a><em class='comment'>                 *  If exit has been requested, exit without running further</em>
+<a id='L130' name='L130'></a><em class='comment'>                 *  callbacks.</em>
+<a id='L131' name='L131'></a><em class='comment'>                 */</em>
+<a id='L132' name='L132'></a>
+<a id='L133' name='L133'></a>                <strong class='reserved'>if</strong> (exit_requested) <em class='brace'>{</em>
+<a id='L134' name='L134'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L135' name='L135'></a>                        fprintf(stderr, "exit requested, exiting timer expiry loop\n");
+<a id='L136' name='L136'></a>                        fflush(stderr);
+<a id='L137' name='L137'></a><em class='sharp'>#endif</em>
+<a id='L138' name='L138'></a>                        <strong class='reserved'>break</strong>;
+<a id='L139' name='L139'></a>                <em class='brace'>}</em>
+<a id='L140' name='L140'></a>
+<a id='L141' name='L141'></a>                <em class='comment'>/*</em>
+<a id='L142' name='L142'></a><em class='comment'>                 *  Expired timer(s) still exist?</em>
+<a id='L143' name='L143'></a><em class='comment'>                 */</em>
+<a id='L144' name='L144'></a>
+<a id='L145' name='L145'></a>                <strong class='reserved'>if</strong> (timer_count &lt;= 0) <em class='brace'>{</em>
+<a id='L146' name='L146'></a>                        <strong class='reserved'>break</strong>;
+<a id='L147' name='L147'></a>                <em class='brace'>}</em>
+<a id='L148' name='L148'></a>                t = timer_list + timer_count - 1;
+<a id='L149' name='L149'></a>                <strong class='reserved'>if</strong> (t-&gt;target &gt; now) <em class='brace'>{</em>
+<a id='L150' name='L150'></a>                        <strong class='reserved'>break</strong>;
+<a id='L151' name='L151'></a>                <em class='brace'>}</em>
+<a id='L152' name='L152'></a>
+<a id='L153' name='L153'></a>                <em class='comment'>/*</em>
+<a id='L154' name='L154'></a><em class='comment'>                 *  Move the timer to 'expiring' for the duration of the callback.</em>
+<a id='L155' name='L155'></a><em class='comment'>                 *  Mark a one-shot timer deleted, compute a new target for an interval.</em>
+<a id='L156' name='L156'></a><em class='comment'>                 */</em>
+<a id='L157' name='L157'></a>
+<a id='L158' name='L158'></a>                memcpy((<strong class='reserved'>void</strong> *) &amp;timer_expiring, (<strong class='reserved'>void</strong> *) t, <strong class='reserved'>sizeof</strong>(<a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a>));
+<a id='L159' name='L159'></a>                memset((<strong class='reserved'>void</strong> *) t, 0, <strong class='reserved'>sizeof</strong>(<a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a>));
+<a id='L160' name='L160'></a>                timer_count--;
+<a id='L161' name='L161'></a>                t = &amp;timer_expiring;
+<a id='L162' name='L162'></a>
+<a id='L163' name='L163'></a>                <strong class='reserved'>if</strong> (t-&gt;oneshot) <em class='brace'>{</em>
+<a id='L164' name='L164'></a>                        t-&gt;removed = 1;
+<a id='L165' name='L165'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L166' name='L166'></a>                        t-&gt;target = now + t-&gt;delay;  <em class='comment'>/* XXX: or t-&gt;target + t-&gt;delay? */</em>
+<a id='L167' name='L167'></a>                <em class='brace'>}</em>
+<a id='L168' name='L168'></a>
+<a id='L169' name='L169'></a>                <em class='comment'>/*</em>
+<a id='L170' name='L170'></a><em class='comment'>                 *  Call timer callback.  The callback can operate on the timer list:</em>
+<a id='L171' name='L171'></a><em class='comment'>                 *  add new timers, remove timers.  The callback can even remove the</em>
+<a id='L172' name='L172'></a><em class='comment'>                 *  expired timer whose callback we're calling.  However, because the</em>
+<a id='L173' name='L173'></a><em class='comment'>                 *  timer being expired has been moved to 'timer_expiring', we don't</em>
+<a id='L174' name='L174'></a><em class='comment'>                 *  need to worry about the timer's offset changing on the timer list.</em>
+<a id='L175' name='L175'></a><em class='comment'>                 */</em>
+<a id='L176' name='L176'></a>
+<a id='L177' name='L177'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L178' name='L178'></a>                fprintf(stderr, "calling user callback for timer id %d\n", (<strong class='reserved'>int</strong>) t-&gt;id);
+<a id='L179' name='L179'></a>                fflush(stderr);
+<a id='L180' name='L180'></a><em class='sharp'>#endif</em>
+<a id='L181' name='L181'></a>
+<a id='L182' name='L182'></a>                <a href='../D/5599.html' title='Multiple defined in 4 places.'>duk_push_number</a>(ctx, (<strong class='reserved'>double</strong>) t-&gt;id);
+<a id='L183' name='L183'></a>                <a href='../D/5106.html' title='Multiple defined in 4 places.'>duk_get_prop</a>(ctx, -2);  <em class='comment'>/* -&gt; [ ... stash eventTimers func ] */</em>
+<a id='L184' name='L184'></a>                rc = <a href='../D/5496.html' title='Multiple defined in 4 places.'>duk_pcall</a>(ctx, 0 <em class='comment'>/*nargs*/</em>);  <em class='comment'>/* -&gt; [ ... stash eventTimers retval ] */</em>
+<a id='L185' name='L185'></a>                <strong class='reserved'>if</strong> (rc != 0) <em class='brace'>{</em>
+<a id='L186' name='L186'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L187' name='L187'></a>                        fprintf(stderr, "timer callback failed for timer %d: %s\n", (<strong class='reserved'>int</strong>) t-&gt;id, <a href='../D/5818.html' title='Multiple defined in 4 places.'>duk_to_string</a>(ctx, -1));
+<a id='L188' name='L188'></a>                        fflush(stderr);
+<a id='L189' name='L189'></a><em class='sharp'>#endif</em>
+<a id='L190' name='L190'></a>                <em class='brace'>}</em>
+<a id='L191' name='L191'></a>                <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);    <em class='comment'>/* ignore errors for now -&gt; [ ... stash eventTimers ] */</em>
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a>                <strong class='reserved'>if</strong> (t-&gt;removed) <em class='brace'>{</em>
+<a id='L194' name='L194'></a>                        <em class='comment'>/* One-shot timer (always removed) or removed by user callback. */</em>
+<a id='L195' name='L195'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L196' name='L196'></a>                        fprintf(stderr, "deleting callback state for timer %d\n", (<strong class='reserved'>int</strong>) t-&gt;id);
+<a id='L197' name='L197'></a>                        fflush(stderr);
+<a id='L198' name='L198'></a><em class='sharp'>#endif</em>
+<a id='L199' name='L199'></a>                        <a href='../D/5599.html' title='Multiple defined in 4 places.'>duk_push_number</a>(ctx, (<strong class='reserved'>double</strong>) t-&gt;id);
+<a id='L200' name='L200'></a>                        <a href='../D/4930.html' title='Multiple defined in 4 places.'>duk_del_prop</a>(ctx, -2);
+<a id='L201' name='L201'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L202' name='L202'></a>                        <em class='comment'>/* Interval timer, not removed by user callback.  Queue back to</em>
+<a id='L203' name='L203'></a><em class='comment'>                         * timer list and bubble to its final sorted position.</em>
+<a id='L204' name='L204'></a><em class='comment'>                         */</em>
+<a id='L205' name='L205'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L206' name='L206'></a>                        fprintf(stderr, "queueing timer %d back into active list\n", (<strong class='reserved'>int</strong>) t-&gt;id);
+<a id='L207' name='L207'></a>                        fflush(stderr);
+<a id='L208' name='L208'></a><em class='sharp'>#endif</em>
+<a id='L209' name='L209'></a>                        <strong class='reserved'>if</strong> (timer_count &gt;= <a href='../S/347.html#L30' title='Defined at 30 in examples/eventloop/c_eventloop.c.'>MAX_TIMERS</a>) <em class='brace'>{</em>
+<a id='L210' name='L210'></a>                                (<strong class='reserved'>void</strong>) <a href='../D/5011.html' title='Multiple defined in 6 places.'>duk_error</a>(ctx, <a href='../D/754.html' title='Multiple defined in 3 places.'>DUK_ERR_RANGE_ERROR</a>, "out of timer slots");
+<a id='L211' name='L211'></a>                        <em class='brace'>}</em>
+<a id='L212' name='L212'></a>                        memcpy((<strong class='reserved'>void</strong> *) (timer_list + timer_count), (<strong class='reserved'>void</strong> *) t, <strong class='reserved'>sizeof</strong>(<a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a>));
+<a id='L213' name='L213'></a>                        timer_count++;
+<a id='L214' name='L214'></a>                        <a href='../S/347.html#L87' title='Defined at 87 in examples/eventloop/c_eventloop.c.'>bubble_last_timer</a>();
+<a id='L215' name='L215'></a>                <em class='brace'>}</em>
+<a id='L216' name='L216'></a>        <em class='brace'>}</em>
+<a id='L217' name='L217'></a>
+<a id='L218' name='L218'></a>        memset((<strong class='reserved'>void</strong> *) &amp;timer_expiring, 0, <strong class='reserved'>sizeof</strong>(<a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a>));
+<a id='L219' name='L219'></a>
+<a id='L220' name='L220'></a>        <a href='../D/5522.html' title='Multiple defined in 8 places.'>duk_pop_2</a>(ctx);  <em class='comment'>/* -&gt; [ ... ] */</em>
+<a id='L221' name='L221'></a><em class='brace'>}</em>
+<a id='L222' name='L222'></a>
+<a id='L223' name='L223'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../S/347.html#L307' title='Referred from 307 in examples/eventloop/c_eventloop.c.'>compact_poll_list</a>(<strong class='reserved'>void</strong>) <em class='brace'>{</em>
+<a id='L224' name='L224'></a>        <strong class='reserved'>int</strong> i, j, n;
+<a id='L225' name='L225'></a>
+<a id='L226' name='L226'></a>        <em class='comment'>/* i = input index</em>
+<a id='L227' name='L227'></a><em class='comment'>         * j = output index (initially same as i)</em>
+<a id='L228' name='L228'></a><em class='comment'>         */</em>
+<a id='L229' name='L229'></a>
+<a id='L230' name='L230'></a>        n = poll_count;
+<a id='L231' name='L231'></a>        <strong class='reserved'>for</strong> (i = 0, j = 0; i &lt; n; i++) <em class='brace'>{</em>
+<a id='L232' name='L232'></a>                <strong class='reserved'>struct</strong> pollfd *pfd = poll_list + i;
+<a id='L233' name='L233'></a>                <strong class='reserved'>if</strong> (pfd-&gt;fd == 0) <em class='brace'>{</em>
+<a id='L234' name='L234'></a>                        <em class='comment'>/* keep output index the same */</em>
+<a id='L235' name='L235'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L236' name='L236'></a>                        fprintf(stderr, "remove pollfd (index %d): fd=%d, events=%d, revents=%d\n",
+<a id='L237' name='L237'></a>                                i, pfd-&gt;fd, pfd-&gt;events, pfd-&gt;revents),
+<a id='L238' name='L238'></a>                        fflush(stderr);
+<a id='L239' name='L239'></a><em class='sharp'>#endif</em>
+<a id='L240' name='L240'></a>
+<a id='L241' name='L241'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L242' name='L242'></a>                <em class='brace'>}</em>
+<a id='L243' name='L243'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L244' name='L244'></a>                fprintf(stderr, "keep pollfd (index %d -&gt; %d): fd=%d, events=%d, revents=%d\n",
+<a id='L245' name='L245'></a>                        i, j, pfd-&gt;fd, pfd-&gt;events, pfd-&gt;revents),
+<a id='L246' name='L246'></a>                fflush(stderr);
+<a id='L247' name='L247'></a><em class='sharp'>#endif</em>
+<a id='L248' name='L248'></a>                <strong class='reserved'>if</strong> (i != j) <em class='brace'>{</em>
+<a id='L249' name='L249'></a>                        <em class='comment'>/* copy only if indices have diverged */</em>
+<a id='L250' name='L250'></a>                        memcpy((<strong class='reserved'>void</strong> *) (poll_list + j), (<strong class='reserved'>void</strong> *) (poll_list + i), <strong class='reserved'>sizeof</strong>(<strong class='reserved'>struct</strong> pollfd));
+<a id='L251' name='L251'></a>                <em class='brace'>}</em>
+<a id='L252' name='L252'></a>                j++;
+<a id='L253' name='L253'></a>        <em class='brace'>}</em>
+<a id='L254' name='L254'></a>
+<a id='L255' name='L255'></a>        <strong class='reserved'>if</strong> (j &lt; poll_count) <em class='brace'>{</em>
+<a id='L256' name='L256'></a>                <em class='comment'>/* zeroize unused entries for sanity */</em>
+<a id='L257' name='L257'></a>                memset((<strong class='reserved'>void</strong> *) (poll_list + j), 0, (poll_count - j) * <strong class='reserved'>sizeof</strong>(<strong class='reserved'>struct</strong> pollfd));
+<a id='L258' name='L258'></a>        <em class='brace'>}</em>
+<a id='L259' name='L259'></a>
+<a id='L260' name='L260'></a>        poll_count = j;
+<a id='L261' name='L261'></a><em class='brace'>}</em>
+<a id='L262' name='L262'></a>
+<a id='L263' name='L263'></a><a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/5123.html' title='Multiple referred from 3 places.'>eventloop_run</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx, <strong class='reserved'>void</strong> *udata) <em class='brace'>{</em>
+<a id='L264' name='L264'></a>        <a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a> *t;
+<a id='L265' name='L265'></a>        <strong class='reserved'>double</strong> now;
+<a id='L266' name='L266'></a>        <strong class='reserved'>double</strong> diff;
+<a id='L267' name='L267'></a>        <strong class='reserved'>int</strong> timeout;
+<a id='L268' name='L268'></a>        <strong class='reserved'>int</strong> rc;
+<a id='L269' name='L269'></a>        <strong class='reserved'>int</strong> i, n;
+<a id='L270' name='L270'></a>        <strong class='reserved'>int</strong> idx_eventloop;
+<a id='L271' name='L271'></a>        <strong class='reserved'>int</strong> idx_fd_handler;
+<a id='L272' name='L272'></a>
+<a id='L273' name='L273'></a>        (<strong class='reserved'>void</strong>) udata;
+<a id='L274' name='L274'></a>
+<a id='L275' name='L275'></a>        <em class='comment'>/* The ECMAScript poll handler is passed through EventLoop.fdPollHandler</em>
+<a id='L276' name='L276'></a><em class='comment'>         * which c_eventloop.js sets before we come here.</em>
+<a id='L277' name='L277'></a><em class='comment'>         */</em>
+<a id='L278' name='L278'></a>        <a href='../D/5568.html' title='Multiple defined in 4 places.'>duk_push_global_object</a>(ctx);
+<a id='L279' name='L279'></a>        <a href='../D/5117.html' title='Multiple defined in 4 places.'>duk_get_prop_string</a>(ctx, -1, "EventLoop");
+<a id='L280' name='L280'></a>        <a href='../D/5117.html' title='Multiple defined in 4 places.'>duk_get_prop_string</a>(ctx, -1, "fdPollHandler");  <em class='comment'>/* -&gt; [ global EventLoop fdPollHandler ] */</em>
+<a id='L281' name='L281'></a>        idx_fd_handler = <a href='../D/5123.html' title='Multiple defined in 4 places.'>duk_get_top_index</a>(ctx);
+<a id='L282' name='L282'></a>        idx_eventloop = idx_fd_handler - 1;
+<a id='L283' name='L283'></a>
+<a id='L284' name='L284'></a>        <strong class='reserved'>for</strong> (;;) <em class='brace'>{</em>
+<a id='L285' name='L285'></a>                <em class='comment'>/*</em>
+<a id='L286' name='L286'></a><em class='comment'>                 *  Expire timers.</em>
+<a id='L287' name='L287'></a><em class='comment'>                 */</em>
+<a id='L288' name='L288'></a>
+<a id='L289' name='L289'></a>                <a href='../S/347.html#L110' title='Defined at 110 in examples/eventloop/c_eventloop.c.'>expire_timers</a>(ctx);
+<a id='L290' name='L290'></a>
+<a id='L291' name='L291'></a>                <em class='comment'>/*</em>
+<a id='L292' name='L292'></a><em class='comment'>                 *  If exit requested, bail out as fast as possible.</em>
+<a id='L293' name='L293'></a><em class='comment'>                 */</em>
+<a id='L294' name='L294'></a>
+<a id='L295' name='L295'></a>                <strong class='reserved'>if</strong> (exit_requested) <em class='brace'>{</em>
+<a id='L296' name='L296'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L297' name='L297'></a>                        fprintf(stderr, "exit requested, exiting event loop\n");
+<a id='L298' name='L298'></a>                        fflush(stderr);
+<a id='L299' name='L299'></a><em class='sharp'>#endif</em>
+<a id='L300' name='L300'></a>                        <strong class='reserved'>break</strong>;
+<a id='L301' name='L301'></a>                <em class='brace'>}</em>
+<a id='L302' name='L302'></a>
+<a id='L303' name='L303'></a>                <em class='comment'>/*</em>
+<a id='L304' name='L304'></a><em class='comment'>                 *  Compact poll list by removing pollfds with fd == 0.</em>
+<a id='L305' name='L305'></a><em class='comment'>                 */</em>
+<a id='L306' name='L306'></a>
+<a id='L307' name='L307'></a>                <a href='../S/347.html#L223' title='Defined at 223 in examples/eventloop/c_eventloop.c.'>compact_poll_list</a>();
+<a id='L308' name='L308'></a>
+<a id='L309' name='L309'></a>                <em class='comment'>/*</em>
+<a id='L310' name='L310'></a><em class='comment'>                 *  Determine poll() timeout (as close to poll() as possible as</em>
+<a id='L311' name='L311'></a><em class='comment'>                 *  the wait is relative).</em>
+<a id='L312' name='L312'></a><em class='comment'>                 */</em>
+<a id='L313' name='L313'></a>
+<a id='L314' name='L314'></a>                now = <a href='../S/347.html#L64' title='Defined at 64 in examples/eventloop/c_eventloop.c.'>get_now</a>();
+<a id='L315' name='L315'></a>                t = <a href='../S/347.html#L76' title='Defined at 76 in examples/eventloop/c_eventloop.c.'>find_nearest_timer</a>();
+<a id='L316' name='L316'></a>                <strong class='reserved'>if</strong> (t) <em class='brace'>{</em>
+<a id='L317' name='L317'></a>                        diff = t-&gt;target - now;
+<a id='L318' name='L318'></a>                        <strong class='reserved'>if</strong> (diff &lt; <a href='../S/347.html#L25' title='Defined at 25 in examples/eventloop/c_eventloop.c.'>MIN_WAIT</a>) <em class='brace'>{</em>
+<a id='L319' name='L319'></a>                                diff = <a href='../S/347.html#L25' title='Defined at 25 in examples/eventloop/c_eventloop.c.'>MIN_WAIT</a>;
+<a id='L320' name='L320'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (diff &gt; <a href='../S/347.html#L26' title='Defined at 26 in examples/eventloop/c_eventloop.c.'>MAX_WAIT</a>) <em class='brace'>{</em>
+<a id='L321' name='L321'></a>                                diff = <a href='../S/347.html#L26' title='Defined at 26 in examples/eventloop/c_eventloop.c.'>MAX_WAIT</a>;
+<a id='L322' name='L322'></a>                        <em class='brace'>}</em>
+<a id='L323' name='L323'></a>                        timeout = (<strong class='reserved'>int</strong>) diff;  <em class='comment'>/* clamping ensures that fits */</em>
+<a id='L324' name='L324'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L325' name='L325'></a>                        <strong class='reserved'>if</strong> (poll_count == 0) <em class='brace'>{</em>
+<a id='L326' name='L326'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L327' name='L327'></a>                                fprintf(stderr, "no timers and no sockets to poll, exiting\n");
+<a id='L328' name='L328'></a>                                fflush(stderr);
+<a id='L329' name='L329'></a><em class='sharp'>#endif</em>
+<a id='L330' name='L330'></a>                                <strong class='reserved'>break</strong>;
+<a id='L331' name='L331'></a>                        <em class='brace'>}</em>
+<a id='L332' name='L332'></a>                        timeout = (<strong class='reserved'>int</strong>) <a href='../S/347.html#L26' title='Defined at 26 in examples/eventloop/c_eventloop.c.'>MAX_WAIT</a>;
+<a id='L333' name='L333'></a>                <em class='brace'>}</em>
+<a id='L334' name='L334'></a>
+<a id='L335' name='L335'></a>                <em class='comment'>/*</em>
+<a id='L336' name='L336'></a><em class='comment'>                 *  Poll for activity or timeout.</em>
+<a id='L337' name='L337'></a><em class='comment'>                 */</em>
+<a id='L338' name='L338'></a>
+<a id='L339' name='L339'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L340' name='L340'></a>                fprintf(stderr, "going to poll, timeout %d ms, pollfd count %d\n", timeout, poll_count);
+<a id='L341' name='L341'></a>                fflush(stderr);
+<a id='L342' name='L342'></a><em class='sharp'>#endif</em>
+<a id='L343' name='L343'></a>
+<a id='L344' name='L344'></a>                rc = <a href='../S/354.html#L12' title='Defined at 12 in examples/eventloop/poll.c.'>poll</a>(poll_list, poll_count, timeout);
+<a id='L345' name='L345'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L346' name='L346'></a>                fprintf(stderr, "poll rc: %d\n", rc);
+<a id='L347' name='L347'></a>                fflush(stderr);
+<a id='L348' name='L348'></a><em class='sharp'>#endif</em>
+<a id='L349' name='L349'></a>                <strong class='reserved'>if</strong> (rc &lt; 0) <em class='brace'>{</em>
+<a id='L350' name='L350'></a>                        <em class='comment'>/* error */</em>
+<a id='L351' name='L351'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (rc == 0) <em class='brace'>{</em>
+<a id='L352' name='L352'></a>                        <em class='comment'>/* timeout */</em>
+<a id='L353' name='L353'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L354' name='L354'></a>                        <em class='comment'>/* 'rc' fds active */</em>
+<a id='L355' name='L355'></a>                <em class='brace'>}</em>
+<a id='L356' name='L356'></a>
+<a id='L357' name='L357'></a>                <em class='comment'>/*</em>
+<a id='L358' name='L358'></a><em class='comment'>                 *  Check socket activity, handle all sockets.  Handling is offloaded to</em>
+<a id='L359' name='L359'></a><em class='comment'>                 *  ECMAScript code (fd + revents).</em>
+<a id='L360' name='L360'></a><em class='comment'>                 *</em>
+<a id='L361' name='L361'></a><em class='comment'>                 *  If FDs are removed from the poll list while we're processing callbacks,</em>
+<a id='L362' name='L362'></a><em class='comment'>                 *  the entries are simply marked unused (fd set to 0) without actually</em>
+<a id='L363' name='L363'></a><em class='comment'>                 *  removing them from the poll list.  This ensures indices are not</em>
+<a id='L364' name='L364'></a><em class='comment'>                 *  disturbed.  The poll list is compacted before next poll().</em>
+<a id='L365' name='L365'></a><em class='comment'>                 */</em>
+<a id='L366' name='L366'></a>
+<a id='L367' name='L367'></a>                n = (rc == 0 ? 0 : poll_count);  <em class='comment'>/* if timeout, no need to check pollfd */</em>
+<a id='L368' name='L368'></a>                <strong class='reserved'>for</strong> (i = 0; i &lt; n; i++) <em class='brace'>{</em>
+<a id='L369' name='L369'></a>                        <strong class='reserved'>struct</strong> pollfd *pfd = poll_list + i;
+<a id='L370' name='L370'></a>
+<a id='L371' name='L371'></a>                        <strong class='reserved'>if</strong> (pfd-&gt;fd == 0) <em class='brace'>{</em>
+<a id='L372' name='L372'></a>                                <em class='comment'>/* deleted, perhaps by previous callback */</em>
+<a id='L373' name='L373'></a>                                <strong class='reserved'>continue</strong>;
+<a id='L374' name='L374'></a>                        <em class='brace'>}</em>
+<a id='L375' name='L375'></a>
+<a id='L376' name='L376'></a>                        <strong class='reserved'>if</strong> (pfd-&gt;revents) <em class='brace'>{</em>
+<a id='L377' name='L377'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L378' name='L378'></a>                                fprintf(stderr, "fd %d has revents: %d\n", (<strong class='reserved'>int</strong>) pfd-&gt;fd, (<strong class='reserved'>int</strong>) pfd-&gt;revents);
+<a id='L379' name='L379'></a>                                fflush(stderr);
+<a id='L380' name='L380'></a><em class='sharp'>#endif</em>
+<a id='L381' name='L381'></a>                                <a href='../D/4968.html' title='Multiple defined in 4 places.'>duk_dup</a>(ctx, idx_fd_handler);
+<a id='L382' name='L382'></a>                                <a href='../D/4968.html' title='Multiple defined in 4 places.'>duk_dup</a>(ctx, idx_eventloop);
+<a id='L383' name='L383'></a>                                <a href='../D/5589.html' title='Multiple defined in 4 places.'>duk_push_int</a>(ctx, pfd-&gt;fd);
+<a id='L384' name='L384'></a>                                <a href='../D/5589.html' title='Multiple defined in 4 places.'>duk_push_int</a>(ctx, pfd-&gt;revents);
+<a id='L385' name='L385'></a>                                rc = <a href='../D/5497.html' title='Multiple defined in 4 places.'>duk_pcall_method</a>(ctx, 2 <em class='comment'>/*nargs*/</em>);
+<a id='L386' name='L386'></a>                                <strong class='reserved'>if</strong> (rc) <em class='brace'>{</em>
+<a id='L387' name='L387'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L388' name='L388'></a>                                        fprintf(stderr, "fd callback failed for fd %d: %s\n", (<strong class='reserved'>int</strong>) pfd-&gt;fd, <a href='../D/5818.html' title='Multiple defined in 4 places.'>duk_to_string</a>(ctx, -1));
+<a id='L389' name='L389'></a>                                        fflush(stderr);
+<a id='L390' name='L390'></a><em class='sharp'>#endif</em>
+<a id='L391' name='L391'></a>                                <em class='brace'>}</em>
+<a id='L392' name='L392'></a>                                <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L393' name='L393'></a>
+<a id='L394' name='L394'></a>                                pfd-&gt;revents = 0;
+<a id='L395' name='L395'></a>                        <em class='brace'>}</em>
+<a id='L396' name='L396'></a>
+<a id='L397' name='L397'></a>                <em class='brace'>}</em>
+<a id='L398' name='L398'></a>        <em class='brace'>}</em>
+<a id='L399' name='L399'></a>
+<a id='L400' name='L400'></a>        <a href='../D/5528.html' title='Multiple defined in 4 places.'>duk_pop_n</a>(ctx, 3);
+<a id='L401' name='L401'></a>
+<a id='L402' name='L402'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L403' name='L403'></a><em class='brace'>}</em>
+<a id='L404' name='L404'></a>
+<a id='L405' name='L405'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/347.html#L602' title='Referred from 602 in examples/eventloop/c_eventloop.c.'>create_timer</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L406' name='L406'></a>        <strong class='reserved'>double</strong> delay;
+<a id='L407' name='L407'></a>        <strong class='reserved'>int</strong> oneshot;
+<a id='L408' name='L408'></a>        <strong class='reserved'>int</strong> idx;
+<a id='L409' name='L409'></a>        int64_t timer_id;
+<a id='L410' name='L410'></a>        <strong class='reserved'>double</strong> now;
+<a id='L411' name='L411'></a>        <a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a> *t;
+<a id='L412' name='L412'></a>
+<a id='L413' name='L413'></a>        now = <a href='../S/347.html#L64' title='Defined at 64 in examples/eventloop/c_eventloop.c.'>get_now</a>();
+<a id='L414' name='L414'></a>
+<a id='L415' name='L415'></a>        <em class='comment'>/* indexes:</em>
+<a id='L416' name='L416'></a><em class='comment'>         *   0 = function (callback)</em>
+<a id='L417' name='L417'></a><em class='comment'>         *   1 = delay</em>
+<a id='L418' name='L418'></a><em class='comment'>         *   2 = boolean: oneshot</em>
+<a id='L419' name='L419'></a><em class='comment'>         */</em>
+<a id='L420' name='L420'></a>
+<a id='L421' name='L421'></a>        delay = <a href='../D/5729.html' title='Multiple defined in 4 places.'>duk_require_number</a>(ctx, 1);
+<a id='L422' name='L422'></a>        <strong class='reserved'>if</strong> (delay &lt; <a href='../S/347.html#L24' title='Defined at 24 in examples/eventloop/c_eventloop.c.'>MIN_DELAY</a>) <em class='brace'>{</em>
+<a id='L423' name='L423'></a>                delay = <a href='../S/347.html#L24' title='Defined at 24 in examples/eventloop/c_eventloop.c.'>MIN_DELAY</a>;
+<a id='L424' name='L424'></a>        <em class='brace'>}</em>
+<a id='L425' name='L425'></a>        oneshot = <a href='../D/5703.html' title='Multiple defined in 4 places.'>duk_require_boolean</a>(ctx, 2);
+<a id='L426' name='L426'></a>
+<a id='L427' name='L427'></a>        <strong class='reserved'>if</strong> (timer_count &gt;= <a href='../S/347.html#L30' title='Defined at 30 in examples/eventloop/c_eventloop.c.'>MAX_TIMERS</a>) <em class='brace'>{</em>
+<a id='L428' name='L428'></a>                (<strong class='reserved'>void</strong>) <a href='../D/5011.html' title='Multiple defined in 6 places.'>duk_error</a>(ctx, <a href='../D/754.html' title='Multiple defined in 3 places.'>DUK_ERR_RANGE_ERROR</a>, "out of timer slots");
+<a id='L429' name='L429'></a>        <em class='brace'>}</em>
+<a id='L430' name='L430'></a>        idx = timer_count++;
+<a id='L431' name='L431'></a>        timer_id = timer_next_id++;
+<a id='L432' name='L432'></a>        t = timer_list + idx;
+<a id='L433' name='L433'></a>
+<a id='L434' name='L434'></a>        memset((<strong class='reserved'>void</strong> *) t, 0, <strong class='reserved'>sizeof</strong>(<a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a>));
+<a id='L435' name='L435'></a>        t-&gt;id = timer_id;
+<a id='L436' name='L436'></a>        t-&gt;target = now + delay;
+<a id='L437' name='L437'></a>        t-&gt;delay = delay;
+<a id='L438' name='L438'></a>        t-&gt;oneshot = oneshot;
+<a id='L439' name='L439'></a>        t-&gt;removed = 0;
+<a id='L440' name='L440'></a>
+<a id='L441' name='L441'></a>        <em class='comment'>/* Timer is now at the last position; use swaps to "bubble" it to its</em>
+<a id='L442' name='L442'></a><em class='comment'>         * correct sorted position.</em>
+<a id='L443' name='L443'></a><em class='comment'>         */</em>
+<a id='L444' name='L444'></a>
+<a id='L445' name='L445'></a>        <a href='../S/347.html#L87' title='Defined at 87 in examples/eventloop/c_eventloop.c.'>bubble_last_timer</a>();
+<a id='L446' name='L446'></a>
+<a id='L447' name='L447'></a>        <em class='comment'>/* Finally, register the callback to the global stash 'eventTimers' object. */</em>
+<a id='L448' name='L448'></a>
+<a id='L449' name='L449'></a>        <a href='../D/5569.html' title='Multiple defined in 4 places.'>duk_push_global_stash</a>(ctx);
+<a id='L450' name='L450'></a>        <a href='../D/5117.html' title='Multiple defined in 4 places.'>duk_get_prop_string</a>(ctx, -1, <a href='../S/347.html#L23' title='Defined at 23 in examples/eventloop/c_eventloop.c.'>TIMERS_SLOT_NAME</a>);  <em class='comment'>/* -&gt; [ func delay oneshot stash eventTimers ] */</em>
+<a id='L451' name='L451'></a>        <a href='../D/5599.html' title='Multiple defined in 4 places.'>duk_push_number</a>(ctx, (<strong class='reserved'>double</strong>) timer_id);
+<a id='L452' name='L452'></a>        <a href='../D/4968.html' title='Multiple defined in 4 places.'>duk_dup</a>(ctx, 0);
+<a id='L453' name='L453'></a>        <a href='../D/5639.html' title='Multiple defined in 4 places.'>duk_put_prop</a>(ctx, -3);  <em class='comment'>/* eventTimers[timer_id] = callback */</em>
+<a id='L454' name='L454'></a>
+<a id='L455' name='L455'></a>        <em class='comment'>/* Return timer id. */</em>
+<a id='L456' name='L456'></a>
+<a id='L457' name='L457'></a>        <a href='../D/5599.html' title='Multiple defined in 4 places.'>duk_push_number</a>(ctx, (<strong class='reserved'>double</strong>) timer_id);
+<a id='L458' name='L458'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L459' name='L459'></a>        fprintf(stderr, "created timer id: %d\n", (<strong class='reserved'>int</strong>) timer_id);
+<a id='L460' name='L460'></a>        fflush(stderr);
+<a id='L461' name='L461'></a><em class='sharp'>#endif</em>
+<a id='L462' name='L462'></a>        <strong class='reserved'>return</strong> 1;
+<a id='L463' name='L463'></a><em class='brace'>}</em>
+<a id='L464' name='L464'></a>
+<a id='L465' name='L465'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/347.html#L603' title='Referred from 603 in examples/eventloop/c_eventloop.c.'>delete_timer</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L466' name='L466'></a>        <strong class='reserved'>int</strong> i, n;
+<a id='L467' name='L467'></a>        int64_t timer_id;
+<a id='L468' name='L468'></a>        <a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a> *t;
+<a id='L469' name='L469'></a>        <strong class='reserved'>int</strong> found = 0;
+<a id='L470' name='L470'></a>
+<a id='L471' name='L471'></a>        <em class='comment'>/* indexes:</em>
+<a id='L472' name='L472'></a><em class='comment'>         *   0 = timer id</em>
+<a id='L473' name='L473'></a><em class='comment'>         */</em>
+<a id='L474' name='L474'></a>
+<a id='L475' name='L475'></a>        timer_id = (int64_t) <a href='../D/5729.html' title='Multiple defined in 4 places.'>duk_require_number</a>(ctx, 0);
+<a id='L476' name='L476'></a>
+<a id='L477' name='L477'></a>        <em class='comment'>/*</em>
+<a id='L478' name='L478'></a><em class='comment'>         *  Unlike insertion, deletion needs a full scan of the timer list</em>
+<a id='L479' name='L479'></a><em class='comment'>         *  and an expensive remove.  If no match is found, nothing is deleted.</em>
+<a id='L480' name='L480'></a><em class='comment'>         *  Caller gets a boolean return code indicating match.</em>
+<a id='L481' name='L481'></a><em class='comment'>         *</em>
+<a id='L482' name='L482'></a><em class='comment'>         *  When a timer is being expired and its user callback is running,</em>
+<a id='L483' name='L483'></a><em class='comment'>         *  the timer has been moved to 'timer_expiring' and its deletion</em>
+<a id='L484' name='L484'></a><em class='comment'>         *  needs special handling: just mark it to-be-deleted and let the</em>
+<a id='L485' name='L485'></a><em class='comment'>         *  expiry code remove it.</em>
+<a id='L486' name='L486'></a><em class='comment'>         */</em>
+<a id='L487' name='L487'></a>
+<a id='L488' name='L488'></a>        t = &amp;timer_expiring;
+<a id='L489' name='L489'></a>        <strong class='reserved'>if</strong> (t-&gt;id == timer_id) <em class='brace'>{</em>
+<a id='L490' name='L490'></a>                t-&gt;removed = 1;
+<a id='L491' name='L491'></a>                <a href='../D/5623.html' title='Multiple defined in 4 places.'>duk_push_true</a>(ctx);
+<a id='L492' name='L492'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L493' name='L493'></a>                fprintf(stderr, "deleted expiring timer id: %d\n", (<strong class='reserved'>int</strong>) timer_id);
+<a id='L494' name='L494'></a>                fflush(stderr);
+<a id='L495' name='L495'></a><em class='sharp'>#endif</em>
+<a id='L496' name='L496'></a>                <strong class='reserved'>return</strong> 1;
+<a id='L497' name='L497'></a>        <em class='brace'>}</em>
+<a id='L498' name='L498'></a>
+<a id='L499' name='L499'></a>        n = timer_count;
+<a id='L500' name='L500'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; n; i++) <em class='brace'>{</em>
+<a id='L501' name='L501'></a>                t = timer_list + i;
+<a id='L502' name='L502'></a>                <strong class='reserved'>if</strong> (t-&gt;id == timer_id) <em class='brace'>{</em>
+<a id='L503' name='L503'></a>                        found = 1;
+<a id='L504' name='L504'></a>
+<a id='L505' name='L505'></a>                        <em class='comment'>/* Shift elements downwards to keep the timer list dense</em>
+<a id='L506' name='L506'></a><em class='comment'>                         * (no need if last element).</em>
+<a id='L507' name='L507'></a><em class='comment'>                         */</em>
+<a id='L508' name='L508'></a>                        <strong class='reserved'>if</strong> (i &lt; timer_count - 1) <em class='brace'>{</em>
+<a id='L509' name='L509'></a>                                memmove((<strong class='reserved'>void</strong> *) t, (<strong class='reserved'>void</strong> *) (t + 1), (timer_count - i - 1) * <strong class='reserved'>sizeof</strong>(<a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a>));
+<a id='L510' name='L510'></a>                        <em class='brace'>}</em>
+<a id='L511' name='L511'></a>
+<a id='L512' name='L512'></a>                        <em class='comment'>/* Zero last element for clarity. */</em>
+<a id='L513' name='L513'></a>                        memset((<strong class='reserved'>void</strong> *) (timer_list + n - 1), 0, <strong class='reserved'>sizeof</strong>(<a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a>));
+<a id='L514' name='L514'></a>
+<a id='L515' name='L515'></a>                        <em class='comment'>/* Update timer_count. */</em>
+<a id='L516' name='L516'></a>                        timer_count--;
+<a id='L517' name='L517'></a>
+<a id='L518' name='L518'></a>                        <em class='comment'>/* The C state is now up-to-date, but we still need to delete</em>
+<a id='L519' name='L519'></a><em class='comment'>                         * the timer callback state from the global 'stash'.</em>
+<a id='L520' name='L520'></a><em class='comment'>                         */</em>
+<a id='L521' name='L521'></a>
+<a id='L522' name='L522'></a>                        <a href='../D/5569.html' title='Multiple defined in 4 places.'>duk_push_global_stash</a>(ctx);
+<a id='L523' name='L523'></a>                        <a href='../D/5117.html' title='Multiple defined in 4 places.'>duk_get_prop_string</a>(ctx, -1, <a href='../S/347.html#L23' title='Defined at 23 in examples/eventloop/c_eventloop.c.'>TIMERS_SLOT_NAME</a>);  <em class='comment'>/* -&gt; [ timer_id stash eventTimers ] */</em>
+<a id='L524' name='L524'></a>                        <a href='../D/5599.html' title='Multiple defined in 4 places.'>duk_push_number</a>(ctx, (<strong class='reserved'>double</strong>) timer_id);
+<a id='L525' name='L525'></a>                        <a href='../D/4930.html' title='Multiple defined in 4 places.'>duk_del_prop</a>(ctx, -2);  <em class='comment'>/* delete eventTimers[timer_id] */</em>
+<a id='L526' name='L526'></a>
+<a id='L527' name='L527'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L528' name='L528'></a>                        fprintf(stderr, "deleted timer id: %d\n", (<strong class='reserved'>int</strong>) timer_id);
+<a id='L529' name='L529'></a>                        fflush(stderr);
+<a id='L530' name='L530'></a><em class='sharp'>#endif</em>
+<a id='L531' name='L531'></a>                        <strong class='reserved'>break</strong>;
+<a id='L532' name='L532'></a>                <em class='brace'>}</em>
+<a id='L533' name='L533'></a>        <em class='brace'>}</em>
+<a id='L534' name='L534'></a>
+<a id='L535' name='L535'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L536' name='L536'></a>        <strong class='reserved'>if</strong> (!found) <em class='brace'>{</em>
+<a id='L537' name='L537'></a>                fprintf(stderr, "trying to delete timer id %d, but not found; ignoring\n", (<strong class='reserved'>int</strong>) timer_id);
+<a id='L538' name='L538'></a>                fflush(stderr);
+<a id='L539' name='L539'></a>        <em class='brace'>}</em>
+<a id='L540' name='L540'></a><em class='sharp'>#endif</em>
+<a id='L541' name='L541'></a>
+<a id='L542' name='L542'></a>        <a href='../D/5544.html' title='Multiple defined in 4 places.'>duk_push_boolean</a>(ctx, found);
+<a id='L543' name='L543'></a>        <strong class='reserved'>return</strong> 1;
+<a id='L544' name='L544'></a><em class='brace'>}</em>
+<a id='L545' name='L545'></a>
+<a id='L546' name='L546'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/347.html#L604' title='Referred from 604 in examples/eventloop/c_eventloop.c.'>listen_fd</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L547' name='L547'></a>        <strong class='reserved'>int</strong> fd = <a href='../D/5724.html' title='Multiple defined in 4 places.'>duk_require_int</a>(ctx, 0);
+<a id='L548' name='L548'></a>        <strong class='reserved'>int</strong> events = <a href='../D/5724.html' title='Multiple defined in 4 places.'>duk_require_int</a>(ctx, 1);
+<a id='L549' name='L549'></a>        <strong class='reserved'>int</strong> i, n;
+<a id='L550' name='L550'></a>        <strong class='reserved'>struct</strong> pollfd *pfd;
+<a id='L551' name='L551'></a>
+<a id='L552' name='L552'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L553' name='L553'></a>        fprintf(stderr, "listen_fd: fd=%d, events=%d\n", fd, events);
+<a id='L554' name='L554'></a>        fflush(stderr);
+<a id='L555' name='L555'></a><em class='sharp'>#endif</em>
+<a id='L556' name='L556'></a>        <em class='comment'>/* events == 0 means stop listening to the FD */</em>
+<a id='L557' name='L557'></a>
+<a id='L558' name='L558'></a>        n = poll_count;
+<a id='L559' name='L559'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; n; i++) <em class='brace'>{</em>
+<a id='L560' name='L560'></a>                pfd = poll_list + i;
+<a id='L561' name='L561'></a>                <strong class='reserved'>if</strong> (pfd-&gt;fd == fd) <em class='brace'>{</em>
+<a id='L562' name='L562'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L563' name='L563'></a>                        fprintf(stderr, "listen_fd: fd found at index %d\n", i);
+<a id='L564' name='L564'></a>                        fflush(stderr);
+<a id='L565' name='L565'></a><em class='sharp'>#endif</em>
+<a id='L566' name='L566'></a>                        <strong class='reserved'>if</strong> (events == 0) <em class='brace'>{</em>
+<a id='L567' name='L567'></a>                                <em class='comment'>/* mark to-be-deleted, cleaned up by next poll */</em>
+<a id='L568' name='L568'></a>                                pfd-&gt;fd = 0;
+<a id='L569' name='L569'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L570' name='L570'></a>                                pfd-&gt;events = events;
+<a id='L571' name='L571'></a>                        <em class='brace'>}</em>
+<a id='L572' name='L572'></a>                        <strong class='reserved'>return</strong> 0;
+<a id='L573' name='L573'></a>                <em class='brace'>}</em>
+<a id='L574' name='L574'></a>        <em class='brace'>}</em>
+<a id='L575' name='L575'></a>
+<a id='L576' name='L576'></a>        <em class='comment'>/* not found, append to list */</em>
+<a id='L577' name='L577'></a><em class='sharp'>#if</em> <a href='../S/347.html#L20' title='Defined at 20 in examples/eventloop/c_eventloop.c.'>DUKTAPE_EVENTLOOP_DEBUG</a> &gt; 0
+<a id='L578' name='L578'></a>        fprintf(stderr, "listen_fd: fd not found on list, add new entry\n");
+<a id='L579' name='L579'></a>        fflush(stderr);
+<a id='L580' name='L580'></a><em class='sharp'>#endif</em>
+<a id='L581' name='L581'></a>
+<a id='L582' name='L582'></a>        <strong class='reserved'>if</strong> (poll_count &gt;= <a href='../S/347.html#L29' title='Defined at 29 in examples/eventloop/c_eventloop.c.'>MAX_FDS</a>) <em class='brace'>{</em>
+<a id='L583' name='L583'></a>                (<strong class='reserved'>void</strong>) <a href='../D/5011.html' title='Multiple defined in 6 places.'>duk_error</a>(ctx, <a href='../D/751.html' title='Multiple defined in 3 places.'>DUK_ERR_ERROR</a>, "out of fd slots");
+<a id='L584' name='L584'></a>        <em class='brace'>}</em>
+<a id='L585' name='L585'></a>
+<a id='L586' name='L586'></a>        pfd = poll_list + poll_count;
+<a id='L587' name='L587'></a>        pfd-&gt;fd = fd;
+<a id='L588' name='L588'></a>        pfd-&gt;events = events;
+<a id='L589' name='L589'></a>        pfd-&gt;revents = 0;
+<a id='L590' name='L590'></a>        poll_count++;
+<a id='L591' name='L591'></a>
+<a id='L592' name='L592'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L593' name='L593'></a><em class='brace'>}</em>
+<a id='L594' name='L594'></a>
+<a id='L595' name='L595'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/347.html#L605' title='Referred from 605 in examples/eventloop/c_eventloop.c.'>request_exit</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L596' name='L596'></a>        (<strong class='reserved'>void</strong>) ctx;
+<a id='L597' name='L597'></a>        exit_requested = 1;
+<a id='L598' name='L598'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L599' name='L599'></a><em class='brace'>}</em>
+<a id='L600' name='L600'></a>
+<a id='L601' name='L601'></a><strong class='reserved'>static</strong> <a href='../D/5054.html' title='Multiple defined in 6 places.'>duk_function_list_entry</a> eventloop_funcs[] = <em class='brace'>{</em>
+<a id='L602' name='L602'></a>        <em class='brace'>{</em> "createTimer", <a href='../S/347.html#L405' title='Defined at 405 in examples/eventloop/c_eventloop.c.'>create_timer</a>, 3 <em class='brace'>}</em>,
+<a id='L603' name='L603'></a>        <em class='brace'>{</em> "deleteTimer", <a href='../S/347.html#L465' title='Defined at 465 in examples/eventloop/c_eventloop.c.'>delete_timer</a>, 1 <em class='brace'>}</em>,
+<a id='L604' name='L604'></a>        <em class='brace'>{</em> "listenFd", <a href='../S/347.html#L546' title='Defined at 546 in examples/eventloop/c_eventloop.c.'>listen_fd</a>, 2 <em class='brace'>}</em>,
+<a id='L605' name='L605'></a>        <em class='brace'>{</em> "requestExit", <a href='../S/347.html#L595' title='Defined at 595 in examples/eventloop/c_eventloop.c.'>request_exit</a>, 0 <em class='brace'>}</em>,
+<a id='L606' name='L606'></a>        <em class='brace'>{</em> NULL, NULL, 0 <em class='brace'>}</em>
+<a id='L607' name='L607'></a><em class='brace'>}</em>;
+<a id='L608' name='L608'></a>
+<a id='L609' name='L609'></a><strong class='reserved'>void</strong> <a href='../R/5122.html' title='Multiple referred from 3 places.'>eventloop_register</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L610' name='L610'></a>        memset((<strong class='reserved'>void</strong> *) timer_list, 0, <a href='../S/347.html#L30' title='Defined at 30 in examples/eventloop/c_eventloop.c.'>MAX_TIMERS</a> * <strong class='reserved'>sizeof</strong>(<a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a>));
+<a id='L611' name='L611'></a>        memset((<strong class='reserved'>void</strong> *) &amp;timer_expiring, 0, <strong class='reserved'>sizeof</strong>(<a href='../S/347.html#L43' title='Defined at 43 in examples/eventloop/c_eventloop.c.'>ev_timer</a>));
+<a id='L612' name='L612'></a>        memset((<strong class='reserved'>void</strong> *) poll_list, 0, <a href='../S/347.html#L29' title='Defined at 29 in examples/eventloop/c_eventloop.c.'>MAX_FDS</a> * <strong class='reserved'>sizeof</strong>(<strong class='reserved'>struct</strong> pollfd));
+<a id='L613' name='L613'></a>
+<a id='L614' name='L614'></a>        <em class='comment'>/* Set global 'EventLoop'. */</em>
+<a id='L615' name='L615'></a>        <a href='../D/5568.html' title='Multiple defined in 4 places.'>duk_push_global_object</a>(ctx);
+<a id='L616' name='L616'></a>        <a href='../D/5600.html' title='Multiple defined in 4 places.'>duk_push_object</a>(ctx);
+<a id='L617' name='L617'></a>        <a href='../D/5632.html' title='Multiple defined in 4 places.'>duk_put_function_list</a>(ctx, -1, eventloop_funcs);
+<a id='L618' name='L618'></a>        <a href='../D/5648.html' title='Multiple defined in 4 places.'>duk_put_prop_string</a>(ctx, -2, "EventLoop");
+<a id='L619' name='L619'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L620' name='L620'></a>
+<a id='L621' name='L621'></a>        <em class='comment'>/* Initialize global stash 'eventTimers'. */</em>
+<a id='L622' name='L622'></a>        <a href='../D/5569.html' title='Multiple defined in 4 places.'>duk_push_global_stash</a>(ctx);
+<a id='L623' name='L623'></a>        <a href='../D/5600.html' title='Multiple defined in 4 places.'>duk_push_object</a>(ctx);
+<a id='L624' name='L624'></a>        <a href='../D/5648.html' title='Multiple defined in 4 places.'>duk_put_prop_string</a>(ctx, -2, <a href='../S/347.html#L23' title='Defined at 23 in examples/eventloop/c_eventloop.c.'>TIMERS_SLOT_NAME</a>);
+<a id='L625' name='L625'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L626' name='L626'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L64'>[^]</a><a href='#L609'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

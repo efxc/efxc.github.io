@@ -1,0 +1,1336 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src-separate/duk_regexp_compiler.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1032.html'>src-separate</a>/duk_regexp_compiler.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L73'>[^]</a><a href='#L1250'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L73' title='Defined at 73.'>duk__encode_i32</a></li>
+<li><a href='#L84' title='Defined at 84.'>duk__insert_u32</a></li>
+<li><a href='#L94' title='Defined at 94.'>duk__append_u32</a></li>
+<li><a href='#L98' title='Defined at 98.'>duk__append_7bit</a></li>
+<li><a href='#L108' title='Defined at 108.'>duk__append_2bytes</a></li>
+<li><a href='#L113' title='Defined at 113.'>duk__insert_i32</a></li>
+<li><a href='#L117' title='Defined at 117.'>duk__append_reop</a></li>
+<li><a href='#L123' title='Defined at 123.'>duk__append_i32</a></li>
+<li><a href='#L129' title='Defined at 129.'>duk__append_u16_list</a></li>
+<li><a href='#L136' title='Defined at 136.'>duk__insert_slice</a></li>
+<li><a href='#L140' title='Defined at 140.'>duk__append_slice</a></li>
+<li><a href='#L144' title='Defined at 144.'>duk__remove_slice</a></li>
+<li><a href='#L161' title='Defined at 161.'>duk__insert_jump_offset</a></li>
+<li><a href='#L225' title='Defined at 225.'>duk__append_jump_offset</a></li>
+<li><a href='#L306' title='Defined at 306.'>duk__regexp_emit_range</a></li>
+<li><a href='#L318' title='Defined at 318.'>duk__re_canon_next_discontinuity</a></li>
+<li><a href='#L357' title='Defined at 357.'>duk__re_canon_next_discontinuity</a></li>
+<li><a href='#L369' title='Defined at 369.'>duk__regexp_generate_ranges</a></li>
+<li><a href='#L502' title='Defined at 502.'>duk__append_range_atom_matcher</a></li>
+<li><a href='#L513' title='Defined at 513.'>duk__parse_disjunction</a></li>
+<li><a href='#L1003' title='Defined at 1003.'>duk__parse_regexp_flags</a></li>
+<li><a href='#L1070' title='Defined at 1070.'>duk__create_escaped_source</a></li>
+<li><a href='#L1131' title='Defined at 1131.'>duk_regexp_compile</a></li>
+<li><a href='#L1250' title='Defined at 1250.'>duk_regexp_create_instance</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Regexp compilation.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> *  See doc/regexp.rst for a discussion of the compilation approach and</em>
+<a id='L5' name='L5'></a><em class='comment'> *  current limitations.</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> *  Regexp bytecode assumes jumps can be expressed with signed 32-bit</em>
+<a id='L8' name='L8'></a><em class='comment'> *  integers.  Consequently the bytecode size must not exceed 0x7fffffffL.</em>
+<a id='L9' name='L9'></a><em class='comment'> *  The implementation casts duk_size_t (buffer size) to duk_(u)int32_t</em>
+<a id='L10' name='L10'></a><em class='comment'> *  in many places.  Although this could be changed, the bytecode format</em>
+<a id='L11' name='L11'></a><em class='comment'> *  limit would still prevent regexps exceeding the signed 32-bit limit</em>
+<a id='L12' name='L12'></a><em class='comment'> *  from working.</em>
+<a id='L13' name='L13'></a><em class='comment'> *</em>
+<a id='L14' name='L14'></a><em class='comment'> *  XXX: The implementation does not prevent bytecode from exceeding the</em>
+<a id='L15' name='L15'></a><em class='comment'> *  maximum supported size.  This could be done by limiting the maximum</em>
+<a id='L16' name='L16'></a><em class='comment'> *  input string size (assuming an upper bound can be computed for number</em>
+<a id='L17' name='L17'></a><em class='comment'> *  of bytecode bytes emitted per input byte) or checking buffer maximum</em>
+<a id='L18' name='L18'></a><em class='comment'> *  size when emitting bytecode (slower).</em>
+<a id='L19' name='L19'></a><em class='comment'> */</em>
+<a id='L20' name='L20'></a>
+<a id='L21' name='L21'></a><em class='sharp'>#include</em> "<a href='../I/161.html'>duk_internal.h</a>"
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3207.html' title='Multiple defined in 3 places.'>DUK_USE_REGEXP_SUPPORT</a>)
+<a id='L24' name='L24'></a>
+<a id='L25' name='L25'></a><em class='comment'>/*</em>
+<a id='L26' name='L26'></a><em class='comment'> *  Helper macros</em>
+<a id='L27' name='L27'></a><em class='comment'> */</em>
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a><em class='sharp'>#define</em> <a href='../R/2865.html' title='Multiple referred from 4 places.'>DUK__RE_INITIAL_BUFSIZE</a> 64
+<a id='L30' name='L30'></a>
+<a id='L31' name='L31'></a><em class='sharp'>#define</em> <a href='../R/2864.html' title='Multiple referred from 76 places.'>DUK__RE_BUFLEN</a>(re_ctx) \
+<a id='L32' name='L32'></a>        <a href='../D/335.html' title='Multiple defined in 4 places.'>DUK_BW_GET_SIZE</a>(re_ctx-&gt;thr, &amp;re_ctx-&gt;bw)
+<a id='L33' name='L33'></a>
+<a id='L34' name='L34'></a><em class='comment'>/*</em>
+<a id='L35' name='L35'></a><em class='comment'> *  Disjunction struct: result of parsing a disjunction</em>
+<a id='L36' name='L36'></a><em class='comment'> */</em>
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>struct</strong> <em class='brace'>{</em>
+<a id='L39' name='L39'></a>        <em class='comment'>/* Number of characters that the atom matches (e.g. 3 for 'abc'),</em>
+<a id='L40' name='L40'></a><em class='comment'>         * -1 if atom is complex and number of matched characters either</em>
+<a id='L41' name='L41'></a><em class='comment'>         * varies or is not known.</em>
+<a id='L42' name='L42'></a><em class='comment'>         */</em>
+<a id='L43' name='L43'></a>        <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> charlen;
+<a id='L44' name='L44'></a>
+<a id='L45' name='L45'></a><em class='sharp'>#if</em> 0
+<a id='L46' name='L46'></a>        <em class='comment'>/* These are not needed to implement quantifier capture handling,</em>
+<a id='L47' name='L47'></a><em class='comment'>         * but might be needed at some point.</em>
+<a id='L48' name='L48'></a><em class='comment'>         */</em>
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a>        <em class='comment'>/* re_ctx-&gt;captures at start and end of atom parsing.</em>
+<a id='L51' name='L51'></a><em class='comment'>         * Since 'captures' indicates highest capture number emitted</em>
+<a id='L52' name='L52'></a><em class='comment'>         * so far in a DUK_REOP_SAVE, the captures numbers saved by</em>
+<a id='L53' name='L53'></a><em class='comment'>         * the atom are: ]start_captures,end_captures].</em>
+<a id='L54' name='L54'></a><em class='comment'>         */</em>
+<a id='L55' name='L55'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> start_captures;
+<a id='L56' name='L56'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> end_captures;
+<a id='L57' name='L57'></a><em class='sharp'>#endif</em>
+<a id='L58' name='L58'></a><em class='brace'>}</em> <a href='../R/3650.html' title='Multiple referred from 12 places.'>duk__re_disjunction_info</a>;
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a><em class='comment'>/*</em>
+<a id='L61' name='L61'></a><em class='comment'> *  Encoding helpers</em>
+<a id='L62' name='L62'></a><em class='comment'> *</em>
+<a id='L63' name='L63'></a><em class='comment'> *  Some of the typing is bytecode based, e.g. slice sizes are unsigned 32-bit</em>
+<a id='L64' name='L64'></a><em class='comment'> *  even though the buffer operations will use duk_size_t.</em>
+<a id='L65' name='L65'></a><em class='comment'> */</em>
+<a id='L66' name='L66'></a>
+<a id='L67' name='L67'></a><em class='comment'>/* XXX: the insert helpers should ensure that the bytecode result is not</em>
+<a id='L68' name='L68'></a><em class='comment'> * larger than expected (or at least assert for it).  Many things in the</em>
+<a id='L69' name='L69'></a><em class='comment'> * bytecode, like skip offsets, won't work correctly if the bytecode is</em>
+<a id='L70' name='L70'></a><em class='comment'> * larger than say 2G.</em>
+<a id='L71' name='L71'></a><em class='comment'> */</em>
+<a id='L72' name='L72'></a>
+<a id='L73' name='L73'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> <a href='../R/3316.html' title='Multiple referred from 20 places.'>duk__encode_i32</a>(<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> x) <em class='brace'>{</em>
+<a id='L74' name='L74'></a>        <strong class='reserved'>if</strong> (x &lt; 0) <em class='brace'>{</em>
+<a id='L75' name='L75'></a>                <strong class='reserved'>return</strong> ((<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) (-x)) * 2 + 1;
+<a id='L76' name='L76'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L77' name='L77'></a>                <strong class='reserved'>return</strong> ((<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) x) * 2;
+<a id='L78' name='L78'></a>        <em class='brace'>}</em>
+<a id='L79' name='L79'></a><em class='brace'>}</em>
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a><em class='comment'>/* XXX: return type should probably be duk_size_t, or explicit checks are needed for</em>
+<a id='L82' name='L82'></a><em class='comment'> * maximum size.</em>
+<a id='L83' name='L83'></a><em class='comment'> */</em>
+<a id='L84' name='L84'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> <a href='../R/3459.html' title='Multiple referred from 72 places.'>duk__insert_u32</a>(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> offset, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> x) <em class='brace'>{</em>
+<a id='L85' name='L85'></a>        <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> buf[<a href='../D/3006.html' title='Multiple defined in 4 places.'>DUK_UNICODE_MAX_XUTF8_LENGTH</a>];
+<a id='L86' name='L86'></a>        <a href='../D/5767.html' title='Multiple defined in 3 places.'>duk_small_int_t</a> len;
+<a id='L87' name='L87'></a>
+<a id='L88' name='L88'></a>        len = <a href='../D/5903.html' title='Multiple defined in 4 places.'>duk_unicode_encode_xutf8</a>((<a href='../D/5881.html' title='Multiple defined in 3 places.'>duk_ucodepoint_t</a>) x, buf);
+<a id='L89' name='L89'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(len &gt;= 0);
+<a id='L90' name='L90'></a>        <a href='../D/339.html' title='Multiple defined in 4 places.'>DUK_BW_INSERT_ENSURE_BYTES</a>(re_ctx-&gt;thr, &amp;re_ctx-&gt;bw, offset, buf, (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) len);
+<a id='L91' name='L91'></a>        <strong class='reserved'>return</strong> (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) len;
+<a id='L92' name='L92'></a><em class='brace'>}</em>
+<a id='L93' name='L93'></a>
+<a id='L94' name='L94'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3021.html' title='Multiple referred from 52 places.'>duk__append_u32</a>(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> x) <em class='brace'>{</em>
+<a id='L95' name='L95'></a>        <a href='../D/367.html' title='Multiple defined in 4 places.'>DUK_BW_WRITE_ENSURE_XUTF8</a>(re_ctx-&gt;thr, &amp;re_ctx-&gt;bw, x);
+<a id='L96' name='L96'></a><em class='brace'>}</em>
+<a id='L97' name='L97'></a>
+<a id='L98' name='L98'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3015.html' title='Multiple referred from 16 places.'>duk__append_7bit</a>(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> x) <em class='brace'>{</em>
+<a id='L99' name='L99'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3196.html' title='Multiple defined in 3 places.'>DUK_USE_PREFER_SIZE</a>)
+<a id='L100' name='L100'></a>        <a href='../D/3779.html' title='Multiple defined in 4 places.'>duk__append_u32</a>(re_ctx, x);
+<a id='L101' name='L101'></a><em class='sharp'>#else</em>
+<a id='L102' name='L102'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(x &lt;= 0x7fU);
+<a id='L103' name='L103'></a>        <a href='../D/361.html' title='Multiple defined in 4 places.'>DUK_BW_WRITE_ENSURE_U8</a>(re_ctx-&gt;thr, &amp;re_ctx-&gt;bw, (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a>) x);
+<a id='L104' name='L104'></a><em class='sharp'>#endif</em>
+<a id='L105' name='L105'></a><em class='brace'>}</em>
+<a id='L106' name='L106'></a>
+<a id='L107' name='L107'></a><em class='sharp'>#if</em> 0
+<a id='L108' name='L108'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3014.html' title='Multiple referred from 4 places.'>duk__append_2bytes</a>(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> x, <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> y) <em class='brace'>{</em>
+<a id='L109' name='L109'></a>        <a href='../D/362.html' title='Multiple defined in 4 places.'>DUK_BW_WRITE_ENSURE_U8_2</a>(re_ctx-&gt;thr, &amp;re_ctx-&gt;bw, x, y);
+<a id='L110' name='L110'></a><em class='brace'>}</em>
+<a id='L111' name='L111'></a><em class='sharp'>#endif</em>
+<a id='L112' name='L112'></a>
+<a id='L113' name='L113'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> <a href='../R/3455.html' title='Multiple referred from 4 places.'>duk__insert_i32</a>(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> offset, <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> x) <em class='brace'>{</em>
+<a id='L114' name='L114'></a>        <strong class='reserved'>return</strong> <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx, offset, <a href='../D/4077.html' title='Multiple defined in 4 places.'>duk__encode_i32</a>(x));
+<a id='L115' name='L115'></a><em class='brace'>}</em>
+<a id='L116' name='L116'></a>
+<a id='L117' name='L117'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3018.html' title='Multiple referred from 80 places.'>duk__append_reop</a>(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> reop) <em class='brace'>{</em>
+<a id='L118' name='L118'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(reop &lt;= 0x7fU);
+<a id='L119' name='L119'></a>        (<strong class='reserved'>void</strong>) <a href='../D/3772.html' title='Multiple defined in 4 places.'>duk__append_7bit</a>(re_ctx, reop);
+<a id='L120' name='L120'></a><em class='brace'>}</em>
+<a id='L121' name='L121'></a>
+<a id='L122' name='L122'></a><em class='sharp'>#if</em> 0  <em class='comment'>/* unused */</em>
+<a id='L123' name='L123'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> duk__append_i32(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> x) <em class='brace'>{</em>
+<a id='L124' name='L124'></a>        <a href='../D/3779.html' title='Multiple defined in 4 places.'>duk__append_u32</a>(re_ctx, <a href='../D/4077.html' title='Multiple defined in 4 places.'>duk__encode_i32</a>(x));
+<a id='L125' name='L125'></a><em class='brace'>}</em>
+<a id='L126' name='L126'></a><em class='sharp'>#endif</em>
+<a id='L127' name='L127'></a>
+<a id='L128' name='L128'></a><em class='comment'>/* special helper for emitting u16 lists (used for character ranges for built-in char classes) */</em>
+<a id='L129' name='L129'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3020.html' title='Multiple referred from 4 places.'>duk__append_u16_list</a>(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <strong class='reserved'>const</strong> <a href='../D/5883.html' title='Multiple defined in 9 places.'>duk_uint16_t</a> *values, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> count) <em class='brace'>{</em>
+<a id='L130' name='L130'></a>        <em class='comment'>/* Call sites don't need the result length so it's not accumulated. */</em>
+<a id='L131' name='L131'></a>        <strong class='reserved'>while</strong> (count-- &gt; 0) <em class='brace'>{</em>
+<a id='L132' name='L132'></a>                <a href='../D/3779.html' title='Multiple defined in 4 places.'>duk__append_u32</a>(re_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) (*values++));
+<a id='L133' name='L133'></a>        <em class='brace'>}</em>
+<a id='L134' name='L134'></a><em class='brace'>}</em>
+<a id='L135' name='L135'></a>
+<a id='L136' name='L136'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3458.html' title='Multiple referred from 4 places.'>duk__insert_slice</a>(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> offset, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> data_offset, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> data_length) <em class='brace'>{</em>
+<a id='L137' name='L137'></a>        <a href='../D/340.html' title='Multiple defined in 4 places.'>DUK_BW_INSERT_ENSURE_SLICE</a>(re_ctx-&gt;thr, &amp;re_ctx-&gt;bw, offset, data_offset, data_length);
+<a id='L138' name='L138'></a><em class='brace'>}</em>
+<a id='L139' name='L139'></a>
+<a id='L140' name='L140'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3019.html' title='Multiple referred from 8 places.'>duk__append_slice</a>(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> data_offset, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> data_length) <em class='brace'>{</em>
+<a id='L141' name='L141'></a>        <a href='../D/360.html' title='Multiple defined in 4 places.'>DUK_BW_WRITE_ENSURE_SLICE</a>(re_ctx-&gt;thr, &amp;re_ctx-&gt;bw, data_offset, data_length);
+<a id='L142' name='L142'></a><em class='brace'>}</em>
+<a id='L143' name='L143'></a>
+<a id='L144' name='L144'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3661.html' title='Multiple referred from 4 places.'>duk__remove_slice</a>(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> data_offset, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> data_length) <em class='brace'>{</em>
+<a id='L145' name='L145'></a>        <a href='../D/345.html' title='Multiple defined in 4 places.'>DUK_BW_REMOVE_ENSURE_SLICE</a>(re_ctx-&gt;thr, &amp;re_ctx-&gt;bw, data_offset, data_length);
+<a id='L146' name='L146'></a><em class='brace'>}</em>
+<a id='L147' name='L147'></a>
+<a id='L148' name='L148'></a><em class='comment'>/*</em>
+<a id='L149' name='L149'></a><em class='comment'> *  Insert a jump offset at 'offset' to complete an instruction</em>
+<a id='L150' name='L150'></a><em class='comment'> *  (the jump offset is always the last component of an instruction).</em>
+<a id='L151' name='L151'></a><em class='comment'> *  The 'skip' argument must be computed relative to 'offset',</em>
+<a id='L152' name='L152'></a><em class='comment'> *  -without- taking into account the skip field being inserted.</em>
+<a id='L153' name='L153'></a><em class='comment'> *</em>
+<a id='L154' name='L154'></a><em class='comment'> *       ... A B C ins X Y Z ...   (ins may be a JUMP, SPLIT1/SPLIT2, etc)</em>
+<a id='L155' name='L155'></a><em class='comment'> *   =&gt;  ... A B C ins SKIP X Y Z</em>
+<a id='L156' name='L156'></a><em class='comment'> *</em>
+<a id='L157' name='L157'></a><em class='comment'> *  Computing the final (adjusted) skip value, which is relative to the</em>
+<a id='L158' name='L158'></a><em class='comment'> *  first byte of the next instruction, is a bit tricky because of the</em>
+<a id='L159' name='L159'></a><em class='comment'> *  variable length UTF-8 encoding.  See doc/regexp.rst for discussion.</em>
+<a id='L160' name='L160'></a><em class='comment'> */</em>
+<a id='L161' name='L161'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> <a href='../R/3457.html' title='Multiple referred from 36 places.'>duk__insert_jump_offset</a>(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> offset, <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> skip) <em class='brace'>{</em>
+<a id='L162' name='L162'></a><em class='sharp'>#if</em> 0
+<a id='L163' name='L163'></a>        <em class='comment'>/* Iterative solution. */</em>
+<a id='L164' name='L164'></a>        <strong class='reserved'>if</strong> (skip &lt; 0) <em class='brace'>{</em>
+<a id='L165' name='L165'></a>                <a href='../D/5767.html' title='Multiple defined in 3 places.'>duk_small_int_t</a> len;
+<a id='L166' name='L166'></a>                <em class='comment'>/* two encoding attempts suffices */</em>
+<a id='L167' name='L167'></a>                len = <a href='../D/5905.html' title='Multiple defined in 4 places.'>duk_unicode_get_xutf8_length</a>((<a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a>) <a href='../D/4077.html' title='Multiple defined in 4 places.'>duk__encode_i32</a>(skip));
+<a id='L168' name='L168'></a>                len = <a href='../D/5905.html' title='Multiple defined in 4 places.'>duk_unicode_get_xutf8_length</a>((<a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a>) <a href='../D/4077.html' title='Multiple defined in 4 places.'>duk__encode_i32</a>(skip - (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) len));
+<a id='L169' name='L169'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/5905.html' title='Multiple defined in 4 places.'>duk_unicode_get_xutf8_length</a>(<a href='../D/4077.html' title='Multiple defined in 4 places.'>duk__encode_i32</a>(skip - (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) len)) == len);  <em class='comment'>/* no change */</em>
+<a id='L170' name='L170'></a>                skip -= (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) len;
+<a id='L171' name='L171'></a>        <em class='brace'>}</em>
+<a id='L172' name='L172'></a><em class='sharp'>#endif</em>
+<a id='L173' name='L173'></a>
+<a id='L174' name='L174'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3196.html' title='Multiple defined in 3 places.'>DUK_USE_PREFER_SIZE</a>)
+<a id='L175' name='L175'></a>        <em class='comment'>/* Closed form solution, this produces smallest code.</em>
+<a id='L176' name='L176'></a><em class='comment'>         * See re_neg_jump_offset (closed2).</em>
+<a id='L177' name='L177'></a><em class='comment'>         */</em>
+<a id='L178' name='L178'></a>        <strong class='reserved'>if</strong> (skip &lt; 0) <em class='brace'>{</em>
+<a id='L179' name='L179'></a>                skip--;
+<a id='L180' name='L180'></a>                <strong class='reserved'>if</strong> (skip &lt; -0x3fL) <em class='brace'>{</em>
+<a id='L181' name='L181'></a>                        skip--;
+<a id='L182' name='L182'></a>                <em class='brace'>}</em>
+<a id='L183' name='L183'></a>                <strong class='reserved'>if</strong> (skip &lt; -0x3ffL) <em class='brace'>{</em>
+<a id='L184' name='L184'></a>                        skip--;
+<a id='L185' name='L185'></a>                <em class='brace'>}</em>
+<a id='L186' name='L186'></a>                <strong class='reserved'>if</strong> (skip &lt; -0x7fffL) <em class='brace'>{</em>
+<a id='L187' name='L187'></a>                        skip--;
+<a id='L188' name='L188'></a>                <em class='brace'>}</em>
+<a id='L189' name='L189'></a>                <strong class='reserved'>if</strong> (skip &lt; -0xfffffL) <em class='brace'>{</em>
+<a id='L190' name='L190'></a>                        skip--;
+<a id='L191' name='L191'></a>                <em class='brace'>}</em>
+<a id='L192' name='L192'></a>                <strong class='reserved'>if</strong> (skip &lt; -0x1ffffffL) <em class='brace'>{</em>
+<a id='L193' name='L193'></a>                        skip--;
+<a id='L194' name='L194'></a>                <em class='brace'>}</em>
+<a id='L195' name='L195'></a>                <strong class='reserved'>if</strong> (skip &lt; -0x3fffffffL) <em class='brace'>{</em>
+<a id='L196' name='L196'></a>                        skip--;
+<a id='L197' name='L197'></a>                <em class='brace'>}</em>
+<a id='L198' name='L198'></a>        <em class='brace'>}</em>
+<a id='L199' name='L199'></a><em class='sharp'>#else</em>  <em class='comment'>/* DUK_USE_PREFER_SIZE */</em>
+<a id='L200' name='L200'></a>        <em class='comment'>/* Closed form solution, this produces fastest code.</em>
+<a id='L201' name='L201'></a><em class='comment'>         * See re_neg_jump_offset (closed1).</em>
+<a id='L202' name='L202'></a><em class='comment'>         */</em>
+<a id='L203' name='L203'></a>        <strong class='reserved'>if</strong> (skip &lt; 0) <em class='brace'>{</em>
+<a id='L204' name='L204'></a>                <strong class='reserved'>if</strong> (skip &gt;= -0x3eL) <em class='brace'>{</em>
+<a id='L205' name='L205'></a>                        skip -= 1;
+<a id='L206' name='L206'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (skip &gt;= -0x3fdL) <em class='brace'>{</em>
+<a id='L207' name='L207'></a>                        skip -= 2;
+<a id='L208' name='L208'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (skip &gt;= -0x7ffcL) <em class='brace'>{</em>
+<a id='L209' name='L209'></a>                        skip -= 3;
+<a id='L210' name='L210'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (skip &gt;= -0xffffbL) <em class='brace'>{</em>
+<a id='L211' name='L211'></a>                        skip -= 4;
+<a id='L212' name='L212'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (skip &gt;= -0x1fffffaL) <em class='brace'>{</em>
+<a id='L213' name='L213'></a>                        skip -= 5;
+<a id='L214' name='L214'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (skip &gt;= -0x3ffffff9L) <em class='brace'>{</em>
+<a id='L215' name='L215'></a>                        skip -= 6;
+<a id='L216' name='L216'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L217' name='L217'></a>                        skip -= 7;
+<a id='L218' name='L218'></a>                <em class='brace'>}</em>
+<a id='L219' name='L219'></a>        <em class='brace'>}</em>
+<a id='L220' name='L220'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_PREFER_SIZE */</em>
+<a id='L221' name='L221'></a>
+<a id='L222' name='L222'></a>        <strong class='reserved'>return</strong> <a href='../D/4216.html' title='Multiple defined in 4 places.'>duk__insert_i32</a>(re_ctx, offset, skip);
+<a id='L223' name='L223'></a><em class='brace'>}</em>
+<a id='L224' name='L224'></a>
+<a id='L225' name='L225'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> <a href='../R/3016.html' title='Multiple referred from 8 places.'>duk__append_jump_offset</a>(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> skip) <em class='brace'>{</em>
+<a id='L226' name='L226'></a>        <strong class='reserved'>return</strong> (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) <a href='../D/4218.html' title='Multiple defined in 4 places.'>duk__insert_jump_offset</a>(re_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) <a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx), skip);
+<a id='L227' name='L227'></a><em class='brace'>}</em>
+<a id='L228' name='L228'></a>
+<a id='L229' name='L229'></a><em class='comment'>/*</em>
+<a id='L230' name='L230'></a><em class='comment'> *  duk_re_range_callback for generating character class ranges.</em>
+<a id='L231' name='L231'></a><em class='comment'> *</em>
+<a id='L232' name='L232'></a><em class='comment'> *  When ignoreCase is false, the range is simply emitted as is.  We don't,</em>
+<a id='L233' name='L233'></a><em class='comment'> *  for instance, eliminate duplicates or overlapping ranges in a character</em>
+<a id='L234' name='L234'></a><em class='comment'> *  class.</em>
+<a id='L235' name='L235'></a><em class='comment'> *</em>
+<a id='L236' name='L236'></a><em class='comment'> *  When ignoreCase is true but the 'direct' flag is set, the caller knows</em>
+<a id='L237' name='L237'></a><em class='comment'> *  that the range canonicalizes to itself for case insensitive matching,</em>
+<a id='L238' name='L238'></a><em class='comment'> *  so the range is emitted as is.  This is mainly useful for built-in ranges</em>
+<a id='L239' name='L239'></a><em class='comment'> *  like \W.</em>
+<a id='L240' name='L240'></a><em class='comment'> *</em>
+<a id='L241' name='L241'></a><em class='comment'> *  Otherwise, when ignoreCase is true, the range needs to be normalized</em>
+<a id='L242' name='L242'></a><em class='comment'> *  through canonicalization.  Unfortunately a canonicalized version of a</em>
+<a id='L243' name='L243'></a><em class='comment'> *  continuous range is not necessarily continuous (e.g. [x-{] is continuous</em>
+<a id='L244' name='L244'></a><em class='comment'> *  but [X-{] is not).  As a result, a single input range may expand to a lot</em>
+<a id='L245' name='L245'></a><em class='comment'> *  of output ranges.  The current algorithm creates the canonicalized ranges</em>
+<a id='L246' name='L246'></a><em class='comment'> *  footprint efficiently at the cost of compile time execution time; see</em>
+<a id='L247' name='L247'></a><em class='comment'> *  doc/regexp.rst for discussion, and some more details below.</em>
+<a id='L248' name='L248'></a><em class='comment'> *</em>
+<a id='L249' name='L249'></a><em class='comment'> *  Note that the ctx-&gt;nranges is a context-wide temporary value.  This is OK</em>
+<a id='L250' name='L250'></a><em class='comment'> *  because there cannot be multiple character classes being parsed</em>
+<a id='L251' name='L251'></a><em class='comment'> *  simultaneously.</em>
+<a id='L252' name='L252'></a><em class='comment'> *</em>
+<a id='L253' name='L253'></a><em class='comment'> *  More detail on canonicalization:</em>
+<a id='L254' name='L254'></a><em class='comment'> *</em>
+<a id='L255' name='L255'></a><em class='comment'> *  Conceptually, a range is canonicalized by scanning the entire range,</em>
+<a id='L256' name='L256'></a><em class='comment'> *  normalizing each codepoint by converting it to uppercase, and generating</em>
+<a id='L257' name='L257'></a><em class='comment'> *  a set of result ranges.</em>
+<a id='L258' name='L258'></a><em class='comment'> *</em>
+<a id='L259' name='L259'></a><em class='comment'> *  Ideally a minimal set of output ranges would be emitted by merging all</em>
+<a id='L260' name='L260'></a><em class='comment'> *  possible ranges even if they're emitted out of sequence.  Because the</em>
+<a id='L261' name='L261'></a><em class='comment'> *  input string is also case normalized during matching, some codepoints</em>
+<a id='L262' name='L262'></a><em class='comment'> *  never occur at runtime; these "don't care" codepoints can be included or</em>
+<a id='L263' name='L263'></a><em class='comment'> *  excluded from ranges when merging/optimizing ranges.</em>
+<a id='L264' name='L264'></a><em class='comment'> *</em>
+<a id='L265' name='L265'></a><em class='comment'> *  The current algorithm does not do optimal range merging.  Rather, output</em>
+<a id='L266' name='L266'></a><em class='comment'> *  codepoints are generated in sequence, and when the output codepoints are</em>
+<a id='L267' name='L267'></a><em class='comment'> *  continuous (CP, CP+1, CP+2, ...), they are merged locally into as large a</em>
+<a id='L268' name='L268'></a><em class='comment'> *  range as possible.  A small canonicalization bitmap is used to reduce</em>
+<a id='L269' name='L269'></a><em class='comment'> *  actual codepoint canonicalizations which are quite slow at present.  The</em>
+<a id='L270' name='L270'></a><em class='comment'> *  bitmap provides a "codepoint block is continuous with respect to</em>
+<a id='L271' name='L271'></a><em class='comment'> *  canonicalization" for N-codepoint blocks.  This allows blocks to be</em>
+<a id='L272' name='L272'></a><em class='comment'> *  skipped quickly.</em>
+<a id='L273' name='L273'></a><em class='comment'> *</em>
+<a id='L274' name='L274'></a><em class='comment'> *  There are a number of shortcomings and future work here:</em>
+<a id='L275' name='L275'></a><em class='comment'> *</em>
+<a id='L276' name='L276'></a><em class='comment'> *    - Individual codepoint normalizations are slow because they involve</em>
+<a id='L277' name='L277'></a><em class='comment'> *      walking bit-packed rules without a lookup index.</em>
+<a id='L278' name='L278'></a><em class='comment'> *</em>
+<a id='L279' name='L279'></a><em class='comment'> *    - The conceptual algorithm needs to canonicalize every codepoint in the</em>
+<a id='L280' name='L280'></a><em class='comment'> *      input range to figure out the output range(s).  Even with the small</em>
+<a id='L281' name='L281'></a><em class='comment'> *      canonicalization bitmap the algorithm runs quite slowly for worst case</em>
+<a id='L282' name='L282'></a><em class='comment'> *      inputs.  There are many data structure alternatives to improve this.</em>
+<a id='L283' name='L283'></a><em class='comment'> *</em>
+<a id='L284' name='L284'></a><em class='comment'> *    - While the current algorithm generates maximal output ranges when the</em>
+<a id='L285' name='L285'></a><em class='comment'> *      output codepoints are emitted linearly, output ranges are not sorted or</em>
+<a id='L286' name='L286'></a><em class='comment'> *      merged otherwise.  In the worst case a lot of ranges are emitted when</em>
+<a id='L287' name='L287'></a><em class='comment'> *      most of the ranges could be merged.  In this process one could take</em>
+<a id='L288' name='L288'></a><em class='comment'> *      advantage of "don't care" codepoints, which are never matched against at</em>
+<a id='L289' name='L289'></a><em class='comment'> *      runtime due to canonicalization of input codepoints before comparison,</em>
+<a id='L290' name='L290'></a><em class='comment'> *      to merge otherwise discontinuous output ranges.</em>
+<a id='L291' name='L291'></a><em class='comment'> *</em>
+<a id='L292' name='L292'></a><em class='comment'> *    - The runtime data structure is just a linear list of ranges to match</em>
+<a id='L293' name='L293'></a><em class='comment'> *      against.  This can be quite slow if there are a lot of output ranges.</em>
+<a id='L294' name='L294'></a><em class='comment'> *      There are various ways to make matching against the ranges faster,</em>
+<a id='L295' name='L295'></a><em class='comment'> *      e.g. sorting the ranges and using a binary search; skip lists; tree</em>
+<a id='L296' name='L296'></a><em class='comment'> *      based representations; full or approximate codepoint bitmaps, etc.</em>
+<a id='L297' name='L297'></a><em class='comment'> *</em>
+<a id='L298' name='L298'></a><em class='comment'> *    - Only BMP is supported, codepoints above BMP are assumed to canonicalize</em>
+<a id='L299' name='L299'></a><em class='comment'> *      to themselves.  For now this is one place where we don't want to</em>
+<a id='L300' name='L300'></a><em class='comment'> *      support chars outside the BMP, because the exhaustive search would be</em>
+<a id='L301' name='L301'></a><em class='comment'> *      massively larger.  It would be possible to support non-BMP with a</em>
+<a id='L302' name='L302'></a><em class='comment'> *      different algorithm, or perhaps doing case normalization only at match</em>
+<a id='L303' name='L303'></a><em class='comment'> *      time.</em>
+<a id='L304' name='L304'></a><em class='comment'> */</em>
+<a id='L305' name='L305'></a>
+<a id='L306' name='L306'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3658.html' title='Multiple referred from 12 places.'>duk__regexp_emit_range</a>(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> r1, <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> r2) <em class='brace'>{</em>
+<a id='L307' name='L307'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(r2 &gt;= r1);
+<a id='L308' name='L308'></a>        <a href='../D/3779.html' title='Multiple defined in 4 places.'>duk__append_u32</a>(re_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) r1);
+<a id='L309' name='L309'></a>        <a href='../D/3779.html' title='Multiple defined in 4 places.'>duk__append_u32</a>(re_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) r2);
+<a id='L310' name='L310'></a>        re_ctx-&gt;nranges++;
+<a id='L311' name='L311'></a><em class='brace'>}</em>
+<a id='L312' name='L312'></a>
+<a id='L313' name='L313'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3203.html' title='Multiple defined in 3 places.'>DUK_USE_REGEXP_CANON_BITMAP</a>)
+<a id='L314' name='L314'></a><em class='comment'>/* Find next canonicalization discontinuity (conservative estimate) starting</em>
+<a id='L315' name='L315'></a><em class='comment'> * from 'start', not exceeding 'end'.  If continuity is fine up to 'end'</em>
+<a id='L316' name='L316'></a><em class='comment'> * inclusive, returns end.  Minimum possible return value is start.</em>
+<a id='L317' name='L317'></a><em class='comment'> */</em>
+<a id='L318' name='L318'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> <a href='../R/3649.html' title='Multiple referred from 4 places.'>duk__re_canon_next_discontinuity</a>(<a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> start, <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> end) <em class='brace'>{</em>
+<a id='L319' name='L319'></a>        <a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a> start_blk;
+<a id='L320' name='L320'></a>        <a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a> end_blk;
+<a id='L321' name='L321'></a>        <a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a> blk;
+<a id='L322' name='L322'></a>        <a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a> offset;
+<a id='L323' name='L323'></a>        <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> mask;
+<a id='L324' name='L324'></a>
+<a id='L325' name='L325'></a>        <em class='comment'>/* Inclusive block range. */</em>
+<a id='L326' name='L326'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(start &gt;= 0);
+<a id='L327' name='L327'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(end &gt;= 0);
+<a id='L328' name='L328'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(end &gt;= start);
+<a id='L329' name='L329'></a>        start_blk = (<a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a>) (start &gt;&gt; <a href='../D/391.html' title='Multiple defined in 3 places.'>DUK_CANON_BITMAP_BLKSHIFT</a>);
+<a id='L330' name='L330'></a>        end_blk = (<a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a>) (end &gt;&gt; <a href='../D/391.html' title='Multiple defined in 3 places.'>DUK_CANON_BITMAP_BLKSHIFT</a>);
+<a id='L331' name='L331'></a>
+<a id='L332' name='L332'></a>        <strong class='reserved'>for</strong> (blk = start_blk; blk &lt;= end_blk; blk++) <em class='brace'>{</em>
+<a id='L333' name='L333'></a>                offset = blk &gt;&gt; 3;
+<a id='L334' name='L334'></a>                mask = 1U &lt;&lt; (blk &amp; 0x07);
+<a id='L335' name='L335'></a>                <strong class='reserved'>if</strong> (offset &gt;= <strong class='reserved'>sizeof</strong>(duk_unicode_re_canon_bitmap)) <em class='brace'>{</em>
+<a id='L336' name='L336'></a>                        <em class='comment'>/* Reached non-BMP range which is assumed continuous. */</em>
+<a id='L337' name='L337'></a>                        <strong class='reserved'>return</strong> end;
+<a id='L338' name='L338'></a>                <em class='brace'>}</em>
+<a id='L339' name='L339'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(offset &lt; <strong class='reserved'>sizeof</strong>(duk_unicode_re_canon_bitmap));
+<a id='L340' name='L340'></a>                <strong class='reserved'>if</strong> ((duk_unicode_re_canon_bitmap[offset] &amp; mask) == 0) <em class='brace'>{</em>
+<a id='L341' name='L341'></a>                        <em class='comment'>/* Block is discontinuous, continuity is guaranteed</em>
+<a id='L342' name='L342'></a><em class='comment'>                         * only up to end of previous block (+1 for exclusive</em>
+<a id='L343' name='L343'></a><em class='comment'>                         * return value =&gt; start of current block).  Start</em>
+<a id='L344' name='L344'></a><em class='comment'>                         * block requires special handling.</em>
+<a id='L345' name='L345'></a><em class='comment'>                         */</em>
+<a id='L346' name='L346'></a>                        <strong class='reserved'>if</strong> (blk &gt; start_blk) <em class='brace'>{</em>
+<a id='L347' name='L347'></a>                                <strong class='reserved'>return</strong> (<a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a>) (blk &lt;&lt; <a href='../D/391.html' title='Multiple defined in 3 places.'>DUK_CANON_BITMAP_BLKSHIFT</a>);
+<a id='L348' name='L348'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L349' name='L349'></a>                                <strong class='reserved'>return</strong> start;
+<a id='L350' name='L350'></a>                        <em class='brace'>}</em>
+<a id='L351' name='L351'></a>                <em class='brace'>}</em>
+<a id='L352' name='L352'></a>        <em class='brace'>}</em>
+<a id='L353' name='L353'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(blk == end_blk + 1);  <em class='comment'>/* Reached end block which is continuous. */</em>
+<a id='L354' name='L354'></a>        <strong class='reserved'>return</strong> end;
+<a id='L355' name='L355'></a><em class='brace'>}</em>
+<a id='L356' name='L356'></a><em class='sharp'>#else</em>  <em class='comment'>/* DUK_USE_REGEXP_CANON_BITMAP */</em>
+<a id='L357' name='L357'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> <a href='../R/3649.html' title='Multiple referred from 4 places.'>duk__re_canon_next_discontinuity</a>(<a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> start, <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> end) <em class='brace'>{</em>
+<a id='L358' name='L358'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(start &gt;= 0);
+<a id='L359' name='L359'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(end &gt;= 0);
+<a id='L360' name='L360'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(end &gt;= start);
+<a id='L361' name='L361'></a>        <strong class='reserved'>if</strong> (start &gt;= 0x10000) <em class='brace'>{</em>
+<a id='L362' name='L362'></a>                <em class='comment'>/* Even without the bitmap, treat non-BMP as continuous. */</em>
+<a id='L363' name='L363'></a>                <strong class='reserved'>return</strong> end;
+<a id='L364' name='L364'></a>        <em class='brace'>}</em>
+<a id='L365' name='L365'></a>        <strong class='reserved'>return</strong> start;
+<a id='L366' name='L366'></a><em class='brace'>}</em>
+<a id='L367' name='L367'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_REGEXP_CANON_BITMAP */</em>
+<a id='L368' name='L368'></a>
+<a id='L369' name='L369'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3659.html' title='Multiple referred from 4 places.'>duk__regexp_generate_ranges</a>(<strong class='reserved'>void</strong> *userdata, <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> r1, <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> r2, <a href='../D/4797.html' title='Multiple defined in 3 places.'>duk_bool_t</a> direct) <em class='brace'>{</em>
+<a id='L370' name='L370'></a>        <a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx = (<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *) userdata;
+<a id='L371' name='L371'></a>        <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> r_start;
+<a id='L372' name='L372'></a>        <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> r_end;
+<a id='L373' name='L373'></a>        <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> i;
+<a id='L374' name='L374'></a>        <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> t;
+<a id='L375' name='L375'></a>        <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> r_disc;
+<a id='L376' name='L376'></a>
+<a id='L377' name='L377'></a>        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("duk__regexp_generate_ranges(): re_ctx=%p, range=[%ld,%ld] direct=%ld",
+<a id='L378' name='L378'></a>                           (<strong class='reserved'>void</strong> *) re_ctx, (<strong class='reserved'>long</strong>) r1, (<strong class='reserved'>long</strong>) r2, (<strong class='reserved'>long</strong>) direct));
+<a id='L379' name='L379'></a>
+<a id='L380' name='L380'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(r2 &gt;= r1);  <em class='comment'>/* SyntaxError for out of order range. */</em>
+<a id='L381' name='L381'></a>
+<a id='L382' name='L382'></a>        <strong class='reserved'>if</strong> (direct || (re_ctx-&gt;re_flags &amp; <a href='../D/2340.html' title='Multiple defined in 4 places.'>DUK_RE_FLAG_IGNORE_CASE</a>) == 0) <em class='brace'>{</em>
+<a id='L383' name='L383'></a>                <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("direct or not case sensitive, emit range: [%ld,%ld]", (<strong class='reserved'>long</strong>) r1, (<strong class='reserved'>long</strong>) r2));
+<a id='L384' name='L384'></a>                <a href='../D/4420.html' title='Multiple defined in 4 places.'>duk__regexp_emit_range</a>(re_ctx, r1, r2);
+<a id='L385' name='L385'></a>                <strong class='reserved'>return</strong>;
+<a id='L386' name='L386'></a>        <em class='brace'>}</em>
+<a id='L387' name='L387'></a>
+<a id='L388' name='L388'></a>        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("case sensitive, process range: [%ld,%ld]", (<strong class='reserved'>long</strong>) r1, (<strong class='reserved'>long</strong>) r2));
+<a id='L389' name='L389'></a>
+<a id='L390' name='L390'></a>        r_start = <a href='../D/5912.html' title='Multiple defined in 4 places.'>duk_unicode_re_canonicalize_char</a>(re_ctx-&gt;thr, r1);
+<a id='L391' name='L391'></a>        r_end = r_start;
+<a id='L392' name='L392'></a>
+<a id='L393' name='L393'></a>        <strong class='reserved'>for</strong> (i = r1 + 1; i &lt;= r2;) <em class='brace'>{</em>
+<a id='L394' name='L394'></a>                <em class='comment'>/* Input codepoint space processed up to i-1, and</em>
+<a id='L395' name='L395'></a><em class='comment'>                 * current range in r_{start,end} is up-to-date</em>
+<a id='L396' name='L396'></a><em class='comment'>                 * (inclusive) and may either break or continue.</em>
+<a id='L397' name='L397'></a><em class='comment'>                 */</em>
+<a id='L398' name='L398'></a>                r_disc = <a href='../D/4411.html' title='Multiple defined in 8 places.'>duk__re_canon_next_discontinuity</a>(i, r2);
+<a id='L399' name='L399'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(r_disc &gt;= i);
+<a id='L400' name='L400'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(r_disc &lt;= r2);
+<a id='L401' name='L401'></a>
+<a id='L402' name='L402'></a>                r_end += r_disc - i;  <em class='comment'>/* May be zero. */</em>
+<a id='L403' name='L403'></a>                t = <a href='../D/5912.html' title='Multiple defined in 4 places.'>duk_unicode_re_canonicalize_char</a>(re_ctx-&gt;thr, r_disc);
+<a id='L404' name='L404'></a>                <strong class='reserved'>if</strong> (t == r_end + 1) <em class='brace'>{</em>
+<a id='L405' name='L405'></a>                        <em class='comment'>/* Not actually a discontinuity, continue range</em>
+<a id='L406' name='L406'></a><em class='comment'>                         * to r_disc and recheck.</em>
+<a id='L407' name='L407'></a><em class='comment'>                         */</em>
+<a id='L408' name='L408'></a>                        r_end = t;
+<a id='L409' name='L409'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L410' name='L410'></a>                        <a href='../D/4420.html' title='Multiple defined in 4 places.'>duk__regexp_emit_range</a>(re_ctx, r_start, r_end);
+<a id='L411' name='L411'></a>                        r_start = t;
+<a id='L412' name='L412'></a>                        r_end = t;
+<a id='L413' name='L413'></a>                <em class='brace'>}</em>
+<a id='L414' name='L414'></a>                i = r_disc + 1;  <em class='comment'>/* Guarantees progress. */</em>
+<a id='L415' name='L415'></a>        <em class='brace'>}</em>
+<a id='L416' name='L416'></a>        <a href='../D/4420.html' title='Multiple defined in 4 places.'>duk__regexp_emit_range</a>(re_ctx, r_start, r_end);
+<a id='L417' name='L417'></a>
+<a id='L418' name='L418'></a><em class='sharp'>#if</em> 0  <em class='comment'>/* Exhaustive search, very slow. */</em>
+<a id='L419' name='L419'></a>        r_start = <a href='../D/5912.html' title='Multiple defined in 4 places.'>duk_unicode_re_canonicalize_char</a>(re_ctx-&gt;thr, r1);
+<a id='L420' name='L420'></a>        r_end = r_start;
+<a id='L421' name='L421'></a>        <strong class='reserved'>for</strong> (i = r1 + 1; i &lt;= r2; i++) <em class='brace'>{</em>
+<a id='L422' name='L422'></a>                t = <a href='../D/5912.html' title='Multiple defined in 4 places.'>duk_unicode_re_canonicalize_char</a>(re_ctx-&gt;thr, i);
+<a id='L423' name='L423'></a>                <strong class='reserved'>if</strong> (t == r_end + 1) <em class='brace'>{</em>
+<a id='L424' name='L424'></a>                        r_end = t;
+<a id='L425' name='L425'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L426' name='L426'></a>                        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("canonicalized, emit range: [%ld,%ld]", (<strong class='reserved'>long</strong>) r_start, (<strong class='reserved'>long</strong>) r_end));
+<a id='L427' name='L427'></a>                        <a href='../D/3779.html' title='Multiple defined in 4 places.'>duk__append_u32</a>(re_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) r_start);
+<a id='L428' name='L428'></a>                        <a href='../D/3779.html' title='Multiple defined in 4 places.'>duk__append_u32</a>(re_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) r_end);
+<a id='L429' name='L429'></a>                        re_ctx-&gt;nranges++;
+<a id='L430' name='L430'></a>                        r_start = t;
+<a id='L431' name='L431'></a>                        r_end = t;
+<a id='L432' name='L432'></a>                <em class='brace'>}</em>
+<a id='L433' name='L433'></a>        <em class='brace'>}</em>
+<a id='L434' name='L434'></a>        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("canonicalized, emit range: [%ld,%ld]", (<strong class='reserved'>long</strong>) r_start, (<strong class='reserved'>long</strong>) r_end));
+<a id='L435' name='L435'></a>        <a href='../D/3779.html' title='Multiple defined in 4 places.'>duk__append_u32</a>(re_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) r_start);
+<a id='L436' name='L436'></a>        <a href='../D/3779.html' title='Multiple defined in 4 places.'>duk__append_u32</a>(re_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) r_end);
+<a id='L437' name='L437'></a>        re_ctx-&gt;nranges++;
+<a id='L438' name='L438'></a><em class='sharp'>#endif</em>
+<a id='L439' name='L439'></a><em class='brace'>}</em>
+<a id='L440' name='L440'></a>
+<a id='L441' name='L441'></a><em class='comment'>/*</em>
+<a id='L442' name='L442'></a><em class='comment'> *  Parse regexp Disjunction.  Most of regexp compilation happens here.</em>
+<a id='L443' name='L443'></a><em class='comment'> *</em>
+<a id='L444' name='L444'></a><em class='comment'> *  Handles Disjunction, Alternative, and Term productions directly without</em>
+<a id='L445' name='L445'></a><em class='comment'> *  recursion.  The only constructs requiring recursion are positive/negative</em>
+<a id='L446' name='L446'></a><em class='comment'> *  lookaheads, capturing parentheses, and non-capturing parentheses.</em>
+<a id='L447' name='L447'></a><em class='comment'> *</em>
+<a id='L448' name='L448'></a><em class='comment'> *  The function determines whether the entire disjunction is a 'simple atom'</em>
+<a id='L449' name='L449'></a><em class='comment'> *  (see doc/regexp.rst discussion on 'simple quantifiers') and if so,</em>
+<a id='L450' name='L450'></a><em class='comment'> *  returns the atom character length which is needed by the caller to keep</em>
+<a id='L451' name='L451'></a><em class='comment'> *  track of its own atom character length.  A disjunction with more than one</em>
+<a id='L452' name='L452'></a><em class='comment'> *  alternative is never considered a simple atom (although in some cases</em>
+<a id='L453' name='L453'></a><em class='comment'> *  that might be the case).</em>
+<a id='L454' name='L454'></a><em class='comment'> *</em>
+<a id='L455' name='L455'></a><em class='comment'> *  Return value: simple atom character length or &lt; 0 if not a simple atom.</em>
+<a id='L456' name='L456'></a><em class='comment'> *  Appends the bytecode for the disjunction matcher to the end of the temp</em>
+<a id='L457' name='L457'></a><em class='comment'> *  buffer.</em>
+<a id='L458' name='L458'></a><em class='comment'> *</em>
+<a id='L459' name='L459'></a><em class='comment'> *  Regexp top level structure is:</em>
+<a id='L460' name='L460'></a><em class='comment'> *</em>
+<a id='L461' name='L461'></a><em class='comment'> *    Disjunction = Term*</em>
+<a id='L462' name='L462'></a><em class='comment'> *                | Term* | Disjunction</em>
+<a id='L463' name='L463'></a><em class='comment'> *</em>
+<a id='L464' name='L464'></a><em class='comment'> *    Term = Assertion</em>
+<a id='L465' name='L465'></a><em class='comment'> *         | Atom</em>
+<a id='L466' name='L466'></a><em class='comment'> *         | Atom Quantifier</em>
+<a id='L467' name='L467'></a><em class='comment'> *</em>
+<a id='L468' name='L468'></a><em class='comment'> *  An empty Term sequence is a valid disjunction alternative (e.g. /|||c||/).</em>
+<a id='L469' name='L469'></a><em class='comment'> *</em>
+<a id='L470' name='L470'></a><em class='comment'> *  Notes:</em>
+<a id='L471' name='L471'></a><em class='comment'> *</em>
+<a id='L472' name='L472'></a><em class='comment'> *    * Tracking of the 'simple-ness' of the current atom vs. the entire</em>
+<a id='L473' name='L473'></a><em class='comment'> *      disjunction are separate matters.  For instance, the disjunction</em>
+<a id='L474' name='L474'></a><em class='comment'> *      may be complex, but individual atoms may be simple.  Furthermore,</em>
+<a id='L475' name='L475'></a><em class='comment'> *      simple quantifiers are used whenever possible, even if the</em>
+<a id='L476' name='L476'></a><em class='comment'> *      disjunction as a whole is complex.</em>
+<a id='L477' name='L477'></a><em class='comment'> *</em>
+<a id='L478' name='L478'></a><em class='comment'> *    * The estimate of whether an atom is simple is conservative now,</em>
+<a id='L479' name='L479'></a><em class='comment'> *      and it would be possible to expand it.  For instance, captures</em>
+<a id='L480' name='L480'></a><em class='comment'> *      cause the disjunction to be marked complex, even though captures</em>
+<a id='L481' name='L481'></a><em class='comment'> *      -can- be handled by simple quantifiers with some minor modifications.</em>
+<a id='L482' name='L482'></a><em class='comment'> *</em>
+<a id='L483' name='L483'></a><em class='comment'> *    * Disjunction 'tainting' as 'complex' is handled at the end of the</em>
+<a id='L484' name='L484'></a><em class='comment'> *      main for loop collectively for atoms.  Assertions, quantifiers,</em>
+<a id='L485' name='L485'></a><em class='comment'> *      and '|' tokens need to taint the result manually if necessary.</em>
+<a id='L486' name='L486'></a><em class='comment'> *      Assertions cannot add to result char length, only atoms (and</em>
+<a id='L487' name='L487'></a><em class='comment'> *      quantifiers) can; currently quantifiers will taint the result</em>
+<a id='L488' name='L488'></a><em class='comment'> *      as complex though.</em>
+<a id='L489' name='L489'></a><em class='comment'> */</em>
+<a id='L490' name='L490'></a>
+<a id='L491' name='L491'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>const</strong> <a href='../D/5883.html' title='Multiple defined in 9 places.'>duk_uint16_t</a> * <strong class='reserved'>const</strong> duk__re_range_lookup1[3] = <em class='brace'>{</em>
+<a id='L492' name='L492'></a>        duk_unicode_re_ranges_digit,
+<a id='L493' name='L493'></a>        duk_unicode_re_ranges_white,
+<a id='L494' name='L494'></a>        duk_unicode_re_ranges_wordchar
+<a id='L495' name='L495'></a><em class='brace'>}</em>;
+<a id='L496' name='L496'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>const</strong> <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> duk__re_range_lookup2[3] = <em class='brace'>{</em>
+<a id='L497' name='L497'></a>        <strong class='reserved'>sizeof</strong>(duk_unicode_re_ranges_digit) / (2 * <strong class='reserved'>sizeof</strong>(<a href='../D/5883.html' title='Multiple defined in 9 places.'>duk_uint16_t</a>)),
+<a id='L498' name='L498'></a>        <strong class='reserved'>sizeof</strong>(duk_unicode_re_ranges_white) / (2 * <strong class='reserved'>sizeof</strong>(<a href='../D/5883.html' title='Multiple defined in 9 places.'>duk_uint16_t</a>)),
+<a id='L499' name='L499'></a>        <strong class='reserved'>sizeof</strong>(duk_unicode_re_ranges_wordchar) / (2 * <strong class='reserved'>sizeof</strong>(<a href='../D/5883.html' title='Multiple defined in 9 places.'>duk_uint16_t</a>))
+<a id='L500' name='L500'></a><em class='brace'>}</em>;
+<a id='L501' name='L501'></a>
+<a id='L502' name='L502'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3017.html' title='Multiple referred from 4 places.'>duk__append_range_atom_matcher</a>(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> re_op, <strong class='reserved'>const</strong> <a href='../D/5883.html' title='Multiple defined in 9 places.'>duk_uint16_t</a> *ranges, <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> count) <em class='brace'>{</em>
+<a id='L503' name='L503'></a><em class='sharp'>#if</em> 0
+<a id='L504' name='L504'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(re_op &lt;= 0x7fUL);
+<a id='L505' name='L505'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(count &lt;= 0x7fUL);
+<a id='L506' name='L506'></a>        <a href='../D/3771.html' title='Multiple defined in 4 places.'>duk__append_2bytes</a>(re_ctx, (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a>) re_op, (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a>) count);
+<a id='L507' name='L507'></a><em class='sharp'>#endif</em>
+<a id='L508' name='L508'></a>        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, re_op);
+<a id='L509' name='L509'></a>        <a href='../D/3772.html' title='Multiple defined in 4 places.'>duk__append_7bit</a>(re_ctx, count);
+<a id='L510' name='L510'></a>        <a href='../D/3778.html' title='Multiple defined in 4 places.'>duk__append_u16_list</a>(re_ctx, ranges, count * 2);
+<a id='L511' name='L511'></a><em class='brace'>}</em>
+<a id='L512' name='L512'></a>
+<a id='L513' name='L513'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3570.html' title='Multiple referred from 16 places.'>duk__parse_disjunction</a>(<a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> *re_ctx, <a href='../D/4797.html' title='Multiple defined in 3 places.'>duk_bool_t</a> expect_eof, <a href='../D/4412.html' title='Multiple defined in 4 places.'>duk__re_disjunction_info</a> *out_atom_info) <em class='brace'>{</em>
+<a id='L514' name='L514'></a>        <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> atom_start_offset = -1;                   <em class='comment'>/* negative -&gt; no atom matched on previous round */</em>
+<a id='L515' name='L515'></a>        <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> atom_char_length = 0;                     <em class='comment'>/* negative -&gt; complex atom */</em>
+<a id='L516' name='L516'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> atom_start_captures = re_ctx-&gt;captures;  <em class='comment'>/* value of re_ctx-&gt;captures at start of atom */</em>
+<a id='L517' name='L517'></a>        <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> unpatched_disjunction_split = -1;
+<a id='L518' name='L518'></a>        <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> unpatched_disjunction_jump = -1;
+<a id='L519' name='L519'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> entry_offset = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) <a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx);
+<a id='L520' name='L520'></a>        <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> res_charlen = 0;  <em class='comment'>/* -1 if disjunction is complex, char length if simple */</em>
+<a id='L521' name='L521'></a>        <a href='../D/4412.html' title='Multiple defined in 4 places.'>duk__re_disjunction_info</a> tmp_disj;
+<a id='L522' name='L522'></a>
+<a id='L523' name='L523'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(out_atom_info != NULL);
+<a id='L524' name='L524'></a>
+<a id='L525' name='L525'></a>        <a href='../D/5476.html' title='Multiple defined in 4 places.'>duk_native_stack_check</a>(re_ctx-&gt;thr);
+<a id='L526' name='L526'></a>        <strong class='reserved'>if</strong> (re_ctx-&gt;recursion_depth &gt;= re_ctx-&gt;recursion_limit) <em class='brace'>{</em>
+<a id='L527' name='L527'></a>                <a href='../D/731.html' title='Multiple defined in 8 places.'>DUK_ERROR_RANGE</a>(re_ctx-&gt;thr, <a href='../D/2656.html' title='Multiple defined in 4 places.'>DUK_STR_REGEXP_COMPILER_RECURSION_LIMIT</a>);
+<a id='L528' name='L528'></a>                <a href='../D/3267.html' title='Multiple defined in 6 places.'>DUK_WO_NORETURN</a>(<strong class='reserved'>return</strong>;);
+<a id='L529' name='L529'></a>        <em class='brace'>}</em>
+<a id='L530' name='L530'></a>        re_ctx-&gt;recursion_depth++;
+<a id='L531' name='L531'></a>
+<a id='L532' name='L532'></a><em class='sharp'>#if</em> 0
+<a id='L533' name='L533'></a>        out_atom_info-&gt;start_captures = re_ctx-&gt;captures;
+<a id='L534' name='L534'></a><em class='sharp'>#endif</em>
+<a id='L535' name='L535'></a>
+<a id='L536' name='L536'></a>        <strong class='reserved'>for</strong> (;;) <em class='brace'>{</em>
+<a id='L537' name='L537'></a>                <em class='comment'>/* atom_char_length, atom_start_offset, atom_start_offset reflect the</em>
+<a id='L538' name='L538'></a><em class='comment'>                 * atom matched on the previous loop.  If a quantifier is encountered</em>
+<a id='L539' name='L539'></a><em class='comment'>                 * on this loop, these are needed to handle the quantifier correctly.</em>
+<a id='L540' name='L540'></a><em class='comment'>                 * new_atom_char_length etc are for the atom parsed on this round;</em>
+<a id='L541' name='L541'></a><em class='comment'>                 * they're written to atom_char_length etc at the end of the round.</em>
+<a id='L542' name='L542'></a><em class='comment'>                 */</em>
+<a id='L543' name='L543'></a>                <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> new_atom_char_length;   <em class='comment'>/* char length of the atom parsed in this loop */</em>
+<a id='L544' name='L544'></a>                <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> new_atom_start_offset;  <em class='comment'>/* bytecode start offset of the atom parsed in this loop</em>
+<a id='L545' name='L545'></a><em class='comment'>                                                     * (allows quantifiers to copy the atom bytecode)</em>
+<a id='L546' name='L546'></a><em class='comment'>                                                     */</em>
+<a id='L547' name='L547'></a>                <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> new_atom_start_captures;  <em class='comment'>/* re_ctx-&gt;captures at the start of the atom parsed in this loop */</em>
+<a id='L548' name='L548'></a>
+<a id='L549' name='L549'></a>                <a href='../D/5448.html' title='Multiple defined in 4 places.'>duk_lexer_parse_re_token</a>(&amp;re_ctx-&gt;lex, &amp;re_ctx-&gt;curr_token);
+<a id='L550' name='L550'></a>
+<a id='L551' name='L551'></a>                <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("re token: %ld (num=%ld, char=%c)",
+<a id='L552' name='L552'></a>                                   (<strong class='reserved'>long</strong>) re_ctx-&gt;curr_token.t,
+<a id='L553' name='L553'></a>                                   (<strong class='reserved'>long</strong>) re_ctx-&gt;curr_token.num,
+<a id='L554' name='L554'></a>                                   (re_ctx-&gt;curr_token.num &gt;= 0x20 &amp;&amp; re_ctx-&gt;curr_token.num &lt;= 0x7e) ?
+<a id='L555' name='L555'></a>                                   (<strong class='reserved'>int</strong>) re_ctx-&gt;curr_token.num : (<strong class='reserved'>int</strong>) '?'));
+<a id='L556' name='L556'></a>
+<a id='L557' name='L557'></a>                <em class='comment'>/* set by atom case clauses */</em>
+<a id='L558' name='L558'></a>                new_atom_start_offset = -1;
+<a id='L559' name='L559'></a>                new_atom_char_length = -1;
+<a id='L560' name='L560'></a>                new_atom_start_captures = re_ctx-&gt;captures;
+<a id='L561' name='L561'></a>
+<a id='L562' name='L562'></a>                <strong class='reserved'>switch</strong> (re_ctx-&gt;curr_token.t) <em class='brace'>{</em>
+<a id='L563' name='L563'></a>                <strong class='reserved'>case</strong> <a href='../D/2325.html' title='Multiple defined in 4 places.'>DUK_RETOK_DISJUNCTION</a>: <em class='brace'>{</em>
+<a id='L564' name='L564'></a>                        <em class='comment'>/*</em>
+<a id='L565' name='L565'></a><em class='comment'>                         *  The handling here is a bit tricky.  If a previous '|' has been processed,</em>
+<a id='L566' name='L566'></a><em class='comment'>                         *  we have a pending split1 and a pending jump (for a previous match).  These</em>
+<a id='L567' name='L567'></a><em class='comment'>                         *  need to be back-patched carefully.  See docs for a detailed example.</em>
+<a id='L568' name='L568'></a><em class='comment'>                         */</em>
+<a id='L569' name='L569'></a>
+<a id='L570' name='L570'></a>                        <em class='comment'>/* patch pending jump and split */</em>
+<a id='L571' name='L571'></a>                        <strong class='reserved'>if</strong> (unpatched_disjunction_jump &gt;= 0) <em class='brace'>{</em>
+<a id='L572' name='L572'></a>                                <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> offset;
+<a id='L573' name='L573'></a>
+<a id='L574' name='L574'></a>                                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(unpatched_disjunction_split &gt;= 0);
+<a id='L575' name='L575'></a>                                offset = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) unpatched_disjunction_jump;
+<a id='L576' name='L576'></a>                                offset += <a href='../D/4218.html' title='Multiple defined in 4 places.'>duk__insert_jump_offset</a>(re_ctx,
+<a id='L577' name='L577'></a>                                                                  offset,
+<a id='L578' name='L578'></a>                                                                  (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) (<a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx) - offset));
+<a id='L579' name='L579'></a>                                <em class='comment'>/* offset is now target of the pending split (right after jump) */</em>
+<a id='L580' name='L580'></a>                                <a href='../D/4218.html' title='Multiple defined in 4 places.'>duk__insert_jump_offset</a>(re_ctx,
+<a id='L581' name='L581'></a>                                                        (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) unpatched_disjunction_split,
+<a id='L582' name='L582'></a>                                                        (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) offset - unpatched_disjunction_split);
+<a id='L583' name='L583'></a>                        <em class='brace'>}</em>
+<a id='L584' name='L584'></a>
+<a id='L585' name='L585'></a>                        <em class='comment'>/* add a new pending split to the beginning of the entire disjunction */</em>
+<a id='L586' name='L586'></a>                        (<strong class='reserved'>void</strong>) <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx,
+<a id='L587' name='L587'></a>                                               entry_offset,
+<a id='L588' name='L588'></a>                                               <a href='../D/2299.html' title='Multiple defined in 4 places.'>DUK_REOP_SPLIT1</a>);   <em class='comment'>/* prefer direct execution */</em>
+<a id='L589' name='L589'></a>                        unpatched_disjunction_split = (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) (entry_offset + 1);   <em class='comment'>/* +1 for opcode */</em>
+<a id='L590' name='L590'></a>
+<a id='L591' name='L591'></a>                        <em class='comment'>/* add a new pending match jump for latest finished alternative */</em>
+<a id='L592' name='L592'></a>                        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, <a href='../D/2292.html' title='Multiple defined in 4 places.'>DUK_REOP_JUMP</a>);
+<a id='L593' name='L593'></a>                        unpatched_disjunction_jump = (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) <a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx);
+<a id='L594' name='L594'></a>
+<a id='L595' name='L595'></a>                        <em class='comment'>/* 'taint' result as complex */</em>
+<a id='L596' name='L596'></a>                        res_charlen = -1;
+<a id='L597' name='L597'></a>                        <strong class='reserved'>break</strong>;
+<a id='L598' name='L598'></a>                <em class='brace'>}</em>
+<a id='L599' name='L599'></a>                <strong class='reserved'>case</strong> <a href='../D/2327.html' title='Multiple defined in 4 places.'>DUK_RETOK_QUANTIFIER</a>: <em class='brace'>{</em>
+<a id='L600' name='L600'></a>                        <strong class='reserved'>if</strong> (atom_start_offset &lt; 0) <em class='brace'>{</em>
+<a id='L601' name='L601'></a>                                <a href='../D/744.html' title='Multiple defined in 8 places.'>DUK_ERROR_SYNTAX</a>(re_ctx-&gt;thr, <a href='../D/2612.html' title='Multiple defined in 4 places.'>DUK_STR_INVALID_QUANTIFIER_NO_ATOM</a>);
+<a id='L602' name='L602'></a>                                <a href='../D/3267.html' title='Multiple defined in 6 places.'>DUK_WO_NORETURN</a>(<strong class='reserved'>return</strong>;);
+<a id='L603' name='L603'></a>                        <em class='brace'>}</em>
+<a id='L604' name='L604'></a>                        <strong class='reserved'>if</strong> (re_ctx-&gt;curr_token.qmin &gt; re_ctx-&gt;curr_token.qmax) <em class='brace'>{</em>
+<a id='L605' name='L605'></a>                                <a href='../D/744.html' title='Multiple defined in 8 places.'>DUK_ERROR_SYNTAX</a>(re_ctx-&gt;thr, <a href='../D/2613.html' title='Multiple defined in 4 places.'>DUK_STR_INVALID_QUANTIFIER_VALUES</a>);
+<a id='L606' name='L606'></a>                                <a href='../D/3267.html' title='Multiple defined in 6 places.'>DUK_WO_NORETURN</a>(<strong class='reserved'>return</strong>;);
+<a id='L607' name='L607'></a>                        <em class='brace'>}</em>
+<a id='L608' name='L608'></a>                        <strong class='reserved'>if</strong> (atom_char_length &gt;= 0) <em class='brace'>{</em>
+<a id='L609' name='L609'></a>                                <em class='comment'>/*</em>
+<a id='L610' name='L610'></a><em class='comment'>                                 *  Simple atom</em>
+<a id='L611' name='L611'></a><em class='comment'>                                 *</em>
+<a id='L612' name='L612'></a><em class='comment'>                                 *  If atom_char_length is zero, we'll have unbounded execution time for e.g.</em>
+<a id='L613' name='L613'></a><em class='comment'>                                 *  /()*x/.exec('x').  We can't just skip the match because it might have some</em>
+<a id='L614' name='L614'></a><em class='comment'>                                 *  side effects (for instance, if we allowed captures in simple atoms, the</em>
+<a id='L615' name='L615'></a><em class='comment'>                                 *  capture needs to happen).  The simple solution below is to force the</em>
+<a id='L616' name='L616'></a><em class='comment'>                                 *  quantifier to match at most once, since the additional matches have no effect.</em>
+<a id='L617' name='L617'></a><em class='comment'>                                 *</em>
+<a id='L618' name='L618'></a><em class='comment'>                                 *  With a simple atom there can be no capture groups, so no captures need</em>
+<a id='L619' name='L619'></a><em class='comment'>                                 *  to be reset.</em>
+<a id='L620' name='L620'></a><em class='comment'>                                 */</em>
+<a id='L621' name='L621'></a>                                <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> atom_code_length;
+<a id='L622' name='L622'></a>                                <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> offset;
+<a id='L623' name='L623'></a>                                <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> qmin, qmax;
+<a id='L624' name='L624'></a>
+<a id='L625' name='L625'></a>                                qmin = re_ctx-&gt;curr_token.qmin;
+<a id='L626' name='L626'></a>                                qmax = re_ctx-&gt;curr_token.qmax;
+<a id='L627' name='L627'></a>                                <strong class='reserved'>if</strong> (atom_char_length == 0) <em class='brace'>{</em>
+<a id='L628' name='L628'></a>                                        <em class='comment'>/* qmin and qmax will be 0 or 1 */</em>
+<a id='L629' name='L629'></a>                                        <strong class='reserved'>if</strong> (qmin &gt; 1) <em class='brace'>{</em>
+<a id='L630' name='L630'></a>                                                qmin = 1;
+<a id='L631' name='L631'></a>                                        <em class='brace'>}</em>
+<a id='L632' name='L632'></a>                                        <strong class='reserved'>if</strong> (qmax &gt; 1) <em class='brace'>{</em>
+<a id='L633' name='L633'></a>                                                qmax = 1;
+<a id='L634' name='L634'></a>                                        <em class='brace'>}</em>
+<a id='L635' name='L635'></a>                                <em class='brace'>}</em>
+<a id='L636' name='L636'></a>
+<a id='L637' name='L637'></a>                                <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, <a href='../D/2295.html' title='Multiple defined in 4 places.'>DUK_REOP_MATCH</a>);   <em class='comment'>/* complete 'sub atom' */</em>
+<a id='L638' name='L638'></a>                                atom_code_length = (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) (<a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx) - (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) atom_start_offset);
+<a id='L639' name='L639'></a>
+<a id='L640' name='L640'></a>                                offset = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) atom_start_offset;
+<a id='L641' name='L641'></a>                                <strong class='reserved'>if</strong> (re_ctx-&gt;curr_token.greedy) <em class='brace'>{</em>
+<a id='L642' name='L642'></a>                                        offset += <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx, offset, <a href='../D/2301.html' title='Multiple defined in 4 places.'>DUK_REOP_SQGREEDY</a>);
+<a id='L643' name='L643'></a>                                        offset += <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx, offset, qmin);
+<a id='L644' name='L644'></a>                                        offset += <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx, offset, qmax);
+<a id='L645' name='L645'></a>                                        offset += <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx, offset, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) atom_char_length);
+<a id='L646' name='L646'></a>                                        offset += <a href='../D/4218.html' title='Multiple defined in 4 places.'>duk__insert_jump_offset</a>(re_ctx, offset, atom_code_length);
+<a id='L647' name='L647'></a>                                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L648' name='L648'></a>                                        offset += <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx, offset, <a href='../D/2302.html' title='Multiple defined in 4 places.'>DUK_REOP_SQMINIMAL</a>);
+<a id='L649' name='L649'></a>                                        offset += <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx, offset, qmin);
+<a id='L650' name='L650'></a>                                        offset += <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx, offset, qmax);
+<a id='L651' name='L651'></a>                                        offset += <a href='../D/4218.html' title='Multiple defined in 4 places.'>duk__insert_jump_offset</a>(re_ctx, offset, atom_code_length);
+<a id='L652' name='L652'></a>                                <em class='brace'>}</em>
+<a id='L653' name='L653'></a>                                <a href='../D/3010.html' title='Multiple defined in 9 places.'>DUK_UNREF</a>(offset);  <em class='comment'>/* silence scan-build warning */</em>
+<a id='L654' name='L654'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L655' name='L655'></a>                                <em class='comment'>/*</em>
+<a id='L656' name='L656'></a><em class='comment'>                                 *  Complex atom</em>
+<a id='L657' name='L657'></a><em class='comment'>                                 *</em>
+<a id='L658' name='L658'></a><em class='comment'>                                 *  The original code is used as a template, and removed at the end</em>
+<a id='L659' name='L659'></a><em class='comment'>                                 *  (this differs from the handling of simple quantifiers).</em>
+<a id='L660' name='L660'></a><em class='comment'>                                 *</em>
+<a id='L661' name='L661'></a><em class='comment'>                                 *  NOTE: there is no current solution for empty atoms in complex</em>
+<a id='L662' name='L662'></a><em class='comment'>                                 *  quantifiers.  This would need some sort of a 'progress' instruction.</em>
+<a id='L663' name='L663'></a><em class='comment'>                                 *</em>
+<a id='L664' name='L664'></a><em class='comment'>                                 *  XXX: impose limit on maximum result size, i.e. atom_code_len * atom_copies?</em>
+<a id='L665' name='L665'></a><em class='comment'>                                 */</em>
+<a id='L666' name='L666'></a>                                <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> atom_code_length;
+<a id='L667' name='L667'></a>                                <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> atom_copies;
+<a id='L668' name='L668'></a>                                <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> tmp_qmin, tmp_qmax;
+<a id='L669' name='L669'></a>
+<a id='L670' name='L670'></a>                                <em class='comment'>/* pre-check how many atom copies we're willing to make (atom_copies not needed below) */</em>
+<a id='L671' name='L671'></a>                                atom_copies = (re_ctx-&gt;curr_token.qmax == <a href='../D/2343.html' title='Multiple defined in 4 places.'>DUK_RE_QUANTIFIER_INFINITE</a>) ?
+<a id='L672' name='L672'></a>                                              re_ctx-&gt;curr_token.qmin : re_ctx-&gt;curr_token.qmax;
+<a id='L673' name='L673'></a>                                <strong class='reserved'>if</strong> (atom_copies &gt; <a href='../D/2342.html' title='Multiple defined in 4 places.'>DUK_RE_MAX_ATOM_COPIES</a>) <em class='brace'>{</em>
+<a id='L674' name='L674'></a>                                        <a href='../D/731.html' title='Multiple defined in 8 places.'>DUK_ERROR_RANGE</a>(re_ctx-&gt;thr, <a href='../D/2655.html' title='Multiple defined in 4 places.'>DUK_STR_QUANTIFIER_TOO_MANY_COPIES</a>);
+<a id='L675' name='L675'></a>                                        <a href='../D/3267.html' title='Multiple defined in 6 places.'>DUK_WO_NORETURN</a>(<strong class='reserved'>return</strong>;);
+<a id='L676' name='L676'></a>                                <em class='brace'>}</em>
+<a id='L677' name='L677'></a>
+<a id='L678' name='L678'></a>                                <em class='comment'>/* wipe the capture range made by the atom (if any) */</em>
+<a id='L679' name='L679'></a>                                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(atom_start_captures &lt;= re_ctx-&gt;captures);
+<a id='L680' name='L680'></a>                                <strong class='reserved'>if</strong> (atom_start_captures != re_ctx-&gt;captures) <em class='brace'>{</em>
+<a id='L681' name='L681'></a>                                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(atom_start_captures &lt; re_ctx-&gt;captures);
+<a id='L682' name='L682'></a>                                        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("must wipe ]atom_start_captures,re_ctx-&gt;captures]: ]%ld,%ld]",
+<a id='L683' name='L683'></a>                                                             (<strong class='reserved'>long</strong>) atom_start_captures, (<strong class='reserved'>long</strong>) re_ctx-&gt;captures));
+<a id='L684' name='L684'></a>
+<a id='L685' name='L685'></a>                                        <em class='comment'>/* insert (DUK_REOP_WIPERANGE, start, count) in reverse order so the order ends up right */</em>
+<a id='L686' name='L686'></a>                                        <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) atom_start_offset, (re_ctx-&gt;captures - atom_start_captures) * 2U);
+<a id='L687' name='L687'></a>                                        <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) atom_start_offset, (atom_start_captures + 1) * 2);
+<a id='L688' name='L688'></a>                                        <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) atom_start_offset, <a href='../D/2303.html' title='Multiple defined in 4 places.'>DUK_REOP_WIPERANGE</a>);
+<a id='L689' name='L689'></a>                                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L690' name='L690'></a>                                        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("no need to wipe captures: atom_start_captures == re_ctx-&gt;captures == %ld",
+<a id='L691' name='L691'></a>                                                             (<strong class='reserved'>long</strong>) atom_start_captures));
+<a id='L692' name='L692'></a>                                <em class='brace'>}</em>
+<a id='L693' name='L693'></a>
+<a id='L694' name='L694'></a>                                atom_code_length = (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) <a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx) - atom_start_offset;
+<a id='L695' name='L695'></a>
+<a id='L696' name='L696'></a>                                <em class='comment'>/* insert the required matches (qmin) by copying the atom */</em>
+<a id='L697' name='L697'></a>                                tmp_qmin = re_ctx-&gt;curr_token.qmin;
+<a id='L698' name='L698'></a>                                tmp_qmax = re_ctx-&gt;curr_token.qmax;
+<a id='L699' name='L699'></a>                                <strong class='reserved'>while</strong> (tmp_qmin &gt; 0) <em class='brace'>{</em>
+<a id='L700' name='L700'></a>                                        <a href='../D/3777.html' title='Multiple defined in 4 places.'>duk__append_slice</a>(re_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) atom_start_offset, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) atom_code_length);
+<a id='L701' name='L701'></a>                                        tmp_qmin--;
+<a id='L702' name='L702'></a>                                        <strong class='reserved'>if</strong> (tmp_qmax != <a href='../D/2343.html' title='Multiple defined in 4 places.'>DUK_RE_QUANTIFIER_INFINITE</a>) <em class='brace'>{</em>
+<a id='L703' name='L703'></a>                                                tmp_qmax--;
+<a id='L704' name='L704'></a>                                        <em class='brace'>}</em>
+<a id='L705' name='L705'></a>                                <em class='brace'>}</em>
+<a id='L706' name='L706'></a>                                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(tmp_qmin == 0);
+<a id='L707' name='L707'></a>
+<a id='L708' name='L708'></a>                                <em class='comment'>/* insert code for matching the remainder - infinite or finite */</em>
+<a id='L709' name='L709'></a>                                <strong class='reserved'>if</strong> (tmp_qmax == <a href='../D/2343.html' title='Multiple defined in 4 places.'>DUK_RE_QUANTIFIER_INFINITE</a>) <em class='brace'>{</em>
+<a id='L710' name='L710'></a>                                        <em class='comment'>/* reuse last emitted atom for remaining 'infinite' quantifier */</em>
+<a id='L711' name='L711'></a>
+<a id='L712' name='L712'></a>                                        <strong class='reserved'>if</strong> (re_ctx-&gt;curr_token.qmin == 0) <em class='brace'>{</em>
+<a id='L713' name='L713'></a>                                                <em class='comment'>/* Special case: original qmin was zero so there is nothing</em>
+<a id='L714' name='L714'></a><em class='comment'>                                                 * to repeat.  Emit an atom copy but jump over it here.</em>
+<a id='L715' name='L715'></a><em class='comment'>                                                 */</em>
+<a id='L716' name='L716'></a>                                                <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, <a href='../D/2292.html' title='Multiple defined in 4 places.'>DUK_REOP_JUMP</a>);
+<a id='L717' name='L717'></a>                                                <a href='../D/3774.html' title='Multiple defined in 4 places.'>duk__append_jump_offset</a>(re_ctx, atom_code_length);
+<a id='L718' name='L718'></a>                                                <a href='../D/3777.html' title='Multiple defined in 4 places.'>duk__append_slice</a>(re_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) atom_start_offset, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) atom_code_length);
+<a id='L719' name='L719'></a>                                        <em class='brace'>}</em>
+<a id='L720' name='L720'></a>                                        <strong class='reserved'>if</strong> (re_ctx-&gt;curr_token.greedy) <em class='brace'>{</em>
+<a id='L721' name='L721'></a>                                                <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, <a href='../D/2300.html' title='Multiple defined in 4 places.'>DUK_REOP_SPLIT2</a>);   <em class='comment'>/* prefer jump */</em>
+<a id='L722' name='L722'></a>                                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L723' name='L723'></a>                                                <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, <a href='../D/2299.html' title='Multiple defined in 4 places.'>DUK_REOP_SPLIT1</a>);   <em class='comment'>/* prefer direct */</em>
+<a id='L724' name='L724'></a>                                        <em class='brace'>}</em>
+<a id='L725' name='L725'></a>                                        <a href='../D/3774.html' title='Multiple defined in 4 places.'>duk__append_jump_offset</a>(re_ctx, -atom_code_length - 1);  <em class='comment'>/* -1 for opcode */</em>
+<a id='L726' name='L726'></a>                                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L727' name='L727'></a>                                        <em class='comment'>/*</em>
+<a id='L728' name='L728'></a><em class='comment'>                                         *  The remaining matches are emitted as sequence of SPLITs and atom</em>
+<a id='L729' name='L729'></a><em class='comment'>                                         *  copies; the SPLITs skip the remaining copies and match the sequel.</em>
+<a id='L730' name='L730'></a><em class='comment'>                                         *  This sequence needs to be emitted starting from the last copy</em>
+<a id='L731' name='L731'></a><em class='comment'>                                         *  because the SPLITs are variable length due to the variable length</em>
+<a id='L732' name='L732'></a><em class='comment'>                                         *  skip offset.  This causes a lot of memory copying now.</em>
+<a id='L733' name='L733'></a><em class='comment'>                                         *</em>
+<a id='L734' name='L734'></a><em class='comment'>                                         *  Example structure (greedy, match maximum # atoms):</em>
+<a id='L735' name='L735'></a><em class='comment'>                                         *</em>
+<a id='L736' name='L736'></a><em class='comment'>                                         *      SPLIT1 LSEQ</em>
+<a id='L737' name='L737'></a><em class='comment'>                                         *      (atom)</em>
+<a id='L738' name='L738'></a><em class='comment'>                                         *      SPLIT1 LSEQ    ; &lt;- the byte length of this instruction is needed</em>
+<a id='L739' name='L739'></a><em class='comment'>                                         *      (atom)         ; to encode the above SPLIT1 correctly</em>
+<a id='L740' name='L740'></a><em class='comment'>                                         *      ...</em>
+<a id='L741' name='L741'></a><em class='comment'>                                         *   LSEQ:</em>
+<a id='L742' name='L742'></a><em class='comment'>                                         */</em>
+<a id='L743' name='L743'></a>                                        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> offset = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) <a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx);
+<a id='L744' name='L744'></a>                                        <strong class='reserved'>while</strong> (tmp_qmax &gt; 0) <em class='brace'>{</em>
+<a id='L745' name='L745'></a>                                                <a href='../D/4219.html' title='Multiple defined in 4 places.'>duk__insert_slice</a>(re_ctx, offset, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) atom_start_offset, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) atom_code_length);
+<a id='L746' name='L746'></a>                                                <strong class='reserved'>if</strong> (re_ctx-&gt;curr_token.greedy) <em class='brace'>{</em>
+<a id='L747' name='L747'></a>                                                        <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx, offset, <a href='../D/2299.html' title='Multiple defined in 4 places.'>DUK_REOP_SPLIT1</a>);   <em class='comment'>/* prefer direct */</em>
+<a id='L748' name='L748'></a>                                                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L749' name='L749'></a>                                                        <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx, offset, <a href='../D/2300.html' title='Multiple defined in 4 places.'>DUK_REOP_SPLIT2</a>);   <em class='comment'>/* prefer jump */</em>
+<a id='L750' name='L750'></a>                                                <em class='brace'>}</em>
+<a id='L751' name='L751'></a>                                                <a href='../D/4218.html' title='Multiple defined in 4 places.'>duk__insert_jump_offset</a>(re_ctx,
+<a id='L752' name='L752'></a>                                                                        offset + 1,   <em class='comment'>/* +1 for opcode */</em>
+<a id='L753' name='L753'></a>                                                                        (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) (<a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx) - (offset + 1)));
+<a id='L754' name='L754'></a>                                                tmp_qmax--;
+<a id='L755' name='L755'></a>                                        <em class='brace'>}</em>
+<a id='L756' name='L756'></a>                                <em class='brace'>}</em>
+<a id='L757' name='L757'></a>
+<a id='L758' name='L758'></a>                                <em class='comment'>/* remove the original 'template' atom */</em>
+<a id='L759' name='L759'></a>                                <a href='../D/4423.html' title='Multiple defined in 4 places.'>duk__remove_slice</a>(re_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) atom_start_offset, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) atom_code_length);
+<a id='L760' name='L760'></a>                        <em class='brace'>}</em>
+<a id='L761' name='L761'></a>
+<a id='L762' name='L762'></a>                        <em class='comment'>/* 'taint' result as complex */</em>
+<a id='L763' name='L763'></a>                        res_charlen = -1;
+<a id='L764' name='L764'></a>                        <strong class='reserved'>break</strong>;
+<a id='L765' name='L765'></a>                <em class='brace'>}</em>
+<a id='L766' name='L766'></a>                <strong class='reserved'>case</strong> <a href='../D/2307.html' title='Multiple defined in 4 places.'>DUK_RETOK_ASSERT_START</a>: <em class='brace'>{</em>
+<a id='L767' name='L767'></a>                        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, <a href='../D/2287.html' title='Multiple defined in 4 places.'>DUK_REOP_ASSERT_START</a>);
+<a id='L768' name='L768'></a>                        <strong class='reserved'>break</strong>;
+<a id='L769' name='L769'></a>                <em class='brace'>}</em>
+<a id='L770' name='L770'></a>                <strong class='reserved'>case</strong> <a href='../D/2305.html' title='Multiple defined in 4 places.'>DUK_RETOK_ASSERT_END</a>: <em class='brace'>{</em>
+<a id='L771' name='L771'></a>                        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, <a href='../D/2285.html' title='Multiple defined in 4 places.'>DUK_REOP_ASSERT_END</a>);
+<a id='L772' name='L772'></a>                        <strong class='reserved'>break</strong>;
+<a id='L773' name='L773'></a>                <em class='brace'>}</em>
+<a id='L774' name='L774'></a>                <strong class='reserved'>case</strong> <a href='../D/2310.html' title='Multiple defined in 4 places.'>DUK_RETOK_ASSERT_WORD_BOUNDARY</a>: <em class='brace'>{</em>
+<a id='L775' name='L775'></a>                        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, <a href='../D/2288.html' title='Multiple defined in 4 places.'>DUK_REOP_ASSERT_WORD_BOUNDARY</a>);
+<a id='L776' name='L776'></a>                        <strong class='reserved'>break</strong>;
+<a id='L777' name='L777'></a>                <em class='brace'>}</em>
+<a id='L778' name='L778'></a>                <strong class='reserved'>case</strong> <a href='../D/2306.html' title='Multiple defined in 4 places.'>DUK_RETOK_ASSERT_NOT_WORD_BOUNDARY</a>: <em class='brace'>{</em>
+<a id='L779' name='L779'></a>                        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, <a href='../D/2286.html' title='Multiple defined in 4 places.'>DUK_REOP_ASSERT_NOT_WORD_BOUNDARY</a>);
+<a id='L780' name='L780'></a>                        <strong class='reserved'>break</strong>;
+<a id='L781' name='L781'></a>                <em class='brace'>}</em>
+<a id='L782' name='L782'></a>                <strong class='reserved'>case</strong> <a href='../D/2309.html' title='Multiple defined in 4 places.'>DUK_RETOK_ASSERT_START_POS_LOOKAHEAD</a>:
+<a id='L783' name='L783'></a>                <strong class='reserved'>case</strong> <a href='../D/2308.html' title='Multiple defined in 4 places.'>DUK_RETOK_ASSERT_START_NEG_LOOKAHEAD</a>: <em class='brace'>{</em>
+<a id='L784' name='L784'></a>                        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> offset;
+<a id='L785' name='L785'></a>                        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> opcode = (re_ctx-&gt;curr_token.t == <a href='../D/2309.html' title='Multiple defined in 4 places.'>DUK_RETOK_ASSERT_START_POS_LOOKAHEAD</a>) ?
+<a id='L786' name='L786'></a>                                              <a href='../D/2294.html' title='Multiple defined in 4 places.'>DUK_REOP_LOOKPOS</a> : <a href='../D/2293.html' title='Multiple defined in 4 places.'>DUK_REOP_LOOKNEG</a>;
+<a id='L787' name='L787'></a>
+<a id='L788' name='L788'></a>                        offset = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) <a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx);
+<a id='L789' name='L789'></a>                        <a href='../D/4331.html' title='Multiple defined in 4 places.'>duk__parse_disjunction</a>(re_ctx, 0, &amp;tmp_disj);
+<a id='L790' name='L790'></a>                        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, <a href='../D/2295.html' title='Multiple defined in 4 places.'>DUK_REOP_MATCH</a>);
+<a id='L791' name='L791'></a>
+<a id='L792' name='L792'></a>                        (<strong class='reserved'>void</strong>) <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx, offset, opcode);
+<a id='L793' name='L793'></a>                        (<strong class='reserved'>void</strong>) <a href='../D/4218.html' title='Multiple defined in 4 places.'>duk__insert_jump_offset</a>(re_ctx,
+<a id='L794' name='L794'></a>                                                       offset + 1,   <em class='comment'>/* +1 for opcode */</em>
+<a id='L795' name='L795'></a>                                                       (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) (<a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx) - (offset + 1)));
+<a id='L796' name='L796'></a>
+<a id='L797' name='L797'></a>                        <em class='comment'>/* 'taint' result as complex -- this is conservative,</em>
+<a id='L798' name='L798'></a><em class='comment'>                         * as lookaheads do not backtrack.</em>
+<a id='L799' name='L799'></a><em class='comment'>                         */</em>
+<a id='L800' name='L800'></a>                        res_charlen = -1;
+<a id='L801' name='L801'></a>                        <strong class='reserved'>break</strong>;
+<a id='L802' name='L802'></a>                <em class='brace'>}</em>
+<a id='L803' name='L803'></a>                <strong class='reserved'>case</strong> <a href='../D/2318.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_PERIOD</a>: <em class='brace'>{</em>
+<a id='L804' name='L804'></a>                        new_atom_char_length = 1;
+<a id='L805' name='L805'></a>                        new_atom_start_offset = (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) <a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx);
+<a id='L806' name='L806'></a>                        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, <a href='../D/2296.html' title='Multiple defined in 4 places.'>DUK_REOP_PERIOD</a>);
+<a id='L807' name='L807'></a>                        <strong class='reserved'>break</strong>;
+<a id='L808' name='L808'></a>                <em class='brace'>}</em>
+<a id='L809' name='L809'></a>                <strong class='reserved'>case</strong> <a href='../D/2312.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_CHAR</a>: <em class='brace'>{</em>
+<a id='L810' name='L810'></a>                        <em class='comment'>/* Note: successive characters could be joined into string matches</em>
+<a id='L811' name='L811'></a><em class='comment'>                         * but this is not trivial (consider e.g. '/xyz+/); see docs for</em>
+<a id='L812' name='L812'></a><em class='comment'>                         * more discussion.</em>
+<a id='L813' name='L813'></a><em class='comment'>                         *</em>
+<a id='L814' name='L814'></a><em class='comment'>                         * No support for \u{H+} yet.  While only BMP Unicode escapes are</em>
+<a id='L815' name='L815'></a><em class='comment'>                         * supported for RegExps at present, 'ch' may still be a non-BMP</em>
+<a id='L816' name='L816'></a><em class='comment'>                         * codepoint if it is decoded straight from source text UTF-8.</em>
+<a id='L817' name='L817'></a><em class='comment'>                         * There's no non-BMP support yet so this is handled simply by</em>
+<a id='L818' name='L818'></a><em class='comment'>                         * matching the non-BMP character (which is custom behavior).</em>
+<a id='L819' name='L819'></a><em class='comment'>                         */</em>
+<a id='L820' name='L820'></a>                        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> ch;
+<a id='L821' name='L821'></a>
+<a id='L822' name='L822'></a>                        new_atom_char_length = 1;
+<a id='L823' name='L823'></a>                        new_atom_start_offset = (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) <a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx);
+<a id='L824' name='L824'></a>                        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, <a href='../D/2290.html' title='Multiple defined in 4 places.'>DUK_REOP_CHAR</a>);
+<a id='L825' name='L825'></a>                        ch = re_ctx-&gt;curr_token.num;
+<a id='L826' name='L826'></a>                        <strong class='reserved'>if</strong> (re_ctx-&gt;re_flags &amp; <a href='../D/2340.html' title='Multiple defined in 4 places.'>DUK_RE_FLAG_IGNORE_CASE</a>) <em class='brace'>{</em>
+<a id='L827' name='L827'></a>                                ch = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) <a href='../D/5912.html' title='Multiple defined in 4 places.'>duk_unicode_re_canonicalize_char</a>(re_ctx-&gt;thr, (<a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a>) ch);
+<a id='L828' name='L828'></a>                        <em class='brace'>}</em>
+<a id='L829' name='L829'></a>                        <a href='../D/3779.html' title='Multiple defined in 4 places.'>duk__append_u32</a>(re_ctx, ch);
+<a id='L830' name='L830'></a>                        <strong class='reserved'>break</strong>;
+<a id='L831' name='L831'></a>                <em class='brace'>}</em>
+<a id='L832' name='L832'></a>                <strong class='reserved'>case</strong> <a href='../D/2313.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_DIGIT</a>:
+<a id='L833' name='L833'></a>                <strong class='reserved'>case</strong> <a href='../D/2315.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_NOT_DIGIT</a>:
+<a id='L834' name='L834'></a>                <strong class='reserved'>case</strong> <a href='../D/2323.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_WHITE</a>:
+<a id='L835' name='L835'></a>                <strong class='reserved'>case</strong> <a href='../D/2316.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_NOT_WHITE</a>:
+<a id='L836' name='L836'></a>                <strong class='reserved'>case</strong> <a href='../D/2324.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_WORD_CHAR</a>:
+<a id='L837' name='L837'></a>                <strong class='reserved'>case</strong> <a href='../D/2317.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_NOT_WORD_CHAR</a>: <em class='brace'>{</em>
+<a id='L838' name='L838'></a>                        <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> re_op;
+<a id='L839' name='L839'></a>                        <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> idx;
+<a id='L840' name='L840'></a>
+<a id='L841' name='L841'></a>                        new_atom_char_length = 1;
+<a id='L842' name='L842'></a>                        new_atom_start_offset = (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) <a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx);
+<a id='L843' name='L843'></a>
+<a id='L844' name='L844'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>((<a href='../D/2313.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_DIGIT</a> &amp; 0x01) != 0);
+<a id='L845' name='L845'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>((<a href='../D/2323.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_WHITE</a> &amp; 0x01) != 0);
+<a id='L846' name='L846'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>((<a href='../D/2324.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_WORD_CHAR</a> &amp; 0x01) != 0);
+<a id='L847' name='L847'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>((<a href='../D/2315.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_NOT_DIGIT</a> &amp; 0x01) == 0);
+<a id='L848' name='L848'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>((<a href='../D/2316.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_NOT_WHITE</a> &amp; 0x01) == 0);
+<a id='L849' name='L849'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>((<a href='../D/2317.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_NOT_WORD_CHAR</a> &amp; 0x01) == 0);
+<a id='L850' name='L850'></a>                        re_op = (re_ctx-&gt;curr_token.t &amp; 0x01) ? <a href='../D/2297.html' title='Multiple defined in 4 places.'>DUK_REOP_RANGES</a> : <a href='../D/2291.html' title='Multiple defined in 4 places.'>DUK_REOP_INVRANGES</a>;
+<a id='L851' name='L851'></a>
+<a id='L852' name='L852'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/2323.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_WHITE</a> == <a href='../D/2313.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_DIGIT</a> + 2);
+<a id='L853' name='L853'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/2324.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_WORD_CHAR</a> == <a href='../D/2313.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_DIGIT</a> + 4);
+<a id='L854' name='L854'></a>                        idx = (<a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a>) ((re_ctx-&gt;curr_token.t - <a href='../D/2313.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_DIGIT</a>) &gt;&gt; 1U);
+<a id='L855' name='L855'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(idx &lt;= 2U);  <em class='comment'>/* Assume continuous token numbers; also checks negative underflow. */</em>
+<a id='L856' name='L856'></a>
+<a id='L857' name='L857'></a>                        <a href='../D/3775.html' title='Multiple defined in 4 places.'>duk__append_range_atom_matcher</a>(re_ctx, re_op, duk__re_range_lookup1[idx], duk__re_range_lookup2[idx]);
+<a id='L858' name='L858'></a>                        <strong class='reserved'>break</strong>;
+<a id='L859' name='L859'></a>                <em class='brace'>}</em>
+<a id='L860' name='L860'></a>                <strong class='reserved'>case</strong> <a href='../D/2311.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_BACKREFERENCE</a>: <em class='brace'>{</em>
+<a id='L861' name='L861'></a>                        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> backref = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) re_ctx-&gt;curr_token.num;
+<a id='L862' name='L862'></a>                        <strong class='reserved'>if</strong> (backref &gt; re_ctx-&gt;highest_backref) <em class='brace'>{</em>
+<a id='L863' name='L863'></a>                                re_ctx-&gt;highest_backref = backref;
+<a id='L864' name='L864'></a>                        <em class='brace'>}</em>
+<a id='L865' name='L865'></a>                        new_atom_char_length = -1;   <em class='comment'>/* mark as complex */</em>
+<a id='L866' name='L866'></a>                        new_atom_start_offset = (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) <a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx);
+<a id='L867' name='L867'></a>                        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, <a href='../D/2289.html' title='Multiple defined in 4 places.'>DUK_REOP_BACKREFERENCE</a>);
+<a id='L868' name='L868'></a>                        <a href='../D/3779.html' title='Multiple defined in 4 places.'>duk__append_u32</a>(re_ctx, backref);
+<a id='L869' name='L869'></a>                        <strong class='reserved'>break</strong>;
+<a id='L870' name='L870'></a>                <em class='brace'>}</em>
+<a id='L871' name='L871'></a>                <strong class='reserved'>case</strong> <a href='../D/2319.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_START_CAPTURE_GROUP</a>: <em class='brace'>{</em>
+<a id='L872' name='L872'></a>                        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> cap;
+<a id='L873' name='L873'></a>
+<a id='L874' name='L874'></a>                        new_atom_char_length = -1;   <em class='comment'>/* mark as complex (capture handling) */</em>
+<a id='L875' name='L875'></a>                        new_atom_start_offset = (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) <a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx);
+<a id='L876' name='L876'></a>                        cap = ++re_ctx-&gt;captures;
+<a id='L877' name='L877'></a>                        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, <a href='../D/2298.html' title='Multiple defined in 4 places.'>DUK_REOP_SAVE</a>);
+<a id='L878' name='L878'></a>                        <a href='../D/3779.html' title='Multiple defined in 4 places.'>duk__append_u32</a>(re_ctx, cap * 2);
+<a id='L879' name='L879'></a>                        <a href='../D/4331.html' title='Multiple defined in 4 places.'>duk__parse_disjunction</a>(re_ctx, 0, &amp;tmp_disj);  <em class='comment'>/* retval (sub-atom char length) unused, tainted as complex above */</em>
+<a id='L880' name='L880'></a>                        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx, <a href='../D/2298.html' title='Multiple defined in 4 places.'>DUK_REOP_SAVE</a>);
+<a id='L881' name='L881'></a>                        <a href='../D/3779.html' title='Multiple defined in 4 places.'>duk__append_u32</a>(re_ctx, cap * 2 + 1);
+<a id='L882' name='L882'></a>                        <strong class='reserved'>break</strong>;
+<a id='L883' name='L883'></a>                <em class='brace'>}</em>
+<a id='L884' name='L884'></a>                <strong class='reserved'>case</strong> <a href='../D/2322.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_START_NONCAPTURE_GROUP</a>: <em class='brace'>{</em>
+<a id='L885' name='L885'></a>                        new_atom_start_offset = (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) <a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx);
+<a id='L886' name='L886'></a>                        <a href='../D/4331.html' title='Multiple defined in 4 places.'>duk__parse_disjunction</a>(re_ctx, 0, &amp;tmp_disj);
+<a id='L887' name='L887'></a>                        new_atom_char_length = tmp_disj.charlen;
+<a id='L888' name='L888'></a>                        <strong class='reserved'>break</strong>;
+<a id='L889' name='L889'></a>                <em class='brace'>}</em>
+<a id='L890' name='L890'></a>                <strong class='reserved'>case</strong> <a href='../D/2320.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_START_CHARCLASS</a>:
+<a id='L891' name='L891'></a>                <strong class='reserved'>case</strong> <a href='../D/2321.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_START_CHARCLASS_INVERTED</a>: <em class='brace'>{</em>
+<a id='L892' name='L892'></a>                        <em class='comment'>/*</em>
+<a id='L893' name='L893'></a><em class='comment'>                         *  Range parsing is done with a special lexer function which calls</em>
+<a id='L894' name='L894'></a><em class='comment'>                         *  us for every range parsed.  This is different from how rest of</em>
+<a id='L895' name='L895'></a><em class='comment'>                         *  the parsing works, but avoids a heavy, arbitrary size intermediate</em>
+<a id='L896' name='L896'></a><em class='comment'>                         *  value type to hold the ranges.</em>
+<a id='L897' name='L897'></a><em class='comment'>                         *</em>
+<a id='L898' name='L898'></a><em class='comment'>                         *  Another complication is the handling of character ranges when</em>
+<a id='L899' name='L899'></a><em class='comment'>                         *  case insensitive matching is used (see docs for discussion).</em>
+<a id='L900' name='L900'></a><em class='comment'>                         *  The range handler callback given to the lexer takes care of this</em>
+<a id='L901' name='L901'></a><em class='comment'>                         *  as well.</em>
+<a id='L902' name='L902'></a><em class='comment'>                         *</em>
+<a id='L903' name='L903'></a><em class='comment'>                         *  Note that duplicate ranges are not eliminated when parsing character</em>
+<a id='L904' name='L904'></a><em class='comment'>                         *  classes, so that canonicalization of</em>
+<a id='L905' name='L905'></a><em class='comment'>                         *</em>
+<a id='L906' name='L906'></a><em class='comment'>                         *    [0-9a-fA-Fx-{]</em>
+<a id='L907' name='L907'></a><em class='comment'>                         *</em>
+<a id='L908' name='L908'></a><em class='comment'>                         *  creates the result (note the duplicate ranges):</em>
+<a id='L909' name='L909'></a><em class='comment'>                         *</em>
+<a id='L910' name='L910'></a><em class='comment'>                         *    [0-9A-FA-FX-Z{-{]</em>
+<a id='L911' name='L911'></a><em class='comment'>                         *</em>
+<a id='L912' name='L912'></a><em class='comment'>                         *  where [x-{] is split as a result of canonicalization.  The duplicate</em>
+<a id='L913' name='L913'></a><em class='comment'>                         *  ranges are not a semantics issue: they work correctly.</em>
+<a id='L914' name='L914'></a><em class='comment'>                         */</em>
+<a id='L915' name='L915'></a>
+<a id='L916' name='L916'></a>                        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> offset;
+<a id='L917' name='L917'></a>
+<a id='L918' name='L918'></a>                        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("character class"));
+<a id='L919' name='L919'></a>
+<a id='L920' name='L920'></a>                        <em class='comment'>/* insert ranges instruction, range count patched in later */</em>
+<a id='L921' name='L921'></a>                        new_atom_char_length = 1;
+<a id='L922' name='L922'></a>                        new_atom_start_offset = (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) <a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx);
+<a id='L923' name='L923'></a>                        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(re_ctx,
+<a id='L924' name='L924'></a>                                         (re_ctx-&gt;curr_token.t == <a href='../D/2320.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_START_CHARCLASS</a>) ?
+<a id='L925' name='L925'></a>                                         <a href='../D/2297.html' title='Multiple defined in 4 places.'>DUK_REOP_RANGES</a> : <a href='../D/2291.html' title='Multiple defined in 4 places.'>DUK_REOP_INVRANGES</a>);
+<a id='L926' name='L926'></a>                        offset = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) <a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx);    <em class='comment'>/* patch in range count later */</em>
+<a id='L927' name='L927'></a>
+<a id='L928' name='L928'></a>                        <em class='comment'>/* parse ranges until character class ends */</em>
+<a id='L929' name='L929'></a>                        re_ctx-&gt;nranges = 0;    <em class='comment'>/* note: ctx-wide temporary */</em>
+<a id='L930' name='L930'></a>                        <a href='../D/5447.html' title='Multiple defined in 4 places.'>duk_lexer_parse_re_ranges</a>(&amp;re_ctx-&gt;lex, <a href='../D/4421.html' title='Multiple defined in 4 places.'>duk__regexp_generate_ranges</a>, (<strong class='reserved'>void</strong> *) re_ctx);
+<a id='L931' name='L931'></a>
+<a id='L932' name='L932'></a>                        <em class='comment'>/* insert range count */</em>
+<a id='L933' name='L933'></a>                        <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(re_ctx, offset, re_ctx-&gt;nranges);
+<a id='L934' name='L934'></a>                        <strong class='reserved'>break</strong>;
+<a id='L935' name='L935'></a>                <em class='brace'>}</em>
+<a id='L936' name='L936'></a>                <strong class='reserved'>case</strong> <a href='../D/2314.html' title='Multiple defined in 4 places.'>DUK_RETOK_ATOM_END_GROUP</a>: <em class='brace'>{</em>
+<a id='L937' name='L937'></a>                        <strong class='reserved'>if</strong> (expect_eof) <em class='brace'>{</em>
+<a id='L938' name='L938'></a>                                <a href='../D/744.html' title='Multiple defined in 8 places.'>DUK_ERROR_SYNTAX</a>(re_ctx-&gt;thr, <a href='../D/2669.html' title='Multiple defined in 4 places.'>DUK_STR_UNEXPECTED_CLOSING_PAREN</a>);
+<a id='L939' name='L939'></a>                                <a href='../D/3267.html' title='Multiple defined in 6 places.'>DUK_WO_NORETURN</a>(<strong class='reserved'>return</strong>;);
+<a id='L940' name='L940'></a>                        <em class='brace'>}</em>
+<a id='L941' name='L941'></a>                        <strong class='reserved'>goto</strong> done;
+<a id='L942' name='L942'></a>                <em class='brace'>}</em>
+<a id='L943' name='L943'></a>                <strong class='reserved'>case</strong> <a href='../D/2326.html' title='Multiple defined in 4 places.'>DUK_RETOK_EOF</a>: <em class='brace'>{</em>
+<a id='L944' name='L944'></a>                        <strong class='reserved'>if</strong> (!expect_eof) <em class='brace'>{</em>
+<a id='L945' name='L945'></a>                                <a href='../D/744.html' title='Multiple defined in 8 places.'>DUK_ERROR_SYNTAX</a>(re_ctx-&gt;thr, <a href='../D/2670.html' title='Multiple defined in 4 places.'>DUK_STR_UNEXPECTED_END_OF_PATTERN</a>);
+<a id='L946' name='L946'></a>                                <a href='../D/3267.html' title='Multiple defined in 6 places.'>DUK_WO_NORETURN</a>(<strong class='reserved'>return</strong>;);
+<a id='L947' name='L947'></a>                        <em class='brace'>}</em>
+<a id='L948' name='L948'></a>                        <strong class='reserved'>goto</strong> done;
+<a id='L949' name='L949'></a>                <em class='brace'>}</em>
+<a id='L950' name='L950'></a>                <strong class='reserved'>default</strong>: <em class='brace'>{</em>
+<a id='L951' name='L951'></a>                        <a href='../D/744.html' title='Multiple defined in 8 places.'>DUK_ERROR_SYNTAX</a>(re_ctx-&gt;thr, <a href='../D/2671.html' title='Multiple defined in 4 places.'>DUK_STR_UNEXPECTED_REGEXP_TOKEN</a>);
+<a id='L952' name='L952'></a>                        <a href='../D/3267.html' title='Multiple defined in 6 places.'>DUK_WO_NORETURN</a>(<strong class='reserved'>return</strong>;);
+<a id='L953' name='L953'></a>                <em class='brace'>}</em>
+<a id='L954' name='L954'></a>                <em class='brace'>}</em>
+<a id='L955' name='L955'></a>
+<a id='L956' name='L956'></a>                <em class='comment'>/* a complex (new) atom taints the result */</em>
+<a id='L957' name='L957'></a>                <strong class='reserved'>if</strong> (new_atom_start_offset &gt;= 0) <em class='brace'>{</em>
+<a id='L958' name='L958'></a>                        <strong class='reserved'>if</strong> (new_atom_char_length &lt; 0) <em class='brace'>{</em>
+<a id='L959' name='L959'></a>                                res_charlen = -1;
+<a id='L960' name='L960'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (res_charlen &gt;= 0) <em class='brace'>{</em>
+<a id='L961' name='L961'></a>                                <em class='comment'>/* only advance if not tainted */</em>
+<a id='L962' name='L962'></a>                                res_charlen += new_atom_char_length;
+<a id='L963' name='L963'></a>                        <em class='brace'>}</em>
+<a id='L964' name='L964'></a>                <em class='brace'>}</em>
+<a id='L965' name='L965'></a>
+<a id='L966' name='L966'></a>                <em class='comment'>/* record previous atom info in case next token is a quantifier */</em>
+<a id='L967' name='L967'></a>                atom_start_offset = new_atom_start_offset;
+<a id='L968' name='L968'></a>                atom_char_length = new_atom_char_length;
+<a id='L969' name='L969'></a>                atom_start_captures = new_atom_start_captures;
+<a id='L970' name='L970'></a>        <em class='brace'>}</em>
+<a id='L971' name='L971'></a>
+<a id='L972' name='L972'></a> done:
+<a id='L973' name='L973'></a>
+<a id='L974' name='L974'></a>        <em class='comment'>/* finish up pending jump and split for last alternative */</em>
+<a id='L975' name='L975'></a>        <strong class='reserved'>if</strong> (unpatched_disjunction_jump &gt;= 0) <em class='brace'>{</em>
+<a id='L976' name='L976'></a>                <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> offset;
+<a id='L977' name='L977'></a>
+<a id='L978' name='L978'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(unpatched_disjunction_split &gt;= 0);
+<a id='L979' name='L979'></a>                offset = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) unpatched_disjunction_jump;
+<a id='L980' name='L980'></a>                offset += <a href='../D/4218.html' title='Multiple defined in 4 places.'>duk__insert_jump_offset</a>(re_ctx,
+<a id='L981' name='L981'></a>                                                  offset,
+<a id='L982' name='L982'></a>                                                  (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) (<a href='../D/3616.html' title='Multiple defined in 6 places.'>DUK__RE_BUFLEN</a>(re_ctx) - offset));
+<a id='L983' name='L983'></a>                <em class='comment'>/* offset is now target of the pending split (right after jump) */</em>
+<a id='L984' name='L984'></a>                <a href='../D/4218.html' title='Multiple defined in 4 places.'>duk__insert_jump_offset</a>(re_ctx,
+<a id='L985' name='L985'></a>                                        (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) unpatched_disjunction_split,
+<a id='L986' name='L986'></a>                                        (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) offset - unpatched_disjunction_split);
+<a id='L987' name='L987'></a>        <em class='brace'>}</em>
+<a id='L988' name='L988'></a>
+<a id='L989' name='L989'></a><em class='sharp'>#if</em> 0
+<a id='L990' name='L990'></a>        out_atom_info-&gt;end_captures = re_ctx-&gt;captures;
+<a id='L991' name='L991'></a><em class='sharp'>#endif</em>
+<a id='L992' name='L992'></a>        out_atom_info-&gt;charlen = res_charlen;
+<a id='L993' name='L993'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("parse disjunction finished: charlen=%ld",
+<a id='L994' name='L994'></a>                             (<strong class='reserved'>long</strong>) out_atom_info-&gt;charlen));
+<a id='L995' name='L995'></a>
+<a id='L996' name='L996'></a>        re_ctx-&gt;recursion_depth--;
+<a id='L997' name='L997'></a><em class='brace'>}</em>
+<a id='L998' name='L998'></a>
+<a id='L999' name='L999'></a><em class='comment'>/*</em>
+<a id='L1000' name='L1000'></a><em class='comment'> *  Flags parsing (see E5 Section 15.10.4.1).</em>
+<a id='L1001' name='L1001'></a><em class='comment'> */</em>
+<a id='L1002' name='L1002'></a>
+<a id='L1003' name='L1003'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> <a href='../R/3579.html' title='Multiple referred from 4 places.'>duk__parse_regexp_flags</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/5286.html' title='Multiple defined in 8 places.'>duk_hstring</a> *h) <em class='brace'>{</em>
+<a id='L1004' name='L1004'></a>        <strong class='reserved'>const</strong> <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *p;
+<a id='L1005' name='L1005'></a>        <strong class='reserved'>const</strong> <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *p_end;
+<a id='L1006' name='L1006'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> flags = 0;
+<a id='L1007' name='L1007'></a>
+<a id='L1008' name='L1008'></a>        p = <a href='../D/1554.html' title='Multiple defined in 8 places.'>DUK_HSTRING_GET_DATA</a>(h);
+<a id='L1009' name='L1009'></a>        p_end = p + <a href='../D/1552.html' title='Multiple defined in 8 places.'>DUK_HSTRING_GET_BYTELEN</a>(h);
+<a id='L1010' name='L1010'></a>
+<a id='L1011' name='L1011'></a>        <em class='comment'>/* Note: can be safely scanned as bytes (undecoded) */</em>
+<a id='L1012' name='L1012'></a>
+<a id='L1013' name='L1013'></a>        <strong class='reserved'>while</strong> (p &lt; p_end) <em class='brace'>{</em>
+<a id='L1014' name='L1014'></a>                <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> c = *p++;
+<a id='L1015' name='L1015'></a>                <strong class='reserved'>switch</strong> (c) <em class='brace'>{</em>
+<a id='L1016' name='L1016'></a>                <strong class='reserved'>case</strong> (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a>) 'g': <em class='brace'>{</em>
+<a id='L1017' name='L1017'></a>                        <strong class='reserved'>if</strong> (flags &amp; <a href='../D/2339.html' title='Multiple defined in 4 places.'>DUK_RE_FLAG_GLOBAL</a>) <em class='brace'>{</em>
+<a id='L1018' name='L1018'></a>                                <strong class='reserved'>goto</strong> flags_error;
+<a id='L1019' name='L1019'></a>                        <em class='brace'>}</em>
+<a id='L1020' name='L1020'></a>                        flags |= <a href='../D/2339.html' title='Multiple defined in 4 places.'>DUK_RE_FLAG_GLOBAL</a>;
+<a id='L1021' name='L1021'></a>                        <strong class='reserved'>break</strong>;
+<a id='L1022' name='L1022'></a>                <em class='brace'>}</em>
+<a id='L1023' name='L1023'></a>                <strong class='reserved'>case</strong> (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a>) 'i': <em class='brace'>{</em>
+<a id='L1024' name='L1024'></a>                        <strong class='reserved'>if</strong> (flags &amp; <a href='../D/2340.html' title='Multiple defined in 4 places.'>DUK_RE_FLAG_IGNORE_CASE</a>) <em class='brace'>{</em>
+<a id='L1025' name='L1025'></a>                                <strong class='reserved'>goto</strong> flags_error;
+<a id='L1026' name='L1026'></a>                        <em class='brace'>}</em>
+<a id='L1027' name='L1027'></a>                        flags |= <a href='../D/2340.html' title='Multiple defined in 4 places.'>DUK_RE_FLAG_IGNORE_CASE</a>;
+<a id='L1028' name='L1028'></a>                        <strong class='reserved'>break</strong>;
+<a id='L1029' name='L1029'></a>                <em class='brace'>}</em>
+<a id='L1030' name='L1030'></a>                <strong class='reserved'>case</strong> (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a>) 'm': <em class='brace'>{</em>
+<a id='L1031' name='L1031'></a>                        <strong class='reserved'>if</strong> (flags &amp; <a href='../D/2341.html' title='Multiple defined in 4 places.'>DUK_RE_FLAG_MULTILINE</a>) <em class='brace'>{</em>
+<a id='L1032' name='L1032'></a>                                <strong class='reserved'>goto</strong> flags_error;
+<a id='L1033' name='L1033'></a>                        <em class='brace'>}</em>
+<a id='L1034' name='L1034'></a>                        flags |= <a href='../D/2341.html' title='Multiple defined in 4 places.'>DUK_RE_FLAG_MULTILINE</a>;
+<a id='L1035' name='L1035'></a>                        <strong class='reserved'>break</strong>;
+<a id='L1036' name='L1036'></a>                <em class='brace'>}</em>
+<a id='L1037' name='L1037'></a>                <strong class='reserved'>default</strong>: <em class='brace'>{</em>
+<a id='L1038' name='L1038'></a>                        <strong class='reserved'>goto</strong> flags_error;
+<a id='L1039' name='L1039'></a>                <em class='brace'>}</em>
+<a id='L1040' name='L1040'></a>                <em class='brace'>}</em>
+<a id='L1041' name='L1041'></a>        <em class='brace'>}</em>
+<a id='L1042' name='L1042'></a>
+<a id='L1043' name='L1043'></a>        <strong class='reserved'>return</strong> flags;
+<a id='L1044' name='L1044'></a>
+<a id='L1045' name='L1045'></a> flags_error:
+<a id='L1046' name='L1046'></a>        <a href='../D/744.html' title='Multiple defined in 8 places.'>DUK_ERROR_SYNTAX</a>(thr, <a href='../D/2617.html' title='Multiple defined in 4 places.'>DUK_STR_INVALID_REGEXP_FLAGS</a>);
+<a id='L1047' name='L1047'></a>        <a href='../D/3267.html' title='Multiple defined in 6 places.'>DUK_WO_NORETURN</a>(<strong class='reserved'>return</strong> 0U;);
+<a id='L1048' name='L1048'></a><em class='brace'>}</em>
+<a id='L1049' name='L1049'></a>
+<a id='L1050' name='L1050'></a><em class='comment'>/*</em>
+<a id='L1051' name='L1051'></a><em class='comment'> *  Create escaped RegExp source (E5 Section 15.10.3).</em>
+<a id='L1052' name='L1052'></a><em class='comment'> *</em>
+<a id='L1053' name='L1053'></a><em class='comment'> *  The current approach is to special case the empty RegExp</em>
+<a id='L1054' name='L1054'></a><em class='comment'> *  ('' -&gt; '(?:)') and otherwise replace unescaped '/' characters</em>
+<a id='L1055' name='L1055'></a><em class='comment'> *  with '\/' regardless of where they occur in the regexp.</em>
+<a id='L1056' name='L1056'></a><em class='comment'> *</em>
+<a id='L1057' name='L1057'></a><em class='comment'> *  Note that normalization does not seem to be necessary for</em>
+<a id='L1058' name='L1058'></a><em class='comment'> *  RegExp literals (e.g. '/foo/') because to be acceptable as</em>
+<a id='L1059' name='L1059'></a><em class='comment'> *  a RegExp literal, the text between forward slashes must</em>
+<a id='L1060' name='L1060'></a><em class='comment'> *  already match the escaping requirements (e.g. must not contain</em>
+<a id='L1061' name='L1061'></a><em class='comment'> *  unescaped forward slashes or be empty).  Escaping IS needed</em>
+<a id='L1062' name='L1062'></a><em class='comment'> *  for expressions like 'new Regexp("...", "")' however.</em>
+<a id='L1063' name='L1063'></a><em class='comment'> *  Currently, we re-escape in either case.</em>
+<a id='L1064' name='L1064'></a><em class='comment'> *</em>
+<a id='L1065' name='L1065'></a><em class='comment'> *  Also note that we process the source here in UTF-8 encoded</em>
+<a id='L1066' name='L1066'></a><em class='comment'> *  form.  This is correct, because any non-ASCII characters are</em>
+<a id='L1067' name='L1067'></a><em class='comment'> *  passed through without change.</em>
+<a id='L1068' name='L1068'></a><em class='comment'> */</em>
+<a id='L1069' name='L1069'></a>
+<a id='L1070' name='L1070'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3203.html' title='Multiple referred from 4 places.'>duk__create_escaped_source</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <strong class='reserved'>int</strong> idx_pattern) <em class='brace'>{</em>
+<a id='L1071' name='L1071'></a>        <a href='../D/5286.html' title='Multiple defined in 8 places.'>duk_hstring</a> *h;
+<a id='L1072' name='L1072'></a>        <strong class='reserved'>const</strong> <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *p;
+<a id='L1073' name='L1073'></a>        <a href='../D/4800.html' title='Multiple defined in 8 places.'>duk_bufwriter_ctx</a> bw_alloc;
+<a id='L1074' name='L1074'></a>        <a href='../D/4800.html' title='Multiple defined in 8 places.'>duk_bufwriter_ctx</a> *bw;
+<a id='L1075' name='L1075'></a>        <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *q;
+<a id='L1076' name='L1076'></a>        <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> i, n;
+<a id='L1077' name='L1077'></a>        <a href='../D/5890.html' title='Multiple defined in 6 places.'>duk_uint_fast8_t</a> c_prev, c;
+<a id='L1078' name='L1078'></a>
+<a id='L1079' name='L1079'></a>        h = <a href='../D/5440.html' title='Multiple defined in 4 places.'>duk_known_hstring</a>(thr, idx_pattern);
+<a id='L1080' name='L1080'></a>        p = (<strong class='reserved'>const</strong> <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) <a href='../D/1554.html' title='Multiple defined in 8 places.'>DUK_HSTRING_GET_DATA</a>(h);
+<a id='L1081' name='L1081'></a>        n = (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) <a href='../D/1552.html' title='Multiple defined in 8 places.'>DUK_HSTRING_GET_BYTELEN</a>(h);
+<a id='L1082' name='L1082'></a>
+<a id='L1083' name='L1083'></a>        <strong class='reserved'>if</strong> (n == 0) <em class='brace'>{</em>
+<a id='L1084' name='L1084'></a>                <a href='../D/5593.html' title='Multiple defined in 6 places.'>duk_push_literal</a>(thr, "(?:)");
+<a id='L1085' name='L1085'></a>                <strong class='reserved'>return</strong>;
+<a id='L1086' name='L1086'></a>        <em class='brace'>}</em>
+<a id='L1087' name='L1087'></a>
+<a id='L1088' name='L1088'></a>        bw = &amp;bw_alloc;
+<a id='L1089' name='L1089'></a>        <a href='../D/336.html' title='Multiple defined in 4 places.'>DUK_BW_INIT_PUSHBUF</a>(thr, bw, n);
+<a id='L1090' name='L1090'></a>        q = <a href='../D/334.html' title='Multiple defined in 4 places.'>DUK_BW_GET_PTR</a>(thr, bw);
+<a id='L1091' name='L1091'></a>
+<a id='L1092' name='L1092'></a>        c_prev = (<a href='../D/5890.html' title='Multiple defined in 6 places.'>duk_uint_fast8_t</a>) 0;
+<a id='L1093' name='L1093'></a>
+<a id='L1094' name='L1094'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; n; i++) <em class='brace'>{</em>
+<a id='L1095' name='L1095'></a>                c = p[i];
+<a id='L1096' name='L1096'></a>
+<a id='L1097' name='L1097'></a>                q = <a href='../D/330.html' title='Multiple defined in 4 places.'>DUK_BW_ENSURE_RAW</a>(thr, bw, 2, q);
+<a id='L1098' name='L1098'></a>
+<a id='L1099' name='L1099'></a>                <strong class='reserved'>if</strong> (c == (<a href='../D/5890.html' title='Multiple defined in 6 places.'>duk_uint_fast8_t</a>) '/' &amp;&amp; c_prev != (<a href='../D/5890.html' title='Multiple defined in 6 places.'>duk_uint_fast8_t</a>) '\\') <em class='brace'>{</em>
+<a id='L1100' name='L1100'></a>                        <em class='comment'>/* Unescaped '/' ANYWHERE in the regexp (in disjunction,</em>
+<a id='L1101' name='L1101'></a><em class='comment'>                         * inside a character class, ...) =&gt; same escape works.</em>
+<a id='L1102' name='L1102'></a><em class='comment'>                         */</em>
+<a id='L1103' name='L1103'></a>                        *q++ = <a href='../D/59.html' title='Multiple defined in 4 places.'>DUK_ASC_BACKSLASH</a>;
+<a id='L1104' name='L1104'></a>                <em class='brace'>}</em>
+<a id='L1105' name='L1105'></a>                *q++ = (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a>) c;
+<a id='L1106' name='L1106'></a>
+<a id='L1107' name='L1107'></a>                c_prev = c;
+<a id='L1108' name='L1108'></a>        <em class='brace'>}</em>
+<a id='L1109' name='L1109'></a>
+<a id='L1110' name='L1110'></a>        <a href='../D/348.html' title='Multiple defined in 4 places.'>DUK_BW_SETPTR_AND_COMPACT</a>(thr, bw, q);
+<a id='L1111' name='L1111'></a>        (<strong class='reserved'>void</strong>) <a href='../D/4799.html' title='Multiple defined in 4 places.'>duk_buffer_to_string</a>(thr, -1);  <em class='comment'>/* Safe if input is safe. */</em>
+<a id='L1112' name='L1112'></a>
+<a id='L1113' name='L1113'></a>        <em class='comment'>/* [ ... escaped_source ] */</em>
+<a id='L1114' name='L1114'></a><em class='brace'>}</em>
+<a id='L1115' name='L1115'></a>
+<a id='L1116' name='L1116'></a><em class='comment'>/*</em>
+<a id='L1117' name='L1117'></a><em class='comment'> *  Exposed regexp compilation primitive.</em>
+<a id='L1118' name='L1118'></a><em class='comment'> *</em>
+<a id='L1119' name='L1119'></a><em class='comment'> *  Sets up a regexp compilation context, and calls duk__parse_disjunction() to do the</em>
+<a id='L1120' name='L1120'></a><em class='comment'> *  actual parsing.  Handles generation of the compiled regexp header and the</em>
+<a id='L1121' name='L1121'></a><em class='comment'> *  "boilerplate" capture of the matching substring (save 0 and 1).  Also does some</em>
+<a id='L1122' name='L1122'></a><em class='comment'> *  global level regexp checks after recursive compilation has finished.</em>
+<a id='L1123' name='L1123'></a><em class='comment'> *</em>
+<a id='L1124' name='L1124'></a><em class='comment'> *  An escaped version of the regexp source, suitable for use as a RegExp instance</em>
+<a id='L1125' name='L1125'></a><em class='comment'> *  'source' property (see E5 Section 15.10.3), is also left on the stack.</em>
+<a id='L1126' name='L1126'></a><em class='comment'> *</em>
+<a id='L1127' name='L1127'></a><em class='comment'> *  Input stack:  [ pattern flags ]</em>
+<a id='L1128' name='L1128'></a><em class='comment'> *  Output stack: [ bytecode escaped_source ]  (both as strings)</em>
+<a id='L1129' name='L1129'></a><em class='comment'> */</em>
+<a id='L1130' name='L1130'></a>
+<a id='L1131' name='L1131'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4872.html' title='Multiple referred from 12 places.'>duk_regexp_compile</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L1132' name='L1132'></a>        <a href='../D/5673.html' title='Multiple defined in 8 places.'>duk_re_compiler_ctx</a> re_ctx;
+<a id='L1133' name='L1133'></a>        <a href='../D/5449.html' title='Multiple defined in 8 places.'>duk_lexer_point</a> lex_point;
+<a id='L1134' name='L1134'></a>        <a href='../D/5286.html' title='Multiple defined in 8 places.'>duk_hstring</a> *h_pattern;
+<a id='L1135' name='L1135'></a>        <a href='../D/5286.html' title='Multiple defined in 8 places.'>duk_hstring</a> *h_flags;
+<a id='L1136' name='L1136'></a>        <a href='../D/4412.html' title='Multiple defined in 4 places.'>duk__re_disjunction_info</a> ign_disj;
+<a id='L1137' name='L1137'></a>
+<a id='L1138' name='L1138'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr != NULL);
+<a id='L1139' name='L1139'></a>
+<a id='L1140' name='L1140'></a>        <em class='comment'>/*</em>
+<a id='L1141' name='L1141'></a><em class='comment'>         *  Args validation</em>
+<a id='L1142' name='L1142'></a><em class='comment'>         */</em>
+<a id='L1143' name='L1143'></a>
+<a id='L1144' name='L1144'></a>        <em class='comment'>/* TypeError if fails */</em>
+<a id='L1145' name='L1145'></a>        h_pattern = <a href='../D/5722.html' title='Multiple defined in 4 places.'>duk_require_hstring_notsymbol</a>(thr, -2);
+<a id='L1146' name='L1146'></a>        h_flags = <a href='../D/5722.html' title='Multiple defined in 4 places.'>duk_require_hstring_notsymbol</a>(thr, -1);
+<a id='L1147' name='L1147'></a>
+<a id='L1148' name='L1148'></a>        <em class='comment'>/*</em>
+<a id='L1149' name='L1149'></a><em class='comment'>         *  Create normalized 'source' property (E5 Section 15.10.3).</em>
+<a id='L1150' name='L1150'></a><em class='comment'>         */</em>
+<a id='L1151' name='L1151'></a>
+<a id='L1152' name='L1152'></a>        <em class='comment'>/* [ ... pattern flags ] */</em>
+<a id='L1153' name='L1153'></a>
+<a id='L1154' name='L1154'></a>        <a href='../D/3964.html' title='Multiple defined in 4 places.'>duk__create_escaped_source</a>(thr, -2);
+<a id='L1155' name='L1155'></a>
+<a id='L1156' name='L1156'></a>        <em class='comment'>/* [ ... pattern flags escaped_source ] */</em>
+<a id='L1157' name='L1157'></a>
+<a id='L1158' name='L1158'></a>        <em class='comment'>/*</em>
+<a id='L1159' name='L1159'></a><em class='comment'>         *  Init compilation context</em>
+<a id='L1160' name='L1160'></a><em class='comment'>         */</em>
+<a id='L1161' name='L1161'></a>
+<a id='L1162' name='L1162'></a>        <em class='comment'>/* [ ... pattern flags escaped_source buffer ] */</em>
+<a id='L1163' name='L1163'></a>
+<a id='L1164' name='L1164'></a>        <a href='../D/5467.html' title='Multiple defined in 8 places.'>duk_memzero</a>(&amp;re_ctx, <strong class='reserved'>sizeof</strong>(re_ctx));
+<a id='L1165' name='L1165'></a>        <a href='../D/1862.html' title='Multiple defined in 4 places.'>DUK_LEXER_INITCTX</a>(&amp;re_ctx.lex);  <em class='comment'>/* duplicate zeroing, expect for (possible) NULL inits */</em>
+<a id='L1166' name='L1166'></a>        re_ctx.thr = thr;
+<a id='L1167' name='L1167'></a>        re_ctx.lex.thr = thr;
+<a id='L1168' name='L1168'></a>        re_ctx.lex.input = <a href='../D/1554.html' title='Multiple defined in 8 places.'>DUK_HSTRING_GET_DATA</a>(h_pattern);
+<a id='L1169' name='L1169'></a>        re_ctx.lex.input_length = <a href='../D/1552.html' title='Multiple defined in 8 places.'>DUK_HSTRING_GET_BYTELEN</a>(h_pattern);
+<a id='L1170' name='L1170'></a>        re_ctx.lex.token_limit = <a href='../D/2337.html' title='Multiple defined in 4 places.'>DUK_RE_COMPILE_TOKEN_LIMIT</a>;
+<a id='L1171' name='L1171'></a>        re_ctx.recursion_limit = <a href='../D/3205.html' title='Multiple defined in 3 places.'>DUK_USE_REGEXP_COMPILER_RECLIMIT</a>;
+<a id='L1172' name='L1172'></a>        re_ctx.re_flags = <a href='../D/4340.html' title='Multiple defined in 4 places.'>duk__parse_regexp_flags</a>(thr, h_flags);
+<a id='L1173' name='L1173'></a>
+<a id='L1174' name='L1174'></a>        <a href='../D/336.html' title='Multiple defined in 4 places.'>DUK_BW_INIT_PUSHBUF</a>(thr, &amp;re_ctx.bw, <a href='../D/3617.html' title='Multiple defined in 6 places.'>DUK__RE_INITIAL_BUFSIZE</a>);
+<a id='L1175' name='L1175'></a>
+<a id='L1176' name='L1176'></a>        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("regexp compiler ctx initialized, flags=0x%08lx, recursion_limit=%ld",
+<a id='L1177' name='L1177'></a>                           (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>) re_ctx.re_flags, (<strong class='reserved'>long</strong>) re_ctx.recursion_limit));
+<a id='L1178' name='L1178'></a>
+<a id='L1179' name='L1179'></a>        <em class='comment'>/*</em>
+<a id='L1180' name='L1180'></a><em class='comment'>         *  Init lexer</em>
+<a id='L1181' name='L1181'></a><em class='comment'>         */</em>
+<a id='L1182' name='L1182'></a>
+<a id='L1183' name='L1183'></a>        lex_point.offset = 0;  <em class='comment'>/* expensive init, just want to fill window */</em>
+<a id='L1184' name='L1184'></a>        lex_point.line = 1;
+<a id='L1185' name='L1185'></a>        <a href='../D/1863.html' title='Multiple defined in 4 places.'>DUK_LEXER_SETPOINT</a>(&amp;re_ctx.lex, &amp;lex_point);
+<a id='L1186' name='L1186'></a>
+<a id='L1187' name='L1187'></a>        <em class='comment'>/*</em>
+<a id='L1188' name='L1188'></a><em class='comment'>         *  Compilation</em>
+<a id='L1189' name='L1189'></a><em class='comment'>         */</em>
+<a id='L1190' name='L1190'></a>
+<a id='L1191' name='L1191'></a>        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("starting regexp compilation"));
+<a id='L1192' name='L1192'></a>
+<a id='L1193' name='L1193'></a>        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(&amp;re_ctx, <a href='../D/2298.html' title='Multiple defined in 4 places.'>DUK_REOP_SAVE</a>);
+<a id='L1194' name='L1194'></a>        <a href='../D/3772.html' title='Multiple defined in 4 places.'>duk__append_7bit</a>(&amp;re_ctx, 0);
+<a id='L1195' name='L1195'></a>        <a href='../D/4331.html' title='Multiple defined in 4 places.'>duk__parse_disjunction</a>(&amp;re_ctx, 1 <em class='comment'>/*expect_eof*/</em>, &amp;ign_disj);
+<a id='L1196' name='L1196'></a>        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(&amp;re_ctx, <a href='../D/2298.html' title='Multiple defined in 4 places.'>DUK_REOP_SAVE</a>);
+<a id='L1197' name='L1197'></a>        <a href='../D/3772.html' title='Multiple defined in 4 places.'>duk__append_7bit</a>(&amp;re_ctx, 1);
+<a id='L1198' name='L1198'></a>        <a href='../D/3776.html' title='Multiple defined in 4 places.'>duk__append_reop</a>(&amp;re_ctx, <a href='../D/2295.html' title='Multiple defined in 4 places.'>DUK_REOP_MATCH</a>);
+<a id='L1199' name='L1199'></a>
+<a id='L1200' name='L1200'></a>        <em class='comment'>/*</em>
+<a id='L1201' name='L1201'></a><em class='comment'>         *  Check for invalid backreferences; note that it is NOT an error</em>
+<a id='L1202' name='L1202'></a><em class='comment'>         *  to back-reference a capture group which has not yet been introduced</em>
+<a id='L1203' name='L1203'></a><em class='comment'>         *  in the pattern (as in /\1(foo)/); in fact, the backreference will</em>
+<a id='L1204' name='L1204'></a><em class='comment'>         *  always match!  It IS an error to back-reference a capture group</em>
+<a id='L1205' name='L1205'></a><em class='comment'>         *  which will never be introduced in the pattern.  Thus, we can check</em>
+<a id='L1206' name='L1206'></a><em class='comment'>         *  for such references only after parsing is complete.</em>
+<a id='L1207' name='L1207'></a><em class='comment'>         */</em>
+<a id='L1208' name='L1208'></a>
+<a id='L1209' name='L1209'></a>        <strong class='reserved'>if</strong> (re_ctx.highest_backref &gt; re_ctx.captures) <em class='brace'>{</em>
+<a id='L1210' name='L1210'></a>                <a href='../D/744.html' title='Multiple defined in 8 places.'>DUK_ERROR_SYNTAX</a>(thr, <a href='../D/2588.html' title='Multiple defined in 4 places.'>DUK_STR_INVALID_BACKREFS</a>);
+<a id='L1211' name='L1211'></a>                <a href='../D/3267.html' title='Multiple defined in 6 places.'>DUK_WO_NORETURN</a>(<strong class='reserved'>return</strong>;);
+<a id='L1212' name='L1212'></a>        <em class='brace'>}</em>
+<a id='L1213' name='L1213'></a>
+<a id='L1214' name='L1214'></a>        <em class='comment'>/*</em>
+<a id='L1215' name='L1215'></a><em class='comment'>         *  Emit compiled regexp header: flags, ncaptures</em>
+<a id='L1216' name='L1216'></a><em class='comment'>         *  (insertion order inverted on purpose)</em>
+<a id='L1217' name='L1217'></a><em class='comment'>         */</em>
+<a id='L1218' name='L1218'></a>
+<a id='L1219' name='L1219'></a>        <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(&amp;re_ctx, 0, (re_ctx.captures + 1) * 2);
+<a id='L1220' name='L1220'></a>        <a href='../D/4220.html' title='Multiple defined in 4 places.'>duk__insert_u32</a>(&amp;re_ctx, 0, re_ctx.re_flags);
+<a id='L1221' name='L1221'></a>
+<a id='L1222' name='L1222'></a>        <em class='comment'>/* [ ... pattern flags escaped_source buffer ] */</em>
+<a id='L1223' name='L1223'></a>
+<a id='L1224' name='L1224'></a>        <a href='../D/327.html' title='Multiple defined in 4 places.'>DUK_BW_COMPACT</a>(thr, &amp;re_ctx.bw);
+<a id='L1225' name='L1225'></a>        (<strong class='reserved'>void</strong>) <a href='../D/4799.html' title='Multiple defined in 4 places.'>duk_buffer_to_string</a>(thr, -1);  <em class='comment'>/* Safe because flags is at most 7 bit. */</em>
+<a id='L1226' name='L1226'></a>
+<a id='L1227' name='L1227'></a>        <em class='comment'>/* [ ... pattern flags escaped_source bytecode ] */</em>
+<a id='L1228' name='L1228'></a>
+<a id='L1229' name='L1229'></a>        <em class='comment'>/*</em>
+<a id='L1230' name='L1230'></a><em class='comment'>         *  Finalize stack</em>
+<a id='L1231' name='L1231'></a><em class='comment'>         */</em>
+<a id='L1232' name='L1232'></a>
+<a id='L1233' name='L1233'></a>        <a href='../D/5692.html' title='Multiple defined in 4 places.'>duk_remove</a>(thr, -4);     <em class='comment'>/* -&gt; [ ... flags escaped_source bytecode ] */</em>
+<a id='L1234' name='L1234'></a>        <a href='../D/5692.html' title='Multiple defined in 4 places.'>duk_remove</a>(thr, -3);     <em class='comment'>/* -&gt; [ ... escaped_source bytecode ] */</em>
+<a id='L1235' name='L1235'></a>
+<a id='L1236' name='L1236'></a>        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("regexp compilation successful, bytecode: %!T, escaped source: %!T",
+<a id='L1237' name='L1237'></a>                           (<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *) <a href='../D/5126.html' title='Multiple defined in 4 places.'>duk_get_tval</a>(thr, -1), (<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *) <a href='../D/5126.html' title='Multiple defined in 4 places.'>duk_get_tval</a>(thr, -2)));
+<a id='L1238' name='L1238'></a><em class='brace'>}</em>
+<a id='L1239' name='L1239'></a>
+<a id='L1240' name='L1240'></a><em class='comment'>/*</em>
+<a id='L1241' name='L1241'></a><em class='comment'> *  Create a RegExp instance (E5 Section 15.10.7).</em>
+<a id='L1242' name='L1242'></a><em class='comment'> *</em>
+<a id='L1243' name='L1243'></a><em class='comment'> *  Note: the output stack left by duk_regexp_compile() is directly compatible</em>
+<a id='L1244' name='L1244'></a><em class='comment'> *  with the input here.</em>
+<a id='L1245' name='L1245'></a><em class='comment'> *</em>
+<a id='L1246' name='L1246'></a><em class='comment'> *  Input stack:  [ escaped_source bytecode ]  (both as strings)</em>
+<a id='L1247' name='L1247'></a><em class='comment'> *  Output stack: [ RegExp ]</em>
+<a id='L1248' name='L1248'></a><em class='comment'> */</em>
+<a id='L1249' name='L1249'></a>
+<a id='L1250' name='L1250'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4873.html' title='Multiple referred from 12 places.'>duk_regexp_create_instance</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L1251' name='L1251'></a>        <a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a> *h;
+<a id='L1252' name='L1252'></a>
+<a id='L1253' name='L1253'></a>        <em class='comment'>/* [ ... escaped_source bytecode ] */</em>
+<a id='L1254' name='L1254'></a>
+<a id='L1255' name='L1255'></a>        <a href='../D/5600.html' title='Multiple defined in 4 places.'>duk_push_object</a>(thr);
+<a id='L1256' name='L1256'></a>        h = <a href='../D/5439.html' title='Multiple defined in 4 places.'>duk_known_hobject</a>(thr, -1);
+<a id='L1257' name='L1257'></a>        <a href='../D/5320.html' title='Multiple defined in 4 places.'>duk_insert</a>(thr, -3);
+<a id='L1258' name='L1258'></a>
+<a id='L1259' name='L1259'></a>        <em class='comment'>/* [ ... regexp_object escaped_source bytecode ] */</em>
+<a id='L1260' name='L1260'></a>
+<a id='L1261' name='L1261'></a>        <a href='../D/1496.html' title='Multiple defined in 4 places.'>DUK_HOBJECT_SET_CLASS_NUMBER</a>(h, <a href='../D/1302.html' title='Multiple defined in 4 places.'>DUK_HOBJECT_CLASS_REGEXP</a>);
+<a id='L1262' name='L1262'></a>        <a href='../D/1517.html' title='Multiple defined in 4 places.'>DUK_HOBJECT_SET_PROTOTYPE_UPDREF</a>(thr, h, thr-&gt;builtins[<a href='../D/279.html' title='Multiple defined in 3 places.'>DUK_BIDX_REGEXP_PROTOTYPE</a>]);
+<a id='L1263' name='L1263'></a>
+<a id='L1264' name='L1264'></a>        <a href='../D/5932.html' title='Multiple defined in 4 places.'>duk_xdef_prop_stridx_short</a>(thr, -3, <a href='../D/2444.html' title='Multiple defined in 3 places.'>DUK_STRIDX_INT_BYTECODE</a>, <a href='../D/2239.html' title='Multiple defined in 4 places.'>DUK_PROPDESC_FLAGS_NONE</a>);
+<a id='L1265' name='L1265'></a>
+<a id='L1266' name='L1266'></a>        <em class='comment'>/* [ ... regexp_object escaped_source ] */</em>
+<a id='L1267' name='L1267'></a>
+<a id='L1268' name='L1268'></a>        <em class='comment'>/* In ES2015 .source, and the .global, .multiline, etc flags are</em>
+<a id='L1269' name='L1269'></a><em class='comment'>         * inherited getters.  Store the escaped source as an internal</em>
+<a id='L1270' name='L1270'></a><em class='comment'>         * property for the getter.</em>
+<a id='L1271' name='L1271'></a><em class='comment'>         */</em>
+<a id='L1272' name='L1272'></a>
+<a id='L1273' name='L1273'></a>        <a href='../D/5932.html' title='Multiple defined in 4 places.'>duk_xdef_prop_stridx_short</a>(thr, -2, <a href='../D/2450.html' title='Multiple defined in 3 places.'>DUK_STRIDX_INT_SOURCE</a>, <a href='../D/2239.html' title='Multiple defined in 4 places.'>DUK_PROPDESC_FLAGS_NONE</a>);
+<a id='L1274' name='L1274'></a>
+<a id='L1275' name='L1275'></a>        <em class='comment'>/* [ ... regexp_object ] */</em>
+<a id='L1276' name='L1276'></a>
+<a id='L1277' name='L1277'></a>        <a href='../D/5589.html' title='Multiple defined in 4 places.'>duk_push_int</a>(thr, 0);
+<a id='L1278' name='L1278'></a>        <a href='../D/5932.html' title='Multiple defined in 4 places.'>duk_xdef_prop_stridx_short</a>(thr, -2, <a href='../D/2467.html' title='Multiple defined in 3 places.'>DUK_STRIDX_LAST_INDEX</a>, <a href='../D/2240.html' title='Multiple defined in 4 places.'>DUK_PROPDESC_FLAGS_W</a>);
+<a id='L1279' name='L1279'></a>
+<a id='L1280' name='L1280'></a>        <em class='comment'>/* [ ... regexp_object ] */</em>
+<a id='L1281' name='L1281'></a><em class='brace'>}</em>
+<a id='L1282' name='L1282'></a>
+<a id='L1283' name='L1283'></a><em class='sharp'>#else</em>  <em class='comment'>/* DUK_USE_REGEXP_SUPPORT */</em>
+<a id='L1284' name='L1284'></a>
+<a id='L1285' name='L1285'></a><em class='comment'>/* regexp support disabled */</em>
+<a id='L1286' name='L1286'></a>
+<a id='L1287' name='L1287'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_REGEXP_SUPPORT */</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L73'>[^]</a><a href='#L1250'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

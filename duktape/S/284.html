@@ -1,0 +1,446 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src-separate/duk_dblunion.h</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1032.html'>src-separate</a>/duk_dblunion.h</h2>
+<em class='comment'>/* [&lt;][&gt;][^][v][top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'><a href='../J/105.html' title='Multiple included from 2 places.'>INCLUDED FROM</a></h2>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Union to access IEEE double memory representation, indexes for double</em>
+<a id='L3' name='L3'></a><em class='comment'> *  memory representation, and some macros for double manipulation.</em>
+<a id='L4' name='L4'></a><em class='comment'> *</em>
+<a id='L5' name='L5'></a><em class='comment'> *  Also used by packed duk_tval.  Use a union for bit manipulation to</em>
+<a id='L6' name='L6'></a><em class='comment'> *  minimize aliasing issues in practice.  The C99 standard does not</em>
+<a id='L7' name='L7'></a><em class='comment'> *  guarantee that this should work, but it's a very widely supported</em>
+<a id='L8' name='L8'></a><em class='comment'> *  practice for low level manipulation.</em>
+<a id='L9' name='L9'></a><em class='comment'> *</em>
+<a id='L10' name='L10'></a><em class='comment'> *  IEEE double format summary:</em>
+<a id='L11' name='L11'></a><em class='comment'> *</em>
+<a id='L12' name='L12'></a><em class='comment'> *    seeeeeee eeeeffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff</em>
+<a id='L13' name='L13'></a><em class='comment'> *       A        B        C        D        E        F        G        H</em>
+<a id='L14' name='L14'></a><em class='comment'> *</em>
+<a id='L15' name='L15'></a><em class='comment'> *    s       sign bit</em>
+<a id='L16' name='L16'></a><em class='comment'> *    eee...  exponent field</em>
+<a id='L17' name='L17'></a><em class='comment'> *    fff...  fraction</em>
+<a id='L18' name='L18'></a><em class='comment'> *</em>
+<a id='L19' name='L19'></a><em class='comment'> *  See http://en.wikipedia.org/wiki/Double_precision_floating-point_format.</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> *  NaNs are represented as exponent 0x7ff and mantissa != 0.  The NaN is a</em>
+<a id='L22' name='L22'></a><em class='comment'> *  signaling NaN when the highest bit of the mantissa is zero, and a quiet</em>
+<a id='L23' name='L23'></a><em class='comment'> *  NaN when the highest bit is set.</em>
+<a id='L24' name='L24'></a><em class='comment'> *</em>
+<a id='L25' name='L25'></a><em class='comment'> *  At least three memory layouts are relevant here:</em>
+<a id='L26' name='L26'></a><em class='comment'> *</em>
+<a id='L27' name='L27'></a><em class='comment'> *    A B C D E F G H    Big endian (e.g. 68k)           DUK_USE_DOUBLE_BE</em>
+<a id='L28' name='L28'></a><em class='comment'> *    H G F E D C B A    Little endian (e.g. x86)        DUK_USE_DOUBLE_LE</em>
+<a id='L29' name='L29'></a><em class='comment'> *    D C B A H G F E    Mixed endian (e.g. ARM FPA)     DUK_USE_DOUBLE_ME</em>
+<a id='L30' name='L30'></a><em class='comment'> *</em>
+<a id='L31' name='L31'></a><em class='comment'> *  Legacy ARM (FPA) is a special case: ARM double values are in mixed</em>
+<a id='L32' name='L32'></a><em class='comment'> *  endian format while ARM duk_uint64_t values are in standard little endian</em>
+<a id='L33' name='L33'></a><em class='comment'> *  format (H G F E D C B A).  When a double is read as a duk_uint64_t</em>
+<a id='L34' name='L34'></a><em class='comment'> *  from memory, the register will contain the (logical) value</em>
+<a id='L35' name='L35'></a><em class='comment'> *  E F G H A B C D.  This requires some special handling below.</em>
+<a id='L36' name='L36'></a><em class='comment'> *  See http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.dui0056d/Bcfhgcgd.html.</em>
+<a id='L37' name='L37'></a><em class='comment'> *</em>
+<a id='L38' name='L38'></a><em class='comment'> *  Indexes of various types (8-bit, 16-bit, 32-bit) in memory relative to</em>
+<a id='L39' name='L39'></a><em class='comment'> *  the logical (big endian) order:</em>
+<a id='L40' name='L40'></a><em class='comment'> *</em>
+<a id='L41' name='L41'></a><em class='comment'> *  byte order      duk_uint8_t    duk_uint16_t     duk_uint32_t</em>
+<a id='L42' name='L42'></a><em class='comment'> *    BE             01234567         0123               01</em>
+<a id='L43' name='L43'></a><em class='comment'> *    LE             76543210         3210               10</em>
+<a id='L44' name='L44'></a><em class='comment'> *    ME (ARM)       32107654         1032               01</em>
+<a id='L45' name='L45'></a><em class='comment'> *</em>
+<a id='L46' name='L46'></a><em class='comment'> *  Some processors may alter NaN values in a floating point load+store.</em>
+<a id='L47' name='L47'></a><em class='comment'> *  For instance, on X86 a FLD + FSTP may convert a signaling NaN to a</em>
+<a id='L48' name='L48'></a><em class='comment'> *  quiet one.  This is catastrophic when NaN space is used in packed</em>
+<a id='L49' name='L49'></a><em class='comment'> *  duk_tval values.  See: misc/clang_aliasing.c.</em>
+<a id='L50' name='L50'></a><em class='comment'> */</em>
+<a id='L51' name='L51'></a>
+<a id='L52' name='L52'></a><em class='sharp'>#if</em> !<strong class='reserved'>defined</strong>(<a href='../D/559.html' title='Multiple defined in 4 places.'>DUK_DBLUNION_H_INCLUDED</a>)
+<a id='L53' name='L53'></a><em class='sharp'>#define</em> <a href='../R/452.html' title='Multiple referred from 4 places.'>DUK_DBLUNION_H_INCLUDED</a>
+<a id='L54' name='L54'></a>
+<a id='L55' name='L55'></a><em class='comment'>/*</em>
+<a id='L56' name='L56'></a><em class='comment'> *  Union for accessing double parts, also serves as packed duk_tval</em>
+<a id='L57' name='L57'></a><em class='comment'> */</em>
+<a id='L58' name='L58'></a>
+<a id='L59' name='L59'></a><strong class='reserved'>union</strong> <a href='../R/4189.html' title='Multiple referred from 228 places.'>duk_double_union</a> <em class='brace'>{</em>
+<a id='L60' name='L60'></a>        <strong class='reserved'>double</strong> d;
+<a id='L61' name='L61'></a>        <strong class='reserved'>float</strong> f[2];
+<a id='L62' name='L62'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3011.html' title='Multiple defined in 6 places.'>DUK_USE_64BIT_OPS</a>)
+<a id='L63' name='L63'></a>        <a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> ull[1];
+<a id='L64' name='L64'></a><em class='sharp'>#endif</em>
+<a id='L65' name='L65'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> ui[2];
+<a id='L66' name='L66'></a>        <a href='../D/5883.html' title='Multiple defined in 9 places.'>duk_uint16_t</a> us[4];
+<a id='L67' name='L67'></a>        <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> uc[8];
+<a id='L68' name='L68'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3185.html' title='Multiple defined in 57 places.'>DUK_USE_PACKED_TVAL</a>)
+<a id='L69' name='L69'></a>        <strong class='reserved'>void</strong> *vp[2];  <em class='comment'>/* used by packed duk_tval, assumes sizeof(void *) == 4 */</em>
+<a id='L70' name='L70'></a><em class='sharp'>#endif</em>
+<a id='L71' name='L71'></a><em class='brace'>}</em>;
+<a id='L72' name='L72'></a>
+<a id='L73' name='L73'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>union</strong> <a href='../R/4189.html' title='Multiple referred from 228 places.'>duk_double_union</a> <a href='../D/4964.html' title='Multiple defined in 8 places.'>duk_double_union</a>;
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a><em class='comment'>/*</em>
+<a id='L76' name='L76'></a><em class='comment'> *  Indexes of various types with respect to big endian (logical) layout</em>
+<a id='L77' name='L77'></a><em class='comment'> */</em>
+<a id='L78' name='L78'></a>
+<a id='L79' name='L79'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3076.html' title='Multiple defined in 3 places.'>DUK_USE_DOUBLE_LE</a>)
+<a id='L80' name='L80'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3011.html' title='Multiple defined in 6 places.'>DUK_USE_64BIT_OPS</a>)
+<a id='L81' name='L81'></a><em class='sharp'>#define</em> <a href='../R/469.html' title='Multiple referred from 156 places.'>DUK_DBL_IDX_ULL0</a>   0
+<a id='L82' name='L82'></a><em class='sharp'>#endif</em>
+<a id='L83' name='L83'></a><em class='sharp'>#define</em> <a href='../R/467.html' title='Multiple referred from 144 places.'>DUK_DBL_IDX_UI0</a>    1
+<a id='L84' name='L84'></a><em class='sharp'>#define</em> <a href='../R/468.html' title='Multiple referred from 108 places.'>DUK_DBL_IDX_UI1</a>    0
+<a id='L85' name='L85'></a><em class='sharp'>#define</em> <a href='../R/470.html' title='Multiple referred from 36 places.'>DUK_DBL_IDX_US0</a>    3
+<a id='L86' name='L86'></a><em class='sharp'>#define</em> <a href='../R/471.html' title='Multiple referred from 4 places.'>DUK_DBL_IDX_US1</a>    2
+<a id='L87' name='L87'></a><em class='sharp'>#define</em> DUK_DBL_IDX_US2    1
+<a id='L88' name='L88'></a><em class='sharp'>#define</em> DUK_DBL_IDX_US3    0
+<a id='L89' name='L89'></a><em class='sharp'>#define</em> <a href='../R/466.html' title='Multiple referred from 4 places.'>DUK_DBL_IDX_UC0</a>    7
+<a id='L90' name='L90'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC1    6
+<a id='L91' name='L91'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC2    5
+<a id='L92' name='L92'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC3    4
+<a id='L93' name='L93'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC4    3
+<a id='L94' name='L94'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC5    2
+<a id='L95' name='L95'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC6    1
+<a id='L96' name='L96'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC7    0
+<a id='L97' name='L97'></a><em class='sharp'>#define</em> DUK_DBL_IDX_VP0    <a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>  <em class='comment'>/* packed tval */</em>
+<a id='L98' name='L98'></a><em class='sharp'>#define</em> <a href='../R/472.html' title='Multiple referred from 20 places.'>DUK_DBL_IDX_VP1</a>    <a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>  <em class='comment'>/* packed tval */</em>
+<a id='L99' name='L99'></a><em class='sharp'>#elif</em> <strong class='reserved'>defined</strong>(<a href='../D/3075.html' title='Multiple defined in 3 places.'>DUK_USE_DOUBLE_BE</a>)
+<a id='L100' name='L100'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3011.html' title='Multiple defined in 6 places.'>DUK_USE_64BIT_OPS</a>)
+<a id='L101' name='L101'></a><em class='sharp'>#define</em> <a href='../R/469.html' title='Multiple referred from 156 places.'>DUK_DBL_IDX_ULL0</a>   0
+<a id='L102' name='L102'></a><em class='sharp'>#endif</em>
+<a id='L103' name='L103'></a><em class='sharp'>#define</em> <a href='../R/467.html' title='Multiple referred from 144 places.'>DUK_DBL_IDX_UI0</a>    0
+<a id='L104' name='L104'></a><em class='sharp'>#define</em> <a href='../R/468.html' title='Multiple referred from 108 places.'>DUK_DBL_IDX_UI1</a>    1
+<a id='L105' name='L105'></a><em class='sharp'>#define</em> <a href='../R/470.html' title='Multiple referred from 36 places.'>DUK_DBL_IDX_US0</a>    0
+<a id='L106' name='L106'></a><em class='sharp'>#define</em> <a href='../R/471.html' title='Multiple referred from 4 places.'>DUK_DBL_IDX_US1</a>    1
+<a id='L107' name='L107'></a><em class='sharp'>#define</em> DUK_DBL_IDX_US2    2
+<a id='L108' name='L108'></a><em class='sharp'>#define</em> DUK_DBL_IDX_US3    3
+<a id='L109' name='L109'></a><em class='sharp'>#define</em> <a href='../R/466.html' title='Multiple referred from 4 places.'>DUK_DBL_IDX_UC0</a>    0
+<a id='L110' name='L110'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC1    1
+<a id='L111' name='L111'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC2    2
+<a id='L112' name='L112'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC3    3
+<a id='L113' name='L113'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC4    4
+<a id='L114' name='L114'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC5    5
+<a id='L115' name='L115'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC6    6
+<a id='L116' name='L116'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC7    7
+<a id='L117' name='L117'></a><em class='sharp'>#define</em> DUK_DBL_IDX_VP0    <a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>  <em class='comment'>/* packed tval */</em>
+<a id='L118' name='L118'></a><em class='sharp'>#define</em> <a href='../R/472.html' title='Multiple referred from 20 places.'>DUK_DBL_IDX_VP1</a>    <a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>  <em class='comment'>/* packed tval */</em>
+<a id='L119' name='L119'></a><em class='sharp'>#elif</em> <strong class='reserved'>defined</strong>(<a href='../D/3078.html' title='Multiple defined in 3 places.'>DUK_USE_DOUBLE_ME</a>)
+<a id='L120' name='L120'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3011.html' title='Multiple defined in 6 places.'>DUK_USE_64BIT_OPS</a>)
+<a id='L121' name='L121'></a><em class='sharp'>#define</em> <a href='../R/469.html' title='Multiple referred from 156 places.'>DUK_DBL_IDX_ULL0</a>   0  <em class='comment'>/* not directly applicable, byte order differs from a double */</em>
+<a id='L122' name='L122'></a><em class='sharp'>#endif</em>
+<a id='L123' name='L123'></a><em class='sharp'>#define</em> <a href='../R/467.html' title='Multiple referred from 144 places.'>DUK_DBL_IDX_UI0</a>    0
+<a id='L124' name='L124'></a><em class='sharp'>#define</em> <a href='../R/468.html' title='Multiple referred from 108 places.'>DUK_DBL_IDX_UI1</a>    1
+<a id='L125' name='L125'></a><em class='sharp'>#define</em> <a href='../R/470.html' title='Multiple referred from 36 places.'>DUK_DBL_IDX_US0</a>    1
+<a id='L126' name='L126'></a><em class='sharp'>#define</em> <a href='../R/471.html' title='Multiple referred from 4 places.'>DUK_DBL_IDX_US1</a>    0
+<a id='L127' name='L127'></a><em class='sharp'>#define</em> DUK_DBL_IDX_US2    3
+<a id='L128' name='L128'></a><em class='sharp'>#define</em> DUK_DBL_IDX_US3    2
+<a id='L129' name='L129'></a><em class='sharp'>#define</em> <a href='../R/466.html' title='Multiple referred from 4 places.'>DUK_DBL_IDX_UC0</a>    3
+<a id='L130' name='L130'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC1    2
+<a id='L131' name='L131'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC2    1
+<a id='L132' name='L132'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC3    0
+<a id='L133' name='L133'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC4    7
+<a id='L134' name='L134'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC5    6
+<a id='L135' name='L135'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC6    5
+<a id='L136' name='L136'></a><em class='sharp'>#define</em> DUK_DBL_IDX_UC7    4
+<a id='L137' name='L137'></a><em class='sharp'>#define</em> DUK_DBL_IDX_VP0    <a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>  <em class='comment'>/* packed tval */</em>
+<a id='L138' name='L138'></a><em class='sharp'>#define</em> <a href='../R/472.html' title='Multiple referred from 20 places.'>DUK_DBL_IDX_VP1</a>    <a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>  <em class='comment'>/* packed tval */</em>
+<a id='L139' name='L139'></a><em class='sharp'>#else</em>
+<a id='L140' name='L140'></a><em class='sharp'>#error</em> internal error
+<a id='L141' name='L141'></a><em class='sharp'>#endif</em>
+<a id='L142' name='L142'></a>
+<a id='L143' name='L143'></a><em class='comment'>/*</em>
+<a id='L144' name='L144'></a><em class='comment'> *  Helper macros for reading/writing memory representation parts, used</em>
+<a id='L145' name='L145'></a><em class='comment'> *  by duk_numconv.c and duk_tval.h.</em>
+<a id='L146' name='L146'></a><em class='comment'> */</em>
+<a id='L147' name='L147'></a>
+<a id='L148' name='L148'></a><em class='sharp'>#define</em> <a href='../R/461.html' title='Multiple referred from 12 places.'>DUK_DBLUNION_SET_DOUBLE</a>(u,v)  <strong class='reserved'>do</strong> <em class='brace'>{</em>  \
+<a id='L149' name='L149'></a>                (u)-&gt;d = (v); \
+<a id='L150' name='L150'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L151' name='L151'></a>
+<a id='L152' name='L152'></a><em class='sharp'>#define</em> <a href='../R/462.html' title='Multiple referred from 8 places.'>DUK_DBLUNION_SET_HIGH32</a>(u,v)  <strong class='reserved'>do</strong> <em class='brace'>{</em>  \
+<a id='L153' name='L153'></a>                (u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>] = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) (v); \
+<a id='L154' name='L154'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L155' name='L155'></a>
+<a id='L156' name='L156'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3011.html' title='Multiple defined in 6 places.'>DUK_USE_64BIT_OPS</a>)
+<a id='L157' name='L157'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3078.html' title='Multiple defined in 3 places.'>DUK_USE_DOUBLE_ME</a>)
+<a id='L158' name='L158'></a><em class='sharp'>#define</em> DUK_DBLUNION_SET_HIGH32_ZERO_LOW32(u,v)  <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L159' name='L159'></a>                (u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] = (<a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a>) (v); \
+<a id='L160' name='L160'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L161' name='L161'></a><em class='sharp'>#else</em>
+<a id='L162' name='L162'></a><em class='sharp'>#define</em> DUK_DBLUNION_SET_HIGH32_ZERO_LOW32(u,v)  <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L163' name='L163'></a>                (u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] = ((<a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a>) (v)) &lt;&lt; 32; \
+<a id='L164' name='L164'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L165' name='L165'></a><em class='sharp'>#endif</em>
+<a id='L166' name='L166'></a><em class='sharp'>#else</em>  <em class='comment'>/* DUK_USE_64BIT_OPS */</em>
+<a id='L167' name='L167'></a><em class='sharp'>#define</em> DUK_DBLUNION_SET_HIGH32_ZERO_LOW32(u,v)  <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L168' name='L168'></a>                (u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>] = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) (v); \
+<a id='L169' name='L169'></a>                (u)-&gt;ui[<a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>] = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) 0; \
+<a id='L170' name='L170'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L171' name='L171'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_64BIT_OPS */</em>
+<a id='L172' name='L172'></a>
+<a id='L173' name='L173'></a><em class='sharp'>#define</em> <a href='../R/463.html' title='Multiple referred from 4 places.'>DUK_DBLUNION_SET_LOW32</a>(u,v)  <strong class='reserved'>do</strong> <em class='brace'>{</em>  \
+<a id='L174' name='L174'></a>                (u)-&gt;ui[<a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>] = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) (v); \
+<a id='L175' name='L175'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L176' name='L176'></a>
+<a id='L177' name='L177'></a><em class='sharp'>#define</em> <a href='../R/445.html' title='Multiple referred from 4 places.'>DUK_DBLUNION_GET_DOUBLE</a>(u)  ((u)-&gt;d)
+<a id='L178' name='L178'></a><em class='sharp'>#define</em> <a href='../R/446.html' title='Multiple referred from 8 places.'>DUK_DBLUNION_GET_HIGH32</a>(u)  ((u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>])
+<a id='L179' name='L179'></a><em class='sharp'>#define</em> <a href='../R/448.html' title='Multiple referred from 12 places.'>DUK_DBLUNION_GET_LOW32</a>(u)   ((u)-&gt;ui[<a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>])
+<a id='L180' name='L180'></a>
+<a id='L181' name='L181'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3011.html' title='Multiple defined in 6 places.'>DUK_USE_64BIT_OPS</a>)
+<a id='L182' name='L182'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3078.html' title='Multiple defined in 3 places.'>DUK_USE_DOUBLE_ME</a>)
+<a id='L183' name='L183'></a><em class='sharp'>#define</em> <a href='../R/465.html' title='Multiple referred from 28 places.'>DUK_DBLUNION_SET_UINT64</a>(u,v)  <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L184' name='L184'></a>                (u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>] = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) ((v) &gt;&gt; 32); \
+<a id='L185' name='L185'></a>                (u)-&gt;ui[<a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>] = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) (v); \
+<a id='L186' name='L186'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L187' name='L187'></a><em class='sharp'>#define</em> <a href='../R/450.html' title='Multiple referred from 8 places.'>DUK_DBLUNION_GET_UINT64</a>(u) \
+<a id='L188' name='L188'></a>        ((((<a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a>) (u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>]) &lt;&lt; 32) | \
+<a id='L189' name='L189'></a>         ((<a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a>) (u)-&gt;ui[<a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>]))
+<a id='L190' name='L190'></a><em class='sharp'>#else</em>
+<a id='L191' name='L191'></a><em class='sharp'>#define</em> <a href='../R/465.html' title='Multiple referred from 28 places.'>DUK_DBLUNION_SET_UINT64</a>(u,v)  <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L192' name='L192'></a>                (u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] = (<a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a>) (v); \
+<a id='L193' name='L193'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L194' name='L194'></a><em class='sharp'>#define</em> <a href='../R/450.html' title='Multiple referred from 8 places.'>DUK_DBLUNION_GET_UINT64</a>(u)  ((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>])
+<a id='L195' name='L195'></a><em class='sharp'>#endif</em>
+<a id='L196' name='L196'></a><em class='sharp'>#define</em> DUK_DBLUNION_SET_INT64(u,v) <a href='../D/576.html' title='Multiple defined in 8 places.'>DUK_DBLUNION_SET_UINT64</a>((u), (<a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a>) (v))
+<a id='L197' name='L197'></a><em class='sharp'>#define</em> <a href='../R/447.html' title='Multiple referred from 4 places.'>DUK_DBLUNION_GET_INT64</a>(u)   ((<a href='../D/5329.html' title='Multiple defined in 21 places.'>duk_int64_t</a>) <a href='../D/557.html' title='Multiple defined in 8 places.'>DUK_DBLUNION_GET_UINT64</a>((u)))
+<a id='L198' name='L198'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_64BIT_OPS */</em>
+<a id='L199' name='L199'></a>
+<a id='L200' name='L200'></a><em class='comment'>/*</em>
+<a id='L201' name='L201'></a><em class='comment'> *  Double NaN manipulation macros related to NaN normalization needed when</em>
+<a id='L202' name='L202'></a><em class='comment'> *  using the packed duk_tval representation.  NaN normalization is necessary</em>
+<a id='L203' name='L203'></a><em class='comment'> *  to keep double values compatible with the duk_tval format.</em>
+<a id='L204' name='L204'></a><em class='comment'> *</em>
+<a id='L205' name='L205'></a><em class='comment'> *  When packed duk_tval is used, the NaN space is used to store pointers</em>
+<a id='L206' name='L206'></a><em class='comment'> *  and other tagged values in addition to NaNs.  Actual NaNs are normalized</em>
+<a id='L207' name='L207'></a><em class='comment'> *  to a specific quiet NaN.  The macros below are used by the implementation</em>
+<a id='L208' name='L208'></a><em class='comment'> *  to check and normalize NaN values when they might be created.  The macros</em>
+<a id='L209' name='L209'></a><em class='comment'> *  are essentially NOPs when the non-packed duk_tval representation is used.</em>
+<a id='L210' name='L210'></a><em class='comment'> *</em>
+<a id='L211' name='L211'></a><em class='comment'> *  A FULL check is exact and checks all bits.  A NOTFULL check is used by</em>
+<a id='L212' name='L212'></a><em class='comment'> *  the packed duk_tval and works correctly for all NaNs except those that</em>
+<a id='L213' name='L213'></a><em class='comment'> *  begin with 0x7ff0.  Since the 'normalized NaN' values used with packed</em>
+<a id='L214' name='L214'></a><em class='comment'> *  duk_tval begin with 0x7ff8, the partial check is reliable when packed</em>
+<a id='L215' name='L215'></a><em class='comment'> *  duk_tval is used.  The 0x7ff8 prefix means the normalized NaN will be a</em>
+<a id='L216' name='L216'></a><em class='comment'> *  quiet NaN regardless of its remaining lower bits.</em>
+<a id='L217' name='L217'></a><em class='comment'> *</em>
+<a id='L218' name='L218'></a><em class='comment'> *  The ME variant below is specifically for ARM byte order, which has the</em>
+<a id='L219' name='L219'></a><em class='comment'> *  feature that while doubles have a mixed byte order (32107654), unsigned</em>
+<a id='L220' name='L220'></a><em class='comment'> *  long long values has a little endian byte order (76543210).  When writing</em>
+<a id='L221' name='L221'></a><em class='comment'> *  a logical double value through a ULL pointer, the 32-bit words need to be</em>
+<a id='L222' name='L222'></a><em class='comment'> *  swapped; hence the #if defined()s below for ULL writes with DUK_USE_DOUBLE_ME.</em>
+<a id='L223' name='L223'></a><em class='comment'> *  This is not full ARM support but suffices for some environments.</em>
+<a id='L224' name='L224'></a><em class='comment'> */</em>
+<a id='L225' name='L225'></a>
+<a id='L226' name='L226'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3011.html' title='Multiple defined in 6 places.'>DUK_USE_64BIT_OPS</a>)
+<a id='L227' name='L227'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3078.html' title='Multiple defined in 3 places.'>DUK_USE_DOUBLE_ME</a>)
+<a id='L228' name='L228'></a><em class='comment'>/* Macros for 64-bit ops + mixed endian doubles. */</em>
+<a id='L229' name='L229'></a><em class='sharp'>#define</em> <a href='../R/2635.html' title='Multiple referred from 8 places.'>DUK__DBLUNION_SET_NAN_FULL</a>(u)  <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L230' name='L230'></a>                (u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] = <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x000000007ff80000); \
+<a id='L231' name='L231'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L232' name='L232'></a><em class='sharp'>#define</em> <a href='../R/2625.html' title='Multiple referred from 20 places.'>DUK__DBLUNION_IS_NAN_FULL</a>(u) \
+<a id='L233' name='L233'></a>        ((((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] &amp; <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x000000007ff00000)) == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x000000007ff00000)) &amp;&amp; \
+<a id='L234' name='L234'></a>         ((((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>]) &amp; <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0xffffffff000fffff)) != 0))
+<a id='L235' name='L235'></a><em class='sharp'>#define</em> <a href='../R/2629.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_NORMALIZED_NAN_FULL</a>(u) \
+<a id='L236' name='L236'></a>        ((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x000000007ff80000))
+<a id='L237' name='L237'></a><em class='sharp'>#define</em> <a href='../R/2623.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_ANYINF</a>(u) \
+<a id='L238' name='L238'></a>        (((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] &amp; <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0xffffffff7fffffff)) == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x000000007ff00000))
+<a id='L239' name='L239'></a><em class='sharp'>#define</em> <a href='../R/2631.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_POSINF</a>(u) \
+<a id='L240' name='L240'></a>        ((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x000000007ff00000))
+<a id='L241' name='L241'></a><em class='sharp'>#define</em> <a href='../R/2627.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_NEGINF</a>(u) \
+<a id='L242' name='L242'></a>        ((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x00000000fff00000))
+<a id='L243' name='L243'></a><em class='sharp'>#define</em> <a href='../R/2624.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_ANYZERO</a>(u) \
+<a id='L244' name='L244'></a>        (((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] &amp; <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0xffffffff7fffffff)) == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x0000000000000000))
+<a id='L245' name='L245'></a><em class='sharp'>#define</em> <a href='../R/2632.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_POSZERO</a>(u) \
+<a id='L246' name='L246'></a>        ((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x0000000000000000))
+<a id='L247' name='L247'></a><em class='sharp'>#define</em> <a href='../R/2628.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_NEGZERO</a>(u) \
+<a id='L248' name='L248'></a>        ((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x0000000080000000))
+<a id='L249' name='L249'></a><em class='sharp'>#else</em>
+<a id='L250' name='L250'></a><em class='comment'>/* Macros for 64-bit ops + big/little endian doubles. */</em>
+<a id='L251' name='L251'></a><em class='sharp'>#define</em> <a href='../R/2635.html' title='Multiple referred from 8 places.'>DUK__DBLUNION_SET_NAN_FULL</a>(u)  <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L252' name='L252'></a>                (u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] = <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x7ff8000000000000); \
+<a id='L253' name='L253'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L254' name='L254'></a><em class='sharp'>#define</em> <a href='../R/2625.html' title='Multiple referred from 20 places.'>DUK__DBLUNION_IS_NAN_FULL</a>(u) \
+<a id='L255' name='L255'></a>        ((((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] &amp; <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x7ff0000000000000)) == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x7ff0000000000000)) &amp;&amp; \
+<a id='L256' name='L256'></a>         ((((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>]) &amp; <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x000fffffffffffff)) != 0))
+<a id='L257' name='L257'></a><em class='sharp'>#define</em> <a href='../R/2629.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_NORMALIZED_NAN_FULL</a>(u) \
+<a id='L258' name='L258'></a>        ((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x7ff8000000000000))
+<a id='L259' name='L259'></a><em class='sharp'>#define</em> <a href='../R/2623.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_ANYINF</a>(u) \
+<a id='L260' name='L260'></a>        (((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] &amp; <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x7fffffffffffffff)) == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x7ff0000000000000))
+<a id='L261' name='L261'></a><em class='sharp'>#define</em> <a href='../R/2631.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_POSINF</a>(u) \
+<a id='L262' name='L262'></a>        ((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x7ff0000000000000))
+<a id='L263' name='L263'></a><em class='sharp'>#define</em> <a href='../R/2627.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_NEGINF</a>(u) \
+<a id='L264' name='L264'></a>        ((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0xfff0000000000000))
+<a id='L265' name='L265'></a><em class='sharp'>#define</em> <a href='../R/2624.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_ANYZERO</a>(u) \
+<a id='L266' name='L266'></a>        (((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] &amp; <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x7fffffffffffffff)) == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x0000000000000000))
+<a id='L267' name='L267'></a><em class='sharp'>#define</em> <a href='../R/2632.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_POSZERO</a>(u) \
+<a id='L268' name='L268'></a>        ((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x0000000000000000))
+<a id='L269' name='L269'></a><em class='sharp'>#define</em> <a href='../R/2628.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_NEGZERO</a>(u) \
+<a id='L270' name='L270'></a>        ((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] == <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x8000000000000000))
+<a id='L271' name='L271'></a><em class='sharp'>#endif</em>
+<a id='L272' name='L272'></a><em class='sharp'>#else</em>  <em class='comment'>/* DUK_USE_64BIT_OPS */</em>
+<a id='L273' name='L273'></a><em class='comment'>/* Macros for no 64-bit ops, any endianness. */</em>
+<a id='L274' name='L274'></a><em class='sharp'>#define</em> <a href='../R/2635.html' title='Multiple referred from 8 places.'>DUK__DBLUNION_SET_NAN_FULL</a>(u)  <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L275' name='L275'></a>                (u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>] = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) 0x7ff80000UL; \
+<a id='L276' name='L276'></a>                (u)-&gt;ui[<a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>] = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) 0x00000000UL; \
+<a id='L277' name='L277'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L278' name='L278'></a><em class='sharp'>#define</em> <a href='../R/2625.html' title='Multiple referred from 20 places.'>DUK__DBLUNION_IS_NAN_FULL</a>(u) \
+<a id='L279' name='L279'></a>        ((((u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>] &amp; 0x7ff00000UL) == 0x7ff00000UL) &amp;&amp; \
+<a id='L280' name='L280'></a>         (((u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>] &amp; 0x000fffffUL) != 0 || \
+<a id='L281' name='L281'></a>          (u)-&gt;ui[<a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>] != 0))
+<a id='L282' name='L282'></a><em class='sharp'>#define</em> <a href='../R/2629.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_NORMALIZED_NAN_FULL</a>(u) \
+<a id='L283' name='L283'></a>        (((u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>] == 0x7ff80000UL) &amp;&amp; \
+<a id='L284' name='L284'></a>         ((u)-&gt;ui[<a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>] == 0x00000000UL))
+<a id='L285' name='L285'></a><em class='sharp'>#define</em> <a href='../R/2623.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_ANYINF</a>(u) \
+<a id='L286' name='L286'></a>        ((((u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>] &amp; 0x7fffffffUL) == 0x7ff00000UL) &amp;&amp; \
+<a id='L287' name='L287'></a>         ((u)-&gt;ui[<a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>] == 0x00000000UL))
+<a id='L288' name='L288'></a><em class='sharp'>#define</em> <a href='../R/2631.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_POSINF</a>(u) \
+<a id='L289' name='L289'></a>        (((u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>] == 0x7ff00000UL) &amp;&amp; \
+<a id='L290' name='L290'></a>         ((u)-&gt;ui[<a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>] == 0x00000000UL))
+<a id='L291' name='L291'></a><em class='sharp'>#define</em> <a href='../R/2627.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_NEGINF</a>(u) \
+<a id='L292' name='L292'></a>        (((u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>] == 0xfff00000UL) &amp;&amp; \
+<a id='L293' name='L293'></a>         ((u)-&gt;ui[<a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>] == 0x00000000UL))
+<a id='L294' name='L294'></a><em class='sharp'>#define</em> <a href='../R/2624.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_ANYZERO</a>(u) \
+<a id='L295' name='L295'></a>        ((((u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>] &amp; 0x7fffffffUL) == 0x00000000UL) &amp;&amp; \
+<a id='L296' name='L296'></a>         ((u)-&gt;ui[<a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>] == 0x00000000UL))
+<a id='L297' name='L297'></a><em class='sharp'>#define</em> <a href='../R/2632.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_POSZERO</a>(u) \
+<a id='L298' name='L298'></a>        (((u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>] == 0x00000000UL) &amp;&amp; \
+<a id='L299' name='L299'></a>         ((u)-&gt;ui[<a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>] == 0x00000000UL))
+<a id='L300' name='L300'></a><em class='sharp'>#define</em> <a href='../R/2628.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_NEGZERO</a>(u) \
+<a id='L301' name='L301'></a>        (((u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>] == 0x80000000UL) &amp;&amp; \
+<a id='L302' name='L302'></a>         ((u)-&gt;ui[<a href='../D/586.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI1</a>] == 0x00000000UL))
+<a id='L303' name='L303'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_64BIT_OPS */</em>
+<a id='L304' name='L304'></a>
+<a id='L305' name='L305'></a><em class='sharp'>#define</em> <a href='../R/2636.html' title='Multiple referred from 8 places.'>DUK__DBLUNION_SET_NAN_NOTFULL</a>(u)  <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L306' name='L306'></a>                (u)-&gt;us[<a href='../D/588.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_US0</a>] = 0x7ff8UL; \
+<a id='L307' name='L307'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L308' name='L308'></a>
+<a id='L309' name='L309'></a><em class='sharp'>#define</em> <a href='../R/2626.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_NAN_NOTFULL</a>(u) \
+<a id='L310' name='L310'></a>        <em class='comment'>/* E == 0x7ff, topmost four bits of F != 0 =&gt; assume NaN */</em> \
+<a id='L311' name='L311'></a>        ((((u)-&gt;us[<a href='../D/588.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_US0</a>] &amp; 0x7ff0UL) == 0x7ff0UL) &amp;&amp; \
+<a id='L312' name='L312'></a>         (((u)-&gt;us[<a href='../D/588.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_US0</a>] &amp; 0x000fUL) != 0x0000UL))
+<a id='L313' name='L313'></a>
+<a id='L314' name='L314'></a><em class='sharp'>#define</em> <a href='../R/2630.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_IS_NORMALIZED_NAN_NOTFULL</a>(u) \
+<a id='L315' name='L315'></a>        <em class='comment'>/* E == 0x7ff, F == 8 =&gt; normalized NaN */</em> \
+<a id='L316' name='L316'></a>        ((u)-&gt;us[<a href='../D/588.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_US0</a>] == 0x7ff8UL)
+<a id='L317' name='L317'></a>
+<a id='L318' name='L318'></a><em class='sharp'>#define</em> <a href='../R/2633.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_NORMALIZE_NAN_CHECK_FULL</a>(u)  <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L319' name='L319'></a>                <strong class='reserved'>if</strong> (<a href='../D/3354.html' title='Multiple defined in 12 places.'>DUK__DBLUNION_IS_NAN_FULL</a>((u))) <em class='brace'>{</em> \
+<a id='L320' name='L320'></a>                        <a href='../D/3364.html' title='Multiple defined in 12 places.'>DUK__DBLUNION_SET_NAN_FULL</a>((u)); \
+<a id='L321' name='L321'></a>                <em class='brace'>}</em> \
+<a id='L322' name='L322'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L323' name='L323'></a>
+<a id='L324' name='L324'></a><em class='sharp'>#define</em> <a href='../R/2634.html' title='Multiple referred from 4 places.'>DUK__DBLUNION_NORMALIZE_NAN_CHECK_NOTFULL</a>(u)  <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L325' name='L325'></a>                <em class='comment'>/* Check must be full. */</em> \
+<a id='L326' name='L326'></a>                <strong class='reserved'>if</strong> (<a href='../D/3354.html' title='Multiple defined in 12 places.'>DUK__DBLUNION_IS_NAN_FULL</a>((u))) <em class='brace'>{</em> \
+<a id='L327' name='L327'></a>                        <a href='../D/3365.html' title='Multiple defined in 4 places.'>DUK__DBLUNION_SET_NAN_NOTFULL</a>((u)); \
+<a id='L328' name='L328'></a>                <em class='brace'>}</em> \
+<a id='L329' name='L329'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L330' name='L330'></a>
+<a id='L331' name='L331'></a><em class='comment'>/* Concrete macros for NaN handling used by the implementation internals.</em>
+<a id='L332' name='L332'></a><em class='comment'> * Chosen so that they match the duk_tval representation: with a packed</em>
+<a id='L333' name='L333'></a><em class='comment'> * duk_tval, ensure NaNs are properly normalized; with a non-packed duk_tval</em>
+<a id='L334' name='L334'></a><em class='comment'> * these are essentially NOPs.</em>
+<a id='L335' name='L335'></a><em class='comment'> */</em>
+<a id='L336' name='L336'></a>
+<a id='L337' name='L337'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3185.html' title='Multiple defined in 57 places.'>DUK_USE_PACKED_TVAL</a>)
+<a id='L338' name='L338'></a><em class='sharp'>#define</em> <a href='../R/460.html' title='Multiple referred from 24 places.'>DUK_DBLUNION_NORMALIZE_NAN_CHECK</a>(u)  <a href='../D/3362.html' title='Multiple defined in 4 places.'>DUK__DBLUNION_NORMALIZE_NAN_CHECK_FULL</a>((u))
+<a id='L339' name='L339'></a><em class='sharp'>#define</em> <a href='../R/455.html' title='Multiple referred from 12 places.'>DUK_DBLUNION_IS_NAN</a>(u)               <a href='../D/3354.html' title='Multiple defined in 12 places.'>DUK__DBLUNION_IS_NAN_FULL</a>((u))
+<a id='L340' name='L340'></a><em class='sharp'>#define</em> <a href='../R/458.html' title='Multiple referred from 4 places.'>DUK_DBLUNION_IS_NORMALIZED_NAN</a>(u)    <a href='../D/3358.html' title='Multiple defined in 12 places.'>DUK__DBLUNION_IS_NORMALIZED_NAN_FULL</a>((u))
+<a id='L341' name='L341'></a><em class='sharp'>#define</em> <a href='../R/464.html' title='Multiple referred from 8 places.'>DUK_DBLUNION_SET_NAN</a>(d)              <a href='../D/3364.html' title='Multiple defined in 12 places.'>DUK__DBLUNION_SET_NAN_FULL</a>((d))
+<a id='L342' name='L342'></a><em class='sharp'>#if</em> 0
+<a id='L343' name='L343'></a><em class='sharp'>#define</em> <a href='../R/460.html' title='Multiple referred from 24 places.'>DUK_DBLUNION_NORMALIZE_NAN_CHECK</a>(u)  <a href='../D/3363.html' title='Multiple defined in 4 places.'>DUK__DBLUNION_NORMALIZE_NAN_CHECK_NOTFULL</a>((u))
+<a id='L344' name='L344'></a><em class='sharp'>#define</em> <a href='../R/455.html' title='Multiple referred from 12 places.'>DUK_DBLUNION_IS_NAN</a>(u)               <a href='../D/3355.html' title='Multiple defined in 4 places.'>DUK__DBLUNION_IS_NAN_NOTFULL</a>((u))
+<a id='L345' name='L345'></a><em class='sharp'>#define</em> <a href='../R/458.html' title='Multiple referred from 4 places.'>DUK_DBLUNION_IS_NORMALIZED_NAN</a>(u)    <a href='../D/3359.html' title='Multiple defined in 4 places.'>DUK__DBLUNION_IS_NORMALIZED_NAN_NOTFULL</a>((u))
+<a id='L346' name='L346'></a><em class='sharp'>#define</em> <a href='../R/464.html' title='Multiple referred from 8 places.'>DUK_DBLUNION_SET_NAN</a>(d)              <a href='../D/3365.html' title='Multiple defined in 4 places.'>DUK__DBLUNION_SET_NAN_NOTFULL</a>((d))
+<a id='L347' name='L347'></a><em class='sharp'>#endif</em>
+<a id='L348' name='L348'></a><em class='sharp'>#define</em> <a href='../R/457.html' title='Multiple referred from 44 places.'>DUK_DBLUNION_IS_NORMALIZED</a>(u) \
+<a id='L349' name='L349'></a>        (!<a href='../D/562.html' title='Multiple defined in 12 places.'>DUK_DBLUNION_IS_NAN</a>((u)) ||  <em class='comment'>/* either not a NaN */</em> \
+<a id='L350' name='L350'></a>         <a href='../D/566.html' title='Multiple defined in 12 places.'>DUK_DBLUNION_IS_NORMALIZED_NAN</a>((u)))  <em class='comment'>/* or is a normalized NaN */</em>
+<a id='L351' name='L351'></a><em class='sharp'>#else</em>  <em class='comment'>/* DUK_USE_PACKED_TVAL */</em>
+<a id='L352' name='L352'></a><em class='sharp'>#define</em> <a href='../R/460.html' title='Multiple referred from 24 places.'>DUK_DBLUNION_NORMALIZE_NAN_CHECK</a>(u)  <em class='comment'>/* nop: no need to normalize */</em>
+<a id='L353' name='L353'></a><em class='sharp'>#define</em> <a href='../R/455.html' title='Multiple referred from 12 places.'>DUK_DBLUNION_IS_NAN</a>(u)               <a href='../D/3354.html' title='Multiple defined in 12 places.'>DUK__DBLUNION_IS_NAN_FULL</a>((u))  <em class='comment'>/* (DUK_ISNAN((u)-&gt;d)) */</em>
+<a id='L354' name='L354'></a><em class='sharp'>#define</em> <a href='../R/458.html' title='Multiple referred from 4 places.'>DUK_DBLUNION_IS_NORMALIZED_NAN</a>(u)    <a href='../D/3354.html' title='Multiple defined in 12 places.'>DUK__DBLUNION_IS_NAN_FULL</a>((u))  <em class='comment'>/* (DUK_ISNAN((u)-&gt;d)) */</em>
+<a id='L355' name='L355'></a><em class='sharp'>#define</em> <a href='../R/457.html' title='Multiple referred from 44 places.'>DUK_DBLUNION_IS_NORMALIZED</a>(u)        1  <em class='comment'>/* all doubles are considered normalized */</em>
+<a id='L356' name='L356'></a><em class='sharp'>#define</em> <a href='../R/464.html' title='Multiple referred from 8 places.'>DUK_DBLUNION_SET_NAN</a>(u)  <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L357' name='L357'></a>                <em class='comment'>/* in non-packed representation we don't care about which NaN is used */</em> \
+<a id='L358' name='L358'></a>                (u)-&gt;d = <a href='../D/678.html' title='Multiple defined in 9 places.'>DUK_DOUBLE_NAN</a>; \
+<a id='L359' name='L359'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L360' name='L360'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_PACKED_TVAL */</em>
+<a id='L361' name='L361'></a>
+<a id='L362' name='L362'></a><em class='sharp'>#define</em> <a href='../R/453.html' title='Multiple referred from 4 places.'>DUK_DBLUNION_IS_ANYINF</a>(u) <a href='../D/3352.html' title='Multiple defined in 12 places.'>DUK__DBLUNION_IS_ANYINF</a>((u))
+<a id='L363' name='L363'></a><em class='sharp'>#define</em> <a href='../R/459.html' title='Multiple referred from 4 places.'>DUK_DBLUNION_IS_POSINF</a>(u) <a href='../D/3360.html' title='Multiple defined in 12 places.'>DUK__DBLUNION_IS_POSINF</a>((u))
+<a id='L364' name='L364'></a><em class='sharp'>#define</em> <a href='../R/456.html' title='Multiple referred from 4 places.'>DUK_DBLUNION_IS_NEGINF</a>(u) <a href='../D/3356.html' title='Multiple defined in 12 places.'>DUK__DBLUNION_IS_NEGINF</a>((u))
+<a id='L365' name='L365'></a>
+<a id='L366' name='L366'></a><em class='sharp'>#define</em> <a href='../R/454.html' title='Multiple referred from 8 places.'>DUK_DBLUNION_IS_ANYZERO</a>(u) <a href='../D/3353.html' title='Multiple defined in 12 places.'>DUK__DBLUNION_IS_ANYZERO</a>((u))
+<a id='L367' name='L367'></a><em class='sharp'>#define</em> DUK_DBLUNION_IS_POSZERO(u) <a href='../D/3361.html' title='Multiple defined in 12 places.'>DUK__DBLUNION_IS_POSZERO</a>((u))
+<a id='L368' name='L368'></a><em class='sharp'>#define</em> DUK_DBLUNION_IS_NEGZERO(u) <a href='../D/3357.html' title='Multiple defined in 12 places.'>DUK__DBLUNION_IS_NEGZERO</a>((u))
+<a id='L369' name='L369'></a>
+<a id='L370' name='L370'></a><em class='comment'>/* XXX: native 64-bit byteswaps when available */</em>
+<a id='L371' name='L371'></a>
+<a id='L372' name='L372'></a><em class='comment'>/* 64-bit byteswap, same operation independent of target endianness. */</em>
+<a id='L373' name='L373'></a><em class='sharp'>#define</em> <a href='../R/442.html' title='Multiple referred from 8 places.'>DUK_DBLUNION_BSWAP64</a>(u) <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L374' name='L374'></a>                <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> duk__bswaptmp1, duk__bswaptmp2; \
+<a id='L375' name='L375'></a>                duk__bswaptmp1 = (u)-&gt;ui[0]; \
+<a id='L376' name='L376'></a>                duk__bswaptmp2 = (u)-&gt;ui[1]; \
+<a id='L377' name='L377'></a>                duk__bswaptmp1 = <a href='../D/299.html' title='Multiple defined in 9 places.'>DUK_BSWAP32</a>(duk__bswaptmp1); \
+<a id='L378' name='L378'></a>                duk__bswaptmp2 = <a href='../D/299.html' title='Multiple defined in 9 places.'>DUK_BSWAP32</a>(duk__bswaptmp2); \
+<a id='L379' name='L379'></a>                (u)-&gt;ui[0] = duk__bswaptmp2; \
+<a id='L380' name='L380'></a>                (u)-&gt;ui[1] = duk__bswaptmp1; \
+<a id='L381' name='L381'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L382' name='L382'></a>
+<a id='L383' name='L383'></a><em class='comment'>/* Byteswap an IEEE double in the duk_double_union from host to network</em>
+<a id='L384' name='L384'></a><em class='comment'> * order.  For a big endian target this is a no-op.</em>
+<a id='L385' name='L385'></a><em class='comment'> */</em>
+<a id='L386' name='L386'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3076.html' title='Multiple defined in 3 places.'>DUK_USE_DOUBLE_LE</a>)
+<a id='L387' name='L387'></a><em class='sharp'>#define</em> <a href='../R/443.html' title='Multiple referred from 8 places.'>DUK_DBLUNION_DOUBLE_HTON</a>(u) <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L388' name='L388'></a>                <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> duk__bswaptmp1, duk__bswaptmp2; \
+<a id='L389' name='L389'></a>                duk__bswaptmp1 = (u)-&gt;ui[0]; \
+<a id='L390' name='L390'></a>                duk__bswaptmp2 = (u)-&gt;ui[1]; \
+<a id='L391' name='L391'></a>                duk__bswaptmp1 = <a href='../D/299.html' title='Multiple defined in 9 places.'>DUK_BSWAP32</a>(duk__bswaptmp1); \
+<a id='L392' name='L392'></a>                duk__bswaptmp2 = <a href='../D/299.html' title='Multiple defined in 9 places.'>DUK_BSWAP32</a>(duk__bswaptmp2); \
+<a id='L393' name='L393'></a>                (u)-&gt;ui[0] = duk__bswaptmp2; \
+<a id='L394' name='L394'></a>                (u)-&gt;ui[1] = duk__bswaptmp1; \
+<a id='L395' name='L395'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L396' name='L396'></a><em class='sharp'>#elif</em> <strong class='reserved'>defined</strong>(<a href='../D/3078.html' title='Multiple defined in 3 places.'>DUK_USE_DOUBLE_ME</a>)
+<a id='L397' name='L397'></a><em class='sharp'>#define</em> <a href='../R/443.html' title='Multiple referred from 8 places.'>DUK_DBLUNION_DOUBLE_HTON</a>(u) <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L398' name='L398'></a>                <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> duk__bswaptmp1, duk__bswaptmp2; \
+<a id='L399' name='L399'></a>                duk__bswaptmp1 = (u)-&gt;ui[0]; \
+<a id='L400' name='L400'></a>                duk__bswaptmp2 = (u)-&gt;ui[1]; \
+<a id='L401' name='L401'></a>                duk__bswaptmp1 = <a href='../D/299.html' title='Multiple defined in 9 places.'>DUK_BSWAP32</a>(duk__bswaptmp1); \
+<a id='L402' name='L402'></a>                duk__bswaptmp2 = <a href='../D/299.html' title='Multiple defined in 9 places.'>DUK_BSWAP32</a>(duk__bswaptmp2); \
+<a id='L403' name='L403'></a>                (u)-&gt;ui[0] = duk__bswaptmp1; \
+<a id='L404' name='L404'></a>                (u)-&gt;ui[1] = duk__bswaptmp2; \
+<a id='L405' name='L405'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L406' name='L406'></a><em class='sharp'>#elif</em> <strong class='reserved'>defined</strong>(<a href='../D/3075.html' title='Multiple defined in 3 places.'>DUK_USE_DOUBLE_BE</a>)
+<a id='L407' name='L407'></a><em class='sharp'>#define</em> <a href='../R/443.html' title='Multiple referred from 8 places.'>DUK_DBLUNION_DOUBLE_HTON</a>(u) <strong class='reserved'>do</strong> <em class='brace'>{</em> <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L408' name='L408'></a><em class='sharp'>#else</em>
+<a id='L409' name='L409'></a><em class='sharp'>#error</em> internal error, <strong class='reserved'>double</strong> endianness insane
+<a id='L410' name='L410'></a><em class='sharp'>#endif</em>
+<a id='L411' name='L411'></a>
+<a id='L412' name='L412'></a><em class='comment'>/* Reverse operation is the same. */</em>
+<a id='L413' name='L413'></a><em class='sharp'>#define</em> <a href='../R/444.html' title='Multiple referred from 8 places.'>DUK_DBLUNION_DOUBLE_NTOH</a>(u) <a href='../D/550.html' title='Multiple defined in 12 places.'>DUK_DBLUNION_DOUBLE_HTON</a>((u))
+<a id='L414' name='L414'></a>
+<a id='L415' name='L415'></a><em class='comment'>/* Some sign bit helpers. */</em>
+<a id='L416' name='L416'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3011.html' title='Multiple defined in 6 places.'>DUK_USE_64BIT_OPS</a>)
+<a id='L417' name='L417'></a><em class='sharp'>#define</em> <a href='../R/451.html' title='Multiple referred from 4 places.'>DUK_DBLUNION_HAS_SIGNBIT</a>(u) (((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] &amp; <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x8000000000000000)) != 0)
+<a id='L418' name='L418'></a><em class='sharp'>#define</em> <a href='../R/449.html' title='Multiple referred from 4 places.'>DUK_DBLUNION_GET_SIGNBIT</a>(u) (((u)-&gt;ull[<a href='../D/587.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_ULL0</a>] &gt;&gt; 63U))
+<a id='L419' name='L419'></a><em class='sharp'>#else</em>
+<a id='L420' name='L420'></a><em class='sharp'>#define</em> <a href='../R/451.html' title='Multiple referred from 4 places.'>DUK_DBLUNION_HAS_SIGNBIT</a>(u) (((u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>] &amp; 0x80000000UL) != 0)
+<a id='L421' name='L421'></a><em class='sharp'>#define</em> <a href='../R/449.html' title='Multiple referred from 4 places.'>DUK_DBLUNION_GET_SIGNBIT</a>(u) (((u)-&gt;ui[<a href='../D/585.html' title='Multiple defined in 12 places.'>DUK_DBL_IDX_UI0</a>] &gt;&gt; 31U))
+<a id='L422' name='L422'></a><em class='sharp'>#endif</em>
+<a id='L423' name='L423'></a>
+<a id='L424' name='L424'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_DBLUNION_H_INCLUDED */</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;][^][v]<a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

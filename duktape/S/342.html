@@ -1,0 +1,168 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>examples/alloc-logging/duk_alloc_logging.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1004.html'>examples</a>/<a href='../files/1006.html'>alloc-logging</a>/duk_alloc_logging.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L39'>[^]</a><a href='#L127'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L39' title='Defined at 39.'>write_log</a></li>
+<li><a href='#L54' title='Defined at 54.'>duk_alloc_logging</a></li>
+<li><a href='#L76' title='Defined at 76.'>duk_realloc_logging</a></li>
+<li><a href='#L127' title='Defined at 127.'>duk_free_logging</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Example memory allocator with machine parseable logging.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> *  Also sizes for reallocs and frees are logged so that the memory</em>
+<a id='L5' name='L5'></a><em class='comment'> *  behavior can be essentially replayed to accurately determine e.g.</em>
+<a id='L6' name='L6'></a><em class='comment'> *  optimal pool sizes for a pooled allocator.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> *  Allocation structure:</em>
+<a id='L9' name='L9'></a><em class='comment'> *</em>
+<a id='L10' name='L10'></a><em class='comment'> *    [ alloc_hdr | user area ]</em>
+<a id='L11' name='L11'></a><em class='comment'> *</em>
+<a id='L12' name='L12'></a><em class='comment'> *     ^           ^</em>
+<a id='L13' name='L13'></a><em class='comment'> *     |           `--- pointer returned to Duktape</em>
+<a id='L14' name='L14'></a><em class='comment'> *     `--- underlying malloc ptr</em>
+<a id='L15' name='L15'></a><em class='comment'> */</em>
+<a id='L16' name='L16'></a>
+<a id='L17' name='L17'></a><em class='sharp'>#include</em> "<a href='../I/204.html'>duktape.h</a>"
+<a id='L18' name='L18'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L19' name='L19'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L20' name='L20'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L21' name='L21'></a><em class='sharp'>#include</em> &lt;stdint.h&gt;
+<a id='L22' name='L22'></a><em class='sharp'>#include</em> "<a href='343.html'>duk_alloc_logging.h</a>"
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><em class='sharp'>#define</em>  <a href='../S/342.html#L43' title='Referred from 43 in examples/alloc-logging/duk_alloc_logging.c.'>ALLOC_LOG_FILE</a>  "/tmp/duk-alloc-log.txt"
+<a id='L25' name='L25'></a>
+<a id='L26' name='L26'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>struct</strong> <em class='brace'>{</em>
+<a id='L27' name='L27'></a>        <em class='comment'>/* The double value in the union is there to ensure alignment is</em>
+<a id='L28' name='L28'></a><em class='comment'>         * good for IEEE doubles too.  In many 32-bit environments 4 bytes</em>
+<a id='L29' name='L29'></a><em class='comment'>         * would be sufficiently aligned and the double value is unnecessary.</em>
+<a id='L30' name='L30'></a><em class='comment'>         */</em>
+<a id='L31' name='L31'></a>        <strong class='reserved'>union</strong> <em class='brace'>{</em>
+<a id='L32' name='L32'></a>                size_t sz;
+<a id='L33' name='L33'></a>                <strong class='reserved'>double</strong> d;
+<a id='L34' name='L34'></a>        <em class='brace'>}</em> u;
+<a id='L35' name='L35'></a><em class='brace'>}</em> <a href='../R/2971.html' title='Multiple referred from 42 places.'>alloc_hdr</a>;
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a><strong class='reserved'>static</strong> FILE *log_file = NULL;
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/5221.html' title='Multiple referred from 11 places.'>write_log</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *fmt, ...) <em class='brace'>{</em>
+<a id='L40' name='L40'></a>        va_list ap;
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a>        <strong class='reserved'>if</strong> (!log_file) <em class='brace'>{</em>
+<a id='L43' name='L43'></a>                log_file = fopen(<a href='../S/342.html#L24' title='Defined at 24 in examples/alloc-logging/duk_alloc_logging.c.'>ALLOC_LOG_FILE</a>, "wb");
+<a id='L44' name='L44'></a>                <strong class='reserved'>if</strong> (!log_file) <em class='brace'>{</em>
+<a id='L45' name='L45'></a>                        <strong class='reserved'>return</strong>;
+<a id='L46' name='L46'></a>                <em class='brace'>}</em>
+<a id='L47' name='L47'></a>        <em class='brace'>}</em>
+<a id='L48' name='L48'></a>
+<a id='L49' name='L49'></a>        va_start(ap, fmt);
+<a id='L50' name='L50'></a>        vfprintf(log_file, fmt, ap);
+<a id='L51' name='L51'></a>        va_end(ap);
+<a id='L52' name='L52'></a><em class='brace'>}</em>
+<a id='L53' name='L53'></a>
+<a id='L54' name='L54'></a><strong class='reserved'>void</strong> *<a href='../R/3801.html' title='Multiple referred from 2 places.'>duk_alloc_logging</a>(<strong class='reserved'>void</strong> *udata, <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> size) <em class='brace'>{</em>
+<a id='L55' name='L55'></a>        <a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *hdr;
+<a id='L56' name='L56'></a>        <strong class='reserved'>void</strong> *ret;
+<a id='L57' name='L57'></a>
+<a id='L58' name='L58'></a>        (<strong class='reserved'>void</strong>) udata;  <em class='comment'>/* Suppress warning. */</em>
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a>        <strong class='reserved'>if</strong> (size == 0) <em class='brace'>{</em>
+<a id='L61' name='L61'></a>                <a href='../S/342.html#L39' title='Defined at 39 in examples/alloc-logging/duk_alloc_logging.c.'>write_log</a>("A NULL %ld\n", (<strong class='reserved'>long</strong>) size);
+<a id='L62' name='L62'></a>                <strong class='reserved'>return</strong> NULL;
+<a id='L63' name='L63'></a>        <em class='brace'>}</em>
+<a id='L64' name='L64'></a>
+<a id='L65' name='L65'></a>        hdr = (<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *) malloc(size + <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>));
+<a id='L66' name='L66'></a>        <strong class='reserved'>if</strong> (!hdr) <em class='brace'>{</em>
+<a id='L67' name='L67'></a>                <a href='../S/342.html#L39' title='Defined at 39 in examples/alloc-logging/duk_alloc_logging.c.'>write_log</a>("A FAIL %ld\n", (<strong class='reserved'>long</strong>) size);
+<a id='L68' name='L68'></a>                <strong class='reserved'>return</strong> NULL;
+<a id='L69' name='L69'></a>        <em class='brace'>}</em>
+<a id='L70' name='L70'></a>        hdr-&gt;u.sz = size;
+<a id='L71' name='L71'></a>        ret = (<strong class='reserved'>void</strong> *) (hdr + 1);
+<a id='L72' name='L72'></a>        <a href='../S/342.html#L39' title='Defined at 39 in examples/alloc-logging/duk_alloc_logging.c.'>write_log</a>("A %p %ld\n", ret, (<strong class='reserved'>long</strong>) size);
+<a id='L73' name='L73'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L74' name='L74'></a><em class='brace'>}</em>
+<a id='L75' name='L75'></a>
+<a id='L76' name='L76'></a><strong class='reserved'>void</strong> *<a href='../R/4864.html' title='Multiple referred from 2 places.'>duk_realloc_logging</a>(<strong class='reserved'>void</strong> *udata, <strong class='reserved'>void</strong> *ptr, <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> size) <em class='brace'>{</em>
+<a id='L77' name='L77'></a>        <a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *hdr;
+<a id='L78' name='L78'></a>        size_t old_size;
+<a id='L79' name='L79'></a>        <strong class='reserved'>void</strong> *t;
+<a id='L80' name='L80'></a>        <strong class='reserved'>void</strong> *ret;
+<a id='L81' name='L81'></a>
+<a id='L82' name='L82'></a>        (<strong class='reserved'>void</strong>) udata;  <em class='comment'>/* Suppress warning. */</em>
+<a id='L83' name='L83'></a>
+<a id='L84' name='L84'></a>        <em class='comment'>/* Handle the ptr-NULL vs. size-zero cases explicitly to minimize</em>
+<a id='L85' name='L85'></a><em class='comment'>         * platform assumptions.  You can get away with much less in specific</em>
+<a id='L86' name='L86'></a><em class='comment'>         * well-behaving environments.</em>
+<a id='L87' name='L87'></a><em class='comment'>         */</em>
+<a id='L88' name='L88'></a>
+<a id='L89' name='L89'></a>        <strong class='reserved'>if</strong> (ptr) <em class='brace'>{</em>
+<a id='L90' name='L90'></a>                hdr = (<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *) (<strong class='reserved'>void</strong> *) ((<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) ptr - <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>));
+<a id='L91' name='L91'></a>                old_size = hdr-&gt;u.sz;
+<a id='L92' name='L92'></a>
+<a id='L93' name='L93'></a>                <strong class='reserved'>if</strong> (size == 0) <em class='brace'>{</em>
+<a id='L94' name='L94'></a>                        <a href='../S/342.html#L39' title='Defined at 39 in examples/alloc-logging/duk_alloc_logging.c.'>write_log</a>("R %p %ld NULL 0\n", ptr, (<strong class='reserved'>long</strong>) old_size);
+<a id='L95' name='L95'></a>                        free((<strong class='reserved'>void</strong> *) hdr);
+<a id='L96' name='L96'></a>                        <strong class='reserved'>return</strong> NULL;
+<a id='L97' name='L97'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L98' name='L98'></a>                        t = realloc((<strong class='reserved'>void</strong> *) hdr, size + <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>));
+<a id='L99' name='L99'></a>                        <strong class='reserved'>if</strong> (!t) <em class='brace'>{</em>
+<a id='L100' name='L100'></a>                                <a href='../S/342.html#L39' title='Defined at 39 in examples/alloc-logging/duk_alloc_logging.c.'>write_log</a>("R %p %ld FAIL %ld\n", ptr, (<strong class='reserved'>long</strong>) old_size, (<strong class='reserved'>long</strong>) size);
+<a id='L101' name='L101'></a>                                <strong class='reserved'>return</strong> NULL;
+<a id='L102' name='L102'></a>                        <em class='brace'>}</em>
+<a id='L103' name='L103'></a>                        hdr = (<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *) t;
+<a id='L104' name='L104'></a>                        hdr-&gt;u.sz = size;
+<a id='L105' name='L105'></a>                        ret = (<strong class='reserved'>void</strong> *) (hdr + 1);
+<a id='L106' name='L106'></a>                        <a href='../S/342.html#L39' title='Defined at 39 in examples/alloc-logging/duk_alloc_logging.c.'>write_log</a>("R %p %ld %p %ld\n", ptr, (<strong class='reserved'>long</strong>) old_size, ret, (<strong class='reserved'>long</strong>) size);
+<a id='L107' name='L107'></a>                        <strong class='reserved'>return</strong> ret;
+<a id='L108' name='L108'></a>                <em class='brace'>}</em>
+<a id='L109' name='L109'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L110' name='L110'></a>                <strong class='reserved'>if</strong> (size == 0) <em class='brace'>{</em>
+<a id='L111' name='L111'></a>                        <a href='../S/342.html#L39' title='Defined at 39 in examples/alloc-logging/duk_alloc_logging.c.'>write_log</a>("R NULL 0 NULL 0\n");
+<a id='L112' name='L112'></a>                        <strong class='reserved'>return</strong> NULL;
+<a id='L113' name='L113'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L114' name='L114'></a>                        hdr = (<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *) malloc(size + <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>));
+<a id='L115' name='L115'></a>                        <strong class='reserved'>if</strong> (!hdr) <em class='brace'>{</em>
+<a id='L116' name='L116'></a>                                <a href='../S/342.html#L39' title='Defined at 39 in examples/alloc-logging/duk_alloc_logging.c.'>write_log</a>("R NULL 0 FAIL %ld\n", (<strong class='reserved'>long</strong>) size);
+<a id='L117' name='L117'></a>                                <strong class='reserved'>return</strong> NULL;
+<a id='L118' name='L118'></a>                        <em class='brace'>}</em>
+<a id='L119' name='L119'></a>                        hdr-&gt;u.sz = size;
+<a id='L120' name='L120'></a>                        ret = (<strong class='reserved'>void</strong> *) (hdr + 1);
+<a id='L121' name='L121'></a>                        <a href='../S/342.html#L39' title='Defined at 39 in examples/alloc-logging/duk_alloc_logging.c.'>write_log</a>("R NULL 0 %p %ld\n", ret, (<strong class='reserved'>long</strong>) size);
+<a id='L122' name='L122'></a>                        <strong class='reserved'>return</strong> ret;
+<a id='L123' name='L123'></a>                <em class='brace'>}</em>
+<a id='L124' name='L124'></a>        <em class='brace'>}</em>
+<a id='L125' name='L125'></a><em class='brace'>}</em>
+<a id='L126' name='L126'></a>
+<a id='L127' name='L127'></a><strong class='reserved'>void</strong> <a href='../R/4269.html' title='Multiple referred from 2 places.'>duk_free_logging</a>(<strong class='reserved'>void</strong> *udata, <strong class='reserved'>void</strong> *ptr) <em class='brace'>{</em>
+<a id='L128' name='L128'></a>        <a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *hdr;
+<a id='L129' name='L129'></a>
+<a id='L130' name='L130'></a>        (<strong class='reserved'>void</strong>) udata;  <em class='comment'>/* Suppress warning. */</em>
+<a id='L131' name='L131'></a>
+<a id='L132' name='L132'></a>        <strong class='reserved'>if</strong> (!ptr) <em class='brace'>{</em>
+<a id='L133' name='L133'></a>                <a href='../S/342.html#L39' title='Defined at 39 in examples/alloc-logging/duk_alloc_logging.c.'>write_log</a>("F NULL 0\n");
+<a id='L134' name='L134'></a>                <strong class='reserved'>return</strong>;
+<a id='L135' name='L135'></a>        <em class='brace'>}</em>
+<a id='L136' name='L136'></a>        hdr = (<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *) (<strong class='reserved'>void</strong> *) ((<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) ptr - <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>));
+<a id='L137' name='L137'></a>        <a href='../S/342.html#L39' title='Defined at 39 in examples/alloc-logging/duk_alloc_logging.c.'>write_log</a>("F %p %ld\n", ptr, (<strong class='reserved'>long</strong>) hdr-&gt;u.sz);
+<a id='L138' name='L138'></a>        free((<strong class='reserved'>void</strong> *) hdr);
+<a id='L139' name='L139'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L39'>[^]</a><a href='#L127'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

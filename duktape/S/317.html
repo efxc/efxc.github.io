@@ -1,0 +1,212 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>examples/alloc-torture/duk_alloc_torture.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1004.html'>examples</a>/<a href='../files/1007.html'>alloc-torture</a>/duk_alloc_torture.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L37'>[^]</a><a href='#L167'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L37' title='Defined at 37.'>check_red_zone</a></li>
+<li><a href='#L74' title='Defined at 74.'>duk_alloc_torture</a></li>
+<li><a href='#L99' title='Defined at 99.'>duk_realloc_torture</a></li>
+<li><a href='#L167' title='Defined at 167.'>duk_free_torture</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Example torture memory allocator with memory wiping and check for</em>
+<a id='L3' name='L3'></a><em class='comment'> *  out-of-bounds writes.</em>
+<a id='L4' name='L4'></a><em class='comment'> *</em>
+<a id='L5' name='L5'></a><em class='comment'> *  Allocation structure:</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> *    [ alloc_hdr | red zone before | user area | red zone after ]</em>
+<a id='L8' name='L8'></a><em class='comment'> *</em>
+<a id='L9' name='L9'></a><em class='comment'> *     ^                             ^</em>
+<a id='L10' name='L10'></a><em class='comment'> *     |                             `--- pointer returned to Duktape</em>
+<a id='L11' name='L11'></a><em class='comment'> *     `--- underlying malloc ptr</em>
+<a id='L12' name='L12'></a><em class='comment'> */</em>
+<a id='L13' name='L13'></a>
+<a id='L14' name='L14'></a><em class='sharp'>#include</em> "<a href='../I/204.html'>duktape.h</a>"
+<a id='L15' name='L15'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L16' name='L16'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L17' name='L17'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L18' name='L18'></a><em class='sharp'>#include</em> &lt;stdint.h&gt;
+<a id='L19' name='L19'></a><em class='sharp'>#include</em> "<a href='318.html'>duk_alloc_torture.h</a>"
+<a id='L20' name='L20'></a>
+<a id='L21' name='L21'></a><em class='sharp'>#define</em>  <a href='../R/2958.html' title='Multiple referred from 23 places.'>RED_ZONE_SIZE</a>  16
+<a id='L22' name='L22'></a><em class='sharp'>#define</em>  <a href='../R/2957.html' title='Multiple referred from 8 places.'>RED_ZONE_BYTE</a>  0x5a
+<a id='L23' name='L23'></a><em class='sharp'>#define</em>  <a href='../R/2944.html' title='Multiple referred from 3 places.'>INIT_BYTE</a>      0xa5
+<a id='L24' name='L24'></a><em class='sharp'>#define</em>  <a href='../R/2963.html' title='Multiple referred from 3 places.'>WIPE_BYTE</a>      0x27
+<a id='L25' name='L25'></a>
+<a id='L26' name='L26'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>struct</strong> <em class='brace'>{</em>
+<a id='L27' name='L27'></a>        <em class='comment'>/* The double value in the union is there to ensure alignment is</em>
+<a id='L28' name='L28'></a><em class='comment'>         * good for IEEE doubles too.  In many 32-bit environments 4 bytes</em>
+<a id='L29' name='L29'></a><em class='comment'>         * would be sufficiently aligned and the double value is unnecessary.</em>
+<a id='L30' name='L30'></a><em class='comment'>         */</em>
+<a id='L31' name='L31'></a>        <strong class='reserved'>union</strong> <em class='brace'>{</em>
+<a id='L32' name='L32'></a>                size_t sz;
+<a id='L33' name='L33'></a>                <strong class='reserved'>double</strong> d;
+<a id='L34' name='L34'></a>        <em class='brace'>}</em> u;
+<a id='L35' name='L35'></a><em class='brace'>}</em> <a href='../R/2971.html' title='Multiple referred from 42 places.'>alloc_hdr</a>;
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/2975.html' title='Multiple referred from 2 places.'>check_red_zone</a>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *hdr) <em class='brace'>{</em>
+<a id='L38' name='L38'></a>        size_t size;
+<a id='L39' name='L39'></a>        <strong class='reserved'>int</strong> i;
+<a id='L40' name='L40'></a>        <strong class='reserved'>int</strong> err;
+<a id='L41' name='L41'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *p;
+<a id='L42' name='L42'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *userptr;
+<a id='L43' name='L43'></a>
+<a id='L44' name='L44'></a>        size = hdr-&gt;u.sz;
+<a id='L45' name='L45'></a>        userptr = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) hdr + <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>) + <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>;
+<a id='L46' name='L46'></a>
+<a id='L47' name='L47'></a>        err = 0;
+<a id='L48' name='L48'></a>        p = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) hdr + <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>);
+<a id='L49' name='L49'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>; i++) <em class='brace'>{</em>
+<a id='L50' name='L50'></a>                <strong class='reserved'>if</strong> (p[i] != <a href='../S/317.html#L22' title='Defined at 22 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_BYTE</a>) <em class='brace'>{</em>
+<a id='L51' name='L51'></a>                        err = 1;
+<a id='L52' name='L52'></a>                <em class='brace'>}</em>
+<a id='L53' name='L53'></a>        <em class='brace'>}</em>
+<a id='L54' name='L54'></a>        <strong class='reserved'>if</strong> (err) <em class='brace'>{</em>
+<a id='L55' name='L55'></a>                fprintf(stderr, "RED ZONE CORRUPTED BEFORE ALLOC: hdr=%p ptr=%p size=%ld\n",
+<a id='L56' name='L56'></a>                        (<strong class='reserved'>void</strong> *) hdr, (<strong class='reserved'>void</strong> *) userptr, (<strong class='reserved'>long</strong>) size);
+<a id='L57' name='L57'></a>                fflush(stderr);
+<a id='L58' name='L58'></a>        <em class='brace'>}</em>
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a>        err = 0;
+<a id='L61' name='L61'></a>        p = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) hdr + <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>) + <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a> + size;
+<a id='L62' name='L62'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>; i++) <em class='brace'>{</em>
+<a id='L63' name='L63'></a>                <strong class='reserved'>if</strong> (p[i] != <a href='../S/317.html#L22' title='Defined at 22 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_BYTE</a>) <em class='brace'>{</em>
+<a id='L64' name='L64'></a>                        err = 1;
+<a id='L65' name='L65'></a>                <em class='brace'>}</em>
+<a id='L66' name='L66'></a>        <em class='brace'>}</em>
+<a id='L67' name='L67'></a>        <strong class='reserved'>if</strong> (err) <em class='brace'>{</em>
+<a id='L68' name='L68'></a>                fprintf(stderr, "RED ZONE CORRUPTED AFTER ALLOC: hdr=%p ptr=%p size=%ld\n",
+<a id='L69' name='L69'></a>                        (<strong class='reserved'>void</strong> *) hdr, (<strong class='reserved'>void</strong> *) userptr, (<strong class='reserved'>long</strong>) size);
+<a id='L70' name='L70'></a>                fflush(stderr);
+<a id='L71' name='L71'></a>        <em class='brace'>}</em>
+<a id='L72' name='L72'></a><em class='brace'>}</em>
+<a id='L73' name='L73'></a>
+<a id='L74' name='L74'></a><strong class='reserved'>void</strong> *<a href='../R/3810.html' title='Multiple referred from 2 places.'>duk_alloc_torture</a>(<strong class='reserved'>void</strong> *udata, <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> size) <em class='brace'>{</em>
+<a id='L75' name='L75'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *p;
+<a id='L76' name='L76'></a>
+<a id='L77' name='L77'></a>        (<strong class='reserved'>void</strong>) udata;  <em class='comment'>/* Suppress warning. */</em>
+<a id='L78' name='L78'></a>
+<a id='L79' name='L79'></a>        <strong class='reserved'>if</strong> (size == 0) <em class='brace'>{</em>
+<a id='L80' name='L80'></a>                <strong class='reserved'>return</strong> NULL;
+<a id='L81' name='L81'></a>        <em class='brace'>}</em>
+<a id='L82' name='L82'></a>
+<a id='L83' name='L83'></a>        p = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) malloc(size + <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>) + 2 * <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>);
+<a id='L84' name='L84'></a>        <strong class='reserved'>if</strong> (!p) <em class='brace'>{</em>
+<a id='L85' name='L85'></a>                <strong class='reserved'>return</strong> NULL;
+<a id='L86' name='L86'></a>        <em class='brace'>}</em>
+<a id='L87' name='L87'></a>
+<a id='L88' name='L88'></a>        ((<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *) (<strong class='reserved'>void</strong> *) p)-&gt;u.sz = size;
+<a id='L89' name='L89'></a>        p += <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>);
+<a id='L90' name='L90'></a>        memset((<strong class='reserved'>void</strong> *) p, <a href='../S/317.html#L22' title='Defined at 22 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_BYTE</a>, <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>);
+<a id='L91' name='L91'></a>        p += <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>;
+<a id='L92' name='L92'></a>        memset((<strong class='reserved'>void</strong> *) p, <a href='../S/317.html#L23' title='Defined at 23 in examples/alloc-torture/duk_alloc_torture.c.'>INIT_BYTE</a>, size);
+<a id='L93' name='L93'></a>        p += size;
+<a id='L94' name='L94'></a>        memset((<strong class='reserved'>void</strong> *) p, <a href='../S/317.html#L22' title='Defined at 22 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_BYTE</a>, <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>);
+<a id='L95' name='L95'></a>        p -= size;
+<a id='L96' name='L96'></a>        <strong class='reserved'>return</strong> (<strong class='reserved'>void</strong> *) p;
+<a id='L97' name='L97'></a><em class='brace'>}</em>
+<a id='L98' name='L98'></a>
+<a id='L99' name='L99'></a><strong class='reserved'>void</strong> *<a href='../R/4867.html' title='Multiple referred from 2 places.'>duk_realloc_torture</a>(<strong class='reserved'>void</strong> *udata, <strong class='reserved'>void</strong> *ptr, <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> size) <em class='brace'>{</em>
+<a id='L100' name='L100'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *p, *old_p;
+<a id='L101' name='L101'></a>        size_t old_size;
+<a id='L102' name='L102'></a>
+<a id='L103' name='L103'></a>        (<strong class='reserved'>void</strong>) udata;  <em class='comment'>/* Suppress warning. */</em>
+<a id='L104' name='L104'></a>
+<a id='L105' name='L105'></a>        <em class='comment'>/* Handle the ptr-NULL vs. size-zero cases explicitly to minimize</em>
+<a id='L106' name='L106'></a><em class='comment'>         * platform assumptions.  You can get away with much less in specific</em>
+<a id='L107' name='L107'></a><em class='comment'>         * well-behaving environments.</em>
+<a id='L108' name='L108'></a><em class='comment'>         */</em>
+<a id='L109' name='L109'></a>
+<a id='L110' name='L110'></a>        <strong class='reserved'>if</strong> (ptr) <em class='brace'>{</em>
+<a id='L111' name='L111'></a>                old_p = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) ptr - <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>) - <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>;
+<a id='L112' name='L112'></a>                old_size = ((<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *) (<strong class='reserved'>void</strong> *) old_p)-&gt;u.sz;
+<a id='L113' name='L113'></a>                <a href='../S/317.html#L37' title='Defined at 37 in examples/alloc-torture/duk_alloc_torture.c.'>check_red_zone</a>((<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *) (<strong class='reserved'>void</strong> *) old_p);
+<a id='L114' name='L114'></a>
+<a id='L115' name='L115'></a>                <strong class='reserved'>if</strong> (size == 0) <em class='brace'>{</em>
+<a id='L116' name='L116'></a>                        memset((<strong class='reserved'>void</strong> *) old_p, <a href='../S/317.html#L24' title='Defined at 24 in examples/alloc-torture/duk_alloc_torture.c.'>WIPE_BYTE</a>, old_size + <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>) + 2 * <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>);
+<a id='L117' name='L117'></a>                        free((<strong class='reserved'>void</strong> *) old_p);
+<a id='L118' name='L118'></a>                        <strong class='reserved'>return</strong> NULL;
+<a id='L119' name='L119'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L120' name='L120'></a>                        <em class='comment'>/* Force address change on every realloc. */</em>
+<a id='L121' name='L121'></a>                        p = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) malloc(size + <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>) + 2 * <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>);
+<a id='L122' name='L122'></a>                        <strong class='reserved'>if</strong> (!p) <em class='brace'>{</em>
+<a id='L123' name='L123'></a>                                <strong class='reserved'>return</strong> NULL;
+<a id='L124' name='L124'></a>                        <em class='brace'>}</em>
+<a id='L125' name='L125'></a>
+<a id='L126' name='L126'></a>                        ((<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *) (<strong class='reserved'>void</strong> *) p)-&gt;u.sz = size;
+<a id='L127' name='L127'></a>                        p += <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>);
+<a id='L128' name='L128'></a>                        memset((<strong class='reserved'>void</strong> *) p, <a href='../S/317.html#L22' title='Defined at 22 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_BYTE</a>, <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>);
+<a id='L129' name='L129'></a>                        p += <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>;
+<a id='L130' name='L130'></a>                        <strong class='reserved'>if</strong> (size &gt; old_size) <em class='brace'>{</em>
+<a id='L131' name='L131'></a>                                memcpy((<strong class='reserved'>void</strong> *) p, (<strong class='reserved'>void</strong> *) (old_p + <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>) + <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>), old_size);
+<a id='L132' name='L132'></a>                                memset((<strong class='reserved'>void</strong> *) (p + old_size), <a href='../S/317.html#L23' title='Defined at 23 in examples/alloc-torture/duk_alloc_torture.c.'>INIT_BYTE</a>, size - old_size);
+<a id='L133' name='L133'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L134' name='L134'></a>                                memcpy((<strong class='reserved'>void</strong> *) p, (<strong class='reserved'>void</strong> *) (old_p + <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>) + <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>), size);
+<a id='L135' name='L135'></a>                        <em class='brace'>}</em>
+<a id='L136' name='L136'></a>                        p += size;
+<a id='L137' name='L137'></a>                        memset((<strong class='reserved'>void</strong> *) p, <a href='../S/317.html#L22' title='Defined at 22 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_BYTE</a>, <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>);
+<a id='L138' name='L138'></a>                        p -= size;
+<a id='L139' name='L139'></a>
+<a id='L140' name='L140'></a>                        memset((<strong class='reserved'>void</strong> *) old_p, <a href='../S/317.html#L24' title='Defined at 24 in examples/alloc-torture/duk_alloc_torture.c.'>WIPE_BYTE</a>, old_size + <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>) + 2 * <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>);
+<a id='L141' name='L141'></a>                        free((<strong class='reserved'>void</strong> *) old_p);
+<a id='L142' name='L142'></a>
+<a id='L143' name='L143'></a>                        <strong class='reserved'>return</strong> (<strong class='reserved'>void</strong> *) p;
+<a id='L144' name='L144'></a>                <em class='brace'>}</em>
+<a id='L145' name='L145'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L146' name='L146'></a>                <strong class='reserved'>if</strong> (size == 0) <em class='brace'>{</em>
+<a id='L147' name='L147'></a>                        <strong class='reserved'>return</strong> NULL;
+<a id='L148' name='L148'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L149' name='L149'></a>                        p = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) malloc(size + <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>) + 2 * <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>);
+<a id='L150' name='L150'></a>                        <strong class='reserved'>if</strong> (!p) <em class='brace'>{</em>
+<a id='L151' name='L151'></a>                                <strong class='reserved'>return</strong> NULL;
+<a id='L152' name='L152'></a>                        <em class='brace'>}</em>
+<a id='L153' name='L153'></a>
+<a id='L154' name='L154'></a>                        ((<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *) (<strong class='reserved'>void</strong> *) p)-&gt;u.sz = size;
+<a id='L155' name='L155'></a>                        p += <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>);
+<a id='L156' name='L156'></a>                        memset((<strong class='reserved'>void</strong> *) p, <a href='../S/317.html#L22' title='Defined at 22 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_BYTE</a>, <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>);
+<a id='L157' name='L157'></a>                        p += <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>;
+<a id='L158' name='L158'></a>                        memset((<strong class='reserved'>void</strong> *) p, <a href='../S/317.html#L23' title='Defined at 23 in examples/alloc-torture/duk_alloc_torture.c.'>INIT_BYTE</a>, size);
+<a id='L159' name='L159'></a>                        p += size;
+<a id='L160' name='L160'></a>                        memset((<strong class='reserved'>void</strong> *) p, <a href='../S/317.html#L22' title='Defined at 22 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_BYTE</a>, <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>);
+<a id='L161' name='L161'></a>                        p -= size;
+<a id='L162' name='L162'></a>                        <strong class='reserved'>return</strong> (<strong class='reserved'>void</strong> *) p;
+<a id='L163' name='L163'></a>                <em class='brace'>}</em>
+<a id='L164' name='L164'></a>        <em class='brace'>}</em>
+<a id='L165' name='L165'></a><em class='brace'>}</em>
+<a id='L166' name='L166'></a>
+<a id='L167' name='L167'></a><strong class='reserved'>void</strong> <a href='../R/4272.html' title='Multiple referred from 2 places.'>duk_free_torture</a>(<strong class='reserved'>void</strong> *udata, <strong class='reserved'>void</strong> *ptr) <em class='brace'>{</em>
+<a id='L168' name='L168'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *p;
+<a id='L169' name='L169'></a>        size_t old_size;
+<a id='L170' name='L170'></a>
+<a id='L171' name='L171'></a>        (<strong class='reserved'>void</strong>) udata;  <em class='comment'>/* Suppress warning. */</em>
+<a id='L172' name='L172'></a>
+<a id='L173' name='L173'></a>        <strong class='reserved'>if</strong> (!ptr) <em class='brace'>{</em>
+<a id='L174' name='L174'></a>                <strong class='reserved'>return</strong>;
+<a id='L175' name='L175'></a>        <em class='brace'>}</em>
+<a id='L176' name='L176'></a>
+<a id='L177' name='L177'></a>        p = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) ptr - <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>) - <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>;
+<a id='L178' name='L178'></a>        old_size = ((<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *) (<strong class='reserved'>void</strong> *) p)-&gt;u.sz;
+<a id='L179' name='L179'></a>
+<a id='L180' name='L180'></a>        <a href='../S/317.html#L37' title='Defined at 37 in examples/alloc-torture/duk_alloc_torture.c.'>check_red_zone</a>((<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a> *) (<strong class='reserved'>void</strong> *) p);
+<a id='L181' name='L181'></a>        memset((<strong class='reserved'>void</strong> *) p, <a href='../S/317.html#L24' title='Defined at 24 in examples/alloc-torture/duk_alloc_torture.c.'>WIPE_BYTE</a>, old_size + <strong class='reserved'>sizeof</strong>(<a href='../D/3728.html' title='Multiple defined in 3 places.'>alloc_hdr</a>) + 2 * <a href='../S/317.html#L21' title='Defined at 21 in examples/alloc-torture/duk_alloc_torture.c.'>RED_ZONE_SIZE</a>);
+<a id='L182' name='L182'></a>        free((<strong class='reserved'>void</strong> *) p);
+<a id='L183' name='L183'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L37'>[^]</a><a href='#L167'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

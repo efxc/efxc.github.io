@@ -1,0 +1,343 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>extras/minimal-printf/duk_minimal_printf.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1020.html'>extras</a>/<a href='../files/1026.html'>minimal-printf</a>/duk_minimal_printf.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L29'>[^]</a><a href='#L293'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L29' title='Defined at 29.'>duk__format_long</a></li>
+<li><a href='#L90' title='Defined at 90.'>duk__parse_pointer</a></li>
+<li><a href='#L131' title='Defined at 131.'>duk_minimal_vsnprintf</a></li>
+<li><a href='#L269' title='Defined at 269.'>duk_minimal_snprintf</a></li>
+<li><a href='#L281' title='Defined at 281.'>duk_minimal_sprintf</a></li>
+<li><a href='#L293' title='Defined at 293.'>duk_minimal_sscanf</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Minimal vsnprintf(), snprintf(), sprintf(), and sscanf() for Duktape.</em>
+<a id='L3' name='L3'></a><em class='comment'> *  The supported conversion formats narrowly match what Duktape needs.</em>
+<a id='L4' name='L4'></a><em class='comment'> */</em>
+<a id='L5' name='L5'></a>
+<a id='L6' name='L6'></a><em class='sharp'>#include</em> &lt;stdarg.h&gt;  <em class='comment'>/* va_list etc */</em>
+<a id='L7' name='L7'></a><em class='sharp'>#include</em> &lt;stddef.h&gt;  <em class='comment'>/* size_t */</em>
+<a id='L8' name='L8'></a><em class='sharp'>#include</em> &lt;stdint.h&gt;  <em class='comment'>/* SIZE_MAX */</em>
+<a id='L9' name='L9'></a>
+<a id='L10' name='L10'></a><em class='comment'>/* Write character with bound checking.  Offset 'off' is updated regardless</em>
+<a id='L11' name='L11'></a><em class='comment'> * of whether an actual write is made.  This is necessary to satisfy snprintf()</em>
+<a id='L12' name='L12'></a><em class='comment'> * return value semantics.</em>
+<a id='L13' name='L13'></a><em class='comment'> */</em>
+<a id='L14' name='L14'></a><em class='sharp'>#define</em> <a href='../R/2936.html' title='Multiple referred from 8 places.'>DUK__WRITE_CHAR</a>(c) <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L15' name='L15'></a>                <strong class='reserved'>if</strong> (off &lt; size) <em class='brace'>{</em> \
+<a id='L16' name='L16'></a>                        str[off] = (<strong class='reserved'>char</strong>) c; \
+<a id='L17' name='L17'></a>                <em class='brace'>}</em> \
+<a id='L18' name='L18'></a>                off++; \
+<a id='L19' name='L19'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L20' name='L20'></a>
+<a id='L21' name='L21'></a><em class='comment'>/* Digits up to radix 16. */</em>
+<a id='L22' name='L22'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> duk__format_digits[16] = <em class='brace'>{</em>
+<a id='L23' name='L23'></a>        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'
+<a id='L24' name='L24'></a><em class='brace'>}</em>;
+<a id='L25' name='L25'></a>
+<a id='L26' name='L26'></a><em class='comment'>/* Format an unsigned long with various options.  An unsigned long is large</em>
+<a id='L27' name='L27'></a><em class='comment'> * enough for formatting all supported types.</em>
+<a id='L28' name='L28'></a><em class='comment'> */</em>
+<a id='L29' name='L29'></a><strong class='reserved'>static</strong> size_t <a href='../R/3354.html' title='Multiple referred from 4 places.'>duk__format_long</a>(<strong class='reserved'>char</strong> *str,
+<a id='L30' name='L30'></a>                               size_t size,
+<a id='L31' name='L31'></a>                               size_t off,
+<a id='L32' name='L32'></a>                               <strong class='reserved'>int</strong> fixed_length,
+<a id='L33' name='L33'></a>                               <strong class='reserved'>char</strong> pad,
+<a id='L34' name='L34'></a>                               <strong class='reserved'>int</strong> radix,
+<a id='L35' name='L35'></a>                               <strong class='reserved'>int</strong> neg_sign,
+<a id='L36' name='L36'></a>                               <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> v) <em class='brace'>{</em>
+<a id='L37' name='L37'></a>        <strong class='reserved'>char</strong> buf[24];  <em class='comment'>/* 2^64 = 18446744073709552000, length 20 */</em>
+<a id='L38' name='L38'></a>        <strong class='reserved'>char</strong> *required;
+<a id='L39' name='L39'></a>        <strong class='reserved'>char</strong> *p;
+<a id='L40' name='L40'></a>        <strong class='reserved'>int</strong> i;
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a>        <em class='comment'>/* Format in reverse order first.  Ensure at least one digit is output</em>
+<a id='L43' name='L43'></a><em class='comment'>         * to handle '0' correctly.  Note that space padding and zero padding</em>
+<a id='L44' name='L44'></a><em class='comment'>         * handle negative sign differently:</em>
+<a id='L45' name='L45'></a><em class='comment'>         *</em>
+<a id='L46' name='L46'></a><em class='comment'>         *     %9d and -321  =&gt; '     -321'</em>
+<a id='L47' name='L47'></a><em class='comment'>         *     %09d and -321 =&gt; '-00000321'</em>
+<a id='L48' name='L48'></a><em class='comment'>         */</em>
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; (<strong class='reserved'>int</strong>) <strong class='reserved'>sizeof</strong>(buf); i++) <em class='brace'>{</em>
+<a id='L51' name='L51'></a>                buf[i] = pad;  <em class='comment'>/* compiles into memset() equivalent, avoid memset() dependency */</em>
+<a id='L52' name='L52'></a>        <em class='brace'>}</em>
+<a id='L53' name='L53'></a>
+<a id='L54' name='L54'></a>        p = buf;
+<a id='L55' name='L55'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L56' name='L56'></a>                *p++ = duk__format_digits[v % radix];
+<a id='L57' name='L57'></a>                v /= radix;
+<a id='L58' name='L58'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (v != 0);
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a>        required = buf + fixed_length;
+<a id='L61' name='L61'></a>        <strong class='reserved'>if</strong> (p &lt; required &amp;&amp; pad == (<strong class='reserved'>char</strong>) '0') <em class='brace'>{</em>
+<a id='L62' name='L62'></a>                <em class='comment'>/* Zero padding and we didn't reach maximum length: place</em>
+<a id='L63' name='L63'></a><em class='comment'>                 * negative sign at the last position.  We can't get here</em>
+<a id='L64' name='L64'></a><em class='comment'>                 * with fixed_length == 0 so that required[-1] is safe.</em>
+<a id='L65' name='L65'></a><em class='comment'>                 *</em>
+<a id='L66' name='L66'></a><em class='comment'>                 * Technically we should only do this for 'neg_sign == 1',</em>
+<a id='L67' name='L67'></a><em class='comment'>                 * but it's OK to advance the pointer even when that's not</em>
+<a id='L68' name='L68'></a><em class='comment'>                 * the case.</em>
+<a id='L69' name='L69'></a><em class='comment'>                 */</em>
+<a id='L70' name='L70'></a>                p = required - 1;
+<a id='L71' name='L71'></a>        <em class='brace'>}</em>
+<a id='L72' name='L72'></a>        <strong class='reserved'>if</strong> (neg_sign) <em class='brace'>{</em>
+<a id='L73' name='L73'></a>                *p++ = (<strong class='reserved'>char</strong>) '-';
+<a id='L74' name='L74'></a>        <em class='brace'>}</em>
+<a id='L75' name='L75'></a>        <strong class='reserved'>if</strong> (p &lt; required) <em class='brace'>{</em>
+<a id='L76' name='L76'></a>                p = required;
+<a id='L77' name='L77'></a>        <em class='brace'>}</em>
+<a id='L78' name='L78'></a>
+<a id='L79' name='L79'></a>        <em class='comment'>/* Now [buf,p[ contains the result in reverse; copy into place. */</em>
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a>        <strong class='reserved'>while</strong> (p &gt; buf) <em class='brace'>{</em>
+<a id='L82' name='L82'></a>                p--;
+<a id='L83' name='L83'></a>                <a href='../D/3692.html' title='Multiple defined in 2 places.'>DUK__WRITE_CHAR</a>(*p);
+<a id='L84' name='L84'></a>        <em class='brace'>}</em>
+<a id='L85' name='L85'></a>
+<a id='L86' name='L86'></a>        <strong class='reserved'>return</strong> off;
+<a id='L87' name='L87'></a><em class='brace'>}</em>
+<a id='L88' name='L88'></a>
+<a id='L89' name='L89'></a><em class='comment'>/* Parse a pointer.  Must parse whatever is produced by '%p' in sprintf(). */</em>
+<a id='L90' name='L90'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/928.html#L306' title='Referred from 306 in extras/minimal-printf/duk_minimal_printf.c.'>duk__parse_pointer</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str, <strong class='reserved'>void</strong> **out) <em class='brace'>{</em>
+<a id='L91' name='L91'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *p;
+<a id='L92' name='L92'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> ch;
+<a id='L93' name='L93'></a>        <strong class='reserved'>int</strong> count;
+<a id='L94' name='L94'></a>        <strong class='reserved'>int</strong> limit;
+<a id='L95' name='L95'></a>        <strong class='reserved'>long</strong> val;  <em class='comment'>/* assume void * fits into long */</em>
+<a id='L96' name='L96'></a>
+<a id='L97' name='L97'></a>        <em class='comment'>/* We only need to parse what our minimal printf() produces, so that</em>
+<a id='L98' name='L98'></a><em class='comment'>         * we can check for a '0x' prefix, and assume all hex digits are</em>
+<a id='L99' name='L99'></a><em class='comment'>         * lowercase.</em>
+<a id='L100' name='L100'></a><em class='comment'>         */</em>
+<a id='L101' name='L101'></a>
+<a id='L102' name='L102'></a>        p = (<strong class='reserved'>const</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) str;
+<a id='L103' name='L103'></a>        <strong class='reserved'>if</strong> (p[0] != (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) '0' || p[1] != (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) 'x') <em class='brace'>{</em>
+<a id='L104' name='L104'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L105' name='L105'></a>        <em class='brace'>}</em>
+<a id='L106' name='L106'></a>        p += 2;
+<a id='L107' name='L107'></a>
+<a id='L108' name='L108'></a>        <strong class='reserved'>for</strong> (val = 0, count = 0, limit = <strong class='reserved'>sizeof</strong>(<strong class='reserved'>void</strong> *) * 2; count &lt; limit; count++) <em class='brace'>{</em>
+<a id='L109' name='L109'></a>                ch = *p++;
+<a id='L110' name='L110'></a>
+<a id='L111' name='L111'></a>                val &lt;&lt;= 4;
+<a id='L112' name='L112'></a>                <strong class='reserved'>if</strong> (ch &gt;= (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) '0' &amp;&amp; ch &lt;= (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) '9') <em class='brace'>{</em>
+<a id='L113' name='L113'></a>                        val += ch - (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) '0';
+<a id='L114' name='L114'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (ch &gt;= (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) 'a' &amp;&amp; ch &lt;= (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) 'f') <em class='brace'>{</em>
+<a id='L115' name='L115'></a>                        val += ch - (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong>) 'a' + 0x0a;
+<a id='L116' name='L116'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L117' name='L117'></a>                        <strong class='reserved'>return</strong> 0;
+<a id='L118' name='L118'></a>                <em class='brace'>}</em>
+<a id='L119' name='L119'></a>        <em class='brace'>}</em>
+<a id='L120' name='L120'></a>
+<a id='L121' name='L121'></a>        <em class='comment'>/* The input may end at a NUL or garbage may follow.  As long as we</em>
+<a id='L122' name='L122'></a><em class='comment'>         * parse the '%p' correctly, garbage is allowed to follow, and the</em>
+<a id='L123' name='L123'></a><em class='comment'>         * JX pointer parsing also relies on that.</em>
+<a id='L124' name='L124'></a><em class='comment'>         */</em>
+<a id='L125' name='L125'></a>
+<a id='L126' name='L126'></a>        *out = (<strong class='reserved'>void</strong> *) val;
+<a id='L127' name='L127'></a>        <strong class='reserved'>return</strong> 1;
+<a id='L128' name='L128'></a><em class='brace'>}</em>
+<a id='L129' name='L129'></a>
+<a id='L130' name='L130'></a><em class='comment'>/* Minimal vsnprintf() entry point. */</em>
+<a id='L131' name='L131'></a><strong class='reserved'>int</strong> <a href='../R/4675.html' title='Multiple referred from 3 places.'>duk_minimal_vsnprintf</a>(<strong class='reserved'>char</strong> *str, size_t size, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *format, va_list ap) <em class='brace'>{</em>
+<a id='L132' name='L132'></a>        size_t off = 0;
+<a id='L133' name='L133'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *p;
+<a id='L134' name='L134'></a><em class='sharp'>#if</em> 0
+<a id='L135' name='L135'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *p_tmp;
+<a id='L136' name='L136'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *p_fmt_start;
+<a id='L137' name='L137'></a><em class='sharp'>#endif</em>
+<a id='L138' name='L138'></a>        <strong class='reserved'>char</strong> c;
+<a id='L139' name='L139'></a>        <strong class='reserved'>char</strong> pad;
+<a id='L140' name='L140'></a>        <strong class='reserved'>int</strong> fixed_length;
+<a id='L141' name='L141'></a>        <strong class='reserved'>int</strong> is_long;
+<a id='L142' name='L142'></a>
+<a id='L143' name='L143'></a>        <em class='comment'>/* Assume str != NULL unless size == 0.</em>
+<a id='L144' name='L144'></a><em class='comment'>         * Assume format != NULL.</em>
+<a id='L145' name='L145'></a><em class='comment'>         */</em>
+<a id='L146' name='L146'></a>
+<a id='L147' name='L147'></a>        p = format;
+<a id='L148' name='L148'></a>        <strong class='reserved'>for</strong> (;;) <em class='brace'>{</em>
+<a id='L149' name='L149'></a>                c = *p++;
+<a id='L150' name='L150'></a>                <strong class='reserved'>if</strong> (c == (<strong class='reserved'>char</strong>) 0) <em class='brace'>{</em>
+<a id='L151' name='L151'></a>                        <strong class='reserved'>break</strong>;
+<a id='L152' name='L152'></a>                <em class='brace'>}</em>
+<a id='L153' name='L153'></a>                <strong class='reserved'>if</strong> (c != (<strong class='reserved'>char</strong>) '%') <em class='brace'>{</em>
+<a id='L154' name='L154'></a>                        <a href='../D/3692.html' title='Multiple defined in 2 places.'>DUK__WRITE_CHAR</a>(c);
+<a id='L155' name='L155'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L156' name='L156'></a>                <em class='brace'>}</em>
+<a id='L157' name='L157'></a>
+<a id='L158' name='L158'></a>                <em class='comment'>/* Start format sequence.  Scan flags and format specifier. */</em>
+<a id='L159' name='L159'></a>
+<a id='L160' name='L160'></a><em class='sharp'>#if</em> 0
+<a id='L161' name='L161'></a>                p_fmt_start = p - 1;
+<a id='L162' name='L162'></a><em class='sharp'>#endif</em>
+<a id='L163' name='L163'></a>                is_long = 0;
+<a id='L164' name='L164'></a>                pad = ' ';
+<a id='L165' name='L165'></a>                fixed_length = 0;
+<a id='L166' name='L166'></a>                <strong class='reserved'>for</strong> (;;) <em class='brace'>{</em>
+<a id='L167' name='L167'></a>                        c = *p++;
+<a id='L168' name='L168'></a>                        <strong class='reserved'>if</strong> (c == (<strong class='reserved'>char</strong>) 'l') <em class='brace'>{</em>
+<a id='L169' name='L169'></a>                                is_long = 1;
+<a id='L170' name='L170'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (c == (<strong class='reserved'>char</strong>) '0') <em class='brace'>{</em>
+<a id='L171' name='L171'></a>                                <em class='comment'>/* Only support pad character '0'. */</em>
+<a id='L172' name='L172'></a>                                pad = '0';
+<a id='L173' name='L173'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (c &gt;= (<strong class='reserved'>char</strong>) '1' &amp;&amp; c &lt;= (<strong class='reserved'>char</strong>) '9') <em class='brace'>{</em>
+<a id='L174' name='L174'></a>                                <em class='comment'>/* Only support fixed lengths 1-9. */</em>
+<a id='L175' name='L175'></a>                                fixed_length = (<strong class='reserved'>int</strong>) (c - (<strong class='reserved'>char</strong>) '0');
+<a id='L176' name='L176'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (c == (<strong class='reserved'>char</strong>) 'd') <em class='brace'>{</em>
+<a id='L177' name='L177'></a>                                <strong class='reserved'>long</strong> v;
+<a id='L178' name='L178'></a>                                <strong class='reserved'>int</strong> neg_sign = 0;
+<a id='L179' name='L179'></a>                                <strong class='reserved'>if</strong> (is_long) <em class='brace'>{</em>
+<a id='L180' name='L180'></a>                                        v = va_arg(ap, <strong class='reserved'>long</strong>);
+<a id='L181' name='L181'></a>                                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L182' name='L182'></a>                                        v = (<strong class='reserved'>long</strong>) va_arg(ap, <strong class='reserved'>int</strong>);
+<a id='L183' name='L183'></a>                                <em class='brace'>}</em>
+<a id='L184' name='L184'></a>                                <strong class='reserved'>if</strong> (v &lt; 0) <em class='brace'>{</em>
+<a id='L185' name='L185'></a>                                        neg_sign = 1;
+<a id='L186' name='L186'></a>                                        v = -v;
+<a id='L187' name='L187'></a>                                <em class='brace'>}</em>
+<a id='L188' name='L188'></a>                                off = <a href='../S/928.html#L29' title='Defined at 29 in extras/minimal-printf/duk_minimal_printf.c.'>duk__format_long</a>(str, size, off, fixed_length, pad, 10, neg_sign, (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>) v);
+<a id='L189' name='L189'></a>                                <strong class='reserved'>break</strong>;
+<a id='L190' name='L190'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (c == (<strong class='reserved'>char</strong>) 'u') <em class='brace'>{</em>
+<a id='L191' name='L191'></a>                                <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> v;
+<a id='L192' name='L192'></a>                                <strong class='reserved'>if</strong> (is_long) <em class='brace'>{</em>
+<a id='L193' name='L193'></a>                                        v = va_arg(ap, <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>);
+<a id='L194' name='L194'></a>                                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L195' name='L195'></a>                                        v = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>) va_arg(ap, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong>);
+<a id='L196' name='L196'></a>                                <em class='brace'>}</em>
+<a id='L197' name='L197'></a>                                off = <a href='../S/928.html#L29' title='Defined at 29 in extras/minimal-printf/duk_minimal_printf.c.'>duk__format_long</a>(str, size, off, fixed_length, pad, 10, 0, v);
+<a id='L198' name='L198'></a>                                <strong class='reserved'>break</strong>;
+<a id='L199' name='L199'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (c == (<strong class='reserved'>char</strong>) 'x') <em class='brace'>{</em>
+<a id='L200' name='L200'></a>                                <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> v;
+<a id='L201' name='L201'></a>                                <strong class='reserved'>if</strong> (is_long) <em class='brace'>{</em>
+<a id='L202' name='L202'></a>                                        v = va_arg(ap, <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>);
+<a id='L203' name='L203'></a>                                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L204' name='L204'></a>                                        v = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>) va_arg(ap, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong>);
+<a id='L205' name='L205'></a>                                <em class='brace'>}</em>
+<a id='L206' name='L206'></a>                                off = <a href='../S/928.html#L29' title='Defined at 29 in extras/minimal-printf/duk_minimal_printf.c.'>duk__format_long</a>(str, size, off, fixed_length, pad, 16, 0, v);
+<a id='L207' name='L207'></a>                                <strong class='reserved'>break</strong>;
+<a id='L208' name='L208'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (c == (<strong class='reserved'>char</strong>) 'c') <em class='brace'>{</em>
+<a id='L209' name='L209'></a>                                <strong class='reserved'>char</strong> v;
+<a id='L210' name='L210'></a>                                v = (<strong class='reserved'>char</strong>) va_arg(ap, <strong class='reserved'>int</strong>);  <em class='comment'>/* intentionally not 'char' */</em>
+<a id='L211' name='L211'></a>                                <a href='../D/3692.html' title='Multiple defined in 2 places.'>DUK__WRITE_CHAR</a>(v);
+<a id='L212' name='L212'></a>                                <strong class='reserved'>break</strong>;
+<a id='L213' name='L213'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (c == (<strong class='reserved'>char</strong>) 's') <em class='brace'>{</em>
+<a id='L214' name='L214'></a>                                <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *v;
+<a id='L215' name='L215'></a>                                <strong class='reserved'>char</strong> c_tmp;
+<a id='L216' name='L216'></a>                                v = va_arg(ap, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *);
+<a id='L217' name='L217'></a>                                <strong class='reserved'>if</strong> (v) <em class='brace'>{</em>
+<a id='L218' name='L218'></a>                                        <strong class='reserved'>for</strong> (;;) <em class='brace'>{</em>
+<a id='L219' name='L219'></a>                                                c_tmp = *v++;
+<a id='L220' name='L220'></a>                                                <strong class='reserved'>if</strong> (c_tmp) <em class='brace'>{</em>
+<a id='L221' name='L221'></a>                                                        <a href='../D/3692.html' title='Multiple defined in 2 places.'>DUK__WRITE_CHAR</a>(c_tmp);
+<a id='L222' name='L222'></a>                                                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L223' name='L223'></a>                                                        <strong class='reserved'>break</strong>;
+<a id='L224' name='L224'></a>                                                <em class='brace'>}</em>
+<a id='L225' name='L225'></a>                                        <em class='brace'>}</em>
+<a id='L226' name='L226'></a>                                <em class='brace'>}</em>
+<a id='L227' name='L227'></a>                                <strong class='reserved'>break</strong>;
+<a id='L228' name='L228'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (c == (<strong class='reserved'>char</strong>) 'p') <em class='brace'>{</em>
+<a id='L229' name='L229'></a>                                <em class='comment'>/* Assume a void * can be represented by 'long'.  This is not</em>
+<a id='L230' name='L230'></a><em class='comment'>                                 * always the case.  NULL pointer is printed out as 0x0000...</em>
+<a id='L231' name='L231'></a><em class='comment'>                                 */</em>
+<a id='L232' name='L232'></a>                                <strong class='reserved'>void</strong> *v;
+<a id='L233' name='L233'></a>                                v = va_arg(ap, <strong class='reserved'>void</strong> *);
+<a id='L234' name='L234'></a>                                <a href='../D/3692.html' title='Multiple defined in 2 places.'>DUK__WRITE_CHAR</a>('0');
+<a id='L235' name='L235'></a>                                <a href='../D/3692.html' title='Multiple defined in 2 places.'>DUK__WRITE_CHAR</a>('x');
+<a id='L236' name='L236'></a>                                off = <a href='../S/928.html#L29' title='Defined at 29 in extras/minimal-printf/duk_minimal_printf.c.'>duk__format_long</a>(str, size, off, <strong class='reserved'>sizeof</strong>(<strong class='reserved'>void</strong> *) * 2, '0', 16, 0, (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>) v);
+<a id='L237' name='L237'></a>                                <strong class='reserved'>break</strong>;
+<a id='L238' name='L238'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L239' name='L239'></a>                                <em class='comment'>/* Unrecognized, bail out early.  We could also emit the format</em>
+<a id='L240' name='L240'></a><em class='comment'>                                 * specifier verbatim, but it'd be a waste of footprint because</em>
+<a id='L241' name='L241'></a><em class='comment'>                                 * this case should never happen in practice.</em>
+<a id='L242' name='L242'></a><em class='comment'>                                 */</em>
+<a id='L243' name='L243'></a><em class='sharp'>#if</em> 0
+<a id='L244' name='L244'></a>                                <a href='../D/3692.html' title='Multiple defined in 2 places.'>DUK__WRITE_CHAR</a>('!');
+<a id='L245' name='L245'></a><em class='sharp'>#endif</em>
+<a id='L246' name='L246'></a><em class='sharp'>#if</em> 0
+<a id='L247' name='L247'></a>                                <strong class='reserved'>for</strong> (p_tmp = p_fmt_start; p_tmp != p; p_tmp++) <em class='brace'>{</em>
+<a id='L248' name='L248'></a>                                        <a href='../D/3692.html' title='Multiple defined in 2 places.'>DUK__WRITE_CHAR</a>(*p_tmp);
+<a id='L249' name='L249'></a>                                <em class='brace'>}</em>
+<a id='L250' name='L250'></a>                                <strong class='reserved'>break</strong>;
+<a id='L251' name='L251'></a><em class='sharp'>#endif</em>
+<a id='L252' name='L252'></a>                                <strong class='reserved'>goto</strong> finish;
+<a id='L253' name='L253'></a>                        <em class='brace'>}</em>
+<a id='L254' name='L254'></a>                <em class='brace'>}</em>
+<a id='L255' name='L255'></a>        <em class='brace'>}</em>
+<a id='L256' name='L256'></a>
+<a id='L257' name='L257'></a> finish:
+<a id='L258' name='L258'></a>        <strong class='reserved'>if</strong> (off &lt; size) <em class='brace'>{</em>
+<a id='L259' name='L259'></a>                str[off] = (<strong class='reserved'>char</strong>) 0;  <em class='comment'>/* No increment for 'off', not counted in return value. */</em>
+<a id='L260' name='L260'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (size &gt; 0) <em class='brace'>{</em>
+<a id='L261' name='L261'></a>                <em class='comment'>/* Forced termination. */</em>
+<a id='L262' name='L262'></a>                str[size - 1] = 0;
+<a id='L263' name='L263'></a>        <em class='brace'>}</em>
+<a id='L264' name='L264'></a>
+<a id='L265' name='L265'></a>        <strong class='reserved'>return</strong> (<strong class='reserved'>int</strong>) off;
+<a id='L266' name='L266'></a><em class='brace'>}</em>
+<a id='L267' name='L267'></a>
+<a id='L268' name='L268'></a><em class='comment'>/* Minimal snprintf() entry point. */</em>
+<a id='L269' name='L269'></a><strong class='reserved'>int</strong> <a href='../R/4672.html' title='Multiple referred from 18 places.'>duk_minimal_snprintf</a>(<strong class='reserved'>char</strong> *str, size_t size, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *format, ...) <em class='brace'>{</em>
+<a id='L270' name='L270'></a>        va_list ap;
+<a id='L271' name='L271'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L272' name='L272'></a>
+<a id='L273' name='L273'></a>        va_start(ap, format);
+<a id='L274' name='L274'></a>        ret = <a href='../S/928.html#L131' title='Defined at 131 in extras/minimal-printf/duk_minimal_printf.c.'>duk_minimal_vsnprintf</a>(str, size, format, ap);
+<a id='L275' name='L275'></a>        va_end(ap);
+<a id='L276' name='L276'></a>
+<a id='L277' name='L277'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L278' name='L278'></a><em class='brace'>}</em>
+<a id='L279' name='L279'></a>
+<a id='L280' name='L280'></a><em class='comment'>/* Minimal sprintf() entry point. */</em>
+<a id='L281' name='L281'></a><strong class='reserved'>int</strong> <a href='../R/4673.html' title='Multiple referred from 6 places.'>duk_minimal_sprintf</a>(<strong class='reserved'>char</strong> *str, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *format, ...) <em class='brace'>{</em>
+<a id='L282' name='L282'></a>        va_list ap;
+<a id='L283' name='L283'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L284' name='L284'></a>
+<a id='L285' name='L285'></a>        va_start(ap, format);
+<a id='L286' name='L286'></a>        ret = <a href='../S/928.html#L131' title='Defined at 131 in extras/minimal-printf/duk_minimal_printf.c.'>duk_minimal_vsnprintf</a>(str, <a href='../D/3715.html' title='Multiple defined in 3 places.'>SIZE_MAX</a>, format, ap);
+<a id='L287' name='L287'></a>        va_end(ap);
+<a id='L288' name='L288'></a>
+<a id='L289' name='L289'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L290' name='L290'></a><em class='brace'>}</em>
+<a id='L291' name='L291'></a>
+<a id='L292' name='L292'></a><em class='comment'>/* Minimal sscanf() entry point. */</em>
+<a id='L293' name='L293'></a><strong class='reserved'>int</strong> <a href='../R/4674.html' title='Multiple referred from 4 places.'>duk_minimal_sscanf</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *format, ...) <em class='brace'>{</em>
+<a id='L294' name='L294'></a>        va_list ap;
+<a id='L295' name='L295'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L296' name='L296'></a>        <strong class='reserved'>void</strong> **out;
+<a id='L297' name='L297'></a>
+<a id='L298' name='L298'></a>        <em class='comment'>/* Only the exact "%p" format is supported. */</em>
+<a id='L299' name='L299'></a>        <strong class='reserved'>if</strong> (format[0] != (<strong class='reserved'>char</strong>) '%' ||
+<a id='L300' name='L300'></a>            format[1] != (<strong class='reserved'>char</strong>) 'p' ||
+<a id='L301' name='L301'></a>            format[2] != (<strong class='reserved'>char</strong>) 0) <em class='brace'>{</em>
+<a id='L302' name='L302'></a>        <em class='brace'>}</em>
+<a id='L303' name='L303'></a>
+<a id='L304' name='L304'></a>        va_start(ap, format);
+<a id='L305' name='L305'></a>        out = va_arg(ap, <strong class='reserved'>void</strong> **);
+<a id='L306' name='L306'></a>        ret = <a href='../S/928.html#L90' title='Defined at 90 in extras/minimal-printf/duk_minimal_printf.c.'>duk__parse_pointer</a>(str, out);
+<a id='L307' name='L307'></a>        va_end(ap);
+<a id='L308' name='L308'></a>
+<a id='L309' name='L309'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L310' name='L310'></a><em class='brace'>}</em>
+<a id='L311' name='L311'></a>
+<a id='L312' name='L312'></a><em class='sharp'>#undef</em> <a href='../R/2936.html' title='Multiple referred from 8 places.'>DUK__WRITE_CHAR</a>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L29'>[^]</a><a href='#L293'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

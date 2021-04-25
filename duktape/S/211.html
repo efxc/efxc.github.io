@@ -1,0 +1,620 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src-separate/duk_error_augment.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1032.html'>src-separate</a>/duk_error_augment.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L62'>[^]</a><a href='#L583'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L62' title='Defined at 62.'>duk__err_augment_user</a></li>
+<li><a href='#L143' title='Defined at 143.'>duk__add_traceback</a></li>
+<li><a href='#L301' title='Defined at 301.'>duk__add_fileline</a></li>
+<li><a href='#L416' title='Defined at 416.'>duk__add_compiler_error_line</a></li>
+<li><a href='#L475' title='Defined at 475.'>duk__err_augment_builtin_create</a></li>
+<li><a href='#L528' title='Defined at 528.'>duk_err_augment_error_create</a></li>
+<li><a href='#L583' title='Defined at 583.'>duk_err_augment_error_throw</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Augmenting errors at their creation site and their throw site.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> *  When errors are created, traceback data is added by built-in code</em>
+<a id='L5' name='L5'></a><em class='comment'> *  and a user error handler (if defined) can process or replace the</em>
+<a id='L6' name='L6'></a><em class='comment'> *  error.  Similarly, when errors are thrown, a user error handler</em>
+<a id='L7' name='L7'></a><em class='comment'> *  (if defined) can process or replace the error.</em>
+<a id='L8' name='L8'></a><em class='comment'> *</em>
+<a id='L9' name='L9'></a><em class='comment'> *  Augmentation and other processing at error creation time is nice</em>
+<a id='L10' name='L10'></a><em class='comment'> *  because an error is only created once, but it may be thrown and</em>
+<a id='L11' name='L11'></a><em class='comment'> *  rethrown multiple times.  User error handler registered for processing</em>
+<a id='L12' name='L12'></a><em class='comment'> *  an error at its throw site must be careful to handle rethrowing in</em>
+<a id='L13' name='L13'></a><em class='comment'> *  a useful manner.</em>
+<a id='L14' name='L14'></a><em class='comment'> *</em>
+<a id='L15' name='L15'></a><em class='comment'> *  Error augmentation may throw an internal error (e.g. alloc error).</em>
+<a id='L16' name='L16'></a><em class='comment'> *</em>
+<a id='L17' name='L17'></a><em class='comment'> *  ECMAScript allows throwing any values, so all values cannot be</em>
+<a id='L18' name='L18'></a><em class='comment'> *  augmented.  Currently, the built-in augmentation at error creation</em>
+<a id='L19' name='L19'></a><em class='comment'> *  only augments error values which are Error instances (= have the</em>
+<a id='L20' name='L20'></a><em class='comment'> *  built-in Error.prototype in their prototype chain) and are also</em>
+<a id='L21' name='L21'></a><em class='comment'> *  extensible.  User error handlers have no limitations in this respect.</em>
+<a id='L22' name='L22'></a><em class='comment'> */</em>
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> "<a href='../I/161.html'>duk_internal.h</a>"
+<a id='L25' name='L25'></a>
+<a id='L26' name='L26'></a><em class='comment'>/*</em>
+<a id='L27' name='L27'></a><em class='comment'> *  Helper for calling a user error handler.</em>
+<a id='L28' name='L28'></a><em class='comment'> *</em>
+<a id='L29' name='L29'></a><em class='comment'> *  'thr' must be the currently active thread; the error handler is called</em>
+<a id='L30' name='L30'></a><em class='comment'> *  in its context.  The valstack of 'thr' must have the error value on</em>
+<a id='L31' name='L31'></a><em class='comment'> *  top, and will be replaced by another error value based on the return</em>
+<a id='L32' name='L32'></a><em class='comment'> *  value of the error handler.</em>
+<a id='L33' name='L33'></a><em class='comment'> *</em>
+<a id='L34' name='L34'></a><em class='comment'> *  The helper calls duk_handle_call() recursively in protected mode.</em>
+<a id='L35' name='L35'></a><em class='comment'> *  Before that call happens, no longjmps should happen; as a consequence,</em>
+<a id='L36' name='L36'></a><em class='comment'> *  we must assume that the valstack contains enough temporary space for</em>
+<a id='L37' name='L37'></a><em class='comment'> *  arguments and such.</em>
+<a id='L38' name='L38'></a><em class='comment'> *</em>
+<a id='L39' name='L39'></a><em class='comment'> *  While the error handler runs, any errors thrown will not trigger a</em>
+<a id='L40' name='L40'></a><em class='comment'> *  recursive error handler call (this is implemented using a heap level</em>
+<a id='L41' name='L41'></a><em class='comment'> *  flag which will "follow" through any coroutines resumed inside the</em>
+<a id='L42' name='L42'></a><em class='comment'> *  error handler).  If the error handler is not callable or throws an</em>
+<a id='L43' name='L43'></a><em class='comment'> *  error, the resulting error replaces the original error (for Duktape</em>
+<a id='L44' name='L44'></a><em class='comment'> *  internal errors, duk_error_throw.c further substitutes this error with</em>
+<a id='L45' name='L45'></a><em class='comment'> *  a DoubleError which is not ideal).  This would be easy to change and</em>
+<a id='L46' name='L46'></a><em class='comment'> *  even signal to the caller.</em>
+<a id='L47' name='L47'></a><em class='comment'> *</em>
+<a id='L48' name='L48'></a><em class='comment'> *  The user error handler is stored in 'Duktape.errCreate' or</em>
+<a id='L49' name='L49'></a><em class='comment'> *  'Duktape.errThrow' depending on whether we're augmenting the error at</em>
+<a id='L50' name='L50'></a><em class='comment'> *  creation or throw time.  There are several alternatives to this approach,</em>
+<a id='L51' name='L51'></a><em class='comment'> *  see doc/error-objects.rst for discussion.</em>
+<a id='L52' name='L52'></a><em class='comment'> *</em>
+<a id='L53' name='L53'></a><em class='comment'> *  Note: since further longjmp()s may occur while calling the error handler</em>
+<a id='L54' name='L54'></a><em class='comment'> *  (for many reasons, e.g. a labeled 'break' inside the handler), the</em>
+<a id='L55' name='L55'></a><em class='comment'> *  caller can make no assumptions on the thr-&gt;heap-&gt;lj state after the</em>
+<a id='L56' name='L56'></a><em class='comment'> *  call (this affects especially duk_error_throw.c).  This is not an issue</em>
+<a id='L57' name='L57'></a><em class='comment'> *  as long as the caller writes to the lj state only after the error handler</em>
+<a id='L58' name='L58'></a><em class='comment'> *  finishes.</em>
+<a id='L59' name='L59'></a><em class='comment'> */</em>
+<a id='L60' name='L60'></a>
+<a id='L61' name='L61'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3082.html' title='Multiple defined in 3 places.'>DUK_USE_ERRTHROW</a>) || <strong class='reserved'>defined</strong>(<a href='../D/3081.html' title='Multiple defined in 3 places.'>DUK_USE_ERRCREATE</a>)
+<a id='L62' name='L62'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3318.html' title='Multiple referred from 8 places.'>duk__err_augment_user</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> stridx_cb) <em class='brace'>{</em>
+<a id='L63' name='L63'></a>        <a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *tv_hnd;
+<a id='L64' name='L64'></a>        <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> rc;
+<a id='L65' name='L65'></a>
+<a id='L66' name='L66'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr != NULL);
+<a id='L67' name='L67'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr-&gt;heap != NULL);
+<a id='L68' name='L68'></a>        <a href='../D/186.html' title='Multiple defined in 4 places.'>DUK_ASSERT_STRIDX_VALID</a>(stridx_cb);
+<a id='L69' name='L69'></a>
+<a id='L70' name='L70'></a>        <strong class='reserved'>if</strong> (thr-&gt;heap-&gt;augmenting_error) <em class='brace'>{</em>
+<a id='L71' name='L71'></a>                <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("recursive call to error augmentation, ignore"));
+<a id='L72' name='L72'></a>                <strong class='reserved'>return</strong>;
+<a id='L73' name='L73'></a>        <em class='brace'>}</em>
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a>        <em class='comment'>/*</em>
+<a id='L76' name='L76'></a><em class='comment'>         *  Check whether or not we have an error handler.</em>
+<a id='L77' name='L77'></a><em class='comment'>         *</em>
+<a id='L78' name='L78'></a><em class='comment'>         *  We must be careful of not triggering an error when looking up the</em>
+<a id='L79' name='L79'></a><em class='comment'>         *  property.  For instance, if the property is a getter, we don't want</em>
+<a id='L80' name='L80'></a><em class='comment'>         *  to call it, only plain values are allowed.  The value, if it exists,</em>
+<a id='L81' name='L81'></a><em class='comment'>         *  is not checked.  If the value is not a function, a TypeError happens</em>
+<a id='L82' name='L82'></a><em class='comment'>         *  when it is called and that error replaces the original one.</em>
+<a id='L83' name='L83'></a><em class='comment'>         */</em>
+<a id='L84' name='L84'></a>
+<a id='L85' name='L85'></a>        <a href='../D/190.html' title='Multiple defined in 8 places.'>DUK_ASSERT_VALSTACK_SPACE</a>(thr, 4);  <em class='comment'>/* 3 entries actually needed below */</em>
+<a id='L86' name='L86'></a>
+<a id='L87' name='L87'></a>        <em class='comment'>/* [ ... errval ] */</em>
+<a id='L88' name='L88'></a>
+<a id='L89' name='L89'></a>        <strong class='reserved'>if</strong> (thr-&gt;builtins[<a href='../D/253.html' title='Multiple defined in 3 places.'>DUK_BIDX_DUKTAPE</a>] == NULL) <em class='brace'>{</em>
+<a id='L90' name='L90'></a>                <em class='comment'>/* When creating built-ins, some of the built-ins may not be set</em>
+<a id='L91' name='L91'></a><em class='comment'>                 * and we want to tolerate that when throwing errors.</em>
+<a id='L92' name='L92'></a><em class='comment'>                 */</em>
+<a id='L93' name='L93'></a>                <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("error occurred when DUK_BIDX_DUKTAPE is NULL, ignoring"));
+<a id='L94' name='L94'></a>                <strong class='reserved'>return</strong>;
+<a id='L95' name='L95'></a>        <em class='brace'>}</em>
+<a id='L96' name='L96'></a>        tv_hnd = <a href='../D/5250.html' title='Multiple defined in 4 places.'>duk_hobject_find_entry_tval_ptr_stridx</a>(thr-&gt;heap,
+<a id='L97' name='L97'></a>                                                        thr-&gt;builtins[<a href='../D/253.html' title='Multiple defined in 3 places.'>DUK_BIDX_DUKTAPE</a>],
+<a id='L98' name='L98'></a>                                                        stridx_cb);
+<a id='L99' name='L99'></a>        <strong class='reserved'>if</strong> (tv_hnd == NULL) <em class='brace'>{</em>
+<a id='L100' name='L100'></a>                <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("error handler does not exist or is not a plain value: %!T",
+<a id='L101' name='L101'></a>                                   (<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *) tv_hnd));
+<a id='L102' name='L102'></a>                <strong class='reserved'>return</strong>;
+<a id='L103' name='L103'></a>        <em class='brace'>}</em>
+<a id='L104' name='L104'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("error handler dump (callability not checked): %!T",
+<a id='L105' name='L105'></a>                             (<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *) tv_hnd));
+<a id='L106' name='L106'></a>        <a href='../D/5624.html' title='Multiple defined in 4 places.'>duk_push_tval</a>(thr, tv_hnd);
+<a id='L107' name='L107'></a>
+<a id='L108' name='L108'></a>        <em class='comment'>/* [ ... errval errhandler ] */</em>
+<a id='L109' name='L109'></a>
+<a id='L110' name='L110'></a>        <a href='../D/5320.html' title='Multiple defined in 4 places.'>duk_insert</a>(thr, -2);  <em class='comment'>/* -&gt; [ ... errhandler errval ] */</em>
+<a id='L111' name='L111'></a>        <a href='../D/5630.html' title='Multiple defined in 4 places.'>duk_push_undefined</a>(thr);
+<a id='L112' name='L112'></a>        <a href='../D/5320.html' title='Multiple defined in 4 places.'>duk_insert</a>(thr, -2);  <em class='comment'>/* -&gt; [ ... errhandler undefined(= this) errval ] */</em>
+<a id='L113' name='L113'></a>
+<a id='L114' name='L114'></a>        <em class='comment'>/* [ ... errhandler undefined errval ] */</em>
+<a id='L115' name='L115'></a>
+<a id='L116' name='L116'></a>        <em class='comment'>/*</em>
+<a id='L117' name='L117'></a><em class='comment'>         *  heap-&gt;augmenting_error prevents recursive re-entry and also causes</em>
+<a id='L118' name='L118'></a><em class='comment'>         *  call handling to use a larger (but not unbounded) call stack limit</em>
+<a id='L119' name='L119'></a><em class='comment'>         *  for the duration of error augmentation.</em>
+<a id='L120' name='L120'></a><em class='comment'>         *</em>
+<a id='L121' name='L121'></a><em class='comment'>         *  We ignore errors now: a success return and an error value both</em>
+<a id='L122' name='L122'></a><em class='comment'>         *  replace the original error value.  (This would be easy to change.)</em>
+<a id='L123' name='L123'></a><em class='comment'>         */</em>
+<a id='L124' name='L124'></a>
+<a id='L125' name='L125'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr-&gt;heap-&gt;augmenting_error == 0);
+<a id='L126' name='L126'></a>        thr-&gt;heap-&gt;augmenting_error = 1;
+<a id='L127' name='L127'></a>
+<a id='L128' name='L128'></a>        rc = <a href='../D/5497.html' title='Multiple defined in 4 places.'>duk_pcall_method</a>(thr, 1);
+<a id='L129' name='L129'></a>        <a href='../D/3010.html' title='Multiple defined in 9 places.'>DUK_UNREF</a>(rc);  <em class='comment'>/* no need to check now: both success and error are OK */</em>
+<a id='L130' name='L130'></a>
+<a id='L131' name='L131'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr-&gt;heap-&gt;augmenting_error == 1);
+<a id='L132' name='L132'></a>        thr-&gt;heap-&gt;augmenting_error = 0;
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a>        <em class='comment'>/* [ ... errval ] */</em>
+<a id='L135' name='L135'></a><em class='brace'>}</em>
+<a id='L136' name='L136'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_ERRTHROW || DUK_USE_ERRCREATE */</em>
+<a id='L137' name='L137'></a>
+<a id='L138' name='L138'></a><em class='comment'>/*</em>
+<a id='L139' name='L139'></a><em class='comment'> *  Add ._Tracedata to an error on the stack top.</em>
+<a id='L140' name='L140'></a><em class='comment'> */</em>
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3240.html' title='Multiple defined in 3 places.'>DUK_USE_TRACEBACKS</a>)
+<a id='L143' name='L143'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/2997.html' title='Multiple referred from 4 places.'>duk__add_traceback</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr_callstack, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *c_filename, <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> c_line, <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> flags) <em class='brace'>{</em>
+<a id='L144' name='L144'></a>        <a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *act;
+<a id='L145' name='L145'></a>        <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> depth;
+<a id='L146' name='L146'></a>        <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> arr_size;
+<a id='L147' name='L147'></a>        <a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *tv;
+<a id='L148' name='L148'></a>        <a href='../D/5286.html' title='Multiple defined in 8 places.'>duk_hstring</a> *s;
+<a id='L149' name='L149'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> u32;
+<a id='L150' name='L150'></a>        <a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a> d;
+<a id='L151' name='L151'></a>
+<a id='L152' name='L152'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr != NULL);
+<a id='L153' name='L153'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr_callstack != NULL);
+<a id='L154' name='L154'></a>
+<a id='L155' name='L155'></a>        <em class='comment'>/* [ ... error ] */</em>
+<a id='L156' name='L156'></a>
+<a id='L157' name='L157'></a>        <em class='comment'>/*</em>
+<a id='L158' name='L158'></a><em class='comment'>         *  The traceback format is pretty arcane in an attempt to keep it compact</em>
+<a id='L159' name='L159'></a><em class='comment'>         *  and cheap to create.  It may change arbitrarily from version to version.</em>
+<a id='L160' name='L160'></a><em class='comment'>         *  It should be decoded/accessed through version specific accessors only.</em>
+<a id='L161' name='L161'></a><em class='comment'>         *</em>
+<a id='L162' name='L162'></a><em class='comment'>         *  See doc/error-objects.rst.</em>
+<a id='L163' name='L163'></a><em class='comment'>         */</em>
+<a id='L164' name='L164'></a>
+<a id='L165' name='L165'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("adding traceback to object: %!T",
+<a id='L166' name='L166'></a>                             (<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *) <a href='../D/5126.html' title='Multiple defined in 4 places.'>duk_get_tval</a>(thr, -1)));
+<a id='L167' name='L167'></a>
+<a id='L168' name='L168'></a>        <em class='comment'>/* Preallocate array to correct size, so that we can just write out</em>
+<a id='L169' name='L169'></a><em class='comment'>         * the _Tracedata values into the array part.</em>
+<a id='L170' name='L170'></a><em class='comment'>         */</em>
+<a id='L171' name='L171'></a>        act = thr-&gt;callstack_curr;
+<a id='L172' name='L172'></a>        depth = <a href='../D/3241.html' title='Multiple defined in 3 places.'>DUK_USE_TRACEBACK_DEPTH</a>;
+<a id='L173' name='L173'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr_callstack-&gt;callstack_top &lt;= <a href='../D/1826.html' title='Multiple defined in 6 places.'>DUK_INT_MAX</a>);  <em class='comment'>/* callstack limits */</em>
+<a id='L174' name='L174'></a>        <strong class='reserved'>if</strong> (depth &gt; (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) thr_callstack-&gt;callstack_top) <em class='brace'>{</em>
+<a id='L175' name='L175'></a>                depth = (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) thr_callstack-&gt;callstack_top;
+<a id='L176' name='L176'></a>        <em class='brace'>}</em>
+<a id='L177' name='L177'></a>        <strong class='reserved'>if</strong> (depth &gt; 0) <em class='brace'>{</em>
+<a id='L178' name='L178'></a>                <strong class='reserved'>if</strong> (flags &amp; <a href='../D/195.html' title='Multiple defined in 4 places.'>DUK_AUGMENT_FLAG_SKIP_ONE</a>) <em class='brace'>{</em>
+<a id='L179' name='L179'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(act != NULL);
+<a id='L180' name='L180'></a>                        act = act-&gt;parent;
+<a id='L181' name='L181'></a>                        depth--;
+<a id='L182' name='L182'></a>                <em class='brace'>}</em>
+<a id='L183' name='L183'></a>        <em class='brace'>}</em>
+<a id='L184' name='L184'></a>        arr_size = depth * 2;
+<a id='L185' name='L185'></a>        <strong class='reserved'>if</strong> (thr-&gt;compile_ctx != NULL &amp;&amp; thr-&gt;compile_ctx-&gt;h_filename != NULL) <em class='brace'>{</em>
+<a id='L186' name='L186'></a>                arr_size += 2;
+<a id='L187' name='L187'></a>        <em class='brace'>}</em>
+<a id='L188' name='L188'></a>        <strong class='reserved'>if</strong> (c_filename) <em class='brace'>{</em>
+<a id='L189' name='L189'></a>                <em class='comment'>/* We need the C filename to be interned before getting the</em>
+<a id='L190' name='L190'></a><em class='comment'>                 * array part pointer to avoid any GC interference while the</em>
+<a id='L191' name='L191'></a><em class='comment'>                 * array part is populated.</em>
+<a id='L192' name='L192'></a><em class='comment'>                 */</em>
+<a id='L193' name='L193'></a>                <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(thr, c_filename);
+<a id='L194' name='L194'></a>                arr_size += 2;
+<a id='L195' name='L195'></a>        <em class='brace'>}</em>
+<a id='L196' name='L196'></a>
+<a id='L197' name='L197'></a>        <em class='comment'>/* XXX: Uninitialized would be OK.  Maybe add internal primitive to</em>
+<a id='L198' name='L198'></a><em class='comment'>         * push bare duk_harray with size?</em>
+<a id='L199' name='L199'></a><em class='comment'>         */</em>
+<a id='L200' name='L200'></a>        <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("preallocated _Tracedata to %ld items", (<strong class='reserved'>long</strong>) arr_size));
+<a id='L201' name='L201'></a>        tv = <a href='../D/5572.html' title='Multiple defined in 4 places.'>duk_push_harray_with_size_outptr</a>(thr, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) arr_size);
+<a id='L202' name='L202'></a>        <a href='../D/4834.html' title='Multiple defined in 4 places.'>duk_clear_prototype</a>(thr, -1);
+<a id='L203' name='L203'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/5345.html' title='Multiple defined in 4 places.'>duk_is_bare_object</a>(thr, -1));
+<a id='L204' name='L204'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(arr_size == 0 || tv != NULL);
+<a id='L205' name='L205'></a>
+<a id='L206' name='L206'></a>        <em class='comment'>/* Compiler SyntaxErrors (and other errors) come first, and are</em>
+<a id='L207' name='L207'></a><em class='comment'>         * blamed by default (not flagged "noblame").</em>
+<a id='L208' name='L208'></a><em class='comment'>         */</em>
+<a id='L209' name='L209'></a>        <strong class='reserved'>if</strong> (thr-&gt;compile_ctx != NULL &amp;&amp; thr-&gt;compile_ctx-&gt;h_filename != NULL) <em class='brace'>{</em>
+<a id='L210' name='L210'></a>                s = thr-&gt;compile_ctx-&gt;h_filename;
+<a id='L211' name='L211'></a>                <a href='../D/2902.html' title='Multiple defined in 8 places.'>DUK_TVAL_SET_STRING</a>(tv, s);
+<a id='L212' name='L212'></a>                <a href='../D/1568.html' title='Multiple defined in 12 places.'>DUK_HSTRING_INCREF</a>(thr, s);
+<a id='L213' name='L213'></a>                tv++;
+<a id='L214' name='L214'></a>
+<a id='L215' name='L215'></a>                u32 = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) thr-&gt;compile_ctx-&gt;curr_token.start_line;  <em class='comment'>/* (flags&lt;&lt;32) + (line), flags = 0 */</em>
+<a id='L216' name='L216'></a>                <a href='../D/2912.html' title='Multiple defined in 16 places.'>DUK_TVAL_SET_U32</a>(tv, u32);
+<a id='L217' name='L217'></a>                tv++;
+<a id='L218' name='L218'></a>        <em class='brace'>}</em>
+<a id='L219' name='L219'></a>
+<a id='L220' name='L220'></a>        <em class='comment'>/* Filename/line from C macros (__FILE__, __LINE__) are added as an</em>
+<a id='L221' name='L221'></a><em class='comment'>         * entry with a special format: (string, number).  The number contains</em>
+<a id='L222' name='L222'></a><em class='comment'>         * the line and flags.</em>
+<a id='L223' name='L223'></a><em class='comment'>         */</em>
+<a id='L224' name='L224'></a>
+<a id='L225' name='L225'></a>        <em class='comment'>/* [ ... error c_filename? arr ] */</em>
+<a id='L226' name='L226'></a>
+<a id='L227' name='L227'></a>        <strong class='reserved'>if</strong> (c_filename) <em class='brace'>{</em>
+<a id='L228' name='L228'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/2855.html' title='Multiple defined in 8 places.'>DUK_TVAL_IS_STRING</a>(thr-&gt;valstack_top - 2));
+<a id='L229' name='L229'></a>                s = <a href='../D/2837.html' title='Multiple defined in 8 places.'>DUK_TVAL_GET_STRING</a>(thr-&gt;valstack_top - 2);  <em class='comment'>/* interned c_filename */</em>
+<a id='L230' name='L230'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(s != NULL);
+<a id='L231' name='L231'></a>                <a href='../D/2902.html' title='Multiple defined in 8 places.'>DUK_TVAL_SET_STRING</a>(tv, s);
+<a id='L232' name='L232'></a>                <a href='../D/1568.html' title='Multiple defined in 12 places.'>DUK_HSTRING_INCREF</a>(thr, s);
+<a id='L233' name='L233'></a>                tv++;
+<a id='L234' name='L234'></a>
+<a id='L235' name='L235'></a>                d = ((flags &amp; <a href='../D/194.html' title='Multiple defined in 4 places.'>DUK_AUGMENT_FLAG_NOBLAME_FILELINE</a>) ? ((<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a>) <a href='../D/2702.html' title='Multiple defined in 4 places.'>DUK_TB_FLAG_NOBLAME_FILELINE</a>) * <a href='../D/674.html' title='Multiple defined in 4 places.'>DUK_DOUBLE_2TO32</a> : 0.0) +
+<a id='L236' name='L236'></a>                    (<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a>) c_line;
+<a id='L237' name='L237'></a>                <a href='../D/2868.html' title='Multiple defined in 16 places.'>DUK_TVAL_SET_DOUBLE</a>(tv, d);
+<a id='L238' name='L238'></a>                tv++;
+<a id='L239' name='L239'></a>        <em class='brace'>}</em>
+<a id='L240' name='L240'></a>
+<a id='L241' name='L241'></a>        <em class='comment'>/* Traceback depth doesn't take into account the filename/line</em>
+<a id='L242' name='L242'></a><em class='comment'>         * special handling above (intentional).</em>
+<a id='L243' name='L243'></a><em class='comment'>         */</em>
+<a id='L244' name='L244'></a>        <strong class='reserved'>for</strong> (; depth-- &gt; 0; act = act-&gt;parent) <em class='brace'>{</em>
+<a id='L245' name='L245'></a>                <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> pc;
+<a id='L246' name='L246'></a>                <a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *tv_src;
+<a id='L247' name='L247'></a>
+<a id='L248' name='L248'></a>                <em class='comment'>/* [... arr] */</em>
+<a id='L249' name='L249'></a>
+<a id='L250' name='L250'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(act != NULL);  <em class='comment'>/* depth check above, assumes book-keeping is correct */</em>
+<a id='L251' name='L251'></a>                <a href='../D/178.html' title='Multiple defined in 4 places.'>DUK_ASSERT_DISABLE</a>(act-&gt;pc &gt;= 0);  <em class='comment'>/* unsigned */</em>
+<a id='L252' name='L252'></a>
+<a id='L253' name='L253'></a>                <em class='comment'>/* Add function object. */</em>
+<a id='L254' name='L254'></a>                tv_src = &amp;act-&gt;tv_func;  <em class='comment'>/* object (function) or lightfunc */</em>
+<a id='L255' name='L255'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/2853.html' title='Multiple defined in 8 places.'>DUK_TVAL_IS_OBJECT</a>(tv_src) || <a href='../D/2850.html' title='Multiple defined in 8 places.'>DUK_TVAL_IS_LIGHTFUNC</a>(tv_src));
+<a id='L256' name='L256'></a>                <a href='../D/2905.html' title='Multiple defined in 8 places.'>DUK_TVAL_SET_TVAL</a>(tv, tv_src);
+<a id='L257' name='L257'></a>                <a href='../D/2840.html' title='Multiple defined in 12 places.'>DUK_TVAL_INCREF</a>(thr, tv);
+<a id='L258' name='L258'></a>                tv++;
+<a id='L259' name='L259'></a>
+<a id='L260' name='L260'></a>                <em class='comment'>/* Add a number containing: pc, activation flags.</em>
+<a id='L261' name='L261'></a><em class='comment'>                 *</em>
+<a id='L262' name='L262'></a><em class='comment'>                 * PC points to next instruction, find offending PC.  Note that</em>
+<a id='L263' name='L263'></a><em class='comment'>                 * PC == 0 for native code.</em>
+<a id='L264' name='L264'></a><em class='comment'>                 */</em>
+<a id='L265' name='L265'></a>                pc = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) <a href='../D/5311.html' title='Multiple defined in 4 places.'>duk_hthread_get_act_prev_pc</a>(thr_callstack, act);
+<a id='L266' name='L266'></a>                <a href='../D/178.html' title='Multiple defined in 4 places.'>DUK_ASSERT_DISABLE</a>(pc &gt;= 0);  <em class='comment'>/* unsigned */</em>
+<a id='L267' name='L267'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>((<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a>) pc &lt; <a href='../D/674.html' title='Multiple defined in 4 places.'>DUK_DOUBLE_2TO32</a>);  <em class='comment'>/* assume PC is at most 32 bits and non-negative */</em>
+<a id='L268' name='L268'></a>                d = ((<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a>) act-&gt;flags) * <a href='../D/674.html' title='Multiple defined in 4 places.'>DUK_DOUBLE_2TO32</a> + (<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a>) pc;
+<a id='L269' name='L269'></a>                <a href='../D/2868.html' title='Multiple defined in 16 places.'>DUK_TVAL_SET_DOUBLE</a>(tv, d);
+<a id='L270' name='L270'></a>                tv++;
+<a id='L271' name='L271'></a>        <em class='brace'>}</em>
+<a id='L272' name='L272'></a>
+<a id='L273' name='L273'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3018.html' title='Multiple defined in 3 places.'>DUK_USE_ASSERTIONS</a>)
+<a id='L274' name='L274'></a>        <em class='brace'>{</em>
+<a id='L275' name='L275'></a>                <a href='../D/5139.html' title='Multiple defined in 8 places.'>duk_harray</a> *a;
+<a id='L276' name='L276'></a>                a = (<a href='../D/5139.html' title='Multiple defined in 8 places.'>duk_harray</a> *) <a href='../D/5439.html' title='Multiple defined in 4 places.'>duk_known_hobject</a>(thr, -1);
+<a id='L277' name='L277'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(a != NULL);
+<a id='L278' name='L278'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>((<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) (tv - <a href='../D/1270.html' title='Multiple defined in 12 places.'>DUK_HOBJECT_A_GET_BASE</a>(thr-&gt;heap, (<a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a> *) a)) == a-&gt;length);
+<a id='L279' name='L279'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(a-&gt;length == (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) arr_size);
+<a id='L280' name='L280'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/5345.html' title='Multiple defined in 4 places.'>duk_is_bare_object</a>(thr, -1));
+<a id='L281' name='L281'></a>        <em class='brace'>}</em>
+<a id='L282' name='L282'></a><em class='sharp'>#endif</em>
+<a id='L283' name='L283'></a>
+<a id='L284' name='L284'></a>        <em class='comment'>/* [ ... error c_filename? arr ] */</em>
+<a id='L285' name='L285'></a>
+<a id='L286' name='L286'></a>        <strong class='reserved'>if</strong> (c_filename) <em class='brace'>{</em>
+<a id='L287' name='L287'></a>                <a href='../D/5693.html' title='Multiple defined in 4 places.'>duk_remove_m2</a>(thr);
+<a id='L288' name='L288'></a>        <em class='brace'>}</em>
+<a id='L289' name='L289'></a>
+<a id='L290' name='L290'></a>        <em class='comment'>/* [ ... error arr ] */</em>
+<a id='L291' name='L291'></a>
+<a id='L292' name='L292'></a>        <a href='../D/5934.html' title='Multiple defined in 4 places.'>duk_xdef_prop_stridx_short_wec</a>(thr, -2, <a href='../D/2452.html' title='Multiple defined in 3 places.'>DUK_STRIDX_INT_TRACEDATA</a>);  <em class='comment'>/* -&gt; [ ... error ] */</em>
+<a id='L293' name='L293'></a><em class='brace'>}</em>
+<a id='L294' name='L294'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_TRACEBACKS */</em>
+<a id='L295' name='L295'></a>
+<a id='L296' name='L296'></a><em class='comment'>/*</em>
+<a id='L297' name='L297'></a><em class='comment'> *  Add .fileName and .lineNumber to an error on the stack top.</em>
+<a id='L298' name='L298'></a><em class='comment'> */</em>
+<a id='L299' name='L299'></a>
+<a id='L300' name='L300'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3020.html' title='Multiple defined in 3 places.'>DUK_USE_AUGMENT_ERROR_CREATE</a>) &amp;&amp; !<strong class='reserved'>defined</strong>(<a href='../D/3240.html' title='Multiple defined in 3 places.'>DUK_USE_TRACEBACKS</a>)
+<a id='L301' name='L301'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/2995.html' title='Multiple referred from 4 places.'>duk__add_fileline</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr_callstack, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *c_filename, <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> c_line, <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> flags) <em class='brace'>{</em>
+<a id='L302' name='L302'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3018.html' title='Multiple defined in 3 places.'>DUK_USE_ASSERTIONS</a>)
+<a id='L303' name='L303'></a>        <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> entry_top;
+<a id='L304' name='L304'></a><em class='sharp'>#endif</em>
+<a id='L305' name='L305'></a>
+<a id='L306' name='L306'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3018.html' title='Multiple defined in 3 places.'>DUK_USE_ASSERTIONS</a>)
+<a id='L307' name='L307'></a>        entry_top = <a href='../D/5122.html' title='Multiple defined in 4 places.'>duk_get_top</a>(thr);
+<a id='L308' name='L308'></a><em class='sharp'>#endif</em>
+<a id='L309' name='L309'></a>
+<a id='L310' name='L310'></a>        <em class='comment'>/*</em>
+<a id='L311' name='L311'></a><em class='comment'>         *  If tracebacks are disabled, 'fileName' and 'lineNumber' are added</em>
+<a id='L312' name='L312'></a><em class='comment'>         *  as plain own properties.  Since Error.prototype has accessors of</em>
+<a id='L313' name='L313'></a><em class='comment'>         *  the same name, we need to define own properties directly (cannot</em>
+<a id='L314' name='L314'></a><em class='comment'>         *  just use e.g. duk_put_prop_stridx).  Existing properties are not</em>
+<a id='L315' name='L315'></a><em class='comment'>         *  overwritten in case they already exist.</em>
+<a id='L316' name='L316'></a><em class='comment'>         */</em>
+<a id='L317' name='L317'></a>
+<a id='L318' name='L318'></a>        <strong class='reserved'>if</strong> (thr-&gt;compile_ctx != NULL &amp;&amp; thr-&gt;compile_ctx-&gt;h_filename != NULL) <em class='brace'>{</em>
+<a id='L319' name='L319'></a>                <em class='comment'>/* Compiler SyntaxError (or other error) gets the primary blame.</em>
+<a id='L320' name='L320'></a><em class='comment'>                 * Currently no flag to prevent blaming.</em>
+<a id='L321' name='L321'></a><em class='comment'>                 */</em>
+<a id='L322' name='L322'></a>                <a href='../D/5628.html' title='Multiple defined in 4 places.'>duk_push_uint</a>(thr, (<a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a>) thr-&gt;compile_ctx-&gt;curr_token.start_line);
+<a id='L323' name='L323'></a>                <a href='../D/5582.html' title='Multiple defined in 4 places.'>duk_push_hstring</a>(thr, thr-&gt;compile_ctx-&gt;h_filename);
+<a id='L324' name='L324'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (c_filename &amp;&amp; (flags &amp; <a href='../D/194.html' title='Multiple defined in 4 places.'>DUK_AUGMENT_FLAG_NOBLAME_FILELINE</a>) == 0) <em class='brace'>{</em>
+<a id='L325' name='L325'></a>                <em class='comment'>/* C call site gets blamed next, unless flagged not to do so.</em>
+<a id='L326' name='L326'></a><em class='comment'>                 * XXX: file/line is disabled in minimal builds, so disable this</em>
+<a id='L327' name='L327'></a><em class='comment'>                 * too when appropriate.</em>
+<a id='L328' name='L328'></a><em class='comment'>                 */</em>
+<a id='L329' name='L329'></a>                <a href='../D/5589.html' title='Multiple defined in 4 places.'>duk_push_int</a>(thr, c_line);
+<a id='L330' name='L330'></a>                <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(thr, c_filename);
+<a id='L331' name='L331'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L332' name='L332'></a>                <em class='comment'>/* Finally, blame the innermost callstack entry which has a</em>
+<a id='L333' name='L333'></a><em class='comment'>                 * .fileName property.</em>
+<a id='L334' name='L334'></a><em class='comment'>                 */</em>
+<a id='L335' name='L335'></a>                <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> depth;
+<a id='L336' name='L336'></a>                <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> ecma_line;
+<a id='L337' name='L337'></a>                <a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *act;
+<a id='L338' name='L338'></a>
+<a id='L339' name='L339'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr_callstack-&gt;callstack_top &lt;= <a href='../D/1826.html' title='Multiple defined in 6 places.'>DUK_INT_MAX</a>);  <em class='comment'>/* callstack limits */</em>
+<a id='L340' name='L340'></a>                depth = <a href='../D/3241.html' title='Multiple defined in 3 places.'>DUK_USE_TRACEBACK_DEPTH</a>;
+<a id='L341' name='L341'></a>                <strong class='reserved'>if</strong> (depth &gt; thr_callstack-&gt;callstack_top) <em class='brace'>{</em>
+<a id='L342' name='L342'></a>                        depth = thr_callstack-&gt;callstack_top;
+<a id='L343' name='L343'></a>                <em class='brace'>}</em>
+<a id='L344' name='L344'></a>                <strong class='reserved'>for</strong> (act = thr_callstack-&gt;callstack_curr; depth-- &gt; 0; act = act-&gt;parent) <em class='brace'>{</em>
+<a id='L345' name='L345'></a>                        <a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a> *func;
+<a id='L346' name='L346'></a>                        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> pc;
+<a id='L347' name='L347'></a>
+<a id='L348' name='L348'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(act != NULL);
+<a id='L349' name='L349'></a>                        func = <a href='../D/23.html' title='Multiple defined in 4 places.'>DUK_ACT_GET_FUNC</a>(act);
+<a id='L350' name='L350'></a>                        <strong class='reserved'>if</strong> (func == NULL) <em class='brace'>{</em>
+<a id='L351' name='L351'></a>                                <em class='comment'>/* Lightfunc, not blamed now. */</em>
+<a id='L352' name='L352'></a>                                <strong class='reserved'>continue</strong>;
+<a id='L353' name='L353'></a>                        <em class='brace'>}</em>
+<a id='L354' name='L354'></a>
+<a id='L355' name='L355'></a>                        <em class='comment'>/* PC points to next instruction, find offending PC,</em>
+<a id='L356' name='L356'></a><em class='comment'>                         * PC == 0 for native code.</em>
+<a id='L357' name='L357'></a><em class='comment'>                         */</em>
+<a id='L358' name='L358'></a>                        pc = <a href='../D/5311.html' title='Multiple defined in 4 places.'>duk_hthread_get_act_prev_pc</a>(thr, act);  <em class='comment'>/* thr argument only used for thr-&gt;heap, so specific thread doesn't matter */</em>
+<a id='L359' name='L359'></a>                        <a href='../D/3010.html' title='Multiple defined in 9 places.'>DUK_UNREF</a>(pc);
+<a id='L360' name='L360'></a>                        <a href='../D/178.html' title='Multiple defined in 4 places.'>DUK_ASSERT_DISABLE</a>(pc &gt;= 0);  <em class='comment'>/* unsigned */</em>
+<a id='L361' name='L361'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>((<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a>) pc &lt; <a href='../D/674.html' title='Multiple defined in 4 places.'>DUK_DOUBLE_2TO32</a>);  <em class='comment'>/* assume PC is at most 32 bits and non-negative */</em>
+<a id='L362' name='L362'></a>
+<a id='L363' name='L363'></a>                        <a href='../D/5580.html' title='Multiple defined in 4 places.'>duk_push_hobject</a>(thr, func);
+<a id='L364' name='L364'></a>
+<a id='L365' name='L365'></a>                        <em class='comment'>/* [ ... error func ] */</em>
+<a id='L366' name='L366'></a>
+<a id='L367' name='L367'></a>                        <a href='../D/5115.html' title='Multiple defined in 4 places.'>duk_get_prop_stridx_short</a>(thr, -1, <a href='../D/2421.html' title='Multiple defined in 3 places.'>DUK_STRIDX_FILE_NAME</a>);
+<a id='L368' name='L368'></a>                        <strong class='reserved'>if</strong> (!<a href='../D/5375.html' title='Multiple defined in 4 places.'>duk_is_string_notsymbol</a>(thr, -1)) <em class='brace'>{</em>
+<a id='L369' name='L369'></a>                                <a href='../D/5522.html' title='Multiple defined in 8 places.'>duk_pop_2</a>(thr);
+<a id='L370' name='L370'></a>                                <strong class='reserved'>continue</strong>;
+<a id='L371' name='L371'></a>                        <em class='brace'>}</em>
+<a id='L372' name='L372'></a>
+<a id='L373' name='L373'></a>                        <em class='comment'>/* [ ... error func fileName ] */</em>
+<a id='L374' name='L374'></a>
+<a id='L375' name='L375'></a>                        ecma_line = 0;
+<a id='L376' name='L376'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3193.html' title='Multiple defined in 3 places.'>DUK_USE_PC2LINE</a>)
+<a id='L377' name='L377'></a>                        <strong class='reserved'>if</strong> (<a href='../D/1475.html' title='Multiple defined in 4 places.'>DUK_HOBJECT_IS_COMPFUNC</a>(func)) <em class='brace'>{</em>
+<a id='L378' name='L378'></a>                                ecma_line = <a href='../D/5268.html' title='Multiple defined in 4 places.'>duk_hobject_pc2line_query</a>(thr, -2, (<a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a>) pc);
+<a id='L379' name='L379'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L380' name='L380'></a>                                <em class='comment'>/* Native function, no relevant lineNumber. */</em>
+<a id='L381' name='L381'></a>                        <em class='brace'>}</em>
+<a id='L382' name='L382'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_PC2LINE */</em>
+<a id='L383' name='L383'></a>                        <a href='../D/5625.html' title='Multiple defined in 4 places.'>duk_push_u32</a>(thr, ecma_line);
+<a id='L384' name='L384'></a>
+<a id='L385' name='L385'></a>                        <em class='comment'>/* [ ... error func fileName lineNumber ] */</em>
+<a id='L386' name='L386'></a>
+<a id='L387' name='L387'></a>                        <a href='../D/5702.html' title='Multiple defined in 4 places.'>duk_replace</a>(thr, -3);
+<a id='L388' name='L388'></a>
+<a id='L389' name='L389'></a>                        <em class='comment'>/* [ ... error lineNumber fileName ] */</em>
+<a id='L390' name='L390'></a>                        <strong class='reserved'>goto</strong> define_props;
+<a id='L391' name='L391'></a>                <em class='brace'>}</em>
+<a id='L392' name='L392'></a>
+<a id='L393' name='L393'></a>                <em class='comment'>/* No activation matches, use undefined for both .fileName and</em>
+<a id='L394' name='L394'></a><em class='comment'>                 * .lineNumber (matches what we do with a _Tracedata based</em>
+<a id='L395' name='L395'></a><em class='comment'>                 * no-match lookup.</em>
+<a id='L396' name='L396'></a><em class='comment'>                 */</em>
+<a id='L397' name='L397'></a>                <a href='../D/5630.html' title='Multiple defined in 4 places.'>duk_push_undefined</a>(thr);
+<a id='L398' name='L398'></a>                <a href='../D/5630.html' title='Multiple defined in 4 places.'>duk_push_undefined</a>(thr);
+<a id='L399' name='L399'></a>        <em class='brace'>}</em>
+<a id='L400' name='L400'></a>
+<a id='L401' name='L401'></a> define_props:
+<a id='L402' name='L402'></a>        <em class='comment'>/* [ ... error lineNumber fileName ] */</em>
+<a id='L403' name='L403'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3018.html' title='Multiple defined in 3 places.'>DUK_USE_ASSERTIONS</a>)
+<a id='L404' name='L404'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/5122.html' title='Multiple defined in 4 places.'>duk_get_top</a>(thr) == entry_top + 2);
+<a id='L405' name='L405'></a><em class='sharp'>#endif</em>
+<a id='L406' name='L406'></a>        <a href='../D/5932.html' title='Multiple defined in 4 places.'>duk_xdef_prop_stridx_short</a>(thr, -3, <a href='../D/2421.html' title='Multiple defined in 3 places.'>DUK_STRIDX_FILE_NAME</a>, <a href='../D/2235.html' title='Multiple defined in 4 places.'>DUK_PROPDESC_FLAGS_C</a> | <a href='../D/2247.html' title='Multiple defined in 4 places.'>DUK_PROPDESC_FLAG_NO_OVERWRITE</a>);
+<a id='L407' name='L407'></a>        <a href='../D/5932.html' title='Multiple defined in 4 places.'>duk_xdef_prop_stridx_short</a>(thr, -2, <a href='../D/2481.html' title='Multiple defined in 3 places.'>DUK_STRIDX_LINE_NUMBER</a>, <a href='../D/2235.html' title='Multiple defined in 4 places.'>DUK_PROPDESC_FLAGS_C</a> | <a href='../D/2247.html' title='Multiple defined in 4 places.'>DUK_PROPDESC_FLAG_NO_OVERWRITE</a>);
+<a id='L408' name='L408'></a><em class='brace'>}</em>
+<a id='L409' name='L409'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_AUGMENT_ERROR_CREATE &amp;&amp; !DUK_USE_TRACEBACKS */</em>
+<a id='L410' name='L410'></a>
+<a id='L411' name='L411'></a><em class='comment'>/*</em>
+<a id='L412' name='L412'></a><em class='comment'> *  Add line number to a compiler error.</em>
+<a id='L413' name='L413'></a><em class='comment'> */</em>
+<a id='L414' name='L414'></a>
+<a id='L415' name='L415'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3020.html' title='Multiple defined in 3 places.'>DUK_USE_AUGMENT_ERROR_CREATE</a>)
+<a id='L416' name='L416'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/2992.html' title='Multiple referred from 4 places.'>duk__add_compiler_error_line</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L417' name='L417'></a>
+<a id='L418' name='L418'></a>        <em class='comment'>/* Append a "(line NNN)" to the "message" property of any error</em>
+<a id='L419' name='L419'></a><em class='comment'>         * thrown during compilation.  Usually compilation errors are</em>
+<a id='L420' name='L420'></a><em class='comment'>         * SyntaxErrors but they can also be out-of-memory errors and</em>
+<a id='L421' name='L421'></a><em class='comment'>         * the like.</em>
+<a id='L422' name='L422'></a><em class='comment'>         */</em>
+<a id='L423' name='L423'></a>
+<a id='L424' name='L424'></a>        <em class='comment'>/* [ ... error ] */</em>
+<a id='L425' name='L425'></a>
+<a id='L426' name='L426'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/5367.html' title='Multiple defined in 4 places.'>duk_is_object</a>(thr, -1));
+<a id='L427' name='L427'></a>
+<a id='L428' name='L428'></a>        <strong class='reserved'>if</strong> (!(thr-&gt;compile_ctx != NULL &amp;&amp; thr-&gt;compile_ctx-&gt;h_filename != NULL)) <em class='brace'>{</em>
+<a id='L429' name='L429'></a>                <strong class='reserved'>return</strong>;
+<a id='L430' name='L430'></a>        <em class='brace'>}</em>
+<a id='L431' name='L431'></a>
+<a id='L432' name='L432'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("compile error, before adding line info: %!T",
+<a id='L433' name='L433'></a>                             (<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *) <a href='../D/5126.html' title='Multiple defined in 4 places.'>duk_get_tval</a>(thr, -1)));
+<a id='L434' name='L434'></a>
+<a id='L435' name='L435'></a>        <strong class='reserved'>if</strong> (<a href='../D/5115.html' title='Multiple defined in 4 places.'>duk_get_prop_stridx_short</a>(thr, -1, <a href='../D/2483.html' title='Multiple defined in 3 places.'>DUK_STRIDX_MESSAGE</a>)) <em class='brace'>{</em>
+<a id='L436' name='L436'></a>                <a href='../D/4797.html' title='Multiple defined in 3 places.'>duk_bool_t</a> at_end;
+<a id='L437' name='L437'></a>
+<a id='L438' name='L438'></a>                <em class='comment'>/* Best guesstimate that error occurred at end of input, token</em>
+<a id='L439' name='L439'></a><em class='comment'>                 * truncated by end of input, etc.</em>
+<a id='L440' name='L440'></a><em class='comment'>                 */</em>
+<a id='L441' name='L441'></a><em class='sharp'>#if</em> 0
+<a id='L442' name='L442'></a>                at_end = (thr-&gt;compile_ctx-&gt;curr_token.start_offset + 1 &gt;= thr-&gt;compile_ctx-&gt;lex.input_length);
+<a id='L443' name='L443'></a>                at_end = (thr-&gt;compile_ctx-&gt;lex.window[0].codepoint &lt; 0 || thr-&gt;compile_ctx-&gt;lex.window[1].codepoint &lt; 0);
+<a id='L444' name='L444'></a><em class='sharp'>#endif</em>
+<a id='L445' name='L445'></a>                at_end = (thr-&gt;compile_ctx-&gt;lex.window[0].codepoint &lt; 0);
+<a id='L446' name='L446'></a>
+<a id='L447' name='L447'></a>                <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("syntax error, determined at_end=%ld; curr_token.start_offset=%ld, "
+<a id='L448' name='L448'></a>                                 "lex.input_length=%ld, window[0].codepoint=%ld, window[1].codepoint=%ld",
+<a id='L449' name='L449'></a>                                 (<strong class='reserved'>long</strong>) at_end,
+<a id='L450' name='L450'></a>                                 (<strong class='reserved'>long</strong>) thr-&gt;compile_ctx-&gt;curr_token.start_offset,
+<a id='L451' name='L451'></a>                                 (<strong class='reserved'>long</strong>) thr-&gt;compile_ctx-&gt;lex.input_length,
+<a id='L452' name='L452'></a>                                 (<strong class='reserved'>long</strong>) thr-&gt;compile_ctx-&gt;lex.window[0].codepoint,
+<a id='L453' name='L453'></a>                                 (<strong class='reserved'>long</strong>) thr-&gt;compile_ctx-&gt;lex.window[1].codepoint));
+<a id='L454' name='L454'></a>
+<a id='L455' name='L455'></a>                <a href='../D/5606.html' title='Multiple defined in 4 places.'>duk_push_sprintf</a>(thr, " (line %ld%s)",
+<a id='L456' name='L456'></a>                                 (<strong class='reserved'>long</strong>) thr-&gt;compile_ctx-&gt;curr_token.start_line,
+<a id='L457' name='L457'></a>                                 at_end ? ", end of input" : "");
+<a id='L458' name='L458'></a>                <a href='../D/4850.html' title='Multiple defined in 4 places.'>duk_concat</a>(thr, 2);
+<a id='L459' name='L459'></a>                <a href='../D/5646.html' title='Multiple defined in 4 places.'>duk_put_prop_stridx_short</a>(thr, -2, <a href='../D/2483.html' title='Multiple defined in 3 places.'>DUK_STRIDX_MESSAGE</a>);
+<a id='L460' name='L460'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L461' name='L461'></a>                <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(thr);
+<a id='L462' name='L462'></a>        <em class='brace'>}</em>
+<a id='L463' name='L463'></a>
+<a id='L464' name='L464'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("compile error, after adding line info: %!T",
+<a id='L465' name='L465'></a>                             (<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *) <a href='../D/5126.html' title='Multiple defined in 4 places.'>duk_get_tval</a>(thr, -1)));
+<a id='L466' name='L466'></a><em class='brace'>}</em>
+<a id='L467' name='L467'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_AUGMENT_ERROR_CREATE */</em>
+<a id='L468' name='L468'></a>
+<a id='L469' name='L469'></a><em class='comment'>/*</em>
+<a id='L470' name='L470'></a><em class='comment'> *  Augment an error being created using Duktape specific properties</em>
+<a id='L471' name='L471'></a><em class='comment'> *  like _Tracedata or .fileName/.lineNumber.</em>
+<a id='L472' name='L472'></a><em class='comment'> */</em>
+<a id='L473' name='L473'></a>
+<a id='L474' name='L474'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3020.html' title='Multiple defined in 3 places.'>DUK_USE_AUGMENT_ERROR_CREATE</a>)
+<a id='L475' name='L475'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3317.html' title='Multiple referred from 4 places.'>duk__err_augment_builtin_create</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr_callstack, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *c_filename, <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> c_line, <a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a> *obj, <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> flags) <em class='brace'>{</em>
+<a id='L476' name='L476'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3018.html' title='Multiple defined in 3 places.'>DUK_USE_ASSERTIONS</a>)
+<a id='L477' name='L477'></a>        <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> entry_top;
+<a id='L478' name='L478'></a><em class='sharp'>#endif</em>
+<a id='L479' name='L479'></a>
+<a id='L480' name='L480'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3018.html' title='Multiple defined in 3 places.'>DUK_USE_ASSERTIONS</a>)
+<a id='L481' name='L481'></a>        entry_top = <a href='../D/5122.html' title='Multiple defined in 4 places.'>duk_get_top</a>(thr);
+<a id='L482' name='L482'></a><em class='sharp'>#endif</em>
+<a id='L483' name='L483'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(obj != NULL);
+<a id='L484' name='L484'></a>
+<a id='L485' name='L485'></a>        <a href='../D/3010.html' title='Multiple defined in 9 places.'>DUK_UNREF</a>(obj);  <em class='comment'>/* unreferenced w/o tracebacks */</em>
+<a id='L486' name='L486'></a>
+<a id='L487' name='L487'></a>        <a href='../D/3749.html' title='Multiple defined in 4 places.'>duk__add_compiler_error_line</a>(thr);
+<a id='L488' name='L488'></a>
+<a id='L489' name='L489'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3240.html' title='Multiple defined in 3 places.'>DUK_USE_TRACEBACKS</a>)
+<a id='L490' name='L490'></a>        <em class='comment'>/* If tracebacks are enabled, the '_Tracedata' property is the only</em>
+<a id='L491' name='L491'></a><em class='comment'>         * thing we need: 'fileName' and 'lineNumber' are virtual properties</em>
+<a id='L492' name='L492'></a><em class='comment'>         * which use '_Tracedata'.  (Check _Tracedata only as own property.)</em>
+<a id='L493' name='L493'></a><em class='comment'>         */</em>
+<a id='L494' name='L494'></a>        <strong class='reserved'>if</strong> (<a href='../D/5250.html' title='Multiple defined in 4 places.'>duk_hobject_find_entry_tval_ptr_stridx</a>(thr-&gt;heap, obj, <a href='../D/2452.html' title='Multiple defined in 3 places.'>DUK_STRIDX_INT_TRACEDATA</a>) != NULL) <em class='brace'>{</em>
+<a id='L495' name='L495'></a>                <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("error value already has a '_Tracedata' property, not modifying it"));
+<a id='L496' name='L496'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L497' name='L497'></a>                <a href='../D/3754.html' title='Multiple defined in 4 places.'>duk__add_traceback</a>(thr, thr_callstack, c_filename, c_line, flags);
+<a id='L498' name='L498'></a>        <em class='brace'>}</em>
+<a id='L499' name='L499'></a><em class='sharp'>#else</em>
+<a id='L500' name='L500'></a>        <em class='comment'>/* Without tracebacks the concrete .fileName and .lineNumber need</em>
+<a id='L501' name='L501'></a><em class='comment'>         * to be added directly.</em>
+<a id='L502' name='L502'></a><em class='comment'>         */</em>
+<a id='L503' name='L503'></a>        <a href='../D/3752.html' title='Multiple defined in 4 places.'>duk__add_fileline</a>(thr, thr_callstack, c_filename, c_line, flags);
+<a id='L504' name='L504'></a><em class='sharp'>#endif</em>
+<a id='L505' name='L505'></a>
+<a id='L506' name='L506'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3018.html' title='Multiple defined in 3 places.'>DUK_USE_ASSERTIONS</a>)
+<a id='L507' name='L507'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/5122.html' title='Multiple defined in 4 places.'>duk_get_top</a>(thr) == entry_top);
+<a id='L508' name='L508'></a><em class='sharp'>#endif</em>
+<a id='L509' name='L509'></a><em class='brace'>}</em>
+<a id='L510' name='L510'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_AUGMENT_ERROR_CREATE */</em>
+<a id='L511' name='L511'></a>
+<a id='L512' name='L512'></a><em class='comment'>/*</em>
+<a id='L513' name='L513'></a><em class='comment'> *  Augment an error at creation time with _Tracedata/fileName/lineNumber</em>
+<a id='L514' name='L514'></a><em class='comment'> *  and allow a user error handler (if defined) to process/replace the error.</em>
+<a id='L515' name='L515'></a><em class='comment'> *  The error to be augmented is at the stack top.</em>
+<a id='L516' name='L516'></a><em class='comment'> *</em>
+<a id='L517' name='L517'></a><em class='comment'> *  thr: thread containing the error value</em>
+<a id='L518' name='L518'></a><em class='comment'> *  thr_callstack: thread which should be used for generating callstack etc.</em>
+<a id='L519' name='L519'></a><em class='comment'> *  c_filename: C __FILE__ related to the error</em>
+<a id='L520' name='L520'></a><em class='comment'> *  c_line: C __LINE__ related to the error</em>
+<a id='L521' name='L521'></a><em class='comment'> *  flags &amp; DUK_AUGMENT_FLAG_NOBLAME_FILELINE:</em>
+<a id='L522' name='L522'></a><em class='comment'> *      if true, don't fileName/line as error source, otherwise use traceback</em>
+<a id='L523' name='L523'></a><em class='comment'> *      (needed because user code filename/line are reported but internal ones</em>
+<a id='L524' name='L524'></a><em class='comment'> *      are not)</em>
+<a id='L525' name='L525'></a><em class='comment'> */</em>
+<a id='L526' name='L526'></a>
+<a id='L527' name='L527'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3020.html' title='Multiple defined in 3 places.'>DUK_USE_AUGMENT_ERROR_CREATE</a>)
+<a id='L528' name='L528'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4212.html' title='Multiple referred from 16 places.'>duk_err_augment_error_create</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr_callstack, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *c_filename, <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> c_line, <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> flags) <em class='brace'>{</em>
+<a id='L529' name='L529'></a>        <a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a> *obj;
+<a id='L530' name='L530'></a>
+<a id='L531' name='L531'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr != NULL);
+<a id='L532' name='L532'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr_callstack != NULL);
+<a id='L533' name='L533'></a>
+<a id='L534' name='L534'></a>        <em class='comment'>/* [ ... error ] */</em>
+<a id='L535' name='L535'></a>
+<a id='L536' name='L536'></a>        <em class='comment'>/*</em>
+<a id='L537' name='L537'></a><em class='comment'>         *  Criteria for augmenting:</em>
+<a id='L538' name='L538'></a><em class='comment'>         *</em>
+<a id='L539' name='L539'></a><em class='comment'>         *   - augmentation enabled in build (naturally)</em>
+<a id='L540' name='L540'></a><em class='comment'>         *   - error value internal prototype chain contains the built-in</em>
+<a id='L541' name='L541'></a><em class='comment'>         *     Error prototype object (i.e. 'val instanceof Error')</em>
+<a id='L542' name='L542'></a><em class='comment'>         *</em>
+<a id='L543' name='L543'></a><em class='comment'>         *  Additional criteria for built-in augmenting:</em>
+<a id='L544' name='L544'></a><em class='comment'>         *</em>
+<a id='L545' name='L545'></a><em class='comment'>         *   - error value is an extensible object</em>
+<a id='L546' name='L546'></a><em class='comment'>         */</em>
+<a id='L547' name='L547'></a>
+<a id='L548' name='L548'></a>        obj = <a href='../D/5085.html' title='Multiple defined in 4 places.'>duk_get_hobject</a>(thr, -1);
+<a id='L549' name='L549'></a>        <strong class='reserved'>if</strong> (!obj) <em class='brace'>{</em>
+<a id='L550' name='L550'></a>                <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("value is not an object, skip both built-in and user augment"));
+<a id='L551' name='L551'></a>                <strong class='reserved'>return</strong>;
+<a id='L552' name='L552'></a>        <em class='brace'>}</em>
+<a id='L553' name='L553'></a>        <strong class='reserved'>if</strong> (!<a href='../D/5270.html' title='Multiple defined in 4 places.'>duk_hobject_prototype_chain_contains</a>(thr, obj, thr-&gt;builtins[<a href='../D/255.html' title='Multiple defined in 3 places.'>DUK_BIDX_ERROR_PROTOTYPE</a>], 1 <em class='comment'>/*ignore_loop*/</em>)) <em class='brace'>{</em>
+<a id='L554' name='L554'></a>                <em class='comment'>/* If the value has a prototype loop, it's critical not to</em>
+<a id='L555' name='L555'></a><em class='comment'>                 * throw here.  Instead, assume the value is not to be</em>
+<a id='L556' name='L556'></a><em class='comment'>                 * augmented.</em>
+<a id='L557' name='L557'></a><em class='comment'>                 */</em>
+<a id='L558' name='L558'></a>                <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("value is not an error instance, skip both built-in and user augment"));
+<a id='L559' name='L559'></a>                <strong class='reserved'>return</strong>;
+<a id='L560' name='L560'></a>        <em class='brace'>}</em>
+<a id='L561' name='L561'></a>        <strong class='reserved'>if</strong> (<a href='../D/1451.html' title='Multiple defined in 4 places.'>DUK_HOBJECT_HAS_EXTENSIBLE</a>(obj)) <em class='brace'>{</em>
+<a id='L562' name='L562'></a>                <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("error meets criteria, built-in augment"));
+<a id='L563' name='L563'></a>                <a href='../D/4078.html' title='Multiple defined in 4 places.'>duk__err_augment_builtin_create</a>(thr, thr_callstack, c_filename, c_line, obj, flags);
+<a id='L564' name='L564'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L565' name='L565'></a>                <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("error does not meet criteria, no built-in augment"));
+<a id='L566' name='L566'></a>        <em class='brace'>}</em>
+<a id='L567' name='L567'></a>
+<a id='L568' name='L568'></a>        <em class='comment'>/* [ ... error ] */</em>
+<a id='L569' name='L569'></a>
+<a id='L570' name='L570'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3081.html' title='Multiple defined in 3 places.'>DUK_USE_ERRCREATE</a>)
+<a id='L571' name='L571'></a>        <a href='../D/4079.html' title='Multiple defined in 4 places.'>duk__err_augment_user</a>(thr, <a href='../D/2415.html' title='Multiple defined in 3 places.'>DUK_STRIDX_ERR_CREATE</a>);
+<a id='L572' name='L572'></a><em class='sharp'>#endif</em>
+<a id='L573' name='L573'></a><em class='brace'>}</em>
+<a id='L574' name='L574'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_AUGMENT_ERROR_CREATE */</em>
+<a id='L575' name='L575'></a>
+<a id='L576' name='L576'></a><em class='comment'>/*</em>
+<a id='L577' name='L577'></a><em class='comment'> *  Augment an error at throw time; allow a user error handler (if defined)</em>
+<a id='L578' name='L578'></a><em class='comment'> *  to process/replace the error.  The error to be augmented is at the</em>
+<a id='L579' name='L579'></a><em class='comment'> *  stack top.</em>
+<a id='L580' name='L580'></a><em class='comment'> */</em>
+<a id='L581' name='L581'></a>
+<a id='L582' name='L582'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3021.html' title='Multiple defined in 3 places.'>DUK_USE_AUGMENT_ERROR_THROW</a>)
+<a id='L583' name='L583'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4213.html' title='Multiple referred from 24 places.'>duk_err_augment_error_throw</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L584' name='L584'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3082.html' title='Multiple defined in 3 places.'>DUK_USE_ERRTHROW</a>)
+<a id='L585' name='L585'></a>        <a href='../D/4079.html' title='Multiple defined in 4 places.'>duk__err_augment_user</a>(thr, <a href='../D/2416.html' title='Multiple defined in 3 places.'>DUK_STRIDX_ERR_THROW</a>);
+<a id='L586' name='L586'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_ERRTHROW */</em>
+<a id='L587' name='L587'></a><em class='brace'>}</em>
+<a id='L588' name='L588'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_AUGMENT_ERROR_THROW */</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L62'>[^]</a><a href='#L583'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

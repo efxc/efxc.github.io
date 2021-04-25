@@ -1,0 +1,157 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src-input/duk_util_tinyrandom.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1030.html'>src-input</a>/duk_util_tinyrandom.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L31'>[^]</a><a href='#L103'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L31' title='Defined at 31.'>duk_util_tinyrandom_prepare_seed</a></li>
+<li><a href='#L35' title='Defined at 35.'>duk_util_tinyrandom_get_double</a></li>
+<li><a href='#L61' title='Defined at 61.'>duk__rnd_splitmix64</a></li>
+<li><a href='#L69' title='Defined at 69.'>duk__rnd_rotl</a></li>
+<li><a href='#L73' title='Defined at 73.'>duk__xoroshiro128plus</a></li>
+<li><a href='#L88' title='Defined at 88.'>duk_util_tinyrandom_prepare_seed</a></li>
+<li><a href='#L103' title='Defined at 103.'>duk_util_tinyrandom_get_double</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  A tiny random number generator used for Math.random() and other internals.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> *  Default algorithm is xoroshiro128+: http://xoroshiro.di.unimi.it/xoroshiro128plus.c</em>
+<a id='L5' name='L5'></a><em class='comment'> *  with SplitMix64 seed preparation: http://xorshift.di.unimi.it/splitmix64.c.</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> *  Low memory targets and targets without 64-bit types use a slightly smaller</em>
+<a id='L8' name='L8'></a><em class='comment'> *  (but slower) algorithm by Adi Shamir:</em>
+<a id='L9' name='L9'></a><em class='comment'> *  http://www.woodmann.com/forum/archive/index.php/t-3100.html.</em>
+<a id='L10' name='L10'></a><em class='comment'> *</em>
+<a id='L11' name='L11'></a><em class='comment'> */</em>
+<a id='L12' name='L12'></a>
+<a id='L13' name='L13'></a><em class='sharp'>#include</em> "<a href='../I/161.html'>duk_internal.h</a>"
+<a id='L14' name='L14'></a>
+<a id='L15' name='L15'></a><em class='sharp'>#if</em> !<strong class='reserved'>defined</strong>(<a href='../D/3124.html' title='Multiple defined in 3 places.'>DUK_USE_GET_RANDOM_DOUBLE</a>)
+<a id='L16' name='L16'></a>
+<a id='L17' name='L17'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3196.html' title='Multiple defined in 3 places.'>DUK_USE_PREFER_SIZE</a>) || !<strong class='reserved'>defined</strong>(<a href='../D/3011.html' title='Multiple defined in 6 places.'>DUK_USE_64BIT_OPS</a>)
+<a id='L18' name='L18'></a><em class='sharp'>#define</em> <a href='../R/2840.html' title='Multiple referred from 4 places.'>DUK__RANDOM_SHAMIR3OP</a>
+<a id='L19' name='L19'></a><em class='sharp'>#else</em>
+<a id='L20' name='L20'></a><em class='sharp'>#define</em> <a href='../R/2841.html' title='Multiple referred from 4 places.'>DUK__RANDOM_XOROSHIRO128PLUS</a>
+<a id='L21' name='L21'></a><em class='sharp'>#endif</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3590.html' title='Multiple defined in 6 places.'>DUK__RANDOM_SHAMIR3OP</a>)
+<a id='L24' name='L24'></a><em class='sharp'>#define</em> <a href='../R/2932.html' title='Multiple referred from 4 places.'>DUK__UPDATE_RND</a>(rnd) <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L25' name='L25'></a>                (rnd) += ((rnd) * (rnd)) | 0x05UL; \
+<a id='L26' name='L26'></a>                (rnd) = ((rnd) &amp; 0xffffffffUL);       <em class='comment'>/* if duk_uint32_t is exactly 32 bits, this is a NOP */</em> \
+<a id='L27' name='L27'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a><em class='sharp'>#define</em> <a href='../R/2866.html' title='Multiple referred from 4 places.'>DUK__RND_BIT</a>(rnd)  ((rnd) &gt;&gt; 31)  <em class='comment'>/* only use the highest bit */</em>
+<a id='L30' name='L30'></a>
+<a id='L31' name='L31'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/5099.html' title='Multiple referred from 12 places.'>duk_util_tinyrandom_prepare_seed</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L32' name='L32'></a>        <a href='../D/3010.html' title='Multiple defined in 9 places.'>DUK_UNREF</a>(thr);  <em class='comment'>/* Nothing now. */</em>
+<a id='L33' name='L33'></a><em class='brace'>}</em>
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a> <a href='../R/5098.html' title='Multiple referred from 12 places.'>duk_util_tinyrandom_get_double</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L36' name='L36'></a>        <a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a> t;
+<a id='L37' name='L37'></a>        <a href='../D/5767.html' title='Multiple defined in 3 places.'>duk_small_int_t</a> n;
+<a id='L38' name='L38'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> rnd;
+<a id='L39' name='L39'></a>
+<a id='L40' name='L40'></a>        rnd = thr-&gt;heap-&gt;rnd_state;
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a>        n = 53;  <em class='comment'>/* enough to cover the whole mantissa */</em>
+<a id='L43' name='L43'></a>        t = 0.0;
+<a id='L44' name='L44'></a>
+<a id='L45' name='L45'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L46' name='L46'></a>                <a href='../D/3688.html' title='Multiple defined in 6 places.'>DUK__UPDATE_RND</a>(rnd);
+<a id='L47' name='L47'></a>                t += <a href='../D/3618.html' title='Multiple defined in 6 places.'>DUK__RND_BIT</a>(rnd);
+<a id='L48' name='L48'></a>                t /= 2.0;
+<a id='L49' name='L49'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (--n);
+<a id='L50' name='L50'></a>
+<a id='L51' name='L51'></a>        thr-&gt;heap-&gt;rnd_state = rnd;
+<a id='L52' name='L52'></a>
+<a id='L53' name='L53'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(t &gt;= (<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a>) 0.0);
+<a id='L54' name='L54'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(t &lt; (<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a>) 1.0);
+<a id='L55' name='L55'></a>
+<a id='L56' name='L56'></a>        <strong class='reserved'>return</strong> t;
+<a id='L57' name='L57'></a><em class='brace'>}</em>
+<a id='L58' name='L58'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK__RANDOM_SHAMIR3OP */</em>
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3591.html' title='Multiple defined in 6 places.'>DUK__RANDOM_XOROSHIRO128PLUS</a>)
+<a id='L61' name='L61'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/36.html' title='Multiple defined in 21 places.'>DUK_ALWAYS_INLINE</a> <a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> <a href='../R/3673.html' title='Multiple referred from 4 places.'>duk__rnd_splitmix64</a>(<a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> *x) <em class='brace'>{</em>
+<a id='L62' name='L62'></a>        <a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> z;
+<a id='L63' name='L63'></a>        z = (*x += <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x9E3779B97F4A7C15));
+<a id='L64' name='L64'></a>        z = (z ^ (z &gt;&gt; 30U)) * <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0xBF58476D1CE4E5B9);
+<a id='L65' name='L65'></a>        z = (z ^ (z &gt;&gt; 27U)) * <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x94D049BB133111EB);
+<a id='L66' name='L66'></a>        <strong class='reserved'>return</strong> z ^ (z &gt;&gt; 31U);
+<a id='L67' name='L67'></a><em class='brace'>}</em>
+<a id='L68' name='L68'></a>
+<a id='L69' name='L69'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/36.html' title='Multiple defined in 21 places.'>DUK_ALWAYS_INLINE</a> <a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> <a href='../R/3672.html' title='Multiple referred from 8 places.'>duk__rnd_rotl</a>(<strong class='reserved'>const</strong> <a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> x, <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> k) <em class='brace'>{</em>
+<a id='L70' name='L70'></a>        <strong class='reserved'>return</strong> (x &lt;&lt; k) | (x &gt;&gt; (64U - k));
+<a id='L71' name='L71'></a><em class='brace'>}</em>
+<a id='L72' name='L72'></a>
+<a id='L73' name='L73'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/36.html' title='Multiple defined in 21 places.'>DUK_ALWAYS_INLINE</a> <a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> <a href='../R/3795.html' title='Multiple referred from 4 places.'>duk__xoroshiro128plus</a>(<a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> *s) <em class='brace'>{</em>
+<a id='L74' name='L74'></a>        <a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> s0;
+<a id='L75' name='L75'></a>        <a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> s1;
+<a id='L76' name='L76'></a>        <a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> res;
+<a id='L77' name='L77'></a>
+<a id='L78' name='L78'></a>        s0 = s[0];
+<a id='L79' name='L79'></a>        s1 = s[1];
+<a id='L80' name='L80'></a>        res = s0 + s1;
+<a id='L81' name='L81'></a>        s1 ^= s0;
+<a id='L82' name='L82'></a>        s[0] = <a href='../D/4434.html' title='Multiple defined in 4 places.'>duk__rnd_rotl</a>(s0, 55) ^ s1 ^ (s1 &lt;&lt; 14U);
+<a id='L83' name='L83'></a>        s[1] = <a href='../D/4434.html' title='Multiple defined in 4 places.'>duk__rnd_rotl</a>(s1, 36);
+<a id='L84' name='L84'></a>
+<a id='L85' name='L85'></a>        <strong class='reserved'>return</strong> res;
+<a id='L86' name='L86'></a><em class='brace'>}</em>
+<a id='L87' name='L87'></a>
+<a id='L88' name='L88'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/5099.html' title='Multiple referred from 12 places.'>duk_util_tinyrandom_prepare_seed</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L89' name='L89'></a>        <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> i;
+<a id='L90' name='L90'></a>        <a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> x;
+<a id='L91' name='L91'></a>
+<a id='L92' name='L92'></a>        <em class='comment'>/* Mix both halves of the initial seed with SplitMix64.  The intent</em>
+<a id='L93' name='L93'></a><em class='comment'>         * is to ensure that very similar raw seeds (which is usually the case</em>
+<a id='L94' name='L94'></a><em class='comment'>         * because current seed is Date.now()) result in different xoroshiro128+</em>
+<a id='L95' name='L95'></a><em class='comment'>         * seeds.</em>
+<a id='L96' name='L96'></a><em class='comment'>         */</em>
+<a id='L97' name='L97'></a>        x = thr-&gt;heap-&gt;rnd_state[0];  <em class='comment'>/* Only [0] is used as input here. */</em>
+<a id='L98' name='L98'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; 64; i++) <em class='brace'>{</em>
+<a id='L99' name='L99'></a>                thr-&gt;heap-&gt;rnd_state[i &amp; 0x01] = <a href='../D/4435.html' title='Multiple defined in 4 places.'>duk__rnd_splitmix64</a>(&amp;x);  <em class='comment'>/* Keep last 2 values. */</em>
+<a id='L100' name='L100'></a>        <em class='brace'>}</em>
+<a id='L101' name='L101'></a><em class='brace'>}</em>
+<a id='L102' name='L102'></a>
+<a id='L103' name='L103'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a> <a href='../R/5098.html' title='Multiple referred from 12 places.'>duk_util_tinyrandom_get_double</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L104' name='L104'></a>        <a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> v;
+<a id='L105' name='L105'></a>        <a href='../D/4964.html' title='Multiple defined in 8 places.'>duk_double_union</a> du;
+<a id='L106' name='L106'></a>
+<a id='L107' name='L107'></a>        <em class='comment'>/* For big and little endian the integer and IEEE double byte order</em>
+<a id='L108' name='L108'></a><em class='comment'>         * is the same so a direct assignment works.  For mixed endian the</em>
+<a id='L109' name='L109'></a><em class='comment'>         * 32-bit parts must be swapped.</em>
+<a id='L110' name='L110'></a><em class='comment'>         */</em>
+<a id='L111' name='L111'></a>        v = (<a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x3ff) &lt;&lt; 52U) | (<a href='../D/4557.html' title='Multiple defined in 4 places.'>duk__xoroshiro128plus</a>((<a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> *) thr-&gt;heap-&gt;rnd_state) &gt;&gt; 12U);
+<a id='L112' name='L112'></a>        du.ull[0] = v;
+<a id='L113' name='L113'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3078.html' title='Multiple defined in 3 places.'>DUK_USE_DOUBLE_ME</a>)
+<a id='L114' name='L114'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L115' name='L115'></a>                <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> tmp;
+<a id='L116' name='L116'></a>                tmp = du.ui[0];
+<a id='L117' name='L117'></a>                du.ui[0] = du.ui[1];
+<a id='L118' name='L118'></a>                du.ui[1] = tmp;
+<a id='L119' name='L119'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0);
+<a id='L120' name='L120'></a><em class='sharp'>#endif</em>
+<a id='L121' name='L121'></a>        <strong class='reserved'>return</strong> du.d - 1.0;
+<a id='L122' name='L122'></a><em class='brace'>}</em>
+<a id='L123' name='L123'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK__RANDOM_XOROSHIRO128PLUS */</em>
+<a id='L124' name='L124'></a>
+<a id='L125' name='L125'></a><em class='sharp'>#endif</em>  <em class='comment'>/* !DUK_USE_GET_RANDOM_DOUBLE */</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L31'>[^]</a><a href='#L103'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

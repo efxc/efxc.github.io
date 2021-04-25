@@ -1,0 +1,188 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src-separate/duk_util_bitdecoder.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1032.html'>src-separate</a>/duk_util_bitdecoder.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L11'>[^]</a><a href='#L119'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L11' title='Defined at 11.'>duk_bd_decode</a></li>
+<li><a href='#L56' title='Defined at 56.'>duk_bd_decode_flag</a></li>
+<li><a href='#L63' title='Defined at 63.'>duk_bd_decode_flagged</a></li>
+<li><a href='#L72' title='Defined at 72.'>duk_bd_decode_flagged_signed</a></li>
+<li><a href='#L77' title='Defined at 77.'>duk_bd_decode_varuint</a></li>
+<li><a href='#L119' title='Defined at 119.'>duk_bd_decode_bitpacked_string</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Bitstream decoder.</em>
+<a id='L3' name='L3'></a><em class='comment'> */</em>
+<a id='L4' name='L4'></a>
+<a id='L5' name='L5'></a><em class='sharp'>#include</em> "<a href='../I/161.html'>duk_internal.h</a>"
+<a id='L6' name='L6'></a>
+<a id='L7' name='L7'></a><em class='comment'>/* Decode 'bits' bits from the input stream (bits must be 1...24).</em>
+<a id='L8' name='L8'></a><em class='comment'> * When reading past bitstream end, zeroes are shifted in.  The result</em>
+<a id='L9' name='L9'></a><em class='comment'> * is signed to match duk_bd_decode_flagged.</em>
+<a id='L10' name='L10'></a><em class='comment'> */</em>
+<a id='L11' name='L11'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> <a href='../R/3813.html' title='Multiple referred from 156 places.'>duk_bd_decode</a>(<a href='../D/4795.html' title='Multiple defined in 8 places.'>duk_bitdecoder_ctx</a> *ctx, <a href='../D/5767.html' title='Multiple defined in 3 places.'>duk_small_int_t</a> bits) <em class='brace'>{</em>
+<a id='L12' name='L12'></a>        <a href='../D/5767.html' title='Multiple defined in 3 places.'>duk_small_int_t</a> shift;
+<a id='L13' name='L13'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> mask;
+<a id='L14' name='L14'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> tmp;
+<a id='L15' name='L15'></a>
+<a id='L16' name='L16'></a>        <em class='comment'>/* Note: cannot read more than 24 bits without possibly shifting top bits out.</em>
+<a id='L17' name='L17'></a><em class='comment'>         * Fixable, but adds complexity.</em>
+<a id='L18' name='L18'></a><em class='comment'>         */</em>
+<a id='L19' name='L19'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(bits &gt;= 1 &amp;&amp; bits &lt;= 24);
+<a id='L20' name='L20'></a>
+<a id='L21' name='L21'></a>        <strong class='reserved'>while</strong> (ctx-&gt;currbits &lt; bits) <em class='brace'>{</em>
+<a id='L22' name='L22'></a><em class='sharp'>#if</em> 0
+<a id='L23' name='L23'></a>                <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("decode_bits: shift more data (bits=%ld, currbits=%ld)",
+<a id='L24' name='L24'></a>                                     (<strong class='reserved'>long</strong>) bits, (<strong class='reserved'>long</strong>) ctx-&gt;currbits));
+<a id='L25' name='L25'></a><em class='sharp'>#endif</em>
+<a id='L26' name='L26'></a>                ctx-&gt;currval &lt;&lt;= 8;
+<a id='L27' name='L27'></a>                <strong class='reserved'>if</strong> (ctx-&gt;offset &lt; ctx-&gt;length) <em class='brace'>{</em>
+<a id='L28' name='L28'></a>                        <em class='comment'>/* If ctx-&gt;offset &gt;= ctx-&gt;length, we "shift zeroes in"</em>
+<a id='L29' name='L29'></a><em class='comment'>                         * instead of croaking.</em>
+<a id='L30' name='L30'></a><em class='comment'>                         */</em>
+<a id='L31' name='L31'></a>                        ctx-&gt;currval |= ctx-&gt;data[ctx-&gt;offset++];
+<a id='L32' name='L32'></a>                <em class='brace'>}</em>
+<a id='L33' name='L33'></a>                ctx-&gt;currbits += 8;
+<a id='L34' name='L34'></a>        <em class='brace'>}</em>
+<a id='L35' name='L35'></a><em class='sharp'>#if</em> 0
+<a id='L36' name='L36'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("decode_bits: bits=%ld, currbits=%ld, currval=0x%08lx",
+<a id='L37' name='L37'></a>                             (<strong class='reserved'>long</strong>) bits, (<strong class='reserved'>long</strong>) ctx-&gt;currbits, (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>) ctx-&gt;currval));
+<a id='L38' name='L38'></a><em class='sharp'>#endif</em>
+<a id='L39' name='L39'></a>
+<a id='L40' name='L40'></a>        <em class='comment'>/* Extract 'top' bits of currval; note that the extracted bits do not need</em>
+<a id='L41' name='L41'></a><em class='comment'>         * to be cleared, we just ignore them on next round.</em>
+<a id='L42' name='L42'></a><em class='comment'>         */</em>
+<a id='L43' name='L43'></a>        shift = ctx-&gt;currbits - bits;
+<a id='L44' name='L44'></a>        mask = (((<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) 1U) &lt;&lt; bits) - 1U;
+<a id='L45' name='L45'></a>        tmp = (ctx-&gt;currval &gt;&gt; shift) &amp; mask;
+<a id='L46' name='L46'></a>        ctx-&gt;currbits = shift;  <em class='comment'>/* remaining */</em>
+<a id='L47' name='L47'></a>
+<a id='L48' name='L48'></a><em class='sharp'>#if</em> 0
+<a id='L49' name='L49'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("decode_bits: %ld bits -&gt; 0x%08lx (%ld), currbits=%ld, currval=0x%08lx",
+<a id='L50' name='L50'></a>                             (<strong class='reserved'>long</strong>) bits, (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>) tmp, (<strong class='reserved'>long</strong>) tmp, (<strong class='reserved'>long</strong>) ctx-&gt;currbits, (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>) ctx-&gt;currval));
+<a id='L51' name='L51'></a><em class='sharp'>#endif</em>
+<a id='L52' name='L52'></a>
+<a id='L53' name='L53'></a>        <strong class='reserved'>return</strong> tmp;
+<a id='L54' name='L54'></a><em class='brace'>}</em>
+<a id='L55' name='L55'></a>
+<a id='L56' name='L56'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> <a href='../R/3815.html' title='Multiple referred from 24 places.'>duk_bd_decode_flag</a>(<a href='../D/4795.html' title='Multiple defined in 8 places.'>duk_bitdecoder_ctx</a> *ctx) <em class='brace'>{</em>
+<a id='L57' name='L57'></a>        <strong class='reserved'>return</strong> (<a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a>) <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(ctx, 1);
+<a id='L58' name='L58'></a><em class='brace'>}</em>
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a><em class='comment'>/* Decode a one-bit flag, and if set, decode a value of 'bits', otherwise return</em>
+<a id='L61' name='L61'></a><em class='comment'> * default value.</em>
+<a id='L62' name='L62'></a><em class='comment'> */</em>
+<a id='L63' name='L63'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> <a href='../R/3816.html' title='Multiple referred from 20 places.'>duk_bd_decode_flagged</a>(<a href='../D/4795.html' title='Multiple defined in 8 places.'>duk_bitdecoder_ctx</a> *ctx, <a href='../D/5767.html' title='Multiple defined in 3 places.'>duk_small_int_t</a> bits, <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> def_value) <em class='brace'>{</em>
+<a id='L64' name='L64'></a>        <strong class='reserved'>if</strong> (<a href='../D/4577.html' title='Multiple defined in 4 places.'>duk_bd_decode_flag</a>(ctx)) <em class='brace'>{</em>
+<a id='L65' name='L65'></a>                <strong class='reserved'>return</strong> <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(ctx, bits);
+<a id='L66' name='L66'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L67' name='L67'></a>                <strong class='reserved'>return</strong> def_value;
+<a id='L68' name='L68'></a>        <em class='brace'>}</em>
+<a id='L69' name='L69'></a><em class='brace'>}</em>
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a><em class='comment'>/* Signed variant, allows negative marker value. */</em>
+<a id='L72' name='L72'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> <a href='../R/3817.html' title='Multiple referred from 12 places.'>duk_bd_decode_flagged_signed</a>(<a href='../D/4795.html' title='Multiple defined in 8 places.'>duk_bitdecoder_ctx</a> *ctx, <a href='../D/5767.html' title='Multiple defined in 3 places.'>duk_small_int_t</a> bits, <a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a> def_value) <em class='brace'>{</em>
+<a id='L73' name='L73'></a>        <strong class='reserved'>return</strong> (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) <a href='../D/4578.html' title='Multiple defined in 4 places.'>duk_bd_decode_flagged</a>(ctx, bits, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) def_value);
+<a id='L74' name='L74'></a><em class='brace'>}</em>
+<a id='L75' name='L75'></a>
+<a id='L76' name='L76'></a><em class='comment'>/* Shared varint encoding.  Match dukutil.py BitEncode.varuint(). */</em>
+<a id='L77' name='L77'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> <a href='../R/3818.html' title='Multiple referred from 68 places.'>duk_bd_decode_varuint</a>(<a href='../D/4795.html' title='Multiple defined in 8 places.'>duk_bitdecoder_ctx</a> *ctx) <em class='brace'>{</em>
+<a id='L78' name='L78'></a>        <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> t;
+<a id='L79' name='L79'></a>
+<a id='L80' name='L80'></a>        <em class='comment'>/* The bit encoding choices here are based on manual testing against</em>
+<a id='L81' name='L81'></a><em class='comment'>         * the actual varuints generated by genbuiltins.py.</em>
+<a id='L82' name='L82'></a><em class='comment'>         */</em>
+<a id='L83' name='L83'></a>        <strong class='reserved'>switch</strong> (<a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(ctx, 2)) <em class='brace'>{</em>
+<a id='L84' name='L84'></a>        <strong class='reserved'>case</strong> 0:
+<a id='L85' name='L85'></a>                <strong class='reserved'>return</strong> 0;  <em class='comment'>/* [0,0] */</em>
+<a id='L86' name='L86'></a>        <strong class='reserved'>case</strong> 1:
+<a id='L87' name='L87'></a>                <strong class='reserved'>return</strong> <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(ctx, 2) + 1;  <em class='comment'>/* [1,4] */</em>
+<a id='L88' name='L88'></a>        <strong class='reserved'>case</strong> 2:
+<a id='L89' name='L89'></a>                <strong class='reserved'>return</strong> <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(ctx, 5) + 5;  <em class='comment'>/* [5,36] */</em>
+<a id='L90' name='L90'></a>        <strong class='reserved'>default</strong>:
+<a id='L91' name='L91'></a>                t = <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(ctx, 7);
+<a id='L92' name='L92'></a>                <strong class='reserved'>if</strong> (t == 0) <em class='brace'>{</em>
+<a id='L93' name='L93'></a>                        <strong class='reserved'>return</strong> <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(ctx, 20);
+<a id='L94' name='L94'></a>                <em class='brace'>}</em>
+<a id='L95' name='L95'></a>                <strong class='reserved'>return</strong> (t - 1) + 37;  <em class='comment'>/* [37,163] */</em>
+<a id='L96' name='L96'></a>        <em class='brace'>}</em>
+<a id='L97' name='L97'></a><em class='brace'>}</em>
+<a id='L98' name='L98'></a>
+<a id='L99' name='L99'></a><em class='comment'>/* Decode a bit packed string from a custom format used by genbuiltins.py.</em>
+<a id='L100' name='L100'></a><em class='comment'> * This function is here because it's used for both heap and thread inits.</em>
+<a id='L101' name='L101'></a><em class='comment'> * Caller must supply the output buffer whose size is NOT checked!</em>
+<a id='L102' name='L102'></a><em class='comment'> */</em>
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a><em class='sharp'>#define</em> <a href='../R/2563.html' title='Multiple referred from 4 places.'>DUK__BITPACK_LETTER_LIMIT</a>  26
+<a id='L105' name='L105'></a><em class='sharp'>#define</em> <a href='../R/2564.html' title='Multiple referred from 4 places.'>DUK__BITPACK_LOOKUP1</a>       26
+<a id='L106' name='L106'></a><em class='sharp'>#define</em> <a href='../R/2565.html' title='Multiple referred from 4 places.'>DUK__BITPACK_LOOKUP2</a>       27
+<a id='L107' name='L107'></a><em class='sharp'>#define</em> <a href='../R/2567.html' title='Multiple referred from 4 places.'>DUK__BITPACK_SWITCH1</a>       28
+<a id='L108' name='L108'></a><em class='sharp'>#define</em> <a href='../R/2566.html' title='Multiple referred from 4 places.'>DUK__BITPACK_SWITCH</a>        29
+<a id='L109' name='L109'></a><em class='sharp'>#define</em> DUK__BITPACK_UNUSED1       30
+<a id='L110' name='L110'></a><em class='sharp'>#define</em> <a href='../R/2562.html' title='Multiple referred from 4 places.'>DUK__BITPACK_EIGHTBIT</a>      31
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>const</strong> <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> duk__bitpacked_lookup[16] = <em class='brace'>{</em>
+<a id='L113' name='L113'></a>        <a href='../D/46.html' title='Multiple defined in 4 places.'>DUK_ASC_0</a>, <a href='../D/47.html' title='Multiple defined in 4 places.'>DUK_ASC_1</a>, <a href='../D/48.html' title='Multiple defined in 4 places.'>DUK_ASC_2</a>, <a href='../D/49.html' title='Multiple defined in 4 places.'>DUK_ASC_3</a>,
+<a id='L114' name='L114'></a>        <a href='../D/50.html' title='Multiple defined in 4 places.'>DUK_ASC_4</a>, <a href='../D/51.html' title='Multiple defined in 4 places.'>DUK_ASC_5</a>, <a href='../D/52.html' title='Multiple defined in 4 places.'>DUK_ASC_6</a>, <a href='../D/53.html' title='Multiple defined in 4 places.'>DUK_ASC_7</a>,
+<a id='L115' name='L115'></a>        <a href='../D/54.html' title='Multiple defined in 4 places.'>DUK_ASC_8</a>, <a href='../D/55.html' title='Multiple defined in 4 places.'>DUK_ASC_9</a>, <a href='../D/171.html' title='Multiple defined in 4 places.'>DUK_ASC_UNDERSCORE</a>, <a href='../D/139.html' title='Multiple defined in 4 places.'>DUK_ASC_SPACE</a>,
+<a id='L116' name='L116'></a>        0x82, 0x80, <a href='../D/74.html' title='Multiple defined in 4 places.'>DUK_ASC_DOUBLEQUOTE</a>, <a href='../D/91.html' title='Multiple defined in 4 places.'>DUK_ASC_LCURLY</a>
+<a id='L117' name='L117'></a><em class='brace'>}</em>;
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> <a href='../R/3814.html' title='Multiple referred from 12 places.'>duk_bd_decode_bitpacked_string</a>(<a href='../D/4795.html' title='Multiple defined in 8 places.'>duk_bitdecoder_ctx</a> *bd, <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *out) <em class='brace'>{</em>
+<a id='L120' name='L120'></a>        <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> len;
+<a id='L121' name='L121'></a>        <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> mode;
+<a id='L122' name='L122'></a>        <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> t;
+<a id='L123' name='L123'></a>        <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> i;
+<a id='L124' name='L124'></a>
+<a id='L125' name='L125'></a>        len = <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(bd, 5);
+<a id='L126' name='L126'></a>        <strong class='reserved'>if</strong> (len == 31) <em class='brace'>{</em>
+<a id='L127' name='L127'></a>                len = <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(bd, 8);  <em class='comment'>/* Support up to 256 bytes; rare. */</em>
+<a id='L128' name='L128'></a>        <em class='brace'>}</em>
+<a id='L129' name='L129'></a>
+<a id='L130' name='L130'></a>        mode = 32;  <em class='comment'>/* 0 = uppercase, 32 = lowercase (= 'a' - 'A') */</em>
+<a id='L131' name='L131'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; len; i++) <em class='brace'>{</em>
+<a id='L132' name='L132'></a>                t = <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(bd, 5);
+<a id='L133' name='L133'></a>                <strong class='reserved'>if</strong> (t &lt; <a href='../D/3289.html' title='Multiple defined in 6 places.'>DUK__BITPACK_LETTER_LIMIT</a>) <em class='brace'>{</em>
+<a id='L134' name='L134'></a>                        t = t + <a href='../D/145.html' title='Multiple defined in 4 places.'>DUK_ASC_UC_A</a> + mode;
+<a id='L135' name='L135'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (t == <a href='../D/3290.html' title='Multiple defined in 6 places.'>DUK__BITPACK_LOOKUP1</a>) <em class='brace'>{</em>
+<a id='L136' name='L136'></a>                        t = duk__bitpacked_lookup[<a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(bd, 3)];
+<a id='L137' name='L137'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (t == <a href='../D/3291.html' title='Multiple defined in 6 places.'>DUK__BITPACK_LOOKUP2</a>) <em class='brace'>{</em>
+<a id='L138' name='L138'></a>                        t = duk__bitpacked_lookup[8 + <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(bd, 3)];
+<a id='L139' name='L139'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (t == <a href='../D/3293.html' title='Multiple defined in 6 places.'>DUK__BITPACK_SWITCH1</a>) <em class='brace'>{</em>
+<a id='L140' name='L140'></a>                        t = <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(bd, 5);
+<a id='L141' name='L141'></a>                        <a href='../D/178.html' title='Multiple defined in 4 places.'>DUK_ASSERT_DISABLE</a>(t &gt;= 0);  <em class='comment'>/* unsigned */</em>
+<a id='L142' name='L142'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(t &lt;= 25);
+<a id='L143' name='L143'></a>                        t = t + <a href='../D/145.html' title='Multiple defined in 4 places.'>DUK_ASC_UC_A</a> + (mode ^ 32);
+<a id='L144' name='L144'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (t == <a href='../D/3292.html' title='Multiple defined in 6 places.'>DUK__BITPACK_SWITCH</a>) <em class='brace'>{</em>
+<a id='L145' name='L145'></a>                        mode = mode ^ 32;
+<a id='L146' name='L146'></a>                        t = <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(bd, 5);
+<a id='L147' name='L147'></a>                        <a href='../D/178.html' title='Multiple defined in 4 places.'>DUK_ASSERT_DISABLE</a>(t &gt;= 0);
+<a id='L148' name='L148'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(t &lt;= 25);
+<a id='L149' name='L149'></a>                        t = t + <a href='../D/145.html' title='Multiple defined in 4 places.'>DUK_ASC_UC_A</a> + mode;
+<a id='L150' name='L150'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (t == <a href='../D/3288.html' title='Multiple defined in 6 places.'>DUK__BITPACK_EIGHTBIT</a>) <em class='brace'>{</em>
+<a id='L151' name='L151'></a>                        t = <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(bd, 8);
+<a id='L152' name='L152'></a>                <em class='brace'>}</em>
+<a id='L153' name='L153'></a>                out[i] = (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a>) t;
+<a id='L154' name='L154'></a>        <em class='brace'>}</em>
+<a id='L155' name='L155'></a>
+<a id='L156' name='L156'></a>        <strong class='reserved'>return</strong> len;
+<a id='L157' name='L157'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L11'>[^]</a><a href='#L119'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

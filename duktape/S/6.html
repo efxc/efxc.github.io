@@ -1,0 +1,357 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src-input/duk_bi_date_unix.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1030.html'>src-input</a>/duk_bi_date_unix.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L19'>[^]</a><a href='#L315'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L19' title='Defined at 19.'>duk_bi_date_get_now_gettimeofday</a></li>
+<li><a href='#L38' title='Defined at 38.'>duk_bi_date_get_now_time</a></li>
+<li><a href='#L52' title='Defined at 52.'>duk_bi_date_get_local_tzoffset_gmtime</a></li>
+<li><a href='#L201' title='Defined at 201.'>duk_bi_date_parse_string_strptime</a></li>
+<li><a href='#L236' title='Defined at 236.'>duk_bi_date_parse_string_getdate</a></li>
+<li><a href='#L263' title='Defined at 263.'>duk_bi_date_format_parts_strftime</a></li>
+<li><a href='#L315' title='Defined at 315.'>duk_bi_date_get_monotonic_time_clock_gettime</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Unix-like Date providers</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> *  Generally useful Unix / POSIX / ANSI Date providers.</em>
+<a id='L5' name='L5'></a><em class='comment'> */</em>
+<a id='L6' name='L6'></a>
+<a id='L7' name='L7'></a><em class='sharp'>#include</em> "<a href='../I/161.html'>duk_internal.h</a>"
+<a id='L8' name='L8'></a>
+<a id='L9' name='L9'></a><em class='comment'>/* The necessary #includes are in place in duk_config.h. */</em>
+<a id='L10' name='L10'></a>
+<a id='L11' name='L11'></a><em class='comment'>/* Buffer sizes for some UNIX calls.  Larger than strictly necessary</em>
+<a id='L12' name='L12'></a><em class='comment'> * to avoid Valgrind errors.</em>
+<a id='L13' name='L13'></a><em class='comment'> */</em>
+<a id='L14' name='L14'></a><em class='sharp'>#define</em> <a href='../R/2913.html' title='Multiple referred from 4 places.'>DUK__STRPTIME_BUF_SIZE</a>  64
+<a id='L15' name='L15'></a><em class='sharp'>#define</em> <a href='../R/2906.html' title='Multiple referred from 4 places.'>DUK__STRFTIME_BUF_SIZE</a>  64
+<a id='L16' name='L16'></a>
+<a id='L17' name='L17'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3053.html' title='Multiple defined in 51 places.'>DUK_USE_DATE_NOW_GETTIMEOFDAY</a>)
+<a id='L18' name='L18'></a><em class='comment'>/* Get current ECMAScript time (= UNIX/Posix time, but in milliseconds). */</em>
+<a id='L19' name='L19'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a> <a href='../R/3858.html' title='Multiple referred from 7 places.'>duk_bi_date_get_now_gettimeofday</a>(<strong class='reserved'>void</strong>) <em class='brace'>{</em>
+<a id='L20' name='L20'></a>        <strong class='reserved'>struct</strong> timeval tv;
+<a id='L21' name='L21'></a>        <a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a> d;
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a>        <strong class='reserved'>if</strong> (gettimeofday(&amp;tv, NULL) != 0) <em class='brace'>{</em>
+<a id='L24' name='L24'></a>                <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("gettimeofday() failed"));
+<a id='L25' name='L25'></a>                <strong class='reserved'>return</strong> 0.0;
+<a id='L26' name='L26'></a>        <em class='brace'>}</em>
+<a id='L27' name='L27'></a>
+<a id='L28' name='L28'></a>        <em class='comment'>/* As of Duktape 2.2.0 allow fractions. */</em>
+<a id='L29' name='L29'></a>        d = ((<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a>) tv.tv_sec) * 1000.0 +
+<a id='L30' name='L30'></a>            ((<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a>) tv.tv_usec) / 1000.0;
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a>        <strong class='reserved'>return</strong> d;
+<a id='L33' name='L33'></a><em class='brace'>}</em>
+<a id='L34' name='L34'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_DATE_NOW_GETTIMEOFDAY */</em>
+<a id='L35' name='L35'></a>
+<a id='L36' name='L36'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3054.html' title='Multiple defined in 9 places.'>DUK_USE_DATE_NOW_TIME</a>)
+<a id='L37' name='L37'></a><em class='comment'>/* Not a very good provider: only full seconds are available. */</em>
+<a id='L38' name='L38'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a> <a href='../R/3859.html' title='Multiple referred from 7 places.'>duk_bi_date_get_now_time</a>(<strong class='reserved'>void</strong>) <em class='brace'>{</em>
+<a id='L39' name='L39'></a>        time_t t;
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a>        t = time(NULL);
+<a id='L42' name='L42'></a>        <strong class='reserved'>if</strong> (t == (time_t) -1) <em class='brace'>{</em>
+<a id='L43' name='L43'></a>                <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("time() failed"));
+<a id='L44' name='L44'></a>                <strong class='reserved'>return</strong> 0.0;
+<a id='L45' name='L45'></a>        <em class='brace'>}</em>
+<a id='L46' name='L46'></a>        <strong class='reserved'>return</strong> ((<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a>) t) * 1000.0;
+<a id='L47' name='L47'></a><em class='brace'>}</em>
+<a id='L48' name='L48'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_DATE_NOW_TIME */</em>
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3060.html' title='Multiple defined in 9 places.'>DUK_USE_DATE_TZO_GMTIME</a>) || <strong class='reserved'>defined</strong>(<a href='../D/3061.html' title='Multiple defined in 48 places.'>DUK_USE_DATE_TZO_GMTIME_R</a>) || <strong class='reserved'>defined</strong>(<a href='../D/3062.html' title='Multiple defined in 3 places.'>DUK_USE_DATE_TZO_GMTIME_S</a>)
+<a id='L51' name='L51'></a><em class='comment'>/* Get local time offset (in seconds) for a certain (UTC) instant 'd'. */</em>
+<a id='L52' name='L52'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> <a href='../R/3853.html' title='Multiple referred from 7 places.'>duk_bi_date_get_local_tzoffset_gmtime</a>(<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a> d) <em class='brace'>{</em>
+<a id='L53' name='L53'></a>        time_t t, t1, t2;
+<a id='L54' name='L54'></a>        <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> parts[<a href='../D/481.html' title='Multiple defined in 3 places.'>DUK_DATE_IDX_NUM_PARTS</a>];
+<a id='L55' name='L55'></a>        <a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a> dparts[<a href='../D/481.html' title='Multiple defined in 3 places.'>DUK_DATE_IDX_NUM_PARTS</a>];
+<a id='L56' name='L56'></a>        <strong class='reserved'>struct</strong> tm tms[2];
+<a id='L57' name='L57'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3060.html' title='Multiple defined in 9 places.'>DUK_USE_DATE_TZO_GMTIME</a>)
+<a id='L58' name='L58'></a>        <strong class='reserved'>struct</strong> tm *tm_ptr;
+<a id='L59' name='L59'></a><em class='sharp'>#endif</em>
+<a id='L60' name='L60'></a>
+<a id='L61' name='L61'></a>        <em class='comment'>/* For NaN/inf, the return value doesn't matter. */</em>
+<a id='L62' name='L62'></a>        <strong class='reserved'>if</strong> (!<a href='../D/1829.html' title='Multiple defined in 6 places.'>DUK_ISFINITE</a>(d)) <em class='brace'>{</em>
+<a id='L63' name='L63'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L64' name='L64'></a>        <em class='brace'>}</em>
+<a id='L65' name='L65'></a>
+<a id='L66' name='L66'></a>        <em class='comment'>/* If not within ECMAScript range, some integer time calculations</em>
+<a id='L67' name='L67'></a><em class='comment'>         * won't work correctly (and some asserts will fail), so bail out</em>
+<a id='L68' name='L68'></a><em class='comment'>         * if so.  This fixes test-bug-date-insane-setyear.js.  There is</em>
+<a id='L69' name='L69'></a><em class='comment'>         * a +/- 24h leeway in this range check to avoid a test262 corner</em>
+<a id='L70' name='L70'></a><em class='comment'>         * case documented in test-bug-date-timeval-edges.js.</em>
+<a id='L71' name='L71'></a><em class='comment'>         */</em>
+<a id='L72' name='L72'></a>        <strong class='reserved'>if</strong> (!<a href='../D/4636.html' title='Multiple defined in 4 places.'>duk_bi_date_timeval_in_leeway_range</a>(d)) <em class='brace'>{</em>
+<a id='L73' name='L73'></a>                <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("timeval not within valid range, skip tzoffset computation to avoid integer overflows"));
+<a id='L74' name='L74'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L75' name='L75'></a>        <em class='brace'>}</em>
+<a id='L76' name='L76'></a>
+<a id='L77' name='L77'></a>        <em class='comment'>/*</em>
+<a id='L78' name='L78'></a><em class='comment'>         *  This is a bit tricky to implement portably.  The result depends</em>
+<a id='L79' name='L79'></a><em class='comment'>         *  on the timestamp (specifically, DST depends on the timestamp).</em>
+<a id='L80' name='L80'></a><em class='comment'>         *  If e.g. UNIX APIs are used, they'll have portability issues with</em>
+<a id='L81' name='L81'></a><em class='comment'>         *  very small and very large years.</em>
+<a id='L82' name='L82'></a><em class='comment'>         *</em>
+<a id='L83' name='L83'></a><em class='comment'>         *  Current approach:</em>
+<a id='L84' name='L84'></a><em class='comment'>         *</em>
+<a id='L85' name='L85'></a><em class='comment'>         *  - Stay within portable UNIX limits by using equivalent year mapping.</em>
+<a id='L86' name='L86'></a><em class='comment'>         *    Avoid year 1970 and 2038 as some conversions start to fail, at</em>
+<a id='L87' name='L87'></a><em class='comment'>         *    least on some platforms.  Avoiding 1970 means that there are</em>
+<a id='L88' name='L88'></a><em class='comment'>         *    currently DST discrepancies for 1970.</em>
+<a id='L89' name='L89'></a><em class='comment'>         *</em>
+<a id='L90' name='L90'></a><em class='comment'>         *  - Create a UTC and local time breakdowns from 't'.  Then create</em>
+<a id='L91' name='L91'></a><em class='comment'>         *    a time_t using gmtime() and localtime() and compute the time</em>
+<a id='L92' name='L92'></a><em class='comment'>         *    difference between the two.</em>
+<a id='L93' name='L93'></a><em class='comment'>         *</em>
+<a id='L94' name='L94'></a><em class='comment'>         *  Equivalent year mapping (E5 Section 15.9.1.8):</em>
+<a id='L95' name='L95'></a><em class='comment'>         *</em>
+<a id='L96' name='L96'></a><em class='comment'>         *    If the host environment provides functionality for determining</em>
+<a id='L97' name='L97'></a><em class='comment'>         *    daylight saving time, the implementation of ECMAScript is free</em>
+<a id='L98' name='L98'></a><em class='comment'>         *    to map the year in question to an equivalent year (same</em>
+<a id='L99' name='L99'></a><em class='comment'>         *    leap-year-ness and same starting week day for the year) for which</em>
+<a id='L100' name='L100'></a><em class='comment'>         *    the host environment provides daylight saving time information.</em>
+<a id='L101' name='L101'></a><em class='comment'>         *    The only restriction is that all equivalent years should produce</em>
+<a id='L102' name='L102'></a><em class='comment'>         *    the same result.</em>
+<a id='L103' name='L103'></a><em class='comment'>         *</em>
+<a id='L104' name='L104'></a><em class='comment'>         *  This approach is quite reasonable but not entirely correct, e.g.</em>
+<a id='L105' name='L105'></a><em class='comment'>         *  the specification also states (E5 Section 15.9.1.8):</em>
+<a id='L106' name='L106'></a><em class='comment'>         *</em>
+<a id='L107' name='L107'></a><em class='comment'>         *    The implementation of ECMAScript should not try to determine</em>
+<a id='L108' name='L108'></a><em class='comment'>         *    whether the exact time was subject to daylight saving time, but</em>
+<a id='L109' name='L109'></a><em class='comment'>         *    just whether daylight saving time would have been in effect if</em>
+<a id='L110' name='L110'></a><em class='comment'>         *    the _current daylight saving time algorithm_ had been used at the</em>
+<a id='L111' name='L111'></a><em class='comment'>         *    time.  This avoids complications such as taking into account the</em>
+<a id='L112' name='L112'></a><em class='comment'>         *    years that the locale observed daylight saving time year round.</em>
+<a id='L113' name='L113'></a><em class='comment'>         *</em>
+<a id='L114' name='L114'></a><em class='comment'>         *  Since we rely on the platform APIs for conversions between local</em>
+<a id='L115' name='L115'></a><em class='comment'>         *  time and UTC, we can't guarantee the above.  Rather, if the platform</em>
+<a id='L116' name='L116'></a><em class='comment'>         *  has historical DST rules they will be applied.  This seems to be the</em>
+<a id='L117' name='L117'></a><em class='comment'>         *  general preferred direction in ECMAScript standardization (or at least</em>
+<a id='L118' name='L118'></a><em class='comment'>         *  implementations) anyway, and even the equivalent year mapping should</em>
+<a id='L119' name='L119'></a><em class='comment'>         *  be disabled if the platform is known to handle DST properly for the</em>
+<a id='L120' name='L120'></a><em class='comment'>         *  full ECMAScript range.</em>
+<a id='L121' name='L121'></a><em class='comment'>         *</em>
+<a id='L122' name='L122'></a><em class='comment'>         *  The following has useful discussion and links:</em>
+<a id='L123' name='L123'></a><em class='comment'>         *</em>
+<a id='L124' name='L124'></a><em class='comment'>         *    https://bugzilla.mozilla.org/show_bug.cgi?id=351066</em>
+<a id='L125' name='L125'></a><em class='comment'>         */</em>
+<a id='L126' name='L126'></a>
+<a id='L127' name='L127'></a>        <a href='../D/4638.html' title='Multiple defined in 4 places.'>duk_bi_date_timeval_to_parts</a>(d, parts, dparts, <a href='../D/463.html' title='Multiple defined in 3 places.'>DUK_DATE_FLAG_EQUIVYEAR</a> <em class='comment'>/*flags*/</em>);
+<a id='L128' name='L128'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(parts[<a href='../D/484.html' title='Multiple defined in 3 places.'>DUK_DATE_IDX_YEAR</a>] &gt;= 1970 &amp;&amp; parts[<a href='../D/484.html' title='Multiple defined in 3 places.'>DUK_DATE_IDX_YEAR</a>] &lt;= 2038);
+<a id='L129' name='L129'></a>
+<a id='L130' name='L130'></a>        d = <a href='../D/4624.html' title='Multiple defined in 4 places.'>duk_bi_date_get_timeval_from_dparts</a>(dparts, 0 <em class='comment'>/*flags*/</em>);
+<a id='L131' name='L131'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(d &gt;= 0 &amp;&amp; d &lt; 2147483648.0 * 1000.0);  <em class='comment'>/* unsigned 31-bit range */</em>
+<a id='L132' name='L132'></a>        t = (time_t) (d / 1000.0);
+<a id='L133' name='L133'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("timeval: %lf -&gt; time_t %ld", (<strong class='reserved'>double</strong>) d, (<strong class='reserved'>long</strong>) t));
+<a id='L134' name='L134'></a>
+<a id='L135' name='L135'></a>        <a href='../D/5467.html' title='Multiple defined in 8 places.'>duk_memzero</a>((<strong class='reserved'>void</strong> *) tms, <strong class='reserved'>sizeof</strong>(<strong class='reserved'>struct</strong> tm) * 2);
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3061.html' title='Multiple defined in 48 places.'>DUK_USE_DATE_TZO_GMTIME_R</a>)
+<a id='L138' name='L138'></a>        (<strong class='reserved'>void</strong>) gmtime_r(&amp;t, &amp;tms[0]);
+<a id='L139' name='L139'></a>        (<strong class='reserved'>void</strong>) localtime_r(&amp;t, &amp;tms[1]);
+<a id='L140' name='L140'></a><em class='sharp'>#elif</em> <strong class='reserved'>defined</strong>(<a href='../D/3062.html' title='Multiple defined in 3 places.'>DUK_USE_DATE_TZO_GMTIME_S</a>)
+<a id='L141' name='L141'></a>        (<strong class='reserved'>void</strong>) gmtime_s(&amp;t, &amp;tms[0]);
+<a id='L142' name='L142'></a>        (<strong class='reserved'>void</strong>) localtime_s(&amp;t, &amp;tms[1]);
+<a id='L143' name='L143'></a><em class='sharp'>#elif</em> <strong class='reserved'>defined</strong>(<a href='../D/3060.html' title='Multiple defined in 9 places.'>DUK_USE_DATE_TZO_GMTIME</a>)
+<a id='L144' name='L144'></a>        tm_ptr = gmtime(&amp;t);
+<a id='L145' name='L145'></a>        <a href='../D/5460.html' title='Multiple defined in 8 places.'>duk_memcpy</a>((<strong class='reserved'>void</strong> *) &amp;tms[0], tm_ptr, <strong class='reserved'>sizeof</strong>(<strong class='reserved'>struct</strong> tm));
+<a id='L146' name='L146'></a>        tm_ptr = localtime(&amp;t);
+<a id='L147' name='L147'></a>        <a href='../D/5460.html' title='Multiple defined in 8 places.'>duk_memcpy</a>((<strong class='reserved'>void</strong> *) &amp;tms[1], tm_ptr, <strong class='reserved'>sizeof</strong>(<strong class='reserved'>struct</strong> tm));
+<a id='L148' name='L148'></a><em class='sharp'>#else</em>
+<a id='L149' name='L149'></a><em class='sharp'>#error</em> internal error
+<a id='L150' name='L150'></a><em class='sharp'>#endif</em>
+<a id='L151' name='L151'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("gmtime result: tm={sec:%ld,min:%ld,hour:%ld,mday:%ld,mon:%ld,year:%ld,"
+<a id='L152' name='L152'></a>                             "wday:%ld,yday:%ld,isdst:%ld}",
+<a id='L153' name='L153'></a>                             (<strong class='reserved'>long</strong>) tms[0].tm_sec, (<strong class='reserved'>long</strong>) tms[0].tm_min, (<strong class='reserved'>long</strong>) tms[0].tm_hour,
+<a id='L154' name='L154'></a>                             (<strong class='reserved'>long</strong>) tms[0].tm_mday, (<strong class='reserved'>long</strong>) tms[0].tm_mon, (<strong class='reserved'>long</strong>) tms[0].tm_year,
+<a id='L155' name='L155'></a>                             (<strong class='reserved'>long</strong>) tms[0].tm_wday, (<strong class='reserved'>long</strong>) tms[0].tm_yday, (<strong class='reserved'>long</strong>) tms[0].tm_isdst));
+<a id='L156' name='L156'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("localtime result: tm={sec:%ld,min:%ld,hour:%ld,mday:%ld,mon:%ld,year:%ld,"
+<a id='L157' name='L157'></a>                             "wday:%ld,yday:%ld,isdst:%ld}",
+<a id='L158' name='L158'></a>                             (<strong class='reserved'>long</strong>) tms[1].tm_sec, (<strong class='reserved'>long</strong>) tms[1].tm_min, (<strong class='reserved'>long</strong>) tms[1].tm_hour,
+<a id='L159' name='L159'></a>                             (<strong class='reserved'>long</strong>) tms[1].tm_mday, (<strong class='reserved'>long</strong>) tms[1].tm_mon, (<strong class='reserved'>long</strong>) tms[1].tm_year,
+<a id='L160' name='L160'></a>                             (<strong class='reserved'>long</strong>) tms[1].tm_wday, (<strong class='reserved'>long</strong>) tms[1].tm_yday, (<strong class='reserved'>long</strong>) tms[1].tm_isdst));
+<a id='L161' name='L161'></a>
+<a id='L162' name='L162'></a>        <em class='comment'>/* tm_isdst is both an input and an output to mktime(), use 0 to</em>
+<a id='L163' name='L163'></a><em class='comment'>         * avoid DST handling in mktime():</em>
+<a id='L164' name='L164'></a><em class='comment'>         * - https://github.com/svaarala/duktape/issues/406</em>
+<a id='L165' name='L165'></a><em class='comment'>         * - http://stackoverflow.com/questions/8558919/mktime-and-tm-isdst</em>
+<a id='L166' name='L166'></a><em class='comment'>         */</em>
+<a id='L167' name='L167'></a>        tms[0].tm_isdst = 0;
+<a id='L168' name='L168'></a>        tms[1].tm_isdst = 0;
+<a id='L169' name='L169'></a>        t1 = mktime(&amp;tms[0]);  <em class='comment'>/* UTC */</em>
+<a id='L170' name='L170'></a>        t2 = mktime(&amp;tms[1]);  <em class='comment'>/* local */</em>
+<a id='L171' name='L171'></a>        <strong class='reserved'>if</strong> (t1 == (time_t) -1 || t2 == (time_t) -1) <em class='brace'>{</em>
+<a id='L172' name='L172'></a>                <em class='comment'>/* This check used to be for (t &lt; 0) but on some platforms</em>
+<a id='L173' name='L173'></a><em class='comment'>                 * time_t is unsigned and apparently the proper way to detect</em>
+<a id='L174' name='L174'></a><em class='comment'>                 * an mktime() error return is the cast above.  See e.g.:</em>
+<a id='L175' name='L175'></a><em class='comment'>                 * http://pubs.opengroup.org/onlinepubs/009695299/functions/mktime.html</em>
+<a id='L176' name='L176'></a><em class='comment'>                 */</em>
+<a id='L177' name='L177'></a>                <strong class='reserved'>goto</strong> mktime_error;
+<a id='L178' name='L178'></a>        <em class='brace'>}</em>
+<a id='L179' name='L179'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("t1=%ld (utc), t2=%ld (local)", (<strong class='reserved'>long</strong>) t1, (<strong class='reserved'>long</strong>) t2));
+<a id='L180' name='L180'></a>
+<a id='L181' name='L181'></a>        <em class='comment'>/* Compute final offset in seconds, positive if local time ahead of</em>
+<a id='L182' name='L182'></a><em class='comment'>         * UTC (returned value is UTC-to-local offset).</em>
+<a id='L183' name='L183'></a><em class='comment'>         *</em>
+<a id='L184' name='L184'></a><em class='comment'>         * difftime() returns a double, so coercion to int generates quite</em>
+<a id='L185' name='L185'></a><em class='comment'>         * a lot of code.  Direct subtraction is not portable, however.</em>
+<a id='L186' name='L186'></a><em class='comment'>         * XXX: allow direct subtraction on known platforms.</em>
+<a id='L187' name='L187'></a><em class='comment'>         */</em>
+<a id='L188' name='L188'></a><em class='sharp'>#if</em> 0
+<a id='L189' name='L189'></a>        <strong class='reserved'>return</strong> (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) (t2 - t1);
+<a id='L190' name='L190'></a><em class='sharp'>#endif</em>
+<a id='L191' name='L191'></a>        <strong class='reserved'>return</strong> (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) difftime(t2, t1);
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a> mktime_error:
+<a id='L194' name='L194'></a>        <em class='comment'>/* XXX: return something more useful, so that caller can throw? */</em>
+<a id='L195' name='L195'></a>        <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("mktime() failed, d=%lf", (<strong class='reserved'>double</strong>) d));
+<a id='L196' name='L196'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L197' name='L197'></a><em class='brace'>}</em>
+<a id='L198' name='L198'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_DATE_TZO_GMTIME */</em>
+<a id='L199' name='L199'></a>
+<a id='L200' name='L200'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3059.html' title='Multiple defined in 48 places.'>DUK_USE_DATE_PRS_STRPTIME</a>)
+<a id='L201' name='L201'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/4797.html' title='Multiple defined in 3 places.'>duk_bool_t</a> <a href='../R/3865.html' title='Multiple referred from 7 places.'>duk_bi_date_parse_string_strptime</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str) <em class='brace'>{</em>
+<a id='L202' name='L202'></a>        <strong class='reserved'>struct</strong> tm tm;
+<a id='L203' name='L203'></a>        time_t t;
+<a id='L204' name='L204'></a>        <strong class='reserved'>char</strong> buf[<a href='../D/3666.html' title='Multiple defined in 6 places.'>DUK__STRPTIME_BUF_SIZE</a>];
+<a id='L205' name='L205'></a>
+<a id='L206' name='L206'></a>        <em class='comment'>/* Copy to buffer with slack to avoid Valgrind gripes from strptime. */</em>
+<a id='L207' name='L207'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(str != NULL);
+<a id='L208' name='L208'></a>        <a href='../D/5467.html' title='Multiple defined in 8 places.'>duk_memzero</a>(buf, <strong class='reserved'>sizeof</strong>(buf));  <em class='comment'>/* valgrind whine without this */</em>
+<a id='L209' name='L209'></a>        <a href='../D/2376.html' title='Multiple defined in 9 places.'>DUK_SNPRINTF</a>(buf, <strong class='reserved'>sizeof</strong>(buf), "%s", (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *) str);
+<a id='L210' name='L210'></a>        buf[<strong class='reserved'>sizeof</strong>(buf) - 1] = (<strong class='reserved'>char</strong>) 0;
+<a id='L211' name='L211'></a>
+<a id='L212' name='L212'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("parsing: '%s'", (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *) buf));
+<a id='L213' name='L213'></a>
+<a id='L214' name='L214'></a>        <a href='../D/5467.html' title='Multiple defined in 8 places.'>duk_memzero</a>(&amp;tm, <strong class='reserved'>sizeof</strong>(tm));
+<a id='L215' name='L215'></a>        <strong class='reserved'>if</strong> (strptime((<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *) buf, "%c", &amp;tm) != NULL) <em class='brace'>{</em>
+<a id='L216' name='L216'></a>                <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("before mktime: tm={sec:%ld,min:%ld,hour:%ld,mday:%ld,mon:%ld,year:%ld,"
+<a id='L217' name='L217'></a>                                     "wday:%ld,yday:%ld,isdst:%ld}",
+<a id='L218' name='L218'></a>                                     (<strong class='reserved'>long</strong>) tm.tm_sec, (<strong class='reserved'>long</strong>) tm.tm_min, (<strong class='reserved'>long</strong>) tm.tm_hour,
+<a id='L219' name='L219'></a>                                     (<strong class='reserved'>long</strong>) tm.tm_mday, (<strong class='reserved'>long</strong>) tm.tm_mon, (<strong class='reserved'>long</strong>) tm.tm_year,
+<a id='L220' name='L220'></a>                                     (<strong class='reserved'>long</strong>) tm.tm_wday, (<strong class='reserved'>long</strong>) tm.tm_yday, (<strong class='reserved'>long</strong>) tm.tm_isdst));
+<a id='L221' name='L221'></a>                tm.tm_isdst = -1;  <em class='comment'>/* negative: dst info not available */</em>
+<a id='L222' name='L222'></a>
+<a id='L223' name='L223'></a>                t = mktime(&amp;tm);
+<a id='L224' name='L224'></a>                <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("mktime() -&gt; %ld", (<strong class='reserved'>long</strong>) t));
+<a id='L225' name='L225'></a>                <strong class='reserved'>if</strong> (t &gt;= 0) <em class='brace'>{</em>
+<a id='L226' name='L226'></a>                        <a href='../D/5599.html' title='Multiple defined in 4 places.'>duk_push_number</a>(thr, ((<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a>) t) * 1000.0);
+<a id='L227' name='L227'></a>                        <strong class='reserved'>return</strong> 1;
+<a id='L228' name='L228'></a>                <em class='brace'>}</em>
+<a id='L229' name='L229'></a>        <em class='brace'>}</em>
+<a id='L230' name='L230'></a>
+<a id='L231' name='L231'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L232' name='L232'></a><em class='brace'>}</em>
+<a id='L233' name='L233'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_DATE_PRS_STRPTIME */</em>
+<a id='L234' name='L234'></a>
+<a id='L235' name='L235'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3058.html' title='Multiple defined in 3 places.'>DUK_USE_DATE_PRS_GETDATE</a>)
+<a id='L236' name='L236'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/4797.html' title='Multiple defined in 3 places.'>duk_bool_t</a> <a href='../R/3864.html' title='Multiple referred from 7 places.'>duk_bi_date_parse_string_getdate</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str) <em class='brace'>{</em>
+<a id='L237' name='L237'></a>        <strong class='reserved'>struct</strong> tm tm;
+<a id='L238' name='L238'></a>        <a href='../D/5767.html' title='Multiple defined in 3 places.'>duk_small_int_t</a> rc;
+<a id='L239' name='L239'></a>        time_t t;
+<a id='L240' name='L240'></a>
+<a id='L241' name='L241'></a>        <em class='comment'>/* For this to work, DATEMSK must be set, so this is not very</em>
+<a id='L242' name='L242'></a><em class='comment'>         * convenient for an embeddable interpreter.</em>
+<a id='L243' name='L243'></a><em class='comment'>         */</em>
+<a id='L244' name='L244'></a>
+<a id='L245' name='L245'></a>        <a href='../D/5467.html' title='Multiple defined in 8 places.'>duk_memzero</a>(&amp;tm, <strong class='reserved'>sizeof</strong>(<strong class='reserved'>struct</strong> tm));
+<a id='L246' name='L246'></a>        rc = (<a href='../D/5767.html' title='Multiple defined in 3 places.'>duk_small_int_t</a>) getdate_r(str, &amp;tm);
+<a id='L247' name='L247'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("getdate_r() -&gt; %ld", (<strong class='reserved'>long</strong>) rc));
+<a id='L248' name='L248'></a>
+<a id='L249' name='L249'></a>        <strong class='reserved'>if</strong> (rc == 0) <em class='brace'>{</em>
+<a id='L250' name='L250'></a>                t = mktime(&amp;tm);
+<a id='L251' name='L251'></a>                <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("mktime() -&gt; %ld", (<strong class='reserved'>long</strong>) t));
+<a id='L252' name='L252'></a>                <strong class='reserved'>if</strong> (t &gt;= 0) <em class='brace'>{</em>
+<a id='L253' name='L253'></a>                        <a href='../D/5599.html' title='Multiple defined in 4 places.'>duk_push_number</a>(thr, (<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a>) t);
+<a id='L254' name='L254'></a>                        <strong class='reserved'>return</strong> 1;
+<a id='L255' name='L255'></a>                <em class='brace'>}</em>
+<a id='L256' name='L256'></a>        <em class='brace'>}</em>
+<a id='L257' name='L257'></a>
+<a id='L258' name='L258'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L259' name='L259'></a><em class='brace'>}</em>
+<a id='L260' name='L260'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_DATE_PRS_GETDATE */</em>
+<a id='L261' name='L261'></a>
+<a id='L262' name='L262'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3049.html' title='Multiple defined in 60 places.'>DUK_USE_DATE_FMT_STRFTIME</a>)
+<a id='L263' name='L263'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/4797.html' title='Multiple defined in 3 places.'>duk_bool_t</a> <a href='../R/3852.html' title='Multiple referred from 7 places.'>duk_bi_date_format_parts_strftime</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> *parts, <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> tzoffset, <a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a> flags) <em class='brace'>{</em>
+<a id='L264' name='L264'></a>        <strong class='reserved'>char</strong> buf[<a href='../D/3659.html' title='Multiple defined in 6 places.'>DUK__STRFTIME_BUF_SIZE</a>];
+<a id='L265' name='L265'></a>        <strong class='reserved'>struct</strong> tm tm;
+<a id='L266' name='L266'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *fmt;
+<a id='L267' name='L267'></a>
+<a id='L268' name='L268'></a>        <a href='../D/3010.html' title='Multiple defined in 9 places.'>DUK_UNREF</a>(tzoffset);
+<a id='L269' name='L269'></a>
+<a id='L270' name='L270'></a>        <em class='comment'>/* If the platform doesn't support the entire ECMAScript range, we need</em>
+<a id='L271' name='L271'></a><em class='comment'>         * to return 0 so that the caller can fall back to the default formatter.</em>
+<a id='L272' name='L272'></a><em class='comment'>         *</em>
+<a id='L273' name='L273'></a><em class='comment'>         * For now, assume that if time_t is 8 bytes or more, the whole ECMAScript</em>
+<a id='L274' name='L274'></a><em class='comment'>         * range is supported.  For smaller time_t values (4 bytes in practice),</em>
+<a id='L275' name='L275'></a><em class='comment'>         * assumes that the signed 32-bit range is supported.</em>
+<a id='L276' name='L276'></a><em class='comment'>         *</em>
+<a id='L277' name='L277'></a><em class='comment'>         * XXX: detect this more correctly per platform.  The size of time_t is</em>
+<a id='L278' name='L278'></a><em class='comment'>         * probably not an accurate guarantee of strftime() supporting or not</em>
+<a id='L279' name='L279'></a><em class='comment'>         * supporting a large time range (the full ECMAScript range).</em>
+<a id='L280' name='L280'></a><em class='comment'>         */</em>
+<a id='L281' name='L281'></a>        <strong class='reserved'>if</strong> (<strong class='reserved'>sizeof</strong>(time_t) &lt; 8 &amp;&amp;
+<a id='L282' name='L282'></a>            (parts[<a href='../D/484.html' title='Multiple defined in 3 places.'>DUK_DATE_IDX_YEAR</a>] &lt; 1970 || parts[<a href='../D/484.html' title='Multiple defined in 3 places.'>DUK_DATE_IDX_YEAR</a>] &gt; 2037)) <em class='brace'>{</em>
+<a id='L283' name='L283'></a>                <em class='comment'>/* be paranoid for 32-bit time values (even avoiding negative ones) */</em>
+<a id='L284' name='L284'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L285' name='L285'></a>        <em class='brace'>}</em>
+<a id='L286' name='L286'></a>
+<a id='L287' name='L287'></a>        <a href='../D/5467.html' title='Multiple defined in 8 places.'>duk_memzero</a>(&amp;tm, <strong class='reserved'>sizeof</strong>(tm));
+<a id='L288' name='L288'></a>        tm.tm_sec = parts[<a href='../D/482.html' title='Multiple defined in 3 places.'>DUK_DATE_IDX_SECOND</a>];
+<a id='L289' name='L289'></a>        tm.tm_min = parts[<a href='../D/479.html' title='Multiple defined in 3 places.'>DUK_DATE_IDX_MINUTE</a>];
+<a id='L290' name='L290'></a>        tm.tm_hour = parts[<a href='../D/477.html' title='Multiple defined in 3 places.'>DUK_DATE_IDX_HOUR</a>];
+<a id='L291' name='L291'></a>        tm.tm_mday = parts[<a href='../D/476.html' title='Multiple defined in 3 places.'>DUK_DATE_IDX_DAY</a>];       <em class='comment'>/* already one-based */</em>
+<a id='L292' name='L292'></a>        tm.tm_mon = parts[<a href='../D/480.html' title='Multiple defined in 3 places.'>DUK_DATE_IDX_MONTH</a>] - 1;  <em class='comment'>/* one-based -&gt; zero-based */</em>
+<a id='L293' name='L293'></a>        tm.tm_year = parts[<a href='../D/484.html' title='Multiple defined in 3 places.'>DUK_DATE_IDX_YEAR</a>] - 1900;
+<a id='L294' name='L294'></a>        tm.tm_wday = parts[<a href='../D/483.html' title='Multiple defined in 3 places.'>DUK_DATE_IDX_WEEKDAY</a>];
+<a id='L295' name='L295'></a>        tm.tm_isdst = 0;
+<a id='L296' name='L296'></a>
+<a id='L297' name='L297'></a>        <a href='../D/5467.html' title='Multiple defined in 8 places.'>duk_memzero</a>(buf, <strong class='reserved'>sizeof</strong>(buf));
+<a id='L298' name='L298'></a>        <strong class='reserved'>if</strong> ((flags &amp; <a href='../D/471.html' title='Multiple defined in 3 places.'>DUK_DATE_FLAG_TOSTRING_DATE</a>) &amp;&amp; (flags &amp; <a href='../D/473.html' title='Multiple defined in 3 places.'>DUK_DATE_FLAG_TOSTRING_TIME</a>)) <em class='brace'>{</em>
+<a id='L299' name='L299'></a>                fmt = "%c";
+<a id='L300' name='L300'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (flags &amp; <a href='../D/471.html' title='Multiple defined in 3 places.'>DUK_DATE_FLAG_TOSTRING_DATE</a>) <em class='brace'>{</em>
+<a id='L301' name='L301'></a>                fmt = "%x";
+<a id='L302' name='L302'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L303' name='L303'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(flags &amp; <a href='../D/473.html' title='Multiple defined in 3 places.'>DUK_DATE_FLAG_TOSTRING_TIME</a>);
+<a id='L304' name='L304'></a>                fmt = "%X";
+<a id='L305' name='L305'></a>        <em class='brace'>}</em>
+<a id='L306' name='L306'></a>        (<strong class='reserved'>void</strong>) strftime(buf, <strong class='reserved'>sizeof</strong>(buf) - 1, fmt, &amp;tm);
+<a id='L307' name='L307'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(buf[<strong class='reserved'>sizeof</strong>(buf) - 1] == 0);
+<a id='L308' name='L308'></a>
+<a id='L309' name='L309'></a>        <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(thr, buf);
+<a id='L310' name='L310'></a>        <strong class='reserved'>return</strong> 1;
+<a id='L311' name='L311'></a><em class='brace'>}</em>
+<a id='L312' name='L312'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_DATE_FMT_STRFTIME */</em>
+<a id='L313' name='L313'></a>
+<a id='L314' name='L314'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3122.html' title='Multiple defined in 6 places.'>DUK_USE_GET_MONOTONIC_TIME_CLOCK_GETTIME</a>)
+<a id='L315' name='L315'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a> <a href='../R/3856.html' title='Multiple referred from 7 places.'>duk_bi_date_get_monotonic_time_clock_gettime</a>(<strong class='reserved'>void</strong>) <em class='brace'>{</em>
+<a id='L316' name='L316'></a>        <strong class='reserved'>struct</strong> timespec ts;
+<a id='L317' name='L317'></a>
+<a id='L318' name='L318'></a>        <strong class='reserved'>if</strong> (clock_gettime(CLOCK_MONOTONIC, &amp;ts) == 0) <em class='brace'>{</em>
+<a id='L319' name='L319'></a>                <strong class='reserved'>return</strong> (<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a>) ts.tv_sec * 1000.0 + (<a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a>) ts.tv_nsec / 1000000.0;
+<a id='L320' name='L320'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L321' name='L321'></a>                <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("clock_gettime(CLOCK_MONOTONIC) failed"));
+<a id='L322' name='L322'></a>                <strong class='reserved'>return</strong> 0.0;
+<a id='L323' name='L323'></a>        <em class='brace'>}</em>
+<a id='L324' name='L324'></a><em class='brace'>}</em>
+<a id='L325' name='L325'></a><em class='sharp'>#endif</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L19'>[^]</a><a href='#L315'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

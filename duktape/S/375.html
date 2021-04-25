@@ -1,0 +1,1679 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>examples/cmdline/duk_cmdline.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1004.html'>examples</a>/<a href='../files/1008.html'>cmdline</a>/duk_cmdline.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L124'>[^]</a><a href='#L1625'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L124' title='Defined at 124.'>print_greet_line</a></li>
+<li><a href='#L138' title='Defined at 138.'>set_resource_limits</a></li>
+<li><a href='#L169' title='Defined at 169.'>my_sighandler</a></li>
+<li><a href='#L173' title='Defined at 173.'>set_sigint_handler</a></li>
+<li><a href='#L179' title='Defined at 179.'>cmdline_fatal_handler</a></li>
+<li><a href='#L189' title='Defined at 189.'>print_pop_error</a></li>
+<li><a href='#L195' title='Defined at 195.'>wrapped_compile_execute</a></li>
+<li><a href='#L415' title='Defined at 415.'>linenoise_add_completion</a></li>
+<li><a href='#L426' title='Defined at 426.'>linenoise_hints</a></li>
+<li><a href='#L480' title='Defined at 480.'>linenoise_freehints</a></li>
+<li><a href='#L487' title='Defined at 487.'>linenoise_completion</a></li>
+<li><a href='#L520' title='Defined at 520.'>handle_fh</a></li>
+<li><a href='#L650' title='Defined at 650.'>handle_file</a></li>
+<li><a href='#L687' title='Defined at 687.'>handle_eval</a></li>
+<li><a href='#L714' title='Defined at 714.'>handle_interactive</a></li>
+<li><a href='#L792' title='Defined at 792.'>handle_interactive</a></li>
+<li><a href='#L877' title='Defined at 877.'>fileio_read_file</a></li>
+<li><a href='#L932' title='Defined at 932.'>fileio_write_file</a></li>
+<li><a href='#L974' title='Defined at 974.'>string_frombufferraw</a></li>
+<li><a href='#L984' title='Defined at 984.'>debugger_request</a></li>
+<li><a href='#L1014' title='Defined at 1014.'>debugger_detached</a></li>
+<li><a href='#L1052' title='Defined at 1052.'>create_duktape_heap</a></li>
+<li><a href='#L1233' title='Defined at 1233.'>destroy_duktape_heap</a></li>
+<li><a href='#L1265' title='Defined at 1265.'>main</a></li>
+<li><a href='#L1592' title='Defined at 1592.'>duk_cmdline_stack_check</a></li>
+<li><a href='#L1625' title='Defined at 1625.'>duk_cmdline_stack_check</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Command line execution tool.  Useful for test cases and manual testing.</em>
+<a id='L3' name='L3'></a><em class='comment'> *  Also demonstrates some basic integration techniques.</em>
+<a id='L4' name='L4'></a><em class='comment'> *</em>
+<a id='L5' name='L5'></a><em class='comment'> *  Optional features include:</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> *  - To enable print()/alert() bindings, define DUK_CMDLINE_PRINTALERT_SUPPORT</em>
+<a id='L8' name='L8'></a><em class='comment'> *    and add extras/print-alert/duk_print_alert.c to compilation.</em>
+<a id='L9' name='L9'></a><em class='comment'> *</em>
+<a id='L10' name='L10'></a><em class='comment'> *  - To enable console.log() etc, define DUK_CMDLINE_CONSOLE_SUPPORT</em>
+<a id='L11' name='L11'></a><em class='comment'> *    and add extras/console/duk_console.c to compilation.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> *  - To enable Duktape.Logger, define DUK_CMDLINE_LOGGING_SUPPORT</em>
+<a id='L14' name='L14'></a><em class='comment'> *    and add extras/logging/duk_logging.c to compilation.</em>
+<a id='L15' name='L15'></a><em class='comment'> *</em>
+<a id='L16' name='L16'></a><em class='comment'> *  - To enable Duktape 1.x module loading support (require(),</em>
+<a id='L17' name='L17'></a><em class='comment'> *    Duktape.modSearch() etc), define DUK_CMDLINE_MODULE_SUPPORT and add</em>
+<a id='L18' name='L18'></a><em class='comment'> *    extras/module-duktape/duk_module_duktape.c to compilation.</em>
+<a id='L19' name='L19'></a><em class='comment'> *</em>
+<a id='L20' name='L20'></a><em class='comment'> *  - To enable linenoise and other fancy stuff, compile with -DDUK_CMDLINE_FANCY.</em>
+<a id='L21' name='L21'></a><em class='comment'> *    It is not the default to maximize portability.  You can also compile in</em>
+<a id='L22' name='L22'></a><em class='comment'> *    support for example allocators, grep for DUK_CMDLINE_*.</em>
+<a id='L23' name='L23'></a><em class='comment'> */</em>
+<a id='L24' name='L24'></a>
+<a id='L25' name='L25'></a><em class='comment'>/* Helper define to enable a feature set; can also use separate defines. */</em>
+<a id='L26' name='L26'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_FANCY)
+<a id='L27' name='L27'></a><em class='sharp'>#define</em> <a href='../R/327.html' title='Multiple referred from 3 places.'>DUK_CMDLINE_LINENOISE</a>
+<a id='L28' name='L28'></a><em class='sharp'>#define</em> <a href='../R/328.html' title='Multiple referred from 7 places.'>DUK_CMDLINE_LINENOISE_COMPLETION</a>  <em class='comment'>/* Enables completion and hints. */</em>
+<a id='L29' name='L29'></a><em class='sharp'>#define</em> <a href='../R/329.html' title='Multiple referred from 3 places.'>DUK_CMDLINE_RLIMIT</a>
+<a id='L30' name='L30'></a><em class='sharp'>#define</em> <a href='../R/330.html' title='Multiple referred from 3 places.'>DUK_CMDLINE_SIGNAL</a>
+<a id='L31' name='L31'></a><em class='sharp'>#endif</em>
+<a id='L32' name='L32'></a>
+<a id='L33' name='L33'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(WIN32) || <strong class='reserved'>defined</strong>(_WIN32) || <strong class='reserved'>defined</strong>(__WIN32__) || \
+<a id='L34' name='L34'></a>    <strong class='reserved'>defined</strong>(WIN64) || <strong class='reserved'>defined</strong>(_WIN64) || <strong class='reserved'>defined</strong>(__WIN64__)
+<a id='L35' name='L35'></a><em class='comment'>/* Suppress warnings about plain fopen() etc. */</em>
+<a id='L36' name='L36'></a><em class='sharp'>#define</em> <a href='../R/2964.html' title='Multiple referred from 6 places.'>_CRT_SECURE_NO_WARNINGS</a>
+<a id='L37' name='L37'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(_MSC_VER) &amp;&amp; (_MSC_VER &lt; 1900)
+<a id='L38' name='L38'></a><em class='comment'>/* Workaround for snprintf() missing in older MSVC versions.</em>
+<a id='L39' name='L39'></a><em class='comment'> * Note that _snprintf() may not NUL terminate the string, but</em>
+<a id='L40' name='L40'></a><em class='comment'> * this difference does not matter here as a NUL terminator is</em>
+<a id='L41' name='L41'></a><em class='comment'> * always explicitly added.</em>
+<a id='L42' name='L42'></a><em class='comment'> */</em>
+<a id='L43' name='L43'></a><em class='sharp'>#define</em> <a href='../R/5197.html' title='Multiple referred from 15 places.'>snprintf</a> _snprintf
+<a id='L44' name='L44'></a><em class='sharp'>#endif</em>
+<a id='L45' name='L45'></a><em class='sharp'>#endif</em>
+<a id='L46' name='L46'></a>
+<a id='L47' name='L47'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_PTHREAD_STACK_CHECK)
+<a id='L48' name='L48'></a><em class='sharp'>#define</em> <a href='../R/2965.html' title='Multiple referred from 9 places.'>_GNU_SOURCE</a>
+<a id='L49' name='L49'></a><em class='sharp'>#include</em> &lt;pthread.h&gt;
+<a id='L50' name='L50'></a><em class='sharp'>#endif</em>
+<a id='L51' name='L51'></a>
+<a id='L52' name='L52'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L53' name='L53'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L54' name='L54'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L55' name='L55'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L30' title='Defined at 30 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_SIGNAL</a>)
+<a id='L56' name='L56'></a><em class='sharp'>#include</em> &lt;signal.h&gt;
+<a id='L57' name='L57'></a><em class='sharp'>#endif</em>
+<a id='L58' name='L58'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L29' title='Defined at 29 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_RLIMIT</a>)
+<a id='L59' name='L59'></a><em class='sharp'>#include</em> &lt;sys/resource.h&gt;
+<a id='L60' name='L60'></a><em class='sharp'>#endif</em>
+<a id='L61' name='L61'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L27' title='Defined at 27 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_LINENOISE</a>)
+<a id='L62' name='L62'></a><em class='sharp'>#include</em> "linenoise.h"
+<a id='L63' name='L63'></a><em class='sharp'>#include</em> &lt;stdint.h&gt;  <em class='comment'>/* Assume C99/C++11 with linenoise. */</em>
+<a id='L64' name='L64'></a><em class='sharp'>#endif</em>
+<a id='L65' name='L65'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_PRINTALERT_SUPPORT)
+<a id='L66' name='L66'></a><em class='sharp'>#include</em> "<a href='945.html'>duk_print_alert.h</a>"
+<a id='L67' name='L67'></a><em class='sharp'>#endif</em>
+<a id='L68' name='L68'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_CONSOLE_SUPPORT)
+<a id='L69' name='L69'></a><em class='sharp'>#include</em> "<a href='930.html'>duk_console.h</a>"
+<a id='L70' name='L70'></a><em class='sharp'>#endif</em>
+<a id='L71' name='L71'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOGGING_SUPPORT)
+<a id='L72' name='L72'></a><em class='sharp'>#include</em> "<a href='965.html'>duk_logging.h</a>"
+<a id='L73' name='L73'></a><em class='sharp'>#endif</em>
+<a id='L74' name='L74'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_MODULE_SUPPORT)
+<a id='L75' name='L75'></a><em class='sharp'>#include</em> "<a href='955.html'>duk_module_duktape.h</a>"
+<a id='L76' name='L76'></a><em class='sharp'>#endif</em>
+<a id='L77' name='L77'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_FILEIO)
+<a id='L78' name='L78'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L79' name='L79'></a><em class='sharp'>#endif</em>
+<a id='L80' name='L80'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(EMSCRIPTEN)
+<a id='L81' name='L81'></a><em class='sharp'>#include</em> &lt;emscripten.h&gt;
+<a id='L82' name='L82'></a><em class='sharp'>#endif</em>
+<a id='L83' name='L83'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_ALLOC_LOGGING)
+<a id='L84' name='L84'></a><em class='sharp'>#include</em> "<a href='343.html'>duk_alloc_logging.h</a>"
+<a id='L85' name='L85'></a><em class='sharp'>#endif</em>
+<a id='L86' name='L86'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_ALLOC_TORTURE)
+<a id='L87' name='L87'></a><em class='sharp'>#include</em> "<a href='318.html'>duk_alloc_torture.h</a>"
+<a id='L88' name='L88'></a><em class='sharp'>#endif</em>
+<a id='L89' name='L89'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_ALLOC_HYBRID)
+<a id='L90' name='L90'></a><em class='sharp'>#include</em> "<a href='371.html'>duk_alloc_hybrid.h</a>"
+<a id='L91' name='L91'></a><em class='sharp'>#endif</em>
+<a id='L92' name='L92'></a><em class='sharp'>#include</em> "<a href='../I/204.html'>duktape.h</a>"
+<a id='L93' name='L93'></a>
+<a id='L94' name='L94'></a><em class='sharp'>#include</em> "<a href='377.html'>duk_cmdline.h</a>"
+<a id='L95' name='L95'></a>
+<a id='L96' name='L96'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOWMEM)
+<a id='L97' name='L97'></a><em class='sharp'>#include</em> "<a href='961.html'>duk_alloc_pool.h</a>"
+<a id='L98' name='L98'></a><em class='sharp'>#endif</em>
+<a id='L99' name='L99'></a>
+<a id='L100' name='L100'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_DEBUGGER_SUPPORT)
+<a id='L101' name='L101'></a><em class='sharp'>#include</em> "<a href='328.html'>duk_trans_socket.h</a>"
+<a id='L102' name='L102'></a><em class='sharp'>#endif</em>
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a><em class='sharp'>#define</em>  <a href='../S/375.html#L1420' title='Referred from 1420 in examples/cmdline/duk_cmdline.c.'>MEM_LIMIT_NORMAL</a>   (128*1024*1024)   <em class='comment'>/* 128 MB */</em>
+<a id='L105' name='L105'></a><em class='sharp'>#define</em>  <a href='../S/375.html#L1420' title='Referred from 1420 in examples/cmdline/duk_cmdline.c.'>MEM_LIMIT_HIGH</a>     (2047*1024*1024)  <em class='comment'>/* ~2 GB */</em>
+<a id='L106' name='L106'></a>
+<a id='L107' name='L107'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> main_argc = 0;
+<a id='L108' name='L108'></a><strong class='reserved'>static</strong> <strong class='reserved'>char</strong> **main_argv = NULL;
+<a id='L109' name='L109'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> interactive_mode = 0;
+<a id='L110' name='L110'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> allow_bytecode = 0;
+<a id='L111' name='L111'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_DEBUGGER_SUPPORT)
+<a id='L112' name='L112'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> debugger_reattach = 0;
+<a id='L113' name='L113'></a><em class='sharp'>#endif</em>
+<a id='L114' name='L114'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L28' title='Defined at 28 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_LINENOISE_COMPLETION</a>)
+<a id='L115' name='L115'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> no_auto_complete = 0;
+<a id='L116' name='L116'></a><em class='sharp'>#endif</em>
+<a id='L117' name='L117'></a>
+<a id='L118' name='L118'></a><strong class='reserved'>int</strong> <a href='../D/4835.html' title='Multiple defined in 2 places.'>duk_cmdline_stack_check</a>(<strong class='reserved'>void</strong>);
+<a id='L119' name='L119'></a>
+<a id='L120' name='L120'></a><em class='comment'>/*</em>
+<a id='L121' name='L121'></a><em class='comment'> *  Misc helpers</em>
+<a id='L122' name='L122'></a><em class='comment'> */</em>
+<a id='L123' name='L123'></a>
+<a id='L124' name='L124'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../S/375.html#L1508' title='Referred from 1508 in examples/cmdline/duk_cmdline.c.'>print_greet_line</a>(<strong class='reserved'>void</strong>) <em class='brace'>{</em>
+<a id='L125' name='L125'></a>        printf("((o) Duktape%s %d.%d.%d (%s)\n",
+<a id='L126' name='L126'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L27' title='Defined at 27 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_LINENOISE</a>)
+<a id='L127' name='L127'></a>               " [linenoise]",
+<a id='L128' name='L128'></a><em class='sharp'>#else</em>
+<a id='L129' name='L129'></a>               "",
+<a id='L130' name='L130'></a><em class='sharp'>#endif</em>
+<a id='L131' name='L131'></a>               (<strong class='reserved'>int</strong>) (<a href='../D/3262.html' title='Multiple defined in 3 places.'>DUK_VERSION</a> / 10000),
+<a id='L132' name='L132'></a>               (<strong class='reserved'>int</strong>) ((<a href='../D/3262.html' title='Multiple defined in 3 places.'>DUK_VERSION</a> / 100) % 100),
+<a id='L133' name='L133'></a>               (<strong class='reserved'>int</strong>) (<a href='../D/3262.html' title='Multiple defined in 3 places.'>DUK_VERSION</a> % 100),
+<a id='L134' name='L134'></a>               <a href='../D/876.html' title='Multiple defined in 3 places.'>DUK_GIT_DESCRIBE</a>);
+<a id='L135' name='L135'></a><em class='brace'>}</em>
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L29' title='Defined at 29 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_RLIMIT</a>)
+<a id='L138' name='L138'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../S/375.html#L1420' title='Referred from 1420 in examples/cmdline/duk_cmdline.c.'>set_resource_limits</a>(rlim_t mem_limit_value) <em class='brace'>{</em>
+<a id='L139' name='L139'></a>        <strong class='reserved'>int</strong> rc;
+<a id='L140' name='L140'></a>        <strong class='reserved'>struct</strong> rlimit lim;
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a>        rc = getrlimit(RLIMIT_AS, &amp;lim);
+<a id='L143' name='L143'></a>        <strong class='reserved'>if</strong> (rc != 0) <em class='brace'>{</em>
+<a id='L144' name='L144'></a>                fprintf(stderr, "Warning: cannot read RLIMIT_AS\n");
+<a id='L145' name='L145'></a>                <strong class='reserved'>return</strong>;
+<a id='L146' name='L146'></a>        <em class='brace'>}</em>
+<a id='L147' name='L147'></a>
+<a id='L148' name='L148'></a>        <strong class='reserved'>if</strong> (lim.rlim_max &lt; mem_limit_value) <em class='brace'>{</em>
+<a id='L149' name='L149'></a>                fprintf(stderr, "Warning: rlim_max &lt; mem_limit_value (%d &lt; %d)\n", (<strong class='reserved'>int</strong>) lim.rlim_max, (<strong class='reserved'>int</strong>) mem_limit_value);
+<a id='L150' name='L150'></a>                <strong class='reserved'>return</strong>;
+<a id='L151' name='L151'></a>        <em class='brace'>}</em>
+<a id='L152' name='L152'></a>
+<a id='L153' name='L153'></a>        lim.rlim_cur = mem_limit_value;
+<a id='L154' name='L154'></a>        lim.rlim_max = mem_limit_value;
+<a id='L155' name='L155'></a>
+<a id='L156' name='L156'></a>        rc = setrlimit(RLIMIT_AS, &amp;lim);
+<a id='L157' name='L157'></a>        <strong class='reserved'>if</strong> (rc != 0) <em class='brace'>{</em>
+<a id='L158' name='L158'></a>                fprintf(stderr, "Warning: setrlimit failed\n");
+<a id='L159' name='L159'></a>                <strong class='reserved'>return</strong>;
+<a id='L160' name='L160'></a>        <em class='brace'>}</em>
+<a id='L161' name='L161'></a>
+<a id='L162' name='L162'></a><em class='sharp'>#if</em> 0
+<a id='L163' name='L163'></a>        fprintf(stderr, "Set RLIMIT_AS to %d\n", (<strong class='reserved'>int</strong>) mem_limit_value);
+<a id='L164' name='L164'></a><em class='sharp'>#endif</em>
+<a id='L165' name='L165'></a><em class='brace'>}</em>
+<a id='L166' name='L166'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_CMDLINE_RLIMIT */</em>
+<a id='L167' name='L167'></a>
+<a id='L168' name='L168'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L30' title='Defined at 30 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_SIGNAL</a>)
+<a id='L169' name='L169'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/5168.html' title='Multiple referred from 2 places.'>my_sighandler</a>(<strong class='reserved'>int</strong> x) <em class='brace'>{</em>
+<a id='L170' name='L170'></a>        fprintf(stderr, "Got signal %d\n", x);
+<a id='L171' name='L171'></a>        fflush(stderr);
+<a id='L172' name='L172'></a><em class='brace'>}</em>
+<a id='L173' name='L173'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/5196.html' title='Multiple referred from 2 places.'>set_sigint_handler</a>(<strong class='reserved'>void</strong>) <em class='brace'>{</em>
+<a id='L174' name='L174'></a>        (<strong class='reserved'>void</strong>) signal(SIGINT, <a href='../D/6004.html' title='Multiple defined in 2 places.'>my_sighandler</a>);
+<a id='L175' name='L175'></a>        (<strong class='reserved'>void</strong>) signal(SIGPIPE, SIG_IGN);  <em class='comment'>/* avoid SIGPIPE killing process */</em>
+<a id='L176' name='L176'></a><em class='brace'>}</em>
+<a id='L177' name='L177'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_CMDLINE_SIGNAL */</em>
+<a id='L178' name='L178'></a>
+<a id='L179' name='L179'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/2976.html' title='Multiple referred from 5 places.'>cmdline_fatal_handler</a>(<strong class='reserved'>void</strong> *udata, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *msg) <em class='brace'>{</em>
+<a id='L180' name='L180'></a>        (<strong class='reserved'>void</strong>) udata;
+<a id='L181' name='L181'></a>        fprintf(stderr, "*** FATAL ERROR: %s\n", msg ? msg : "no message");
+<a id='L182' name='L182'></a>        fprintf(stderr, "Causing intentional segfault...\n");
+<a id='L183' name='L183'></a>        fflush(stderr);
+<a id='L184' name='L184'></a>        *((<strong class='reserved'>volatile</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> *) 0) = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong>) 0xdeadbeefUL;
+<a id='L185' name='L185'></a>        abort();
+<a id='L186' name='L186'></a><em class='brace'>}</em>
+<a id='L187' name='L187'></a>
+<a id='L188' name='L188'></a><em class='comment'>/* Print error to stderr and pop error. */</em>
+<a id='L189' name='L189'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/5182.html' title='Multiple referred from 4 places.'>print_pop_error</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx, FILE *f) <em class='brace'>{</em>
+<a id='L190' name='L190'></a>        fprintf(f, "%s\n", <a href='../D/5751.html' title='Multiple defined in 4 places.'>duk_safe_to_stacktrace</a>(ctx, -1));
+<a id='L191' name='L191'></a>        fflush(f);
+<a id='L192' name='L192'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L193' name='L193'></a><em class='brace'>}</em>
+<a id='L194' name='L194'></a>
+<a id='L195' name='L195'></a><strong class='reserved'>static</strong> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/5220.html' title='Multiple referred from 5 places.'>wrapped_compile_execute</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx, <strong class='reserved'>void</strong> *udata) <em class='brace'>{</em>
+<a id='L196' name='L196'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *src_data;
+<a id='L197' name='L197'></a>        <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> src_len;
+<a id='L198' name='L198'></a>        <a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a> comp_flags;
+<a id='L199' name='L199'></a>
+<a id='L200' name='L200'></a>        (<strong class='reserved'>void</strong>) udata;
+<a id='L201' name='L201'></a>
+<a id='L202' name='L202'></a>        <em class='comment'>/* XXX: Here it'd be nice to get some stats for the compilation result</em>
+<a id='L203' name='L203'></a><em class='comment'>         * when a suitable command line is given (e.g. code size, constant</em>
+<a id='L204' name='L204'></a><em class='comment'>         * count, function count.  These are available internally but not through</em>
+<a id='L205' name='L205'></a><em class='comment'>         * the public API.</em>
+<a id='L206' name='L206'></a><em class='comment'>         */</em>
+<a id='L207' name='L207'></a>
+<a id='L208' name='L208'></a>        <em class='comment'>/* Use duk_compile_lstring_filename() variant which avoids interning</em>
+<a id='L209' name='L209'></a><em class='comment'>         * the source code.  This only really matters for low memory environments.</em>
+<a id='L210' name='L210'></a><em class='comment'>         */</em>
+<a id='L211' name='L211'></a>
+<a id='L212' name='L212'></a>        <em class='comment'>/* [ ... bytecode_filename src_data src_len filename ] */</em>
+<a id='L213' name='L213'></a>
+<a id='L214' name='L214'></a>        src_data = (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *) <a href='../D/5732.html' title='Multiple defined in 4 places.'>duk_require_pointer</a>(ctx, -3);
+<a id='L215' name='L215'></a>        src_len = (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) <a href='../D/5740.html' title='Multiple defined in 4 places.'>duk_require_uint</a>(ctx, -2);
+<a id='L216' name='L216'></a>
+<a id='L217' name='L217'></a>        <strong class='reserved'>if</strong> (src_data != NULL &amp;&amp; src_len &gt;= 1 &amp;&amp; src_data[0] == (<strong class='reserved'>char</strong>) 0xbf) <em class='brace'>{</em>
+<a id='L218' name='L218'></a>                <em class='comment'>/* Bytecode. */</em>
+<a id='L219' name='L219'></a>                <strong class='reserved'>if</strong> (allow_bytecode) <em class='brace'>{</em>
+<a id='L220' name='L220'></a>                        <strong class='reserved'>void</strong> *buf;
+<a id='L221' name='L221'></a>                        buf = <a href='../D/5565.html' title='Multiple defined in 3 places.'>duk_push_fixed_buffer</a>(ctx, src_len);
+<a id='L222' name='L222'></a>                        memcpy(buf, (<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *) src_data, src_len);
+<a id='L223' name='L223'></a>                        <a href='../D/5453.html' title='Multiple defined in 8 places.'>duk_load_function</a>(ctx);
+<a id='L224' name='L224'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L225' name='L225'></a>                        (<strong class='reserved'>void</strong>) <a href='../D/5877.html' title='Multiple defined in 6 places.'>duk_type_error</a>(ctx, "bytecode input rejected (use -b to allow bytecode inputs)");
+<a id='L226' name='L226'></a>                <em class='brace'>}</em>
+<a id='L227' name='L227'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L228' name='L228'></a>                <em class='comment'>/* Source code. */</em>
+<a id='L229' name='L229'></a>                comp_flags = <a href='../D/450.html' title='Multiple defined in 3 places.'>DUK_COMPILE_SHEBANG</a>;
+<a id='L230' name='L230'></a>                <a href='../D/4842.html' title='Multiple defined in 3 places.'>duk_compile_lstring_filename</a>(ctx, comp_flags, src_data, src_len);
+<a id='L231' name='L231'></a>        <em class='brace'>}</em>
+<a id='L232' name='L232'></a>
+<a id='L233' name='L233'></a>        <em class='comment'>/* [ ... bytecode_filename src_data src_len function ] */</em>
+<a id='L234' name='L234'></a>
+<a id='L235' name='L235'></a>        <em class='comment'>/* Optional bytecode dump. */</em>
+<a id='L236' name='L236'></a>        <strong class='reserved'>if</strong> (<a href='../D/5374.html' title='Multiple defined in 4 places.'>duk_is_string</a>(ctx, -4)) <em class='brace'>{</em>
+<a id='L237' name='L237'></a>                FILE *f;
+<a id='L238' name='L238'></a>                <strong class='reserved'>void</strong> *bc_ptr;
+<a id='L239' name='L239'></a>                <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> bc_len;
+<a id='L240' name='L240'></a>                size_t wrote;
+<a id='L241' name='L241'></a>                <strong class='reserved'>char</strong> fnbuf[256];
+<a id='L242' name='L242'></a>                <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *filename;
+<a id='L243' name='L243'></a>
+<a id='L244' name='L244'></a>                <a href='../D/4975.html' title='Multiple defined in 4 places.'>duk_dup_top</a>(ctx);
+<a id='L245' name='L245'></a>                <a href='../D/4967.html' title='Multiple defined in 8 places.'>duk_dump_function</a>(ctx);
+<a id='L246' name='L246'></a>                bc_ptr = <a href='../D/5705.html' title='Multiple defined in 4 places.'>duk_require_buffer_data</a>(ctx, -1, &amp;bc_len);
+<a id='L247' name='L247'></a>                filename = <a href='../D/5735.html' title='Multiple defined in 4 places.'>duk_require_string</a>(ctx, -5);
+<a id='L248' name='L248'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(EMSCRIPTEN)
+<a id='L249' name='L249'></a>                <strong class='reserved'>if</strong> (filename[0] == '/') <em class='brace'>{</em>
+<a id='L250' name='L250'></a>                        <a href='../D/6033.html' title='Multiple defined in 3 places.'>snprintf</a>(fnbuf, <strong class='reserved'>sizeof</strong>(fnbuf), "%s", filename);
+<a id='L251' name='L251'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L252' name='L252'></a>                        <a href='../D/6033.html' title='Multiple defined in 3 places.'>snprintf</a>(fnbuf, <strong class='reserved'>sizeof</strong>(fnbuf), "/working/%s", filename);
+<a id='L253' name='L253'></a>                <em class='brace'>}</em>
+<a id='L254' name='L254'></a><em class='sharp'>#else</em>
+<a id='L255' name='L255'></a>                <a href='../D/6033.html' title='Multiple defined in 3 places.'>snprintf</a>(fnbuf, <strong class='reserved'>sizeof</strong>(fnbuf), "%s", filename);
+<a id='L256' name='L256'></a><em class='sharp'>#endif</em>
+<a id='L257' name='L257'></a>                fnbuf[<strong class='reserved'>sizeof</strong>(fnbuf) - 1] = (<strong class='reserved'>char</strong>) 0;
+<a id='L258' name='L258'></a>
+<a id='L259' name='L259'></a>                f = fopen(fnbuf, "wb");
+<a id='L260' name='L260'></a>                <strong class='reserved'>if</strong> (!f) <em class='brace'>{</em>
+<a id='L261' name='L261'></a>                        (<strong class='reserved'>void</strong>) <a href='../D/5056.html' title='Multiple defined in 6 places.'>duk_generic_error</a>(ctx, "failed to open bytecode output file");
+<a id='L262' name='L262'></a>                <em class='brace'>}</em>
+<a id='L263' name='L263'></a>                wrote = fwrite(bc_ptr, 1, (size_t) bc_len, f);  <em class='comment'>/* XXX: handle partial writes */</em>
+<a id='L264' name='L264'></a>                (<strong class='reserved'>void</strong>) fclose(f);
+<a id='L265' name='L265'></a>                <strong class='reserved'>if</strong> (wrote != bc_len) <em class='brace'>{</em>
+<a id='L266' name='L266'></a>                        (<strong class='reserved'>void</strong>) <a href='../D/5056.html' title='Multiple defined in 6 places.'>duk_generic_error</a>(ctx, "failed to write all bytecode");
+<a id='L267' name='L267'></a>                <em class='brace'>}</em>
+<a id='L268' name='L268'></a>
+<a id='L269' name='L269'></a>                <strong class='reserved'>return</strong> 0;  <em class='comment'>/* duk_safe_call() cleans up */</em>
+<a id='L270' name='L270'></a>        <em class='brace'>}</em>
+<a id='L271' name='L271'></a>
+<a id='L272' name='L272'></a><em class='sharp'>#if</em> 0
+<a id='L273' name='L273'></a>        <em class='comment'>/* Manual test for bytecode dump/load cycle: dump and load before</em>
+<a id='L274' name='L274'></a><em class='comment'>         * execution.  Enable manually, then run "make ecmatest" for a</em>
+<a id='L275' name='L275'></a><em class='comment'>         * reasonably good coverage of different functions and programs.</em>
+<a id='L276' name='L276'></a><em class='comment'>         */</em>
+<a id='L277' name='L277'></a>        <a href='../D/4967.html' title='Multiple defined in 8 places.'>duk_dump_function</a>(ctx);
+<a id='L278' name='L278'></a>        <a href='../D/5453.html' title='Multiple defined in 8 places.'>duk_load_function</a>(ctx);
+<a id='L279' name='L279'></a><em class='sharp'>#endif</em>
+<a id='L280' name='L280'></a>
+<a id='L281' name='L281'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOWMEM)
+<a id='L282' name='L282'></a>        <a href='../S/376.html#L981' title='Defined at 981 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_start_exec_timeout</a>();
+<a id='L283' name='L283'></a><em class='sharp'>#endif</em>
+<a id='L284' name='L284'></a>
+<a id='L285' name='L285'></a>        <a href='../D/5568.html' title='Multiple defined in 4 places.'>duk_push_global_object</a>(ctx);  <em class='comment'>/* 'this' binding */</em>
+<a id='L286' name='L286'></a>        <a href='../D/4818.html' title='Multiple defined in 4 places.'>duk_call_method</a>(ctx, 0);
+<a id='L287' name='L287'></a>
+<a id='L288' name='L288'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOWMEM)
+<a id='L289' name='L289'></a>        <a href='../S/376.html#L985' title='Defined at 985 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_clear_exec_timeout</a>();
+<a id='L290' name='L290'></a><em class='sharp'>#endif</em>
+<a id='L291' name='L291'></a>
+<a id='L292' name='L292'></a>        <strong class='reserved'>if</strong> (interactive_mode) <em class='brace'>{</em>
+<a id='L293' name='L293'></a>                <em class='comment'>/*</em>
+<a id='L294' name='L294'></a><em class='comment'>                 *  In interactive mode, write to stdout so output won't</em>
+<a id='L295' name='L295'></a><em class='comment'>                 *  interleave as easily.</em>
+<a id='L296' name='L296'></a><em class='comment'>                 *</em>
+<a id='L297' name='L297'></a><em class='comment'>                 *  NOTE: the ToString() coercion may fail in some cases;</em>
+<a id='L298' name='L298'></a><em class='comment'>                 *  for instance, if you evaluate:</em>
+<a id='L299' name='L299'></a><em class='comment'>                 *</em>
+<a id='L300' name='L300'></a><em class='comment'>                 *    ( {valueOf: function() {return {}},</em>
+<a id='L301' name='L301'></a><em class='comment'>                 *       toString: function() {return {}}});</em>
+<a id='L302' name='L302'></a><em class='comment'>                 *</em>
+<a id='L303' name='L303'></a><em class='comment'>                 *  The error is:</em>
+<a id='L304' name='L304'></a><em class='comment'>                 *</em>
+<a id='L305' name='L305'></a><em class='comment'>                 *    TypeError: coercion to primitive failed</em>
+<a id='L306' name='L306'></a><em class='comment'>                 *            duk_api.c:1420</em>
+<a id='L307' name='L307'></a><em class='comment'>                 *</em>
+<a id='L308' name='L308'></a><em class='comment'>                 *  These are handled now by the caller which also has stack</em>
+<a id='L309' name='L309'></a><em class='comment'>                 *  trace printing support.  User code can print out errors</em>
+<a id='L310' name='L310'></a><em class='comment'>                 *  safely using duk_safe_to_string().</em>
+<a id='L311' name='L311'></a><em class='comment'>                 */</em>
+<a id='L312' name='L312'></a>
+<a id='L313' name='L313'></a>                <a href='../D/5569.html' title='Multiple defined in 4 places.'>duk_push_global_stash</a>(ctx);
+<a id='L314' name='L314'></a>                <a href='../D/5117.html' title='Multiple defined in 4 places.'>duk_get_prop_string</a>(ctx, -1, "dukFormat");
+<a id='L315' name='L315'></a>                <a href='../D/4968.html' title='Multiple defined in 4 places.'>duk_dup</a>(ctx, -3);
+<a id='L316' name='L316'></a>                <a href='../D/4816.html' title='Multiple defined in 4 places.'>duk_call</a>(ctx, 1);  <em class='comment'>/* -&gt; [ ... res stash formatted ] */</em>
+<a id='L317' name='L317'></a>
+<a id='L318' name='L318'></a>                fprintf(stdout, "= %s\n", <a href='../D/5818.html' title='Multiple defined in 4 places.'>duk_to_string</a>(ctx, -1));
+<a id='L319' name='L319'></a>                fflush(stdout);
+<a id='L320' name='L320'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L321' name='L321'></a>                <em class='comment'>/* In non-interactive mode, success results are not written at all.</em>
+<a id='L322' name='L322'></a><em class='comment'>                 * It is important that the result value is not string coerced,</em>
+<a id='L323' name='L323'></a><em class='comment'>                 * as the string coercion may cause an error in some cases.</em>
+<a id='L324' name='L324'></a><em class='comment'>                 */</em>
+<a id='L325' name='L325'></a>        <em class='brace'>}</em>
+<a id='L326' name='L326'></a>
+<a id='L327' name='L327'></a>        <strong class='reserved'>return</strong> 0;  <em class='comment'>/* duk_safe_call() cleans up */</em>
+<a id='L328' name='L328'></a><em class='brace'>}</em>
+<a id='L329' name='L329'></a>
+<a id='L330' name='L330'></a><em class='comment'>/*</em>
+<a id='L331' name='L331'></a><em class='comment'> *  Minimal Linenoise completion support</em>
+<a id='L332' name='L332'></a><em class='comment'> */</em>
+<a id='L333' name='L333'></a>
+<a id='L334' name='L334'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L28' title='Defined at 28 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_LINENOISE_COMPLETION</a>)
+<a id='L335' name='L335'></a><strong class='reserved'>static</strong> <a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *completion_ctx;
+<a id='L336' name='L336'></a>
+<a id='L337' name='L337'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *linenoise_completion_script =
+<a id='L338' name='L338'></a>        "(function linenoiseCompletion(input, addCompletion) {\n"
+<a id='L339' name='L339'></a>        "    // Find maximal trailing string which looks like a property\n"
+<a id='L340' name='L340'></a>        "    // access.  Look up all the components (starting from the global\n"
+<a id='L341' name='L341'></a>        "    // object now) except the last; treat the last component as a\n"
+<a id='L342' name='L342'></a>        "    // partial name and use it as a filter for possible properties.\n"
+<a id='L343' name='L343'></a>        "    var match, propseq, obj, i, partial, names, name, sanity;\n"
+<a id='L344' name='L344'></a>        "\n"
+<a id='L345' name='L345'></a>        "    if (!input) { return; }\n"
+<a id='L346' name='L346'></a>        "    match = /^.*?((?:\\w+\\.)*\\w*)$/.exec(input);\n"
+<a id='L347' name='L347'></a>        "    if (!match || !match[1]) { return; }\n"
+<a id='L348' name='L348'></a>        "    var propseq = match[1].split('.');\n"
+<a id='L349' name='L349'></a>        "\n"
+<a id='L350' name='L350'></a>        "    obj = Function('return this')();\n"
+<a id='L351' name='L351'></a>        "    for (i = 0; i &lt; propseq.length - 1; i++) {\n"
+<a id='L352' name='L352'></a>        "        if (obj === void 0 || obj === null) { return; }\n"
+<a id='L353' name='L353'></a>        "        obj = obj[propseq[i]];\n"
+<a id='L354' name='L354'></a>        "    }\n"
+<a id='L355' name='L355'></a>        "    if (obj === void 0 || obj === null) { return; }\n"
+<a id='L356' name='L356'></a>        "\n"
+<a id='L357' name='L357'></a>        "    partial = propseq[propseq.length - 1];\n"
+<a id='L358' name='L358'></a>        "    sanity = 1000;\n"
+<a id='L359' name='L359'></a>        "    while (obj != null) {\n"
+<a id='L360' name='L360'></a>        "        if (--sanity &lt; 0) { throw new Error('sanity'); }\n"
+<a id='L361' name='L361'></a>        "        names = Object.getOwnPropertyNames(Object(obj));\n"
+<a id='L362' name='L362'></a>        "        for (i = 0; i &lt; names.length; i++) {\n"
+<a id='L363' name='L363'></a>        "            if (--sanity &lt; 0) { throw new Error('sanity'); }\n"
+<a id='L364' name='L364'></a>        "            name = names[i];\n"
+<a id='L365' name='L365'></a>        "            if (Number(name) &gt;= 0) { continue; }  // ignore array keys\n"
+<a id='L366' name='L366'></a>        "            if (name.substring(0, partial.length) !== partial) { continue; }\n"
+<a id='L367' name='L367'></a>        "            if (name === partial) { addCompletion(input + '.'); continue; }\n"
+<a id='L368' name='L368'></a>        "            addCompletion(input + name.substring(partial.length));\n"
+<a id='L369' name='L369'></a>        "        }\n"
+<a id='L370' name='L370'></a>        "        obj = Object.getPrototypeOf(Object(obj));\n"
+<a id='L371' name='L371'></a>        "    }\n"
+<a id='L372' name='L372'></a>        "})";
+<a id='L373' name='L373'></a>
+<a id='L374' name='L374'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *linenoise_hints_script =
+<a id='L375' name='L375'></a>        "(function linenoiseHints(input) {\n"
+<a id='L376' name='L376'></a>        "    // Similar to completions but different handling for final results.\n"
+<a id='L377' name='L377'></a>        "    var match, propseq, obj, i, partial, names, name, res, found, first, sanity;\n"
+<a id='L378' name='L378'></a>        "\n"
+<a id='L379' name='L379'></a>        "    if (!input) { return; }\n"
+<a id='L380' name='L380'></a>        "    match = /^.*?((?:\\w+\\.)*\\w*)$/.exec(input);\n"
+<a id='L381' name='L381'></a>        "    if (!match || !match[1]) { return; }\n"
+<a id='L382' name='L382'></a>        "    var propseq = match[1].split('.');\n"
+<a id='L383' name='L383'></a>        "\n"
+<a id='L384' name='L384'></a>        "    obj = Function('return this')();\n"
+<a id='L385' name='L385'></a>        "    for (i = 0; i &lt; propseq.length - 1; i++) {\n"
+<a id='L386' name='L386'></a>        "        if (obj === void 0 || obj === null) { return; }\n"
+<a id='L387' name='L387'></a>        "        obj = obj[propseq[i]];\n"
+<a id='L388' name='L388'></a>        "    }\n"
+<a id='L389' name='L389'></a>        "    if (obj === void 0 || obj === null) { return; }\n"
+<a id='L390' name='L390'></a>        "\n"
+<a id='L391' name='L391'></a>        "    partial = propseq[propseq.length - 1];\n"
+<a id='L392' name='L392'></a>        "    res = [];\n"
+<a id='L393' name='L393'></a>        "    found = Object.create(null);  // keys already handled\n"
+<a id='L394' name='L394'></a>        "    sanity = 1000;\n"
+<a id='L395' name='L395'></a>        "    while (obj != null) {\n"
+<a id='L396' name='L396'></a>        "        if (--sanity &lt; 0) { throw new Error('sanity'); }\n"
+<a id='L397' name='L397'></a>        "        names = Object.getOwnPropertyNames(Object(obj));\n"
+<a id='L398' name='L398'></a>        "        first = true;\n"
+<a id='L399' name='L399'></a>        "        for (i = 0; i &lt; names.length; i++) {\n"
+<a id='L400' name='L400'></a>        "            if (--sanity &lt; 0) { throw new Error('sanity'); }\n"
+<a id='L401' name='L401'></a>        "            name = names[i];\n"
+<a id='L402' name='L402'></a>        "            if (Number(name) &gt;= 0) { continue; }  // ignore array keys\n"
+<a id='L403' name='L403'></a>        "            if (name.substring(0, partial.length) !== partial) { continue; }\n"
+<a id='L404' name='L404'></a>        "            if (name === partial) { continue; }\n"
+<a id='L405' name='L405'></a>        "            if (found[name]) { continue; }\n"
+<a id='L406' name='L406'></a>        "            found[name] = true;\n"
+<a id='L407' name='L407'></a>        "            res.push(res.length === 0 ? name.substring(partial.length) : (first ? ' || ' : ' | ') + name);\n"
+<a id='L408' name='L408'></a>        "            first = false;\n"
+<a id='L409' name='L409'></a>        "        }\n"
+<a id='L410' name='L410'></a>        "        obj = Object.getPrototypeOf(Object(obj));\n"
+<a id='L411' name='L411'></a>        "    }\n"
+<a id='L412' name='L412'></a>        "    return { hints: res.join(''), color: 35, bold: 1 };\n"
+<a id='L413' name='L413'></a>        "})";
+<a id='L414' name='L414'></a>
+<a id='L415' name='L415'></a><strong class='reserved'>static</strong> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../S/375.html#L504' title='Referred from 504 in examples/cmdline/duk_cmdline.c.'>linenoise_add_completion</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L416' name='L416'></a>        linenoiseCompletions *lc;
+<a id='L417' name='L417'></a>
+<a id='L418' name='L418'></a>        <a href='../D/5555.html' title='Multiple defined in 4 places.'>duk_push_current_function</a>(ctx);
+<a id='L419' name='L419'></a>        <a href='../D/5117.html' title='Multiple defined in 4 places.'>duk_get_prop_string</a>(ctx, -1, "lc");
+<a id='L420' name='L420'></a>        lc = <a href='../D/5732.html' title='Multiple defined in 4 places.'>duk_require_pointer</a>(ctx, -1);
+<a id='L421' name='L421'></a>
+<a id='L422' name='L422'></a>        linenoiseAddCompletion(lc, <a href='../D/5735.html' title='Multiple defined in 4 places.'>duk_require_string</a>(ctx, 0));
+<a id='L423' name='L423'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L424' name='L424'></a><em class='brace'>}</em>
+<a id='L425' name='L425'></a>
+<a id='L426' name='L426'></a><strong class='reserved'>static</strong> <strong class='reserved'>char</strong> *<a href='../S/375.html#L725' title='Referred from 725 in examples/cmdline/duk_cmdline.c.'>linenoise_hints</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *buf, <strong class='reserved'>int</strong> *color, <strong class='reserved'>int</strong> *bold) <em class='brace'>{</em>
+<a id='L427' name='L427'></a>        <a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx;
+<a id='L428' name='L428'></a>        <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> rc;
+<a id='L429' name='L429'></a>
+<a id='L430' name='L430'></a>        ctx = completion_ctx;
+<a id='L431' name='L431'></a>        <strong class='reserved'>if</strong> (!ctx) <em class='brace'>{</em>
+<a id='L432' name='L432'></a>                <strong class='reserved'>return</strong> NULL;
+<a id='L433' name='L433'></a>        <em class='brace'>}</em>
+<a id='L434' name='L434'></a>
+<a id='L435' name='L435'></a>        <a href='../D/5569.html' title='Multiple defined in 4 places.'>duk_push_global_stash</a>(ctx);
+<a id='L436' name='L436'></a>        <a href='../D/5117.html' title='Multiple defined in 4 places.'>duk_get_prop_string</a>(ctx, -1, "linenoiseHints");
+<a id='L437' name='L437'></a>        <strong class='reserved'>if</strong> (!buf) <em class='brace'>{</em>
+<a id='L438' name='L438'></a>                <a href='../D/5630.html' title='Multiple defined in 4 places.'>duk_push_undefined</a>(ctx);
+<a id='L439' name='L439'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L440' name='L440'></a>                <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(ctx, buf);
+<a id='L441' name='L441'></a>        <em class='brace'>}</em>
+<a id='L442' name='L442'></a>
+<a id='L443' name='L443'></a>        rc = <a href='../D/5496.html' title='Multiple defined in 4 places.'>duk_pcall</a>(ctx, 1 <em class='comment'>/*nargs*/</em>);  <em class='comment'>/* [ stash func ] -&gt; [ stash result ] */</em>
+<a id='L444' name='L444'></a>        <strong class='reserved'>if</strong> (rc != 0) <em class='brace'>{</em>
+<a id='L445' name='L445'></a>                <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *res;
+<a id='L446' name='L446'></a>                res = strdup(<a href='../D/5752.html' title='Multiple defined in 3 places.'>duk_safe_to_string</a>(ctx, -1));
+<a id='L447' name='L447'></a>                *color = 31;  <em class='comment'>/* red */</em>
+<a id='L448' name='L448'></a>                *bold = 1;
+<a id='L449' name='L449'></a>                <a href='../D/5522.html' title='Multiple defined in 8 places.'>duk_pop_2</a>(ctx);
+<a id='L450' name='L450'></a>                <strong class='reserved'>return</strong> (<strong class='reserved'>char</strong> *) (uintptr_t) res;  <em class='comment'>/* uintptr_t cast to avoid const discard warning. */</em>
+<a id='L451' name='L451'></a>        <em class='brace'>}</em>
+<a id='L452' name='L452'></a>
+<a id='L453' name='L453'></a>        <strong class='reserved'>if</strong> (<a href='../D/5367.html' title='Multiple defined in 4 places.'>duk_is_object</a>(ctx, -1)) <em class='brace'>{</em>
+<a id='L454' name='L454'></a>                <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *tmp;
+<a id='L455' name='L455'></a>                <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *res = NULL;
+<a id='L456' name='L456'></a>
+<a id='L457' name='L457'></a>                <a href='../D/5117.html' title='Multiple defined in 4 places.'>duk_get_prop_string</a>(ctx, -1, "hints");
+<a id='L458' name='L458'></a>                tmp = <a href='../D/5119.html' title='Multiple defined in 4 places.'>duk_get_string</a>(ctx, -1);
+<a id='L459' name='L459'></a>                <strong class='reserved'>if</strong> (tmp) <em class='brace'>{</em>
+<a id='L460' name='L460'></a>                        res = strdup(tmp);
+<a id='L461' name='L461'></a>                <em class='brace'>}</em>
+<a id='L462' name='L462'></a>                <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L463' name='L463'></a>
+<a id='L464' name='L464'></a>                <a href='../D/5117.html' title='Multiple defined in 4 places.'>duk_get_prop_string</a>(ctx, -1, "color");
+<a id='L465' name='L465'></a>                *color = <a href='../D/5801.html' title='Multiple defined in 4 places.'>duk_to_int</a>(ctx, -1);
+<a id='L466' name='L466'></a>                <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L467' name='L467'></a>
+<a id='L468' name='L468'></a>                <a href='../D/5117.html' title='Multiple defined in 4 places.'>duk_get_prop_string</a>(ctx, -1, "bold");
+<a id='L469' name='L469'></a>                *bold = <a href='../D/5801.html' title='Multiple defined in 4 places.'>duk_to_int</a>(ctx, -1);
+<a id='L470' name='L470'></a>                <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L471' name='L471'></a>
+<a id='L472' name='L472'></a>                <a href='../D/5522.html' title='Multiple defined in 8 places.'>duk_pop_2</a>(ctx);
+<a id='L473' name='L473'></a>                <strong class='reserved'>return</strong> (<strong class='reserved'>char</strong> *) (uintptr_t) res;  <em class='comment'>/* uintptr_t cast to avoid const discard warning. */</em>
+<a id='L474' name='L474'></a>        <em class='brace'>}</em>
+<a id='L475' name='L475'></a>
+<a id='L476' name='L476'></a>        <a href='../D/5522.html' title='Multiple defined in 8 places.'>duk_pop_2</a>(ctx);
+<a id='L477' name='L477'></a>        <strong class='reserved'>return</strong> NULL;
+<a id='L478' name='L478'></a><em class='brace'>}</em>
+<a id='L479' name='L479'></a>
+<a id='L480' name='L480'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../S/375.html#L726' title='Referred from 726 in examples/cmdline/duk_cmdline.c.'>linenoise_freehints</a>(<strong class='reserved'>void</strong> *ptr) <em class='brace'>{</em>
+<a id='L481' name='L481'></a><em class='sharp'>#if</em> 0
+<a id='L482' name='L482'></a>        printf("free hint: %p\n", (<strong class='reserved'>void</strong> *) ptr);
+<a id='L483' name='L483'></a><em class='sharp'>#endif</em>
+<a id='L484' name='L484'></a>        free(ptr);
+<a id='L485' name='L485'></a><em class='brace'>}</em>
+<a id='L486' name='L486'></a>
+<a id='L487' name='L487'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../S/375.html#L724' title='Referred from 724 in examples/cmdline/duk_cmdline.c.'>linenoise_completion</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *buf, linenoiseCompletions *lc) <em class='brace'>{</em>
+<a id='L488' name='L488'></a>        <a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx;
+<a id='L489' name='L489'></a>        <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> rc;
+<a id='L490' name='L490'></a>
+<a id='L491' name='L491'></a>        ctx = completion_ctx;
+<a id='L492' name='L492'></a>        <strong class='reserved'>if</strong> (!ctx) <em class='brace'>{</em>
+<a id='L493' name='L493'></a>                <strong class='reserved'>return</strong>;
+<a id='L494' name='L494'></a>        <em class='brace'>}</em>
+<a id='L495' name='L495'></a>
+<a id='L496' name='L496'></a>        <a href='../D/5569.html' title='Multiple defined in 4 places.'>duk_push_global_stash</a>(ctx);
+<a id='L497' name='L497'></a>        <a href='../D/5117.html' title='Multiple defined in 4 places.'>duk_get_prop_string</a>(ctx, -1, "linenoiseCompletion");
+<a id='L498' name='L498'></a>
+<a id='L499' name='L499'></a>        <strong class='reserved'>if</strong> (!buf) <em class='brace'>{</em>
+<a id='L500' name='L500'></a>                <a href='../D/5630.html' title='Multiple defined in 4 places.'>duk_push_undefined</a>(ctx);
+<a id='L501' name='L501'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L502' name='L502'></a>                <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(ctx, buf);
+<a id='L503' name='L503'></a>        <em class='brace'>}</em>
+<a id='L504' name='L504'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(ctx, <a href='../S/375.html#L415' title='Defined at 415 in examples/cmdline/duk_cmdline.c.'>linenoise_add_completion</a>, 2 <em class='comment'>/*nargs*/</em>);
+<a id='L505' name='L505'></a>        <a href='../D/5603.html' title='Multiple defined in 4 places.'>duk_push_pointer</a>(ctx, (<strong class='reserved'>void</strong> *) lc);
+<a id='L506' name='L506'></a>        <a href='../D/5648.html' title='Multiple defined in 4 places.'>duk_put_prop_string</a>(ctx, -2, "lc");
+<a id='L507' name='L507'></a>
+<a id='L508' name='L508'></a>        rc = <a href='../D/5496.html' title='Multiple defined in 4 places.'>duk_pcall</a>(ctx, 2 <em class='comment'>/*nargs*/</em>);  <em class='comment'>/* [ stash func callback ] -&gt; [ stash result ] */</em>
+<a id='L509' name='L509'></a>        <strong class='reserved'>if</strong> (rc != 0) <em class='brace'>{</em>
+<a id='L510' name='L510'></a>                linenoiseAddCompletion(lc, <a href='../D/5752.html' title='Multiple defined in 3 places.'>duk_safe_to_string</a>(ctx, -1));
+<a id='L511' name='L511'></a>        <em class='brace'>}</em>
+<a id='L512' name='L512'></a>        <a href='../D/5522.html' title='Multiple defined in 8 places.'>duk_pop_2</a>(ctx);
+<a id='L513' name='L513'></a><em class='brace'>}</em>
+<a id='L514' name='L514'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_CMDLINE_LINENOISE_COMPLETION */</em>
+<a id='L515' name='L515'></a>
+<a id='L516' name='L516'></a><em class='comment'>/*</em>
+<a id='L517' name='L517'></a><em class='comment'> *  Execute from file handle etc</em>
+<a id='L518' name='L518'></a><em class='comment'> */</em>
+<a id='L519' name='L519'></a>
+<a id='L520' name='L520'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../R/5135.html' title='Multiple referred from 4 places.'>handle_fh</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx, FILE *f, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *filename, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *bytecode_filename) <em class='brace'>{</em>
+<a id='L521' name='L521'></a>        <strong class='reserved'>char</strong> *buf = NULL;
+<a id='L522' name='L522'></a>        size_t bufsz;
+<a id='L523' name='L523'></a>        size_t bufoff;
+<a id='L524' name='L524'></a>        size_t got;
+<a id='L525' name='L525'></a>        <strong class='reserved'>int</strong> rc;
+<a id='L526' name='L526'></a>        <strong class='reserved'>int</strong> retval = -1;
+<a id='L527' name='L527'></a>
+<a id='L528' name='L528'></a>        buf = (<strong class='reserved'>char</strong> *) malloc(1024);
+<a id='L529' name='L529'></a>        <strong class='reserved'>if</strong> (!buf) <em class='brace'>{</em>
+<a id='L530' name='L530'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L531' name='L531'></a>        <em class='brace'>}</em>
+<a id='L532' name='L532'></a>        bufsz = 1024;
+<a id='L533' name='L533'></a>        bufoff = 0;
+<a id='L534' name='L534'></a>
+<a id='L535' name='L535'></a>        <em class='comment'>/* Read until EOF, avoid fseek/stat because it won't work with stdin. */</em>
+<a id='L536' name='L536'></a>        <strong class='reserved'>for</strong> (;;) <em class='brace'>{</em>
+<a id='L537' name='L537'></a>                size_t avail;
+<a id='L538' name='L538'></a>
+<a id='L539' name='L539'></a>                avail = bufsz - bufoff;
+<a id='L540' name='L540'></a>                <strong class='reserved'>if</strong> (avail &lt; 1024) <em class='brace'>{</em>
+<a id='L541' name='L541'></a>                        size_t newsz;
+<a id='L542' name='L542'></a>                        <strong class='reserved'>char</strong> *buf_new;
+<a id='L543' name='L543'></a><em class='sharp'>#if</em> 0
+<a id='L544' name='L544'></a>                        fprintf(stderr, "resizing read buffer: %ld -&gt; %ld\n", (<strong class='reserved'>long</strong>) bufsz, (<strong class='reserved'>long</strong>) (bufsz * 2));
+<a id='L545' name='L545'></a><em class='sharp'>#endif</em>
+<a id='L546' name='L546'></a>                        newsz = bufsz + (bufsz &gt;&gt; 2) + 1024;  <em class='comment'>/* +25% and some extra */</em>
+<a id='L547' name='L547'></a>                        <strong class='reserved'>if</strong> (newsz &lt; bufsz) <em class='brace'>{</em>
+<a id='L548' name='L548'></a>                                <strong class='reserved'>goto</strong> error;
+<a id='L549' name='L549'></a>                        <em class='brace'>}</em>
+<a id='L550' name='L550'></a>                        buf_new = (<strong class='reserved'>char</strong> *) realloc(buf, newsz);
+<a id='L551' name='L551'></a>                        <strong class='reserved'>if</strong> (!buf_new) <em class='brace'>{</em>
+<a id='L552' name='L552'></a>                                <strong class='reserved'>goto</strong> error;
+<a id='L553' name='L553'></a>                        <em class='brace'>}</em>
+<a id='L554' name='L554'></a>                        buf = buf_new;
+<a id='L555' name='L555'></a>                        bufsz = newsz;
+<a id='L556' name='L556'></a>                <em class='brace'>}</em>
+<a id='L557' name='L557'></a>
+<a id='L558' name='L558'></a>                avail = bufsz - bufoff;
+<a id='L559' name='L559'></a><em class='sharp'>#if</em> 0
+<a id='L560' name='L560'></a>                fprintf(stderr, "reading input: buf=%p bufsz=%ld bufoff=%ld avail=%ld\n",
+<a id='L561' name='L561'></a>                        (<strong class='reserved'>void</strong> *) buf, (<strong class='reserved'>long</strong>) bufsz, (<strong class='reserved'>long</strong>) bufoff, (<strong class='reserved'>long</strong>) avail);
+<a id='L562' name='L562'></a><em class='sharp'>#endif</em>
+<a id='L563' name='L563'></a>
+<a id='L564' name='L564'></a>                got = fread((<strong class='reserved'>void</strong> *) (buf + bufoff), (size_t) 1, avail, f);
+<a id='L565' name='L565'></a><em class='sharp'>#if</em> 0
+<a id='L566' name='L566'></a>                fprintf(stderr, "got=%ld\n", (<strong class='reserved'>long</strong>) got);
+<a id='L567' name='L567'></a><em class='sharp'>#endif</em>
+<a id='L568' name='L568'></a>                <strong class='reserved'>if</strong> (got == 0) <em class='brace'>{</em>
+<a id='L569' name='L569'></a>                        <strong class='reserved'>break</strong>;
+<a id='L570' name='L570'></a>                <em class='brace'>}</em>
+<a id='L571' name='L571'></a>                bufoff += got;
+<a id='L572' name='L572'></a>
+<a id='L573' name='L573'></a>                <em class='comment'>/* Emscripten specific: stdin EOF doesn't work as expected.</em>
+<a id='L574' name='L574'></a><em class='comment'>                 * Instead, when 'emduk' is executed using Node.js, a file</em>
+<a id='L575' name='L575'></a><em class='comment'>                 * piped to stdin repeats (!).  Detect that repeat and cut off</em>
+<a id='L576' name='L576'></a><em class='comment'>                 * the stdin read.  Ensure the loop repeats enough times to</em>
+<a id='L577' name='L577'></a><em class='comment'>                 * avoid detecting spurious loops.</em>
+<a id='L578' name='L578'></a><em class='comment'>                 *</em>
+<a id='L579' name='L579'></a><em class='comment'>                 * This only seems to work for inputs up to 256 bytes long.</em>
+<a id='L580' name='L580'></a><em class='comment'>                 */</em>
+<a id='L581' name='L581'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(EMSCRIPTEN)
+<a id='L582' name='L582'></a>                <strong class='reserved'>if</strong> (bufoff &gt;= 16384) <em class='brace'>{</em>
+<a id='L583' name='L583'></a>                        size_t i, j, nloops;
+<a id='L584' name='L584'></a>                        <strong class='reserved'>int</strong> looped = 0;
+<a id='L585' name='L585'></a>
+<a id='L586' name='L586'></a>                        <strong class='reserved'>for</strong> (i = 16; i &lt; bufoff / 8; i++) <em class='brace'>{</em>
+<a id='L587' name='L587'></a>                                <strong class='reserved'>int</strong> ok;
+<a id='L588' name='L588'></a>
+<a id='L589' name='L589'></a>                                nloops = bufoff / i;
+<a id='L590' name='L590'></a>                                ok = 1;
+<a id='L591' name='L591'></a>                                <strong class='reserved'>for</strong> (j = 1; j &lt; nloops; j++) <em class='brace'>{</em>
+<a id='L592' name='L592'></a>                                        <strong class='reserved'>if</strong> (memcmp((<strong class='reserved'>void</strong> *) buf, (<strong class='reserved'>void</strong> *) (buf + i * j), i) != 0) <em class='brace'>{</em>
+<a id='L593' name='L593'></a>                                                ok = 0;
+<a id='L594' name='L594'></a>                                                <strong class='reserved'>break</strong>;
+<a id='L595' name='L595'></a>                                        <em class='brace'>}</em>
+<a id='L596' name='L596'></a>                                <em class='brace'>}</em>
+<a id='L597' name='L597'></a>                                <strong class='reserved'>if</strong> (ok) <em class='brace'>{</em>
+<a id='L598' name='L598'></a>                                        fprintf(stderr, "emscripten workaround: detect looping at index %ld, verified with %ld loops\n", (<strong class='reserved'>long</strong>) i, (<strong class='reserved'>long</strong>) (nloops - 1));
+<a id='L599' name='L599'></a>                                        bufoff = i;
+<a id='L600' name='L600'></a>                                        looped = 1;
+<a id='L601' name='L601'></a>                                        <strong class='reserved'>break</strong>;
+<a id='L602' name='L602'></a>                                <em class='brace'>}</em>
+<a id='L603' name='L603'></a>                        <em class='brace'>}</em>
+<a id='L604' name='L604'></a>
+<a id='L605' name='L605'></a>                        <strong class='reserved'>if</strong> (looped) <em class='brace'>{</em>
+<a id='L606' name='L606'></a>                                <strong class='reserved'>break</strong>;
+<a id='L607' name='L607'></a>                        <em class='brace'>}</em>
+<a id='L608' name='L608'></a>                <em class='brace'>}</em>
+<a id='L609' name='L609'></a><em class='sharp'>#endif</em>
+<a id='L610' name='L610'></a>        <em class='brace'>}</em>
+<a id='L611' name='L611'></a>
+<a id='L612' name='L612'></a>        <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(ctx, bytecode_filename);
+<a id='L613' name='L613'></a>        <a href='../D/5603.html' title='Multiple defined in 4 places.'>duk_push_pointer</a>(ctx, (<strong class='reserved'>void</strong> *) buf);
+<a id='L614' name='L614'></a>        <a href='../D/5628.html' title='Multiple defined in 4 places.'>duk_push_uint</a>(ctx, (<a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a>) bufoff);
+<a id='L615' name='L615'></a>        <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(ctx, filename);
+<a id='L616' name='L616'></a>
+<a id='L617' name='L617'></a>        interactive_mode = 0;  <em class='comment'>/* global */</em>
+<a id='L618' name='L618'></a>
+<a id='L619' name='L619'></a>        rc = <a href='../D/5748.html' title='Multiple defined in 4 places.'>duk_safe_call</a>(ctx, <a href='../D/6056.html' title='Multiple defined in 2 places.'>wrapped_compile_execute</a>, NULL <em class='comment'>/*udata*/</em>, 4 <em class='comment'>/*nargs*/</em>, 1 <em class='comment'>/*nret*/</em>);
+<a id='L620' name='L620'></a>
+<a id='L621' name='L621'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOWMEM)
+<a id='L622' name='L622'></a>        <a href='../S/376.html#L985' title='Defined at 985 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_clear_exec_timeout</a>();
+<a id='L623' name='L623'></a><em class='sharp'>#endif</em>
+<a id='L624' name='L624'></a>
+<a id='L625' name='L625'></a>        free(buf);
+<a id='L626' name='L626'></a>        buf = NULL;
+<a id='L627' name='L627'></a>
+<a id='L628' name='L628'></a>        <strong class='reserved'>if</strong> (rc != <a href='../D/764.html' title='Multiple defined in 3 places.'>DUK_EXEC_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L629' name='L629'></a>                <a href='../S/375.html#L189' title='Defined at 189 in examples/cmdline/duk_cmdline.c.'>print_pop_error</a>(ctx, stderr);
+<a id='L630' name='L630'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L631' name='L631'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L632' name='L632'></a>                <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L633' name='L633'></a>                retval = 0;
+<a id='L634' name='L634'></a>        <em class='brace'>}</em>
+<a id='L635' name='L635'></a>        <em class='comment'>/* fall thru */</em>
+<a id='L636' name='L636'></a>
+<a id='L637' name='L637'></a> cleanup:
+<a id='L638' name='L638'></a>        <strong class='reserved'>if</strong> (buf) <em class='brace'>{</em>
+<a id='L639' name='L639'></a>                free(buf);
+<a id='L640' name='L640'></a>                buf = NULL;
+<a id='L641' name='L641'></a>        <em class='brace'>}</em>
+<a id='L642' name='L642'></a>        <strong class='reserved'>return</strong> retval;
+<a id='L643' name='L643'></a>
+<a id='L644' name='L644'></a> error:
+<a id='L645' name='L645'></a>        fprintf(stderr, "error in executing file %s\n", filename);
+<a id='L646' name='L646'></a>        fflush(stderr);
+<a id='L647' name='L647'></a>        <strong class='reserved'>goto</strong> cleanup;
+<a id='L648' name='L648'></a><em class='brace'>}</em>
+<a id='L649' name='L649'></a>
+<a id='L650' name='L650'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../R/5136.html' title='Multiple referred from 2 places.'>handle_file</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *filename, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *bytecode_filename) <em class='brace'>{</em>
+<a id='L651' name='L651'></a>        FILE *f = NULL;
+<a id='L652' name='L652'></a>        <strong class='reserved'>int</strong> retval;
+<a id='L653' name='L653'></a>        <strong class='reserved'>char</strong> fnbuf[256];
+<a id='L654' name='L654'></a>
+<a id='L655' name='L655'></a>        <em class='comment'>/* Example of sending an application specific debugger notification. */</em>
+<a id='L656' name='L656'></a>        <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(ctx, "DebuggerHandleFile");
+<a id='L657' name='L657'></a>        <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(ctx, filename);
+<a id='L658' name='L658'></a>        <a href='../D/4921.html' title='Multiple defined in 8 places.'>duk_debugger_notify</a>(ctx, 2);
+<a id='L659' name='L659'></a>
+<a id='L660' name='L660'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(EMSCRIPTEN)
+<a id='L661' name='L661'></a>        <strong class='reserved'>if</strong> (filename[0] == '/') <em class='brace'>{</em>
+<a id='L662' name='L662'></a>                <a href='../D/6033.html' title='Multiple defined in 3 places.'>snprintf</a>(fnbuf, <strong class='reserved'>sizeof</strong>(fnbuf), "%s", filename);
+<a id='L663' name='L663'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L664' name='L664'></a>                <a href='../D/6033.html' title='Multiple defined in 3 places.'>snprintf</a>(fnbuf, <strong class='reserved'>sizeof</strong>(fnbuf), "/working/%s", filename);
+<a id='L665' name='L665'></a>        <em class='brace'>}</em>
+<a id='L666' name='L666'></a><em class='sharp'>#else</em>
+<a id='L667' name='L667'></a>        <a href='../D/6033.html' title='Multiple defined in 3 places.'>snprintf</a>(fnbuf, <strong class='reserved'>sizeof</strong>(fnbuf), "%s", filename);
+<a id='L668' name='L668'></a><em class='sharp'>#endif</em>
+<a id='L669' name='L669'></a>        fnbuf[<strong class='reserved'>sizeof</strong>(fnbuf) - 1] = (<strong class='reserved'>char</strong>) 0;
+<a id='L670' name='L670'></a>
+<a id='L671' name='L671'></a>        f = fopen(fnbuf, "rb");
+<a id='L672' name='L672'></a>        <strong class='reserved'>if</strong> (!f) <em class='brace'>{</em>
+<a id='L673' name='L673'></a>                fprintf(stderr, "failed to open source file: %s\n", filename);
+<a id='L674' name='L674'></a>                fflush(stderr);
+<a id='L675' name='L675'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L676' name='L676'></a>        <em class='brace'>}</em>
+<a id='L677' name='L677'></a>
+<a id='L678' name='L678'></a>        retval = <a href='../D/5961.html' title='Multiple defined in 2 places.'>handle_fh</a>(ctx, f, filename, bytecode_filename);
+<a id='L679' name='L679'></a>
+<a id='L680' name='L680'></a>        fclose(f);
+<a id='L681' name='L681'></a>        <strong class='reserved'>return</strong> retval;
+<a id='L682' name='L682'></a>
+<a id='L683' name='L683'></a> error:
+<a id='L684' name='L684'></a>        <strong class='reserved'>return</strong> -1;
+<a id='L685' name='L685'></a><em class='brace'>}</em>
+<a id='L686' name='L686'></a>
+<a id='L687' name='L687'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/375.html#L1448' title='Referred from 1448 in examples/cmdline/duk_cmdline.c.'>handle_eval</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx, <strong class='reserved'>char</strong> *code) <em class='brace'>{</em>
+<a id='L688' name='L688'></a>        <strong class='reserved'>int</strong> rc;
+<a id='L689' name='L689'></a>        <strong class='reserved'>int</strong> retval = -1;
+<a id='L690' name='L690'></a>
+<a id='L691' name='L691'></a>        <a href='../D/5603.html' title='Multiple defined in 4 places.'>duk_push_pointer</a>(ctx, (<strong class='reserved'>void</strong> *) code);
+<a id='L692' name='L692'></a>        <a href='../D/5628.html' title='Multiple defined in 4 places.'>duk_push_uint</a>(ctx, (<a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a>) strlen(code));
+<a id='L693' name='L693'></a>        <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(ctx, "eval");
+<a id='L694' name='L694'></a>
+<a id='L695' name='L695'></a>        interactive_mode = 0;  <em class='comment'>/* global */</em>
+<a id='L696' name='L696'></a>
+<a id='L697' name='L697'></a>        rc = <a href='../D/5748.html' title='Multiple defined in 4 places.'>duk_safe_call</a>(ctx, <a href='../D/6056.html' title='Multiple defined in 2 places.'>wrapped_compile_execute</a>, NULL <em class='comment'>/*udata*/</em>, 3 <em class='comment'>/*nargs*/</em>, 1 <em class='comment'>/*nret*/</em>);
+<a id='L698' name='L698'></a>
+<a id='L699' name='L699'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOWMEM)
+<a id='L700' name='L700'></a>        <a href='../S/376.html#L985' title='Defined at 985 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_clear_exec_timeout</a>();
+<a id='L701' name='L701'></a><em class='sharp'>#endif</em>
+<a id='L702' name='L702'></a>
+<a id='L703' name='L703'></a>        <strong class='reserved'>if</strong> (rc != <a href='../D/764.html' title='Multiple defined in 3 places.'>DUK_EXEC_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L704' name='L704'></a>                <a href='../S/375.html#L189' title='Defined at 189 in examples/cmdline/duk_cmdline.c.'>print_pop_error</a>(ctx, stderr);
+<a id='L705' name='L705'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L706' name='L706'></a>                <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L707' name='L707'></a>                retval = 0;
+<a id='L708' name='L708'></a>        <em class='brace'>}</em>
+<a id='L709' name='L709'></a>
+<a id='L710' name='L710'></a>        <strong class='reserved'>return</strong> retval;
+<a id='L711' name='L711'></a><em class='brace'>}</em>
+<a id='L712' name='L712'></a>
+<a id='L713' name='L713'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L27' title='Defined at 27 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_LINENOISE</a>)
+<a id='L714' name='L714'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/375.html#L1509' title='Referred from 1509 in examples/cmdline/duk_cmdline.c.'>handle_interactive</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L715' name='L715'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *prompt = "duk&gt; ";
+<a id='L716' name='L716'></a>        <strong class='reserved'>char</strong> *buffer = NULL;
+<a id='L717' name='L717'></a>        <strong class='reserved'>int</strong> retval = 0;
+<a id='L718' name='L718'></a>        <strong class='reserved'>int</strong> rc;
+<a id='L719' name='L719'></a>
+<a id='L720' name='L720'></a>        linenoiseSetMultiLine(1);
+<a id='L721' name='L721'></a>        linenoiseHistorySetMaxLen(64);
+<a id='L722' name='L722'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L28' title='Defined at 28 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_LINENOISE_COMPLETION</a>)
+<a id='L723' name='L723'></a>        <strong class='reserved'>if</strong> (!no_auto_complete) <em class='brace'>{</em>
+<a id='L724' name='L724'></a>                linenoiseSetCompletionCallback(<a href='../S/375.html#L487' title='Defined at 487 in examples/cmdline/duk_cmdline.c.'>linenoise_completion</a>);
+<a id='L725' name='L725'></a>                linenoiseSetHintsCallback(<a href='../S/375.html#L426' title='Defined at 426 in examples/cmdline/duk_cmdline.c.'>linenoise_hints</a>);
+<a id='L726' name='L726'></a>                linenoiseSetFreeHintsCallback(<a href='../S/375.html#L480' title='Defined at 480 in examples/cmdline/duk_cmdline.c.'>linenoise_freehints</a>);
+<a id='L727' name='L727'></a>                <a href='../D/5569.html' title='Multiple defined in 4 places.'>duk_push_global_stash</a>(ctx);
+<a id='L728' name='L728'></a>                <a href='../D/5028.html' title='Multiple defined in 3 places.'>duk_eval_string</a>(ctx, linenoise_completion_script);
+<a id='L729' name='L729'></a>                <a href='../D/5648.html' title='Multiple defined in 4 places.'>duk_put_prop_string</a>(ctx, -2, "linenoiseCompletion");
+<a id='L730' name='L730'></a>                <a href='../D/5028.html' title='Multiple defined in 3 places.'>duk_eval_string</a>(ctx, linenoise_hints_script);
+<a id='L731' name='L731'></a>                <a href='../D/5648.html' title='Multiple defined in 4 places.'>duk_put_prop_string</a>(ctx, -2, "linenoiseHints");
+<a id='L732' name='L732'></a>                <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L733' name='L733'></a>        <em class='brace'>}</em>
+<a id='L734' name='L734'></a><em class='sharp'>#endif</em>
+<a id='L735' name='L735'></a>
+<a id='L736' name='L736'></a>        <strong class='reserved'>for</strong> (;;) <em class='brace'>{</em>
+<a id='L737' name='L737'></a>                <strong class='reserved'>if</strong> (buffer) <em class='brace'>{</em>
+<a id='L738' name='L738'></a>                        linenoiseFree(buffer);
+<a id='L739' name='L739'></a>                        buffer = NULL;
+<a id='L740' name='L740'></a>                <em class='brace'>}</em>
+<a id='L741' name='L741'></a>
+<a id='L742' name='L742'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L28' title='Defined at 28 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_LINENOISE_COMPLETION</a>)
+<a id='L743' name='L743'></a>                completion_ctx = ctx;
+<a id='L744' name='L744'></a><em class='sharp'>#endif</em>
+<a id='L745' name='L745'></a>                buffer = linenoise(prompt);
+<a id='L746' name='L746'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L28' title='Defined at 28 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_LINENOISE_COMPLETION</a>)
+<a id='L747' name='L747'></a>                completion_ctx = NULL;
+<a id='L748' name='L748'></a><em class='sharp'>#endif</em>
+<a id='L749' name='L749'></a>
+<a id='L750' name='L750'></a>                <strong class='reserved'>if</strong> (!buffer) <em class='brace'>{</em>
+<a id='L751' name='L751'></a>                        <strong class='reserved'>break</strong>;
+<a id='L752' name='L752'></a>                <em class='brace'>}</em>
+<a id='L753' name='L753'></a>
+<a id='L754' name='L754'></a>                <strong class='reserved'>if</strong> (buffer &amp;&amp; buffer[0] != (<strong class='reserved'>char</strong>) 0) <em class='brace'>{</em>
+<a id='L755' name='L755'></a>                        linenoiseHistoryAdd(buffer);
+<a id='L756' name='L756'></a>                <em class='brace'>}</em>
+<a id='L757' name='L757'></a>
+<a id='L758' name='L758'></a>                <a href='../D/5603.html' title='Multiple defined in 4 places.'>duk_push_pointer</a>(ctx, (<strong class='reserved'>void</strong> *) buffer);
+<a id='L759' name='L759'></a>                <a href='../D/5628.html' title='Multiple defined in 4 places.'>duk_push_uint</a>(ctx, (<a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a>) strlen(buffer));
+<a id='L760' name='L760'></a>                <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(ctx, "input");
+<a id='L761' name='L761'></a>
+<a id='L762' name='L762'></a>                interactive_mode = 1;  <em class='comment'>/* global */</em>
+<a id='L763' name='L763'></a>
+<a id='L764' name='L764'></a>                rc = <a href='../D/5748.html' title='Multiple defined in 4 places.'>duk_safe_call</a>(ctx, <a href='../D/6056.html' title='Multiple defined in 2 places.'>wrapped_compile_execute</a>, NULL <em class='comment'>/*udata*/</em>, 3 <em class='comment'>/*nargs*/</em>, 1 <em class='comment'>/*nret*/</em>);
+<a id='L765' name='L765'></a>
+<a id='L766' name='L766'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOWMEM)
+<a id='L767' name='L767'></a>                <a href='../S/376.html#L985' title='Defined at 985 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_clear_exec_timeout</a>();
+<a id='L768' name='L768'></a><em class='sharp'>#endif</em>
+<a id='L769' name='L769'></a>
+<a id='L770' name='L770'></a>                <strong class='reserved'>if</strong> (buffer) <em class='brace'>{</em>
+<a id='L771' name='L771'></a>                        linenoiseFree(buffer);
+<a id='L772' name='L772'></a>                        buffer = NULL;
+<a id='L773' name='L773'></a>                <em class='brace'>}</em>
+<a id='L774' name='L774'></a>
+<a id='L775' name='L775'></a>                <strong class='reserved'>if</strong> (rc != <a href='../D/764.html' title='Multiple defined in 3 places.'>DUK_EXEC_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L776' name='L776'></a>                        <em class='comment'>/* in interactive mode, write to stdout */</em>
+<a id='L777' name='L777'></a>                        <a href='../S/375.html#L189' title='Defined at 189 in examples/cmdline/duk_cmdline.c.'>print_pop_error</a>(ctx, stdout);
+<a id='L778' name='L778'></a>                        retval = -1;  <em class='comment'>/* an error 'taints' the execution */</em>
+<a id='L779' name='L779'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L780' name='L780'></a>                        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L781' name='L781'></a>                <em class='brace'>}</em>
+<a id='L782' name='L782'></a>        <em class='brace'>}</em>
+<a id='L783' name='L783'></a>
+<a id='L784' name='L784'></a>        <strong class='reserved'>if</strong> (buffer) <em class='brace'>{</em>
+<a id='L785' name='L785'></a>                linenoiseFree(buffer);
+<a id='L786' name='L786'></a>                buffer = NULL;
+<a id='L787' name='L787'></a>        <em class='brace'>}</em>
+<a id='L788' name='L788'></a>
+<a id='L789' name='L789'></a>        <strong class='reserved'>return</strong> retval;
+<a id='L790' name='L790'></a><em class='brace'>}</em>
+<a id='L791' name='L791'></a><em class='sharp'>#else</em>  <em class='comment'>/* DUK_CMDLINE_LINENOISE */</em>
+<a id='L792' name='L792'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/375.html#L1509' title='Referred from 1509 in examples/cmdline/duk_cmdline.c.'>handle_interactive</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L793' name='L793'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *prompt = "duk&gt; ";
+<a id='L794' name='L794'></a>        size_t bufsize = 0;
+<a id='L795' name='L795'></a>        <strong class='reserved'>char</strong> *buffer = NULL;
+<a id='L796' name='L796'></a>        <strong class='reserved'>int</strong> retval = 0;
+<a id='L797' name='L797'></a>        <strong class='reserved'>int</strong> rc;
+<a id='L798' name='L798'></a>        <strong class='reserved'>int</strong> got_eof = 0;
+<a id='L799' name='L799'></a>
+<a id='L800' name='L800'></a>        <strong class='reserved'>while</strong> (!got_eof) <em class='brace'>{</em>
+<a id='L801' name='L801'></a>                size_t idx = 0;
+<a id='L802' name='L802'></a>
+<a id='L803' name='L803'></a>                fwrite(prompt, 1, strlen(prompt), stdout);
+<a id='L804' name='L804'></a>                fflush(stdout);
+<a id='L805' name='L805'></a>
+<a id='L806' name='L806'></a>                <strong class='reserved'>for</strong> (;;) <em class='brace'>{</em>
+<a id='L807' name='L807'></a>                        <strong class='reserved'>int</strong> c;
+<a id='L808' name='L808'></a>
+<a id='L809' name='L809'></a>                        <strong class='reserved'>if</strong> (idx &gt;= bufsize) <em class='brace'>{</em>
+<a id='L810' name='L810'></a>                                size_t newsize = bufsize + (bufsize &gt;&gt; 2) + 1024;  <em class='comment'>/* +25% and some extra */</em>
+<a id='L811' name='L811'></a>                                <strong class='reserved'>char</strong> *newptr;
+<a id='L812' name='L812'></a>
+<a id='L813' name='L813'></a>                                <strong class='reserved'>if</strong> (newsize &lt; bufsize) <em class='brace'>{</em>
+<a id='L814' name='L814'></a>                                        <strong class='reserved'>goto</strong> fail_realloc;
+<a id='L815' name='L815'></a>                                <em class='brace'>}</em>
+<a id='L816' name='L816'></a>                                newptr = (<strong class='reserved'>char</strong> *) realloc(buffer, newsize);
+<a id='L817' name='L817'></a>                                <strong class='reserved'>if</strong> (!newptr) <em class='brace'>{</em>
+<a id='L818' name='L818'></a>                                        <strong class='reserved'>goto</strong> fail_realloc;
+<a id='L819' name='L819'></a>                                <em class='brace'>}</em>
+<a id='L820' name='L820'></a>                                buffer = newptr;
+<a id='L821' name='L821'></a>                                bufsize = newsize;
+<a id='L822' name='L822'></a>                        <em class='brace'>}</em>
+<a id='L823' name='L823'></a>
+<a id='L824' name='L824'></a>                        c = fgetc(stdin);
+<a id='L825' name='L825'></a>                        <strong class='reserved'>if</strong> (c == EOF) <em class='brace'>{</em>
+<a id='L826' name='L826'></a>                                got_eof = 1;
+<a id='L827' name='L827'></a>                                <strong class='reserved'>break</strong>;
+<a id='L828' name='L828'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (c == '\n') <em class='brace'>{</em>
+<a id='L829' name='L829'></a>                                <strong class='reserved'>break</strong>;
+<a id='L830' name='L830'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L831' name='L831'></a>                                buffer[idx++] = (<strong class='reserved'>char</strong>) c;
+<a id='L832' name='L832'></a>                        <em class='brace'>}</em>
+<a id='L833' name='L833'></a>                <em class='brace'>}</em>
+<a id='L834' name='L834'></a>
+<a id='L835' name='L835'></a>                <a href='../D/5603.html' title='Multiple defined in 4 places.'>duk_push_pointer</a>(ctx, (<strong class='reserved'>void</strong> *) buffer);
+<a id='L836' name='L836'></a>                <a href='../D/5628.html' title='Multiple defined in 4 places.'>duk_push_uint</a>(ctx, (<a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a>) idx);
+<a id='L837' name='L837'></a>                <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(ctx, "input");
+<a id='L838' name='L838'></a>
+<a id='L839' name='L839'></a>                interactive_mode = 1;  <em class='comment'>/* global */</em>
+<a id='L840' name='L840'></a>
+<a id='L841' name='L841'></a>                rc = <a href='../D/5748.html' title='Multiple defined in 4 places.'>duk_safe_call</a>(ctx, <a href='../D/6056.html' title='Multiple defined in 2 places.'>wrapped_compile_execute</a>, NULL <em class='comment'>/*udata*/</em>, 3 <em class='comment'>/*nargs*/</em>, 1 <em class='comment'>/*nret*/</em>);
+<a id='L842' name='L842'></a>
+<a id='L843' name='L843'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOWMEM)
+<a id='L844' name='L844'></a>                <a href='../S/376.html#L985' title='Defined at 985 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_clear_exec_timeout</a>();
+<a id='L845' name='L845'></a><em class='sharp'>#endif</em>
+<a id='L846' name='L846'></a>
+<a id='L847' name='L847'></a>                <strong class='reserved'>if</strong> (rc != <a href='../D/764.html' title='Multiple defined in 3 places.'>DUK_EXEC_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L848' name='L848'></a>                        <em class='comment'>/* in interactive mode, write to stdout */</em>
+<a id='L849' name='L849'></a>                        <a href='../S/375.html#L189' title='Defined at 189 in examples/cmdline/duk_cmdline.c.'>print_pop_error</a>(ctx, stdout);
+<a id='L850' name='L850'></a>                        retval = -1;  <em class='comment'>/* an error 'taints' the execution */</em>
+<a id='L851' name='L851'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L852' name='L852'></a>                        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L853' name='L853'></a>                <em class='brace'>}</em>
+<a id='L854' name='L854'></a>        <em class='brace'>}</em>
+<a id='L855' name='L855'></a>
+<a id='L856' name='L856'></a> done:
+<a id='L857' name='L857'></a>        <strong class='reserved'>if</strong> (buffer) <em class='brace'>{</em>
+<a id='L858' name='L858'></a>                free(buffer);
+<a id='L859' name='L859'></a>                buffer = NULL;
+<a id='L860' name='L860'></a>        <em class='brace'>}</em>
+<a id='L861' name='L861'></a>
+<a id='L862' name='L862'></a>        <strong class='reserved'>return</strong> retval;
+<a id='L863' name='L863'></a>
+<a id='L864' name='L864'></a> fail_realloc:
+<a id='L865' name='L865'></a>        fprintf(stderr, "failed to extend line buffer\n");
+<a id='L866' name='L866'></a>        fflush(stderr);
+<a id='L867' name='L867'></a>        retval = -1;
+<a id='L868' name='L868'></a>        <strong class='reserved'>goto</strong> done;
+<a id='L869' name='L869'></a><em class='brace'>}</em>
+<a id='L870' name='L870'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_CMDLINE_LINENOISE */</em>
+<a id='L871' name='L871'></a>
+<a id='L872' name='L872'></a><em class='comment'>/*</em>
+<a id='L873' name='L873'></a><em class='comment'> *  Simple file read/write bindings</em>
+<a id='L874' name='L874'></a><em class='comment'> */</em>
+<a id='L875' name='L875'></a>
+<a id='L876' name='L876'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_FILEIO)
+<a id='L877' name='L877'></a><strong class='reserved'>static</strong> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../S/375.html#L1175' title='Referred from 1175 in examples/cmdline/duk_cmdline.c.'>fileio_read_file</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L878' name='L878'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *fn;
+<a id='L879' name='L879'></a>        <strong class='reserved'>char</strong> *buf;
+<a id='L880' name='L880'></a>        size_t len;
+<a id='L881' name='L881'></a>        size_t off;
+<a id='L882' name='L882'></a>        <strong class='reserved'>int</strong> rc;
+<a id='L883' name='L883'></a>        FILE *f;
+<a id='L884' name='L884'></a>
+<a id='L885' name='L885'></a>        fn = <a href='../D/5735.html' title='Multiple defined in 4 places.'>duk_require_string</a>(ctx, 0);
+<a id='L886' name='L886'></a>        f = fopen(fn, "rb");
+<a id='L887' name='L887'></a>        <strong class='reserved'>if</strong> (!f) <em class='brace'>{</em>
+<a id='L888' name='L888'></a>                (<strong class='reserved'>void</strong>) <a href='../D/5877.html' title='Multiple defined in 6 places.'>duk_type_error</a>(ctx, "cannot open file %s for reading, errno %ld: %s",
+<a id='L889' name='L889'></a>                                      fn, (<strong class='reserved'>long</strong>) errno, strerror(errno));
+<a id='L890' name='L890'></a>        <em class='brace'>}</em>
+<a id='L891' name='L891'></a>
+<a id='L892' name='L892'></a>        rc = fseek(f, 0, SEEK_END);
+<a id='L893' name='L893'></a>        <strong class='reserved'>if</strong> (rc &lt; 0) <em class='brace'>{</em>
+<a id='L894' name='L894'></a>                (<strong class='reserved'>void</strong>) fclose(f);
+<a id='L895' name='L895'></a>                (<strong class='reserved'>void</strong>) <a href='../D/5877.html' title='Multiple defined in 6 places.'>duk_type_error</a>(ctx, "fseek() failed for %s, errno %ld: %s",
+<a id='L896' name='L896'></a>                                      fn, (<strong class='reserved'>long</strong>) errno, strerror(errno));
+<a id='L897' name='L897'></a>        <em class='brace'>}</em>
+<a id='L898' name='L898'></a>        len = (size_t) ftell(f);
+<a id='L899' name='L899'></a>        rc = fseek(f, 0, SEEK_SET);
+<a id='L900' name='L900'></a>        <strong class='reserved'>if</strong> (rc &lt; 0) <em class='brace'>{</em>
+<a id='L901' name='L901'></a>                (<strong class='reserved'>void</strong>) fclose(f);
+<a id='L902' name='L902'></a>                (<strong class='reserved'>void</strong>) <a href='../D/5877.html' title='Multiple defined in 6 places.'>duk_type_error</a>(ctx, "fseek() failed for %s, errno %ld: %s",
+<a id='L903' name='L903'></a>                                      fn, (<strong class='reserved'>long</strong>) errno, strerror(errno));
+<a id='L904' name='L904'></a>        <em class='brace'>}</em>
+<a id='L905' name='L905'></a>
+<a id='L906' name='L906'></a>        buf = (<strong class='reserved'>char</strong> *) <a href='../D/5565.html' title='Multiple defined in 3 places.'>duk_push_fixed_buffer</a>(ctx, (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) len);
+<a id='L907' name='L907'></a>        <strong class='reserved'>for</strong> (off = 0; off &lt; len;) <em class='brace'>{</em>
+<a id='L908' name='L908'></a>                size_t got;
+<a id='L909' name='L909'></a>                got = fread((<strong class='reserved'>void</strong> *) (buf + off), 1, len - off, f);
+<a id='L910' name='L910'></a>                <strong class='reserved'>if</strong> (ferror(f)) <em class='brace'>{</em>
+<a id='L911' name='L911'></a>                        (<strong class='reserved'>void</strong>) fclose(f);
+<a id='L912' name='L912'></a>                        (<strong class='reserved'>void</strong>) <a href='../D/5877.html' title='Multiple defined in 6 places.'>duk_type_error</a>(ctx, "error while reading %s", fn);
+<a id='L913' name='L913'></a>                <em class='brace'>}</em>
+<a id='L914' name='L914'></a>                <strong class='reserved'>if</strong> (got == 0) <em class='brace'>{</em>
+<a id='L915' name='L915'></a>                        <strong class='reserved'>if</strong> (feof(f)) <em class='brace'>{</em>
+<a id='L916' name='L916'></a>                                <strong class='reserved'>break</strong>;
+<a id='L917' name='L917'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L918' name='L918'></a>                                (<strong class='reserved'>void</strong>) fclose(f);
+<a id='L919' name='L919'></a>                                (<strong class='reserved'>void</strong>) <a href='../D/5877.html' title='Multiple defined in 6 places.'>duk_type_error</a>(ctx, "error while reading %s", fn);
+<a id='L920' name='L920'></a>                        <em class='brace'>}</em>
+<a id='L921' name='L921'></a>                <em class='brace'>}</em>
+<a id='L922' name='L922'></a>                off += got;
+<a id='L923' name='L923'></a>        <em class='brace'>}</em>
+<a id='L924' name='L924'></a>
+<a id='L925' name='L925'></a>        <strong class='reserved'>if</strong> (f) <em class='brace'>{</em>
+<a id='L926' name='L926'></a>                (<strong class='reserved'>void</strong>) fclose(f);
+<a id='L927' name='L927'></a>        <em class='brace'>}</em>
+<a id='L928' name='L928'></a>
+<a id='L929' name='L929'></a>        <strong class='reserved'>return</strong> 1;
+<a id='L930' name='L930'></a><em class='brace'>}</em>
+<a id='L931' name='L931'></a>
+<a id='L932' name='L932'></a><strong class='reserved'>static</strong> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../S/375.html#L1177' title='Referred from 1177 in examples/cmdline/duk_cmdline.c.'>fileio_write_file</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L933' name='L933'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *fn;
+<a id='L934' name='L934'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *buf;
+<a id='L935' name='L935'></a>        size_t len;
+<a id='L936' name='L936'></a>        size_t off;
+<a id='L937' name='L937'></a>        FILE *f;
+<a id='L938' name='L938'></a>
+<a id='L939' name='L939'></a>        fn = <a href='../D/5735.html' title='Multiple defined in 4 places.'>duk_require_string</a>(ctx, 0);
+<a id='L940' name='L940'></a>        f = fopen(fn, "wb");
+<a id='L941' name='L941'></a>        <strong class='reserved'>if</strong> (!f) <em class='brace'>{</em>
+<a id='L942' name='L942'></a>                (<strong class='reserved'>void</strong>) <a href='../D/5877.html' title='Multiple defined in 6 places.'>duk_type_error</a>(ctx, "cannot open file %s for writing, errno %ld: %s",
+<a id='L943' name='L943'></a>                          fn, (<strong class='reserved'>long</strong>) errno, strerror(errno));
+<a id='L944' name='L944'></a>        <em class='brace'>}</em>
+<a id='L945' name='L945'></a>
+<a id='L946' name='L946'></a>        len = 0;
+<a id='L947' name='L947'></a>        buf = (<strong class='reserved'>char</strong> *) <a href='../D/5705.html' title='Multiple defined in 4 places.'>duk_require_buffer_data</a>(ctx, 1, &amp;len);
+<a id='L948' name='L948'></a>        <strong class='reserved'>for</strong> (off = 0; off &lt; len;) <em class='brace'>{</em>
+<a id='L949' name='L949'></a>                size_t got;
+<a id='L950' name='L950'></a>                got = fwrite((<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *) (buf + off), 1, len - off, f);
+<a id='L951' name='L951'></a>                <strong class='reserved'>if</strong> (ferror(f)) <em class='brace'>{</em>
+<a id='L952' name='L952'></a>                        (<strong class='reserved'>void</strong>) fclose(f);
+<a id='L953' name='L953'></a>                        (<strong class='reserved'>void</strong>) <a href='../D/5877.html' title='Multiple defined in 6 places.'>duk_type_error</a>(ctx, "error while writing %s", fn);
+<a id='L954' name='L954'></a>                <em class='brace'>}</em>
+<a id='L955' name='L955'></a>                <strong class='reserved'>if</strong> (got == 0) <em class='brace'>{</em>
+<a id='L956' name='L956'></a>                        (<strong class='reserved'>void</strong>) fclose(f);
+<a id='L957' name='L957'></a>                        (<strong class='reserved'>void</strong>) <a href='../D/5877.html' title='Multiple defined in 6 places.'>duk_type_error</a>(ctx, "error while writing %s", fn);
+<a id='L958' name='L958'></a>                <em class='brace'>}</em>
+<a id='L959' name='L959'></a>                off += got;
+<a id='L960' name='L960'></a>        <em class='brace'>}</em>
+<a id='L961' name='L961'></a>
+<a id='L962' name='L962'></a>        <strong class='reserved'>if</strong> (f) <em class='brace'>{</em>
+<a id='L963' name='L963'></a>                (<strong class='reserved'>void</strong>) fclose(f);
+<a id='L964' name='L964'></a>        <em class='brace'>}</em>
+<a id='L965' name='L965'></a>
+<a id='L966' name='L966'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L967' name='L967'></a><em class='brace'>}</em>
+<a id='L968' name='L968'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_CMDLINE_FILEIO */</em>
+<a id='L969' name='L969'></a>
+<a id='L970' name='L970'></a><em class='comment'>/*</em>
+<a id='L971' name='L971'></a><em class='comment'> *  String.fromBufferRaw()</em>
+<a id='L972' name='L972'></a><em class='comment'> */</em>
+<a id='L973' name='L973'></a>
+<a id='L974' name='L974'></a><strong class='reserved'>static</strong> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../S/375.html#L1154' title='Referred from 1154 in examples/cmdline/duk_cmdline.c.'>string_frombufferraw</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L975' name='L975'></a>        <a href='../D/4799.html' title='Multiple defined in 4 places.'>duk_buffer_to_string</a>(ctx, 0);
+<a id='L976' name='L976'></a>        <strong class='reserved'>return</strong> 1;
+<a id='L977' name='L977'></a><em class='brace'>}</em>
+<a id='L978' name='L978'></a>
+<a id='L979' name='L979'></a><em class='comment'>/*</em>
+<a id='L980' name='L980'></a><em class='comment'> *  Duktape heap lifecycle</em>
+<a id='L981' name='L981'></a><em class='comment'> */</em>
+<a id='L982' name='L982'></a>
+<a id='L983' name='L983'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_DEBUGGER_SUPPORT)
+<a id='L984' name='L984'></a><strong class='reserved'>static</strong> <a href='../D/5319.html' title='Multiple defined in 3 places.'>duk_idx_t</a> <a href='../R/2981.html' title='Multiple referred from 2 places.'>debugger_request</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx, <strong class='reserved'>void</strong> *udata, <a href='../D/5319.html' title='Multiple defined in 3 places.'>duk_idx_t</a> nvalues) <em class='brace'>{</em>
+<a id='L985' name='L985'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *cmd;
+<a id='L986' name='L986'></a>        <strong class='reserved'>int</strong> i;
+<a id='L987' name='L987'></a>
+<a id='L988' name='L988'></a>        (<strong class='reserved'>void</strong>) udata;
+<a id='L989' name='L989'></a>
+<a id='L990' name='L990'></a>        <strong class='reserved'>if</strong> (nvalues &lt; 1) <em class='brace'>{</em>
+<a id='L991' name='L991'></a>                <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(ctx, "missing AppRequest argument(s)");
+<a id='L992' name='L992'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L993' name='L993'></a>        <em class='brace'>}</em>
+<a id='L994' name='L994'></a>
+<a id='L995' name='L995'></a>        cmd = <a href='../D/5119.html' title='Multiple defined in 4 places.'>duk_get_string</a>(ctx, -nvalues + 0);
+<a id='L996' name='L996'></a>
+<a id='L997' name='L997'></a>        <strong class='reserved'>if</strong> (cmd &amp;&amp; strcmp(cmd, "CommandLine") == 0) <em class='brace'>{</em>
+<a id='L998' name='L998'></a>                <strong class='reserved'>if</strong> (!<a href='../D/4830.html' title='Multiple defined in 4 places.'>duk_check_stack</a>(ctx, main_argc)) <em class='brace'>{</em>
+<a id='L999' name='L999'></a>                        <em class='comment'>/* Callback should avoid errors for now, so use</em>
+<a id='L1000' name='L1000'></a><em class='comment'>                         * duk_check_stack() rather than duk_require_stack().</em>
+<a id='L1001' name='L1001'></a><em class='comment'>                         */</em>
+<a id='L1002' name='L1002'></a>                        <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(ctx, "failed to extend stack");
+<a id='L1003' name='L1003'></a>                        <strong class='reserved'>return</strong> -1;
+<a id='L1004' name='L1004'></a>                <em class='brace'>}</em>
+<a id='L1005' name='L1005'></a>                <strong class='reserved'>for</strong> (i = 0; i &lt; main_argc; i++) <em class='brace'>{</em>
+<a id='L1006' name='L1006'></a>                        <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(ctx, main_argv[i]);
+<a id='L1007' name='L1007'></a>                <em class='brace'>}</em>
+<a id='L1008' name='L1008'></a>                <strong class='reserved'>return</strong> main_argc;
+<a id='L1009' name='L1009'></a>        <em class='brace'>}</em>
+<a id='L1010' name='L1010'></a>        <a href='../D/5606.html' title='Multiple defined in 4 places.'>duk_push_sprintf</a>(ctx, "command not supported");
+<a id='L1011' name='L1011'></a>        <strong class='reserved'>return</strong> -1;
+<a id='L1012' name='L1012'></a><em class='brace'>}</em>
+<a id='L1013' name='L1013'></a>
+<a id='L1014' name='L1014'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/2980.html' title='Multiple referred from 2 places.'>debugger_detached</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx, <strong class='reserved'>void</strong> *udata) <em class='brace'>{</em>
+<a id='L1015' name='L1015'></a>        fprintf(stderr, "Debugger detached, udata: %p\n", (<strong class='reserved'>void</strong> *) udata);
+<a id='L1016' name='L1016'></a>        fflush(stderr);
+<a id='L1017' name='L1017'></a>
+<a id='L1018' name='L1018'></a>        <em class='comment'>/* Ensure socket is closed even when detach is initiated by Duktape</em>
+<a id='L1019' name='L1019'></a><em class='comment'>         * rather than debug client.</em>
+<a id='L1020' name='L1020'></a><em class='comment'>         */</em>
+<a id='L1021' name='L1021'></a>        <a href='../D/5856.html' title='Multiple defined in 2 places.'>duk_trans_socket_finish</a>();
+<a id='L1022' name='L1022'></a>
+<a id='L1023' name='L1023'></a>        <strong class='reserved'>if</strong> (debugger_reattach) <em class='brace'>{</em>
+<a id='L1024' name='L1024'></a>                <em class='comment'>/* For automatic reattach testing. */</em>
+<a id='L1025' name='L1025'></a>                <a href='../D/5857.html' title='Multiple defined in 2 places.'>duk_trans_socket_init</a>();
+<a id='L1026' name='L1026'></a>                <a href='../D/5861.html' title='Multiple defined in 2 places.'>duk_trans_socket_waitconn</a>();
+<a id='L1027' name='L1027'></a>                fprintf(stderr, "Debugger reconnected, call duk_debugger_attach()\n");
+<a id='L1028' name='L1028'></a>                fflush(stderr);
+<a id='L1029' name='L1029'></a><em class='sharp'>#if</em> 0
+<a id='L1030' name='L1030'></a>                <em class='comment'>/* This is not necessary but should be harmless. */</em>
+<a id='L1031' name='L1031'></a>                <a href='../D/4920.html' title='Multiple defined in 8 places.'>duk_debugger_detach</a>(ctx);
+<a id='L1032' name='L1032'></a><em class='sharp'>#endif</em>
+<a id='L1033' name='L1033'></a>                <a href='../D/4918.html' title='Multiple defined in 8 places.'>duk_debugger_attach</a>(ctx,
+<a id='L1034' name='L1034'></a>                                    <a href='../D/5859.html' title='Multiple defined in 2 places.'>duk_trans_socket_read_cb</a>,
+<a id='L1035' name='L1035'></a>                                    <a href='../D/5862.html' title='Multiple defined in 2 places.'>duk_trans_socket_write_cb</a>,
+<a id='L1036' name='L1036'></a>                                    <a href='../D/5858.html' title='Multiple defined in 2 places.'>duk_trans_socket_peek_cb</a>,
+<a id='L1037' name='L1037'></a>                                    <a href='../D/5860.html' title='Multiple defined in 2 places.'>duk_trans_socket_read_flush_cb</a>,
+<a id='L1038' name='L1038'></a>                                    <a href='../D/5863.html' title='Multiple defined in 2 places.'>duk_trans_socket_write_flush_cb</a>,
+<a id='L1039' name='L1039'></a>                                    <a href='../S/375.html#L984' title='Defined at 984 in examples/cmdline/duk_cmdline.c.'>debugger_request</a>,
+<a id='L1040' name='L1040'></a>                                    <a href='../S/375.html#L1014' title='Defined at 1014 in examples/cmdline/duk_cmdline.c.'>debugger_detached</a>,
+<a id='L1041' name='L1041'></a>                                    NULL);
+<a id='L1042' name='L1042'></a>        <em class='brace'>}</em>
+<a id='L1043' name='L1043'></a><em class='brace'>}</em>
+<a id='L1044' name='L1044'></a><em class='sharp'>#endif</em>
+<a id='L1045' name='L1045'></a>
+<a id='L1046' name='L1046'></a><em class='sharp'>#define</em>  <a href='../R/4.html' title='Multiple referred from 3 places.'>ALLOC_DEFAULT</a>  0
+<a id='L1047' name='L1047'></a><em class='sharp'>#define</em>  <a href='../R/6.html' title='Multiple referred from 2 places.'>ALLOC_LOGGING</a>  1
+<a id='L1048' name='L1048'></a><em class='sharp'>#define</em>  <a href='../R/9.html' title='Multiple referred from 2 places.'>ALLOC_TORTURE</a>  2
+<a id='L1049' name='L1049'></a><em class='sharp'>#define</em>  <a href='../R/5.html' title='Multiple referred from 2 places.'>ALLOC_HYBRID</a>   3
+<a id='L1050' name='L1050'></a><em class='sharp'>#define</em>  <a href='../R/8.html' title='Multiple referred from 7 places.'>ALLOC_LOWMEM</a>   4
+<a id='L1051' name='L1051'></a>
+<a id='L1052' name='L1052'></a><strong class='reserved'>static</strong> <a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *<a href='../R/2978.html' title='Multiple referred from 3 places.'>create_duktape_heap</a>(<strong class='reserved'>int</strong> alloc_provider, <strong class='reserved'>int</strong> debugger, <strong class='reserved'>int</strong> lowmem_log) <em class='brace'>{</em>
+<a id='L1053' name='L1053'></a>        <a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx;
+<a id='L1054' name='L1054'></a>
+<a id='L1055' name='L1055'></a>        (<strong class='reserved'>void</strong>) lowmem_log;  <em class='comment'>/* suppress warning */</em>
+<a id='L1056' name='L1056'></a>
+<a id='L1057' name='L1057'></a>        ctx = NULL;
+<a id='L1058' name='L1058'></a>        <strong class='reserved'>if</strong> (!ctx &amp;&amp; alloc_provider == <a href='../S/375.html#L1047' title='Defined at 1047 in examples/cmdline/duk_cmdline.c.'>ALLOC_LOGGING</a>) <em class='brace'>{</em>
+<a id='L1059' name='L1059'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_ALLOC_LOGGING)
+<a id='L1060' name='L1060'></a>                ctx = <a href='../D/4858.html' title='Multiple defined in 4 places.'>duk_create_heap</a>(<a href='../S/342.html#L54' title='Defined at 54 in examples/alloc-logging/duk_alloc_logging.c.'>duk_alloc_logging</a>,
+<a id='L1061' name='L1061'></a>                                      <a href='../S/342.html#L76' title='Defined at 76 in examples/alloc-logging/duk_alloc_logging.c.'>duk_realloc_logging</a>,
+<a id='L1062' name='L1062'></a>                                      <a href='../S/342.html#L127' title='Defined at 127 in examples/alloc-logging/duk_alloc_logging.c.'>duk_free_logging</a>,
+<a id='L1063' name='L1063'></a>                                      (<strong class='reserved'>void</strong> *) 0xdeadbeef,
+<a id='L1064' name='L1064'></a>                                      <a href='../S/375.html#L179' title='Defined at 179 in examples/cmdline/duk_cmdline.c.'>cmdline_fatal_handler</a>);
+<a id='L1065' name='L1065'></a><em class='sharp'>#else</em>
+<a id='L1066' name='L1066'></a>                fprintf(stderr, "Warning: option --alloc-logging ignored, no logging allocator support\n");
+<a id='L1067' name='L1067'></a>                fflush(stderr);
+<a id='L1068' name='L1068'></a><em class='sharp'>#endif</em>
+<a id='L1069' name='L1069'></a>        <em class='brace'>}</em>
+<a id='L1070' name='L1070'></a>        <strong class='reserved'>if</strong> (!ctx &amp;&amp; alloc_provider == <a href='../S/375.html#L1048' title='Defined at 1048 in examples/cmdline/duk_cmdline.c.'>ALLOC_TORTURE</a>) <em class='brace'>{</em>
+<a id='L1071' name='L1071'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_ALLOC_TORTURE)
+<a id='L1072' name='L1072'></a>                ctx = <a href='../D/4858.html' title='Multiple defined in 4 places.'>duk_create_heap</a>(<a href='../S/317.html#L74' title='Defined at 74 in examples/alloc-torture/duk_alloc_torture.c.'>duk_alloc_torture</a>,
+<a id='L1073' name='L1073'></a>                                      <a href='../S/317.html#L99' title='Defined at 99 in examples/alloc-torture/duk_alloc_torture.c.'>duk_realloc_torture</a>,
+<a id='L1074' name='L1074'></a>                                      <a href='../S/317.html#L167' title='Defined at 167 in examples/alloc-torture/duk_alloc_torture.c.'>duk_free_torture</a>,
+<a id='L1075' name='L1075'></a>                                      (<strong class='reserved'>void</strong> *) 0xdeadbeef,
+<a id='L1076' name='L1076'></a>                                      <a href='../S/375.html#L179' title='Defined at 179 in examples/cmdline/duk_cmdline.c.'>cmdline_fatal_handler</a>);
+<a id='L1077' name='L1077'></a><em class='sharp'>#else</em>
+<a id='L1078' name='L1078'></a>                fprintf(stderr, "Warning: option --alloc-torture ignored, no torture allocator support\n");
+<a id='L1079' name='L1079'></a>                fflush(stderr);
+<a id='L1080' name='L1080'></a><em class='sharp'>#endif</em>
+<a id='L1081' name='L1081'></a>        <em class='brace'>}</em>
+<a id='L1082' name='L1082'></a>        <strong class='reserved'>if</strong> (!ctx &amp;&amp; alloc_provider == <a href='../S/375.html#L1049' title='Defined at 1049 in examples/cmdline/duk_cmdline.c.'>ALLOC_HYBRID</a>) <em class='brace'>{</em>
+<a id='L1083' name='L1083'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_ALLOC_HYBRID)
+<a id='L1084' name='L1084'></a>                <strong class='reserved'>void</strong> *udata = <a href='../S/372.html#L90' title='Defined at 90 in examples/alloc-hybrid/duk_alloc_hybrid.c.'>duk_alloc_hybrid_init</a>();
+<a id='L1085' name='L1085'></a>                <strong class='reserved'>if</strong> (!udata) <em class='brace'>{</em>
+<a id='L1086' name='L1086'></a>                        fprintf(stderr, "Failed to init hybrid allocator\n");
+<a id='L1087' name='L1087'></a>                        fflush(stderr);
+<a id='L1088' name='L1088'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L1089' name='L1089'></a>                        ctx = <a href='../D/4858.html' title='Multiple defined in 4 places.'>duk_create_heap</a>(<a href='../S/372.html#L152' title='Defined at 152 in examples/alloc-hybrid/duk_alloc_hybrid.c.'>duk_alloc_hybrid</a>,
+<a id='L1090' name='L1090'></a>                                              <a href='../S/372.html#L198' title='Defined at 198 in examples/alloc-hybrid/duk_alloc_hybrid.c.'>duk_realloc_hybrid</a>,
+<a id='L1091' name='L1091'></a>                                              <a href='../S/372.html#L260' title='Defined at 260 in examples/alloc-hybrid/duk_alloc_hybrid.c.'>duk_free_hybrid</a>,
+<a id='L1092' name='L1092'></a>                                              udata,
+<a id='L1093' name='L1093'></a>                                              <a href='../S/375.html#L179' title='Defined at 179 in examples/cmdline/duk_cmdline.c.'>cmdline_fatal_handler</a>);
+<a id='L1094' name='L1094'></a>                <em class='brace'>}</em>
+<a id='L1095' name='L1095'></a><em class='sharp'>#else</em>
+<a id='L1096' name='L1096'></a>                fprintf(stderr, "Warning: option --alloc-hybrid ignored, no hybrid allocator support\n");
+<a id='L1097' name='L1097'></a>                fflush(stderr);
+<a id='L1098' name='L1098'></a><em class='sharp'>#endif</em>
+<a id='L1099' name='L1099'></a>        <em class='brace'>}</em>
+<a id='L1100' name='L1100'></a>        <strong class='reserved'>if</strong> (!ctx &amp;&amp; alloc_provider == <a href='../S/375.html#L1050' title='Defined at 1050 in examples/cmdline/duk_cmdline.c.'>ALLOC_LOWMEM</a>) <em class='brace'>{</em>
+<a id='L1101' name='L1101'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOWMEM)
+<a id='L1102' name='L1102'></a>                <a href='../S/376.html#L106' title='Defined at 106 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_init</a>();
+<a id='L1103' name='L1103'></a>
+<a id='L1104' name='L1104'></a>                ctx = <a href='../D/4858.html' title='Multiple defined in 4 places.'>duk_create_heap</a>(
+<a id='L1105' name='L1105'></a>                        lowmem_log ? <a href='../S/376.html#L240' title='Defined at 240 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_alloc_wrapped</a> : <a href='../S/963.html#L407' title='Defined at 407 in extras/alloc-pool/duk_alloc_pool.c.'>duk_alloc_pool</a>,
+<a id='L1106' name='L1106'></a>                        lowmem_log ? <a href='../S/376.html#L252' title='Defined at 252 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_realloc_wrapped</a> : <a href='../S/963.html#L441' title='Defined at 441 in extras/alloc-pool/duk_alloc_pool.c.'>duk_realloc_pool</a>,
+<a id='L1107' name='L1107'></a>                        lowmem_log ? <a href='../S/376.html#L276' title='Defined at 276 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_free_wrapped</a> : <a href='../S/963.html#L532' title='Defined at 532 in extras/alloc-pool/duk_alloc_pool.c.'>duk_free_pool</a>,
+<a id='L1108' name='L1108'></a>                        (<strong class='reserved'>void</strong> *) lowmem_pool_ptr,
+<a id='L1109' name='L1109'></a>                        <a href='../S/375.html#L179' title='Defined at 179 in examples/cmdline/duk_cmdline.c.'>cmdline_fatal_handler</a>);
+<a id='L1110' name='L1110'></a><em class='sharp'>#else</em>
+<a id='L1111' name='L1111'></a>                fprintf(stderr, "Warning: option --alloc-ajsheap ignored, no ajsheap allocator support\n");
+<a id='L1112' name='L1112'></a>                fflush(stderr);
+<a id='L1113' name='L1113'></a><em class='sharp'>#endif</em>
+<a id='L1114' name='L1114'></a>        <em class='brace'>}</em>
+<a id='L1115' name='L1115'></a>        <strong class='reserved'>if</strong> (!ctx &amp;&amp; alloc_provider == <a href='../S/375.html#L1046' title='Defined at 1046 in examples/cmdline/duk_cmdline.c.'>ALLOC_DEFAULT</a>) <em class='brace'>{</em>
+<a id='L1116' name='L1116'></a>                ctx = <a href='../D/4858.html' title='Multiple defined in 4 places.'>duk_create_heap</a>(NULL, NULL, NULL, NULL, <a href='../S/375.html#L179' title='Defined at 179 in examples/cmdline/duk_cmdline.c.'>cmdline_fatal_handler</a>);
+<a id='L1117' name='L1117'></a>        <em class='brace'>}</em>
+<a id='L1118' name='L1118'></a>
+<a id='L1119' name='L1119'></a>        <strong class='reserved'>if</strong> (!ctx) <em class='brace'>{</em>
+<a id='L1120' name='L1120'></a>                fprintf(stderr, "Failed to create Duktape heap\n");
+<a id='L1121' name='L1121'></a>                fflush(stderr);
+<a id='L1122' name='L1122'></a>                exit(1);
+<a id='L1123' name='L1123'></a>        <em class='brace'>}</em>
+<a id='L1124' name='L1124'></a>
+<a id='L1125' name='L1125'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOWMEM)
+<a id='L1126' name='L1126'></a>        <strong class='reserved'>if</strong> (alloc_provider == <a href='../S/375.html#L1050' title='Defined at 1050 in examples/cmdline/duk_cmdline.c.'>ALLOC_LOWMEM</a>) <em class='brace'>{</em>
+<a id='L1127' name='L1127'></a>                fprintf(stderr, "*** pool dump after heap creation ***\n");
+<a id='L1128' name='L1128'></a>                <a href='../S/376.html#L168' title='Defined at 168 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_dump</a>();
+<a id='L1129' name='L1129'></a>        <em class='brace'>}</em>
+<a id='L1130' name='L1130'></a><em class='sharp'>#endif</em>
+<a id='L1131' name='L1131'></a>
+<a id='L1132' name='L1132'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOWMEM)
+<a id='L1133' name='L1133'></a>        <strong class='reserved'>if</strong> (alloc_provider == <a href='../S/375.html#L1050' title='Defined at 1050 in examples/cmdline/duk_cmdline.c.'>ALLOC_LOWMEM</a>) <em class='brace'>{</em>
+<a id='L1134' name='L1134'></a>                <a href='../S/376.html#L199' title='Defined at 199 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_register</a>(ctx);
+<a id='L1135' name='L1135'></a>        <em class='brace'>}</em>
+<a id='L1136' name='L1136'></a><em class='sharp'>#endif</em>
+<a id='L1137' name='L1137'></a>
+<a id='L1138' name='L1138'></a>        <em class='comment'>/* Register print() and alert() (removed in Duktape 2.x). */</em>
+<a id='L1139' name='L1139'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_PRINTALERT_SUPPORT)
+<a id='L1140' name='L1140'></a>        <a href='../S/943.html#L115' title='Defined at 115 in extras/print-alert/duk_print_alert.c.'>duk_print_alert_init</a>(ctx, 0 <em class='comment'>/*flags*/</em>);
+<a id='L1141' name='L1141'></a><em class='sharp'>#endif</em>
+<a id='L1142' name='L1142'></a>
+<a id='L1143' name='L1143'></a>        <em class='comment'>/* Register String.fromBufferRaw() which does a 1:1 buffer-to-string</em>
+<a id='L1144' name='L1144'></a><em class='comment'>         * coercion needed by testcases.  String.fromBufferRaw() is -not- a</em>
+<a id='L1145' name='L1145'></a><em class='comment'>         * default built-in!  For stripped builds the 'String' built-in</em>
+<a id='L1146' name='L1146'></a><em class='comment'>         * doesn't exist and we create it here; for ROM builds it may be</em>
+<a id='L1147' name='L1147'></a><em class='comment'>         * present but unwritable (which is ignored).</em>
+<a id='L1148' name='L1148'></a><em class='comment'>         */</em>
+<a id='L1149' name='L1149'></a>        <a href='../D/5028.html' title='Multiple defined in 3 places.'>duk_eval_string</a>(ctx,
+<a id='L1150' name='L1150'></a>                "(function(v){"
+<a id='L1151' name='L1151'></a>                    "if (typeof String === 'undefined') { String = {}; }"
+<a id='L1152' name='L1152'></a>                    "Object.defineProperty(String, 'fromBufferRaw', {value:v, configurable:true});"
+<a id='L1153' name='L1153'></a>                "})");
+<a id='L1154' name='L1154'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(ctx, <a href='../S/375.html#L974' title='Defined at 974 in examples/cmdline/duk_cmdline.c.'>string_frombufferraw</a>, 1 <em class='comment'>/*nargs*/</em>);
+<a id='L1155' name='L1155'></a>        (<strong class='reserved'>void</strong>) <a href='../D/5496.html' title='Multiple defined in 4 places.'>duk_pcall</a>(ctx, 1);
+<a id='L1156' name='L1156'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L1157' name='L1157'></a>
+<a id='L1158' name='L1158'></a>        <em class='comment'>/* Register console object. */</em>
+<a id='L1159' name='L1159'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_CONSOLE_SUPPORT)
+<a id='L1160' name='L1160'></a>        <a href='../S/932.html#L106' title='Defined at 106 in extras/console/duk_console.c.'>duk_console_init</a>(ctx, <a href='../S/930.html#L14' title='Defined at 14 in extras/console/duk_console.h.'>DUK_CONSOLE_FLUSH</a> <em class='comment'>/*flags*/</em>);
+<a id='L1161' name='L1161'></a><em class='sharp'>#endif</em>
+<a id='L1162' name='L1162'></a>
+<a id='L1163' name='L1163'></a>        <em class='comment'>/* Register Duktape.Logger (removed in Duktape 2.x). */</em>
+<a id='L1164' name='L1164'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOGGING_SUPPORT)
+<a id='L1165' name='L1165'></a>        <a href='../S/967.html#L351' title='Defined at 351 in extras/logging/duk_logging.c.'>duk_logging_init</a>(ctx, 0 <em class='comment'>/*flags*/</em>);
+<a id='L1166' name='L1166'></a><em class='sharp'>#endif</em>
+<a id='L1167' name='L1167'></a>
+<a id='L1168' name='L1168'></a>        <em class='comment'>/* Register require() (removed in Duktape 2.x). */</em>
+<a id='L1169' name='L1169'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_MODULE_SUPPORT)
+<a id='L1170' name='L1170'></a>        <a href='../S/952.html#L439' title='Defined at 439 in extras/module-duktape/duk_module_duktape.c.'>duk_module_duktape_init</a>(ctx);
+<a id='L1171' name='L1171'></a><em class='sharp'>#endif</em>
+<a id='L1172' name='L1172'></a>
+<a id='L1173' name='L1173'></a>        <em class='comment'>/* Trivial readFile/writeFile bindings for testing. */</em>
+<a id='L1174' name='L1174'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_FILEIO)
+<a id='L1175' name='L1175'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(ctx, <a href='../S/375.html#L877' title='Defined at 877 in examples/cmdline/duk_cmdline.c.'>fileio_read_file</a>, 1 <em class='comment'>/*nargs*/</em>);
+<a id='L1176' name='L1176'></a>        <a href='../D/5637.html' title='Multiple defined in 4 places.'>duk_put_global_string</a>(ctx, "readFile");
+<a id='L1177' name='L1177'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(ctx, <a href='../S/375.html#L932' title='Defined at 932 in examples/cmdline/duk_cmdline.c.'>fileio_write_file</a>, 2 <em class='comment'>/*nargs*/</em>);
+<a id='L1178' name='L1178'></a>        <a href='../D/5637.html' title='Multiple defined in 4 places.'>duk_put_global_string</a>(ctx, "writeFile");
+<a id='L1179' name='L1179'></a><em class='sharp'>#endif</em>
+<a id='L1180' name='L1180'></a>
+<a id='L1181' name='L1181'></a>        <em class='comment'>/* Stash a formatting function for evaluation results. */</em>
+<a id='L1182' name='L1182'></a>        <a href='../D/5569.html' title='Multiple defined in 4 places.'>duk_push_global_stash</a>(ctx);
+<a id='L1183' name='L1183'></a>        <a href='../D/5028.html' title='Multiple defined in 3 places.'>duk_eval_string</a>(ctx,
+<a id='L1184' name='L1184'></a>                "(function (E) {"
+<a id='L1185' name='L1185'></a>                    "return function format(v){"
+<a id='L1186' name='L1186'></a>                        "try{"
+<a id='L1187' name='L1187'></a>                            "return E('jx',v);"
+<a id='L1188' name='L1188'></a>                        "}catch(e){"
+<a id='L1189' name='L1189'></a>                            "return ''+v;"
+<a id='L1190' name='L1190'></a>                        "}"
+<a id='L1191' name='L1191'></a>                    "};"
+<a id='L1192' name='L1192'></a>                "})(Duktape.enc)");
+<a id='L1193' name='L1193'></a>        <a href='../D/5648.html' title='Multiple defined in 4 places.'>duk_put_prop_string</a>(ctx, -2, "dukFormat");
+<a id='L1194' name='L1194'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L1195' name='L1195'></a>
+<a id='L1196' name='L1196'></a>        <strong class='reserved'>if</strong> (debugger) <em class='brace'>{</em>
+<a id='L1197' name='L1197'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_DEBUGGER_SUPPORT)
+<a id='L1198' name='L1198'></a>                fprintf(stderr, "Debugger enabled, create socket and wait for connection\n");
+<a id='L1199' name='L1199'></a>                fflush(stderr);
+<a id='L1200' name='L1200'></a>                <a href='../D/5857.html' title='Multiple defined in 2 places.'>duk_trans_socket_init</a>();
+<a id='L1201' name='L1201'></a>                <a href='../D/5861.html' title='Multiple defined in 2 places.'>duk_trans_socket_waitconn</a>();
+<a id='L1202' name='L1202'></a>                fprintf(stderr, "Debugger connected, call duk_debugger_attach() and then execute requested file(s)/eval\n");
+<a id='L1203' name='L1203'></a>                fflush(stderr);
+<a id='L1204' name='L1204'></a>                <a href='../D/4918.html' title='Multiple defined in 8 places.'>duk_debugger_attach</a>(ctx,
+<a id='L1205' name='L1205'></a>                                    <a href='../D/5859.html' title='Multiple defined in 2 places.'>duk_trans_socket_read_cb</a>,
+<a id='L1206' name='L1206'></a>                                    <a href='../D/5862.html' title='Multiple defined in 2 places.'>duk_trans_socket_write_cb</a>,
+<a id='L1207' name='L1207'></a>                                    <a href='../D/5858.html' title='Multiple defined in 2 places.'>duk_trans_socket_peek_cb</a>,
+<a id='L1208' name='L1208'></a>                                    <a href='../D/5860.html' title='Multiple defined in 2 places.'>duk_trans_socket_read_flush_cb</a>,
+<a id='L1209' name='L1209'></a>                                    <a href='../D/5863.html' title='Multiple defined in 2 places.'>duk_trans_socket_write_flush_cb</a>,
+<a id='L1210' name='L1210'></a>                                    <a href='../S/375.html#L984' title='Defined at 984 in examples/cmdline/duk_cmdline.c.'>debugger_request</a>,
+<a id='L1211' name='L1211'></a>                                    <a href='../S/375.html#L1014' title='Defined at 1014 in examples/cmdline/duk_cmdline.c.'>debugger_detached</a>,
+<a id='L1212' name='L1212'></a>                                    NULL);
+<a id='L1213' name='L1213'></a><em class='sharp'>#else</em>
+<a id='L1214' name='L1214'></a>                fprintf(stderr, "Warning: option --debugger ignored, no debugger support\n");
+<a id='L1215' name='L1215'></a>                fflush(stderr);
+<a id='L1216' name='L1216'></a><em class='sharp'>#endif</em>
+<a id='L1217' name='L1217'></a>        <em class='brace'>}</em>
+<a id='L1218' name='L1218'></a>
+<a id='L1219' name='L1219'></a><em class='sharp'>#if</em> 0
+<a id='L1220' name='L1220'></a>        <em class='comment'>/* Manual test for duk_debugger_cooperate() */</em>
+<a id='L1221' name='L1221'></a>        <em class='brace'>{</em>
+<a id='L1222' name='L1222'></a>                <strong class='reserved'>for</strong> (i = 0; i &lt; 60; i++) <em class='brace'>{</em>
+<a id='L1223' name='L1223'></a>                        printf("cooperate: %d\n", i);
+<a id='L1224' name='L1224'></a>                        usleep(1000000);
+<a id='L1225' name='L1225'></a>                        <a href='../D/4919.html' title='Multiple defined in 8 places.'>duk_debugger_cooperate</a>(ctx);
+<a id='L1226' name='L1226'></a>                <em class='brace'>}</em>
+<a id='L1227' name='L1227'></a>        <em class='brace'>}</em>
+<a id='L1228' name='L1228'></a><em class='sharp'>#endif</em>
+<a id='L1229' name='L1229'></a>
+<a id='L1230' name='L1230'></a>        <strong class='reserved'>return</strong> ctx;
+<a id='L1231' name='L1231'></a><em class='brace'>}</em>
+<a id='L1232' name='L1232'></a>
+<a id='L1233' name='L1233'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/2983.html' title='Multiple referred from 3 places.'>destroy_duktape_heap</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx, <strong class='reserved'>int</strong> alloc_provider) <em class='brace'>{</em>
+<a id='L1234' name='L1234'></a>        (<strong class='reserved'>void</strong>) alloc_provider;
+<a id='L1235' name='L1235'></a>
+<a id='L1236' name='L1236'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOWMEM)
+<a id='L1237' name='L1237'></a>        <strong class='reserved'>if</strong> (alloc_provider == <a href='../S/375.html#L1050' title='Defined at 1050 in examples/cmdline/duk_cmdline.c.'>ALLOC_LOWMEM</a>) <em class='brace'>{</em>
+<a id='L1238' name='L1238'></a>                fprintf(stderr, "*** pool dump before duk_destroy_heap(), before forced gc ***\n");
+<a id='L1239' name='L1239'></a>                <a href='../S/376.html#L168' title='Defined at 168 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_dump</a>();
+<a id='L1240' name='L1240'></a>
+<a id='L1241' name='L1241'></a>                <a href='../D/5055.html' title='Multiple defined in 4 places.'>duk_gc</a>(ctx, 0);
+<a id='L1242' name='L1242'></a>
+<a id='L1243' name='L1243'></a>                fprintf(stderr, "*** pool dump before duk_destroy_heap(), after forced gc ***\n");
+<a id='L1244' name='L1244'></a>                <a href='../S/376.html#L168' title='Defined at 168 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_dump</a>();
+<a id='L1245' name='L1245'></a>        <em class='brace'>}</em>
+<a id='L1246' name='L1246'></a><em class='sharp'>#endif</em>
+<a id='L1247' name='L1247'></a>
+<a id='L1248' name='L1248'></a>        <strong class='reserved'>if</strong> (ctx) <em class='brace'>{</em>
+<a id='L1249' name='L1249'></a>                <a href='../D/4940.html' title='Multiple defined in 4 places.'>duk_destroy_heap</a>(ctx);
+<a id='L1250' name='L1250'></a>        <em class='brace'>}</em>
+<a id='L1251' name='L1251'></a>
+<a id='L1252' name='L1252'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOWMEM)
+<a id='L1253' name='L1253'></a>        <strong class='reserved'>if</strong> (alloc_provider == <a href='../S/375.html#L1050' title='Defined at 1050 in examples/cmdline/duk_cmdline.c.'>ALLOC_LOWMEM</a>) <em class='brace'>{</em>
+<a id='L1254' name='L1254'></a>                fprintf(stderr, "*** pool dump after duk_destroy_heap() (should have zero allocs) ***\n");
+<a id='L1255' name='L1255'></a>                <a href='../S/376.html#L168' title='Defined at 168 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_dump</a>();
+<a id='L1256' name='L1256'></a>        <em class='brace'>}</em>
+<a id='L1257' name='L1257'></a>        <a href='../S/376.html#L155' title='Defined at 155 in examples/cmdline/duk_cmdline_lowmem.c.'>lowmem_free</a>();
+<a id='L1258' name='L1258'></a><em class='sharp'>#endif</em>
+<a id='L1259' name='L1259'></a><em class='brace'>}</em>
+<a id='L1260' name='L1260'></a>
+<a id='L1261' name='L1261'></a><em class='comment'>/*</em>
+<a id='L1262' name='L1262'></a><em class='comment'> *  Main</em>
+<a id='L1263' name='L1263'></a><em class='comment'> */</em>
+<a id='L1264' name='L1264'></a>
+<a id='L1265' name='L1265'></a><strong class='reserved'>int</strong> <a href='../R/5159.html' title='Multiple referred from 3 places.'>main</a>(<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> *argv[]) <em class='brace'>{</em>
+<a id='L1266' name='L1266'></a>        <a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx = NULL;
+<a id='L1267' name='L1267'></a>        <strong class='reserved'>int</strong> retval = 0;
+<a id='L1268' name='L1268'></a>        <strong class='reserved'>int</strong> have_files = 0;
+<a id='L1269' name='L1269'></a>        <strong class='reserved'>int</strong> have_eval = 0;
+<a id='L1270' name='L1270'></a>        <strong class='reserved'>int</strong> interactive = 0;
+<a id='L1271' name='L1271'></a>        <strong class='reserved'>int</strong> memlimit_high = 1;
+<a id='L1272' name='L1272'></a>        <strong class='reserved'>int</strong> alloc_provider = <a href='../S/375.html#L1046' title='Defined at 1046 in examples/cmdline/duk_cmdline.c.'>ALLOC_DEFAULT</a>;
+<a id='L1273' name='L1273'></a>        <strong class='reserved'>int</strong> lowmem_log = 0;
+<a id='L1274' name='L1274'></a>        <strong class='reserved'>int</strong> debugger = 0;
+<a id='L1275' name='L1275'></a>        <strong class='reserved'>int</strong> recreate_heap = 0;
+<a id='L1276' name='L1276'></a>        <strong class='reserved'>int</strong> no_heap_destroy = 0;
+<a id='L1277' name='L1277'></a>        <strong class='reserved'>int</strong> verbose = 0;
+<a id='L1278' name='L1278'></a>        <strong class='reserved'>int</strong> run_stdin = 0;
+<a id='L1279' name='L1279'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *compile_filename = NULL;
+<a id='L1280' name='L1280'></a>        <strong class='reserved'>int</strong> i;
+<a id='L1281' name='L1281'></a>
+<a id='L1282' name='L1282'></a>        main_argc = argc;
+<a id='L1283' name='L1283'></a>        main_argv = (<strong class='reserved'>char</strong> **) argv;
+<a id='L1284' name='L1284'></a>
+<a id='L1285' name='L1285'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(EMSCRIPTEN)
+<a id='L1286' name='L1286'></a>        <em class='comment'>/* Try to use NODEFS to provide access to local files.  Mount the</em>
+<a id='L1287' name='L1287'></a><em class='comment'>         * CWD as /working, and then prepend "/working/" to relative native</em>
+<a id='L1288' name='L1288'></a><em class='comment'>         * paths in file calls to get something that works reasonably for</em>
+<a id='L1289' name='L1289'></a><em class='comment'>         * relative paths.  Emscripten doesn't support replacing virtual</em>
+<a id='L1290' name='L1290'></a><em class='comment'>         * "/" with host "/" (the default MEMFS at "/" can't be unmounted)</em>
+<a id='L1291' name='L1291'></a><em class='comment'>         * but we can mount "/tmp" as host "/tmp" to allow testcase runs.</em>
+<a id='L1292' name='L1292'></a><em class='comment'>         *</em>
+<a id='L1293' name='L1293'></a><em class='comment'>         * https://kripken.github.io/emscripten-site/docs/api_reference/Filesystem-API.html#filesystem-api-nodefs</em>
+<a id='L1294' name='L1294'></a><em class='comment'>         * https://github.com/kripken/emscripten/blob/master/tests/fs/test_nodefs_rw.c</em>
+<a id='L1295' name='L1295'></a><em class='comment'>         */</em>
+<a id='L1296' name='L1296'></a>        EM_ASM(
+<a id='L1297' name='L1297'></a>                <em class='comment'>/* At the moment it's not possible to replace the default MEMFS mounted at '/':</em>
+<a id='L1298' name='L1298'></a><em class='comment'>                 * https://github.com/kripken/emscripten/issues/2040</em>
+<a id='L1299' name='L1299'></a><em class='comment'>                 * https://github.com/kripken/emscripten/blob/incoming/src/library_fs.js#L1341-L1358</em>
+<a id='L1300' name='L1300'></a><em class='comment'>                 */</em>
+<a id='L1301' name='L1301'></a>                <em class='comment'>/*</em>
+<a id='L1302' name='L1302'></a><em class='comment'>                try {</em>
+<a id='L1303' name='L1303'></a><em class='comment'>                        FS.unmount("/");</em>
+<a id='L1304' name='L1304'></a><em class='comment'>                } catch (e) {</em>
+<a id='L1305' name='L1305'></a><em class='comment'>                        console.log("Failed to unmount default '/' MEMFS mount: " + e);</em>
+<a id='L1306' name='L1306'></a><em class='comment'>                }</em>
+<a id='L1307' name='L1307'></a><em class='comment'>                */</em>
+<a id='L1308' name='L1308'></a>                try <em class='brace'>{</em>
+<a id='L1309' name='L1309'></a>                        FS.mkdir("/working");
+<a id='L1310' name='L1310'></a>                        FS.mount(NODEFS, <em class='brace'>{</em> root: "." <em class='brace'>}</em>, "/working");
+<a id='L1311' name='L1311'></a>                <em class='brace'>}</em> catch (e) <em class='brace'>{</em>
+<a id='L1312' name='L1312'></a>                        console.log("Failed to mount NODEFS /working: " + e);
+<a id='L1313' name='L1313'></a>                <em class='brace'>}</em>
+<a id='L1314' name='L1314'></a>                <em class='comment'>/* A virtual '/tmp' exists by default:</em>
+<a id='L1315' name='L1315'></a><em class='comment'>                 * https://gist.github.com/evanw/e6be28094f34451bd5bd#file-temp-js-L3806-L3809</em>
+<a id='L1316' name='L1316'></a><em class='comment'>                 */</em>
+<a id='L1317' name='L1317'></a>                <em class='comment'>/*</em>
+<a id='L1318' name='L1318'></a><em class='comment'>                try {</em>
+<a id='L1319' name='L1319'></a><em class='comment'>                        FS.mkdir("/tmp");</em>
+<a id='L1320' name='L1320'></a><em class='comment'>                } catch (e) {</em>
+<a id='L1321' name='L1321'></a><em class='comment'>                        console.log("Failed to create virtual /tmp: " + e);</em>
+<a id='L1322' name='L1322'></a><em class='comment'>                }</em>
+<a id='L1323' name='L1323'></a><em class='comment'>                */</em>
+<a id='L1324' name='L1324'></a>                try <em class='brace'>{</em>
+<a id='L1325' name='L1325'></a>                        FS.mount(NODEFS, <em class='brace'>{</em> root: "/tmp" <em class='brace'>}</em>, "/tmp");
+<a id='L1326' name='L1326'></a>                <em class='brace'>}</em> catch (e) <em class='brace'>{</em>
+<a id='L1327' name='L1327'></a>                        console.log("Failed to mount NODEFS /tmp: " + e);
+<a id='L1328' name='L1328'></a>                <em class='brace'>}</em>
+<a id='L1329' name='L1329'></a>        );
+<a id='L1330' name='L1330'></a><em class='sharp'>#endif</em>  <em class='comment'>/* EMSCRIPTEN */</em>
+<a id='L1331' name='L1331'></a>
+<a id='L1332' name='L1332'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOWMEM)
+<a id='L1333' name='L1333'></a>        alloc_provider = <a href='../S/375.html#L1050' title='Defined at 1050 in examples/cmdline/duk_cmdline.c.'>ALLOC_LOWMEM</a>;
+<a id='L1334' name='L1334'></a><em class='sharp'>#endif</em>
+<a id='L1335' name='L1335'></a>        (<strong class='reserved'>void</strong>) lowmem_log;
+<a id='L1336' name='L1336'></a>
+<a id='L1337' name='L1337'></a>        <em class='comment'>/*</em>
+<a id='L1338' name='L1338'></a><em class='comment'>         *  Signal handling setup</em>
+<a id='L1339' name='L1339'></a><em class='comment'>         */</em>
+<a id='L1340' name='L1340'></a>
+<a id='L1341' name='L1341'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L30' title='Defined at 30 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_SIGNAL</a>)
+<a id='L1342' name='L1342'></a>        <a href='../D/6032.html' title='Multiple defined in 2 places.'>set_sigint_handler</a>();
+<a id='L1343' name='L1343'></a>
+<a id='L1344' name='L1344'></a>        <em class='comment'>/* This is useful at the global level; libraries should avoid SIGPIPE though */</em>
+<a id='L1345' name='L1345'></a>        <em class='comment'>/*signal(SIGPIPE, SIG_IGN);*/</em>
+<a id='L1346' name='L1346'></a><em class='sharp'>#endif</em>
+<a id='L1347' name='L1347'></a>
+<a id='L1348' name='L1348'></a>        <em class='comment'>/*</em>
+<a id='L1349' name='L1349'></a><em class='comment'>         *  Parse options</em>
+<a id='L1350' name='L1350'></a><em class='comment'>         */</em>
+<a id='L1351' name='L1351'></a>
+<a id='L1352' name='L1352'></a>        <strong class='reserved'>for</strong> (i = 1; i &lt; argc; i++) <em class='brace'>{</em>
+<a id='L1353' name='L1353'></a>                <strong class='reserved'>char</strong> *arg = argv[i];
+<a id='L1354' name='L1354'></a>                <strong class='reserved'>if</strong> (!arg) <em class='brace'>{</em>
+<a id='L1355' name='L1355'></a>                        <strong class='reserved'>goto</strong> usage;
+<a id='L1356' name='L1356'></a>                <em class='brace'>}</em>
+<a id='L1357' name='L1357'></a>                <strong class='reserved'>if</strong> (strcmp(arg, "--restrict-memory") == 0) <em class='brace'>{</em>
+<a id='L1358' name='L1358'></a>                        memlimit_high = 0;
+<a id='L1359' name='L1359'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "-i") == 0) <em class='brace'>{</em>
+<a id='L1360' name='L1360'></a>                        interactive = 1;
+<a id='L1361' name='L1361'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "-b") == 0) <em class='brace'>{</em>
+<a id='L1362' name='L1362'></a>                        allow_bytecode = 1;
+<a id='L1363' name='L1363'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "-c") == 0) <em class='brace'>{</em>
+<a id='L1364' name='L1364'></a>                        <strong class='reserved'>if</strong> (i == argc - 1) <em class='brace'>{</em>
+<a id='L1365' name='L1365'></a>                                <strong class='reserved'>goto</strong> usage;
+<a id='L1366' name='L1366'></a>                        <em class='brace'>}</em>
+<a id='L1367' name='L1367'></a>                        i++;
+<a id='L1368' name='L1368'></a>                        compile_filename = argv[i];
+<a id='L1369' name='L1369'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "-e") == 0) <em class='brace'>{</em>
+<a id='L1370' name='L1370'></a>                        have_eval = 1;
+<a id='L1371' name='L1371'></a>                        <strong class='reserved'>if</strong> (i == argc - 1) <em class='brace'>{</em>
+<a id='L1372' name='L1372'></a>                                <strong class='reserved'>goto</strong> usage;
+<a id='L1373' name='L1373'></a>                        <em class='brace'>}</em>
+<a id='L1374' name='L1374'></a>                        i++;  <em class='comment'>/* skip code */</em>
+<a id='L1375' name='L1375'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "--alloc-default") == 0) <em class='brace'>{</em>
+<a id='L1376' name='L1376'></a>                        alloc_provider = <a href='../S/375.html#L1046' title='Defined at 1046 in examples/cmdline/duk_cmdline.c.'>ALLOC_DEFAULT</a>;
+<a id='L1377' name='L1377'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "--alloc-logging") == 0) <em class='brace'>{</em>
+<a id='L1378' name='L1378'></a>                        alloc_provider = <a href='../S/375.html#L1047' title='Defined at 1047 in examples/cmdline/duk_cmdline.c.'>ALLOC_LOGGING</a>;
+<a id='L1379' name='L1379'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "--alloc-torture") == 0) <em class='brace'>{</em>
+<a id='L1380' name='L1380'></a>                        alloc_provider = <a href='../S/375.html#L1048' title='Defined at 1048 in examples/cmdline/duk_cmdline.c.'>ALLOC_TORTURE</a>;
+<a id='L1381' name='L1381'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "--alloc-hybrid") == 0) <em class='brace'>{</em>
+<a id='L1382' name='L1382'></a>                        alloc_provider = <a href='../S/375.html#L1049' title='Defined at 1049 in examples/cmdline/duk_cmdline.c.'>ALLOC_HYBRID</a>;
+<a id='L1383' name='L1383'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "--alloc-lowmem") == 0) <em class='brace'>{</em>
+<a id='L1384' name='L1384'></a>                        alloc_provider = <a href='../S/375.html#L1050' title='Defined at 1050 in examples/cmdline/duk_cmdline.c.'>ALLOC_LOWMEM</a>;
+<a id='L1385' name='L1385'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "--lowmem-log") == 0) <em class='brace'>{</em>
+<a id='L1386' name='L1386'></a>                        lowmem_log = 1;
+<a id='L1387' name='L1387'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "--debugger") == 0) <em class='brace'>{</em>
+<a id='L1388' name='L1388'></a>                        debugger = 1;
+<a id='L1389' name='L1389'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_DEBUGGER_SUPPORT)
+<a id='L1390' name='L1390'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "--reattach") == 0) <em class='brace'>{</em>
+<a id='L1391' name='L1391'></a>                        debugger_reattach = 1;
+<a id='L1392' name='L1392'></a><em class='sharp'>#endif</em>
+<a id='L1393' name='L1393'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "--recreate-heap") == 0) <em class='brace'>{</em>
+<a id='L1394' name='L1394'></a>                        recreate_heap = 1;
+<a id='L1395' name='L1395'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "--no-heap-destroy") == 0) <em class='brace'>{</em>
+<a id='L1396' name='L1396'></a>                        no_heap_destroy = 1;
+<a id='L1397' name='L1397'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "--no-auto-complete") == 0) <em class='brace'>{</em>
+<a id='L1398' name='L1398'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L28' title='Defined at 28 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_LINENOISE_COMPLETION</a>)
+<a id='L1399' name='L1399'></a>                        no_auto_complete = 1;
+<a id='L1400' name='L1400'></a><em class='sharp'>#endif</em>
+<a id='L1401' name='L1401'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "--verbose") == 0) <em class='brace'>{</em>
+<a id='L1402' name='L1402'></a>                        verbose = 1;
+<a id='L1403' name='L1403'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(arg, "--run-stdin") == 0) <em class='brace'>{</em>
+<a id='L1404' name='L1404'></a>                        run_stdin = 1;
+<a id='L1405' name='L1405'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strlen(arg) &gt;= 1 &amp;&amp; arg[0] == '-') <em class='brace'>{</em>
+<a id='L1406' name='L1406'></a>                        <strong class='reserved'>goto</strong> usage;
+<a id='L1407' name='L1407'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L1408' name='L1408'></a>                        have_files = 1;
+<a id='L1409' name='L1409'></a>                <em class='brace'>}</em>
+<a id='L1410' name='L1410'></a>        <em class='brace'>}</em>
+<a id='L1411' name='L1411'></a>        <strong class='reserved'>if</strong> (!have_files &amp;&amp; !have_eval &amp;&amp; !run_stdin) <em class='brace'>{</em>
+<a id='L1412' name='L1412'></a>                interactive = 1;
+<a id='L1413' name='L1413'></a>        <em class='brace'>}</em>
+<a id='L1414' name='L1414'></a>
+<a id='L1415' name='L1415'></a>        <em class='comment'>/*</em>
+<a id='L1416' name='L1416'></a><em class='comment'>         *  Memory limit</em>
+<a id='L1417' name='L1417'></a><em class='comment'>         */</em>
+<a id='L1418' name='L1418'></a>
+<a id='L1419' name='L1419'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L29' title='Defined at 29 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_RLIMIT</a>)
+<a id='L1420' name='L1420'></a>        <a href='../S/375.html#L138' title='Defined at 138 in examples/cmdline/duk_cmdline.c.'>set_resource_limits</a>(memlimit_high ? <a href='../S/375.html#L105' title='Defined at 105 in examples/cmdline/duk_cmdline.c.'>MEM_LIMIT_HIGH</a> : <a href='../S/375.html#L104' title='Defined at 104 in examples/cmdline/duk_cmdline.c.'>MEM_LIMIT_NORMAL</a>);
+<a id='L1421' name='L1421'></a><em class='sharp'>#else</em>
+<a id='L1422' name='L1422'></a>        <strong class='reserved'>if</strong> (memlimit_high == 0) <em class='brace'>{</em>
+<a id='L1423' name='L1423'></a>                fprintf(stderr, "Warning: option --restrict-memory ignored, no rlimit support\n");
+<a id='L1424' name='L1424'></a>                fflush(stderr);
+<a id='L1425' name='L1425'></a>        <em class='brace'>}</em>
+<a id='L1426' name='L1426'></a><em class='sharp'>#endif</em>
+<a id='L1427' name='L1427'></a>
+<a id='L1428' name='L1428'></a>        <em class='comment'>/*</em>
+<a id='L1429' name='L1429'></a><em class='comment'>         *  Create heap</em>
+<a id='L1430' name='L1430'></a><em class='comment'>         */</em>
+<a id='L1431' name='L1431'></a>
+<a id='L1432' name='L1432'></a>        ctx = <a href='../S/375.html#L1052' title='Defined at 1052 in examples/cmdline/duk_cmdline.c.'>create_duktape_heap</a>(alloc_provider, debugger, lowmem_log);
+<a id='L1433' name='L1433'></a>
+<a id='L1434' name='L1434'></a>        <em class='comment'>/*</em>
+<a id='L1435' name='L1435'></a><em class='comment'>         *  Execute any argument file(s)</em>
+<a id='L1436' name='L1436'></a><em class='comment'>         */</em>
+<a id='L1437' name='L1437'></a>
+<a id='L1438' name='L1438'></a>        <strong class='reserved'>for</strong> (i = 1; i &lt; argc; i++) <em class='brace'>{</em>
+<a id='L1439' name='L1439'></a>                <strong class='reserved'>char</strong> *arg = argv[i];
+<a id='L1440' name='L1440'></a>                <strong class='reserved'>if</strong> (!arg) <em class='brace'>{</em>
+<a id='L1441' name='L1441'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L1442' name='L1442'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strlen(arg) == 2 &amp;&amp; strcmp(arg, "-e") == 0) <em class='brace'>{</em>
+<a id='L1443' name='L1443'></a>                        <em class='comment'>/* Here we know the eval arg exists but check anyway */</em>
+<a id='L1444' name='L1444'></a>                        <strong class='reserved'>if</strong> (i == argc - 1) <em class='brace'>{</em>
+<a id='L1445' name='L1445'></a>                                retval = 1;
+<a id='L1446' name='L1446'></a>                                <strong class='reserved'>goto</strong> cleanup;
+<a id='L1447' name='L1447'></a>                        <em class='brace'>}</em>
+<a id='L1448' name='L1448'></a>                        <strong class='reserved'>if</strong> (<a href='../S/375.html#L687' title='Defined at 687 in examples/cmdline/duk_cmdline.c.'>handle_eval</a>(ctx, argv[i + 1]) != 0) <em class='brace'>{</em>
+<a id='L1449' name='L1449'></a>                                retval = 1;
+<a id='L1450' name='L1450'></a>                                <strong class='reserved'>goto</strong> cleanup;
+<a id='L1451' name='L1451'></a>                        <em class='brace'>}</em>
+<a id='L1452' name='L1452'></a>                        i++;  <em class='comment'>/* skip code */</em>
+<a id='L1453' name='L1453'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L1454' name='L1454'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strlen(arg) == 2 &amp;&amp; strcmp(arg, "-c") == 0) <em class='brace'>{</em>
+<a id='L1455' name='L1455'></a>                        i++;  <em class='comment'>/* skip filename */</em>
+<a id='L1456' name='L1456'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L1457' name='L1457'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strlen(arg) &gt;= 1 &amp;&amp; arg[0] == '-') <em class='brace'>{</em>
+<a id='L1458' name='L1458'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L1459' name='L1459'></a>                <em class='brace'>}</em>
+<a id='L1460' name='L1460'></a>
+<a id='L1461' name='L1461'></a>                <strong class='reserved'>if</strong> (verbose) <em class='brace'>{</em>
+<a id='L1462' name='L1462'></a>                        fprintf(stderr, "*** Executing file: %s\n", arg);
+<a id='L1463' name='L1463'></a>                        fflush(stderr);
+<a id='L1464' name='L1464'></a>                <em class='brace'>}</em>
+<a id='L1465' name='L1465'></a>
+<a id='L1466' name='L1466'></a>                <strong class='reserved'>if</strong> (<a href='../D/5962.html' title='Multiple defined in 2 places.'>handle_file</a>(ctx, arg, compile_filename) != 0) <em class='brace'>{</em>
+<a id='L1467' name='L1467'></a>                        retval = 1;
+<a id='L1468' name='L1468'></a>                        <strong class='reserved'>goto</strong> cleanup;
+<a id='L1469' name='L1469'></a>                <em class='brace'>}</em>
+<a id='L1470' name='L1470'></a>
+<a id='L1471' name='L1471'></a>                <strong class='reserved'>if</strong> (recreate_heap) <em class='brace'>{</em>
+<a id='L1472' name='L1472'></a>                        <strong class='reserved'>if</strong> (verbose) <em class='brace'>{</em>
+<a id='L1473' name='L1473'></a>                                fprintf(stderr, "*** Recreating heap...\n");
+<a id='L1474' name='L1474'></a>                                fflush(stderr);
+<a id='L1475' name='L1475'></a>                        <em class='brace'>}</em>
+<a id='L1476' name='L1476'></a>
+<a id='L1477' name='L1477'></a>                        <a href='../S/375.html#L1233' title='Defined at 1233 in examples/cmdline/duk_cmdline.c.'>destroy_duktape_heap</a>(ctx, alloc_provider);
+<a id='L1478' name='L1478'></a>                        ctx = <a href='../S/375.html#L1052' title='Defined at 1052 in examples/cmdline/duk_cmdline.c.'>create_duktape_heap</a>(alloc_provider, debugger, lowmem_log);
+<a id='L1479' name='L1479'></a>                <em class='brace'>}</em>
+<a id='L1480' name='L1480'></a>        <em class='brace'>}</em>
+<a id='L1481' name='L1481'></a>
+<a id='L1482' name='L1482'></a>        <strong class='reserved'>if</strong> (run_stdin) <em class='brace'>{</em>
+<a id='L1483' name='L1483'></a>                <em class='comment'>/* Running stdin like a full file (reading all lines before</em>
+<a id='L1484' name='L1484'></a><em class='comment'>                 * compiling) is useful with emduk:</em>
+<a id='L1485' name='L1485'></a><em class='comment'>                 * cat test.js | ./emduk --run-stdin</em>
+<a id='L1486' name='L1486'></a><em class='comment'>                 */</em>
+<a id='L1487' name='L1487'></a>                <strong class='reserved'>if</strong> (<a href='../D/5961.html' title='Multiple defined in 2 places.'>handle_fh</a>(ctx, stdin, "stdin", compile_filename) != 0) <em class='brace'>{</em>
+<a id='L1488' name='L1488'></a>                        retval = 1;
+<a id='L1489' name='L1489'></a>                        <strong class='reserved'>goto</strong> cleanup;
+<a id='L1490' name='L1490'></a>                <em class='brace'>}</em>
+<a id='L1491' name='L1491'></a>
+<a id='L1492' name='L1492'></a>                <strong class='reserved'>if</strong> (recreate_heap) <em class='brace'>{</em>
+<a id='L1493' name='L1493'></a>                        <strong class='reserved'>if</strong> (verbose) <em class='brace'>{</em>
+<a id='L1494' name='L1494'></a>                                fprintf(stderr, "*** Recreating heap...\n");
+<a id='L1495' name='L1495'></a>                                fflush(stderr);
+<a id='L1496' name='L1496'></a>                        <em class='brace'>}</em>
+<a id='L1497' name='L1497'></a>
+<a id='L1498' name='L1498'></a>                        <a href='../S/375.html#L1233' title='Defined at 1233 in examples/cmdline/duk_cmdline.c.'>destroy_duktape_heap</a>(ctx, alloc_provider);
+<a id='L1499' name='L1499'></a>                        ctx = <a href='../S/375.html#L1052' title='Defined at 1052 in examples/cmdline/duk_cmdline.c.'>create_duktape_heap</a>(alloc_provider, debugger, lowmem_log);
+<a id='L1500' name='L1500'></a>                <em class='brace'>}</em>
+<a id='L1501' name='L1501'></a>        <em class='brace'>}</em>
+<a id='L1502' name='L1502'></a>
+<a id='L1503' name='L1503'></a>        <em class='comment'>/*</em>
+<a id='L1504' name='L1504'></a><em class='comment'>         *  Enter interactive mode if options indicate it</em>
+<a id='L1505' name='L1505'></a><em class='comment'>         */</em>
+<a id='L1506' name='L1506'></a>
+<a id='L1507' name='L1507'></a>        <strong class='reserved'>if</strong> (interactive) <em class='brace'>{</em>
+<a id='L1508' name='L1508'></a>                <a href='../S/375.html#L124' title='Defined at 124 in examples/cmdline/duk_cmdline.c.'>print_greet_line</a>();
+<a id='L1509' name='L1509'></a>                <strong class='reserved'>if</strong> (<a href='../D/5963.html' title='Multiple defined in 2 places.'>handle_interactive</a>(ctx) != 0) <em class='brace'>{</em>
+<a id='L1510' name='L1510'></a>                        retval = 1;
+<a id='L1511' name='L1511'></a>                        <strong class='reserved'>goto</strong> cleanup;
+<a id='L1512' name='L1512'></a>                <em class='brace'>}</em>
+<a id='L1513' name='L1513'></a>        <em class='brace'>}</em>
+<a id='L1514' name='L1514'></a>
+<a id='L1515' name='L1515'></a>        <em class='comment'>/*</em>
+<a id='L1516' name='L1516'></a><em class='comment'>         *  Cleanup and exit</em>
+<a id='L1517' name='L1517'></a><em class='comment'>         */</em>
+<a id='L1518' name='L1518'></a>
+<a id='L1519' name='L1519'></a> cleanup:
+<a id='L1520' name='L1520'></a>        <strong class='reserved'>if</strong> (interactive) <em class='brace'>{</em>
+<a id='L1521' name='L1521'></a>                fprintf(stderr, "Cleaning up...\n");
+<a id='L1522' name='L1522'></a>                fflush(stderr);
+<a id='L1523' name='L1523'></a>        <em class='brace'>}</em>
+<a id='L1524' name='L1524'></a>
+<a id='L1525' name='L1525'></a>        <strong class='reserved'>if</strong> (ctx &amp;&amp; no_heap_destroy) <em class='brace'>{</em>
+<a id='L1526' name='L1526'></a>                <a href='../D/5055.html' title='Multiple defined in 4 places.'>duk_gc</a>(ctx, 0);
+<a id='L1527' name='L1527'></a>        <em class='brace'>}</em>
+<a id='L1528' name='L1528'></a>        <strong class='reserved'>if</strong> (ctx &amp;&amp; !no_heap_destroy) <em class='brace'>{</em>
+<a id='L1529' name='L1529'></a>                <a href='../S/375.html#L1233' title='Defined at 1233 in examples/cmdline/duk_cmdline.c.'>destroy_duktape_heap</a>(ctx, alloc_provider);
+<a id='L1530' name='L1530'></a>        <em class='brace'>}</em>
+<a id='L1531' name='L1531'></a>        ctx = NULL;
+<a id='L1532' name='L1532'></a>
+<a id='L1533' name='L1533'></a>        <strong class='reserved'>return</strong> retval;
+<a id='L1534' name='L1534'></a>
+<a id='L1535' name='L1535'></a>        <em class='comment'>/*</em>
+<a id='L1536' name='L1536'></a><em class='comment'>         *  Usage</em>
+<a id='L1537' name='L1537'></a><em class='comment'>         */</em>
+<a id='L1538' name='L1538'></a>
+<a id='L1539' name='L1539'></a> usage:
+<a id='L1540' name='L1540'></a>        fprintf(stderr, "Usage: duk [options] [&lt;filenames&gt;]\n"
+<a id='L1541' name='L1541'></a>                        "\n"
+<a id='L1542' name='L1542'></a>                        "   -i                 enter interactive mode after executing argument file(s) / eval code\n"
+<a id='L1543' name='L1543'></a>                        "   -e CODE            evaluate code\n"
+<a id='L1544' name='L1544'></a>                        "   -c FILE            compile into bytecode and write to FILE (use with only one file argument)\n"
+<a id='L1545' name='L1545'></a>                        "   -b                 allow bytecode input files (memory unsafe for invalid bytecode)\n"
+<a id='L1546' name='L1546'></a>                        "   --run-stdin        treat stdin like a file, i.e. compile full input (not line by line)\n"
+<a id='L1547' name='L1547'></a>                        "   --verbose          verbose messages to stderr\n"
+<a id='L1548' name='L1548'></a>                        "   --restrict-memory  use lower memory limit (used by test runner)\n"
+<a id='L1549' name='L1549'></a>                        "   --alloc-default    use Duktape default allocator\n"
+<a id='L1550' name='L1550'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_ALLOC_LOGGING)
+<a id='L1551' name='L1551'></a>                        "   --alloc-logging    use logging allocator, write alloc log to /tmp/duk-alloc-log.txt\n"
+<a id='L1552' name='L1552'></a><em class='sharp'>#endif</em>
+<a id='L1553' name='L1553'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_ALLOC_TORTURE)
+<a id='L1554' name='L1554'></a>                        "   --alloc-torture    use torture allocator\n"
+<a id='L1555' name='L1555'></a><em class='sharp'>#endif</em>
+<a id='L1556' name='L1556'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_ALLOC_HYBRID)
+<a id='L1557' name='L1557'></a>                        "   --alloc-hybrid     use hybrid allocator\n"
+<a id='L1558' name='L1558'></a><em class='sharp'>#endif</em>
+<a id='L1559' name='L1559'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_LOWMEM)
+<a id='L1560' name='L1560'></a>                        "   --alloc-lowmem     use pooled allocator (enabled by default for duk-low)\n"
+<a id='L1561' name='L1561'></a>                        "   --lowmem-log       write alloc log to /tmp/lowmem-alloc-log.txt\n"
+<a id='L1562' name='L1562'></a><em class='sharp'>#endif</em>
+<a id='L1563' name='L1563'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_DEBUGGER_SUPPORT)
+<a id='L1564' name='L1564'></a>                        "   --debugger         start example debugger\n"
+<a id='L1565' name='L1565'></a>                        "   --reattach         automatically reattach debugger on detach\n"
+<a id='L1566' name='L1566'></a><em class='sharp'>#endif</em>
+<a id='L1567' name='L1567'></a>                        "   --recreate-heap    recreate heap after every file\n"
+<a id='L1568' name='L1568'></a>                        "   --no-heap-destroy  force GC, but don't destroy heap at end (leak testing)\n"
+<a id='L1569' name='L1569'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/375.html#L28' title='Defined at 28 in examples/cmdline/duk_cmdline.c.'>DUK_CMDLINE_LINENOISE_COMPLETION</a>)
+<a id='L1570' name='L1570'></a>                        "   --no-auto-complete disable linenoise auto completion\n"
+<a id='L1571' name='L1571'></a><em class='sharp'>#else</em>
+<a id='L1572' name='L1572'></a>                        "   --no-auto-complete disable linenoise auto completion [ignored, not supported]\n"
+<a id='L1573' name='L1573'></a><em class='sharp'>#endif</em>
+<a id='L1574' name='L1574'></a>                        "\n"
+<a id='L1575' name='L1575'></a>                        "If &lt;filename&gt; is omitted, interactive mode is started automatically.\n"
+<a id='L1576' name='L1576'></a>                        "\n"
+<a id='L1577' name='L1577'></a>                        "Input files can be either ECMAScript source files or bytecode files\n"
+<a id='L1578' name='L1578'></a>                        "(if -b is given).  Bytecode files are not validated prior to loading,\n"
+<a id='L1579' name='L1579'></a>                        "so that incompatible or crafted files can cause memory unsafe behavior.\n"
+<a id='L1580' name='L1580'></a>                        "See discussion in\n"
+<a id='L1581' name='L1581'></a>                        "https://github.com/svaarala/duktape/blob/master/doc/bytecode.rst#memory-safety-and-bytecode-validation.\n");
+<a id='L1582' name='L1582'></a>        fflush(stderr);
+<a id='L1583' name='L1583'></a>        exit(1);
+<a id='L1584' name='L1584'></a><em class='brace'>}</em>
+<a id='L1585' name='L1585'></a>
+<a id='L1586' name='L1586'></a><em class='comment'>/* Example of how a native stack check can be implemented in a platform</em>
+<a id='L1587' name='L1587'></a><em class='comment'> * specific manner for DUK_USE_NATIVE_STACK_CHECK().  This example is for</em>
+<a id='L1588' name='L1588'></a><em class='comment'> * (Linux) pthreads, and rejects further native recursion if less than</em>
+<a id='L1589' name='L1589'></a><em class='comment'> * 16kB stack is left (conservative).</em>
+<a id='L1590' name='L1590'></a><em class='comment'> */</em>
+<a id='L1591' name='L1591'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_CMDLINE_PTHREAD_STACK_CHECK)
+<a id='L1592' name='L1592'></a><strong class='reserved'>int</strong> <a href='../S/375.html#L118' title='Referred from 118 in examples/cmdline/duk_cmdline.c.'>duk_cmdline_stack_check</a>(<strong class='reserved'>void</strong>) <em class='brace'>{</em>
+<a id='L1593' name='L1593'></a>        pthread_attr_t attr;
+<a id='L1594' name='L1594'></a>        <strong class='reserved'>void</strong> *stackaddr;
+<a id='L1595' name='L1595'></a>        size_t stacksize;
+<a id='L1596' name='L1596'></a>        <strong class='reserved'>char</strong> *ptr;
+<a id='L1597' name='L1597'></a>        <strong class='reserved'>char</strong> *ptr_base;
+<a id='L1598' name='L1598'></a>        ptrdiff_t remain;
+<a id='L1599' name='L1599'></a>
+<a id='L1600' name='L1600'></a>        (<strong class='reserved'>void</strong>) pthread_getattr_np(pthread_self(), &amp;attr);
+<a id='L1601' name='L1601'></a>        (<strong class='reserved'>void</strong>) pthread_attr_getstack(&amp;attr, &amp;stackaddr, &amp;stacksize);
+<a id='L1602' name='L1602'></a>        ptr = (<strong class='reserved'>char</strong> *) &amp;stacksize;  <em class='comment'>/* Rough estimate of current stack pointer. */</em>
+<a id='L1603' name='L1603'></a>        ptr_base = (<strong class='reserved'>char</strong> *) stackaddr;
+<a id='L1604' name='L1604'></a>        remain = ptr - ptr_base;
+<a id='L1605' name='L1605'></a>
+<a id='L1606' name='L1606'></a>        <em class='comment'>/* HIGH ADDR   -----  stackaddr + stacksize</em>
+<a id='L1607' name='L1607'></a><em class='comment'>         *               |</em>
+<a id='L1608' name='L1608'></a><em class='comment'>         *               |  stack growth direction</em>
+<a id='L1609' name='L1609'></a><em class='comment'>         *               v -- ptr, approximate used size</em>
+<a id='L1610' name='L1610'></a><em class='comment'>         *</em>
+<a id='L1611' name='L1611'></a><em class='comment'>         * LOW ADDR    -----  ptr_base, end of stack (lowest address)</em>
+<a id='L1612' name='L1612'></a><em class='comment'>         */</em>
+<a id='L1613' name='L1613'></a>
+<a id='L1614' name='L1614'></a><em class='sharp'>#if</em> 0
+<a id='L1615' name='L1615'></a>        fprintf(stderr, "STACK CHECK: stackaddr=%p, stacksize=%ld, ptr=%p, remain=%ld\n",
+<a id='L1616' name='L1616'></a>                stackaddr, (<strong class='reserved'>long</strong>) stacksize, (<strong class='reserved'>void</strong> *) ptr, (<strong class='reserved'>long</strong>) remain);
+<a id='L1617' name='L1617'></a>        fflush(stderr);
+<a id='L1618' name='L1618'></a><em class='sharp'>#endif</em>
+<a id='L1619' name='L1619'></a>        <strong class='reserved'>if</strong> (remain &lt; 16384) <em class='brace'>{</em>
+<a id='L1620' name='L1620'></a>                <strong class='reserved'>return</strong> 1;
+<a id='L1621' name='L1621'></a>        <em class='brace'>}</em>
+<a id='L1622' name='L1622'></a>        <strong class='reserved'>return</strong> 0;  <em class='comment'>/* 0: no error, != 0: throw RangeError */</em>
+<a id='L1623' name='L1623'></a><em class='brace'>}</em>
+<a id='L1624' name='L1624'></a><em class='sharp'>#else</em>
+<a id='L1625' name='L1625'></a><strong class='reserved'>int</strong> <a href='../S/375.html#L118' title='Referred from 118 in examples/cmdline/duk_cmdline.c.'>duk_cmdline_stack_check</a>(<strong class='reserved'>void</strong>) <em class='brace'>{</em>
+<a id='L1626' name='L1626'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L1627' name='L1627'></a><em class='brace'>}</em>
+<a id='L1628' name='L1628'></a><em class='sharp'>#endif</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L124'>[^]</a><a href='#L1625'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

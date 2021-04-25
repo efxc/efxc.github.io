@@ -1,0 +1,475 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src-separate/duk_heap_finalize.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1032.html'>src-separate</a>/duk_heap_finalize.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L14'>[^]</a><a href='#L372'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L14' title='Defined at 14.'>duk__fake_global_finalizer</a></li>
+<li><a href='#L48' title='Defined at 48.'>duk__run_global_torture_finalizer</a></li>
+<li><a href='#L129' title='Defined at 129.'>duk_heap_process_finalize_list</a></li>
+<li><a href='#L340' title='Defined at 340.'>duk__finalize_helper</a></li>
+<li><a href='#L372' title='Defined at 372.'>duk_heap_run_finalizer</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Finalizer handling.</em>
+<a id='L3' name='L3'></a><em class='comment'> */</em>
+<a id='L4' name='L4'></a>
+<a id='L5' name='L5'></a><em class='sharp'>#include</em> "<a href='../I/161.html'>duk_internal.h</a>"
+<a id='L6' name='L6'></a>
+<a id='L7' name='L7'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3108.html' title='Multiple defined in 3 places.'>DUK_USE_FINALIZER_SUPPORT</a>)
+<a id='L8' name='L8'></a>
+<a id='L9' name='L9'></a><em class='comment'>/*</em>
+<a id='L10' name='L10'></a><em class='comment'> *  Fake torture finalizer.</em>
+<a id='L11' name='L11'></a><em class='comment'> */</em>
+<a id='L12' name='L12'></a>
+<a id='L13' name='L13'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3109.html' title='Multiple defined in 3 places.'>DUK_USE_FINALIZER_TORTURE</a>)
+<a id='L14' name='L14'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/3347.html' title='Multiple referred from 4 places.'>duk__fake_global_finalizer</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L15' name='L15'></a>        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("fake global torture finalizer executed"));
+<a id='L16' name='L16'></a>
+<a id='L17' name='L17'></a>        <em class='comment'>/* Require a lot of stack to force a value stack grow/shrink. */</em>
+<a id='L18' name='L18'></a>        <a href='../D/5733.html' title='Multiple defined in 4 places.'>duk_require_stack</a>(thr, 100000);
+<a id='L19' name='L19'></a>
+<a id='L20' name='L20'></a>        <em class='comment'>/* Force a reallocation with pointer change for value stack</em>
+<a id='L21' name='L21'></a><em class='comment'>         * to maximize side effects.</em>
+<a id='L22' name='L22'></a><em class='comment'>         */</em>
+<a id='L23' name='L23'></a>        <a href='../D/5318.html' title='Multiple defined in 4 places.'>duk_hthread_valstack_torture_realloc</a>(thr);
+<a id='L24' name='L24'></a>
+<a id='L25' name='L25'></a>        <em class='comment'>/* Inner function call, error throw. */</em>
+<a id='L26' name='L26'></a>        <a href='../D/5029.html' title='Multiple defined in 3 places.'>duk_eval_string_noresult</a>(thr,
+<a id='L27' name='L27'></a>                "(function dummy() {\n"
+<a id='L28' name='L28'></a>                "    dummy.prototype = null;  /* break reference loop */\n"
+<a id='L29' name='L29'></a>                "    try {\n"
+<a id='L30' name='L30'></a>                "        throw 'fake-finalizer-dummy-error';\n"
+<a id='L31' name='L31'></a>                "    } catch (e) {\n"
+<a id='L32' name='L32'></a>                "        void e;\n"
+<a id='L33' name='L33'></a>                "    }\n"
+<a id='L34' name='L34'></a>                "})()");
+<a id='L35' name='L35'></a>
+<a id='L36' name='L36'></a>        <em class='comment'>/* The above creates garbage (e.g. a function instance).  Because</em>
+<a id='L37' name='L37'></a><em class='comment'>         * the function/prototype reference loop is broken, it gets collected</em>
+<a id='L38' name='L38'></a><em class='comment'>         * immediately by DECREF.  If Function.prototype has a _Finalizer</em>
+<a id='L39' name='L39'></a><em class='comment'>         * property (happens in some test cases), the garbage gets queued to</em>
+<a id='L40' name='L40'></a><em class='comment'>         * finalize_list.  This still won't cause an infinite loop because</em>
+<a id='L41' name='L41'></a><em class='comment'>         * the torture finalizer is called once per finalize_list run and</em>
+<a id='L42' name='L42'></a><em class='comment'>         * the garbage gets handled in the same run.  (If the garbage needs</em>
+<a id='L43' name='L43'></a><em class='comment'>         * mark-and-sweep collection, an infinite loop might ensue.)</em>
+<a id='L44' name='L44'></a><em class='comment'>         */</em>
+<a id='L45' name='L45'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L46' name='L46'></a><em class='brace'>}</em>
+<a id='L47' name='L47'></a>
+<a id='L48' name='L48'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3675.html' title='Multiple referred from 4 places.'>duk__run_global_torture_finalizer</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L49' name='L49'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr != NULL);
+<a id='L50' name='L50'></a>
+<a id='L51' name='L51'></a>        <em class='comment'>/* Avoid fake finalization when callstack limit is near.  Otherwise</em>
+<a id='L52' name='L52'></a><em class='comment'>         * a callstack limit error will be created, then refzero'ed.  The</em>
+<a id='L53' name='L53'></a><em class='comment'>         * +5 headroom is conservative.</em>
+<a id='L54' name='L54'></a><em class='comment'>         */</em>
+<a id='L55' name='L55'></a>        <strong class='reserved'>if</strong> (thr-&gt;heap-&gt;call_recursion_depth + 5 &gt;= thr-&gt;heap-&gt;call_recursion_limit ||
+<a id='L56' name='L56'></a>            thr-&gt;callstack_top + 5 &gt;= <a href='../D/3033.html' title='Multiple defined in 3 places.'>DUK_USE_CALLSTACK_LIMIT</a>) <em class='brace'>{</em>
+<a id='L57' name='L57'></a>                <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("skip global torture finalizer, too little headroom for call recursion or call stack size"));
+<a id='L58' name='L58'></a>                <strong class='reserved'>return</strong>;
+<a id='L59' name='L59'></a>        <em class='brace'>}</em>
+<a id='L60' name='L60'></a>
+<a id='L61' name='L61'></a>        <em class='comment'>/* Run fake finalizer.  Avoid creating unnecessary garbage. */</em>
+<a id='L62' name='L62'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(thr, <a href='../D/4108.html' title='Multiple defined in 4 places.'>duk__fake_global_finalizer</a>, 0 <em class='comment'>/*nargs*/</em>);
+<a id='L63' name='L63'></a>        (<strong class='reserved'>void</strong>) <a href='../D/5496.html' title='Multiple defined in 4 places.'>duk_pcall</a>(thr, 0 <em class='comment'>/*nargs*/</em>);
+<a id='L64' name='L64'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(thr);
+<a id='L65' name='L65'></a><em class='brace'>}</em>
+<a id='L66' name='L66'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_FINALIZER_TORTURE */</em>
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a><em class='comment'>/*</em>
+<a id='L69' name='L69'></a><em class='comment'> *  Process the finalize_list to completion.</em>
+<a id='L70' name='L70'></a><em class='comment'> *</em>
+<a id='L71' name='L71'></a><em class='comment'> *  An object may be placed on finalize_list by either refcounting or</em>
+<a id='L72' name='L72'></a><em class='comment'> *  mark-and-sweep.  The refcount of objects placed by refcounting will be</em>
+<a id='L73' name='L73'></a><em class='comment'> *  zero; the refcount of objects placed by mark-and-sweep is &gt; 0.  In both</em>
+<a id='L74' name='L74'></a><em class='comment'> *  cases the refcount is bumped by 1 artificially so that a REFZERO event</em>
+<a id='L75' name='L75'></a><em class='comment'> *  can never happen while an object is waiting for finalization.  Without</em>
+<a id='L76' name='L76'></a><em class='comment'> *  this bump a REFZERO could now happen because user code may call</em>
+<a id='L77' name='L77'></a><em class='comment'> *  duk_push_heapptr() and then pop a value even when it's on finalize_list.</em>
+<a id='L78' name='L78'></a><em class='comment'> *</em>
+<a id='L79' name='L79'></a><em class='comment'> *  List processing assumes refcounts are kept up-to-date at all times, so</em>
+<a id='L80' name='L80'></a><em class='comment'> *  that once the finalizer returns, a zero refcount is a reliable reason to</em>
+<a id='L81' name='L81'></a><em class='comment'> *  free the object immediately rather than place it back to the heap.  This</em>
+<a id='L82' name='L82'></a><em class='comment'> *  is the case because we run outside of refzero_list processing so that</em>
+<a id='L83' name='L83'></a><em class='comment'> *  DECREF cascades are handled fully inline.</em>
+<a id='L84' name='L84'></a><em class='comment'> *</em>
+<a id='L85' name='L85'></a><em class='comment'> *  For mark-and-sweep queued objects (had_zero_refcount false) the object</em>
+<a id='L86' name='L86'></a><em class='comment'> *  may be freed immediately if its refcount is zero after the finalizer call</em>
+<a id='L87' name='L87'></a><em class='comment'> *  (i.e. finalizer removed the reference loop for the object).  If not, the</em>
+<a id='L88' name='L88'></a><em class='comment'> *  next mark-and-sweep will collect the object unless it has become reachable</em>
+<a id='L89' name='L89'></a><em class='comment'> *  (i.e. rescued) by that time and its refcount hasn't fallen to zero before</em>
+<a id='L90' name='L90'></a><em class='comment'> *  that.  Mark-and-sweep detects these objects because their FINALIZED flag</em>
+<a id='L91' name='L91'></a><em class='comment'> *  is set.</em>
+<a id='L92' name='L92'></a><em class='comment'> *</em>
+<a id='L93' name='L93'></a><em class='comment'> *  There's an inherent limitation for mark-and-sweep finalizer rescuing: an</em>
+<a id='L94' name='L94'></a><em class='comment'> *  object won't get refinalized if (1) it's rescued, but (2) becomes</em>
+<a id='L95' name='L95'></a><em class='comment'> *  unreachable before mark-and-sweep has had time to notice it.  The next</em>
+<a id='L96' name='L96'></a><em class='comment'> *  mark-and-sweep round simply doesn't have any information of whether the</em>
+<a id='L97' name='L97'></a><em class='comment'> *  object has been unreachable the whole time or not (the only way to get</em>
+<a id='L98' name='L98'></a><em class='comment'> *  that information would be a mark-and-sweep pass for *every finalized</em>
+<a id='L99' name='L99'></a><em class='comment'> *  object*).  This is awkward for the application because the mark-and-sweep</em>
+<a id='L100' name='L100'></a><em class='comment'> *  round is not generally visible or under full application control.</em>
+<a id='L101' name='L101'></a><em class='comment'> *</em>
+<a id='L102' name='L102'></a><em class='comment'> *  For refcount queued objects (had_zero_refcount true) the object is either</em>
+<a id='L103' name='L103'></a><em class='comment'> *  immediately freed or rescued, and waiting for a mark-and-sweep round is not</em>
+<a id='L104' name='L104'></a><em class='comment'> *  necessary (or desirable); FINALIZED is cleared when a rescued object is</em>
+<a id='L105' name='L105'></a><em class='comment'> *  queued back to heap_allocated.  The object is eligible for finalization</em>
+<a id='L106' name='L106'></a><em class='comment'> *  again (either via refcounting or mark-and-sweep) immediately after being</em>
+<a id='L107' name='L107'></a><em class='comment'> *  rescued.  If a refcount finalized object is placed into an unreachable</em>
+<a id='L108' name='L108'></a><em class='comment'> *  reference loop by its finalizer, it will get collected by mark-and-sweep</em>
+<a id='L109' name='L109'></a><em class='comment'> *  and currently the finalizer will execute again.</em>
+<a id='L110' name='L110'></a><em class='comment'> *</em>
+<a id='L111' name='L111'></a><em class='comment'> *  There's a special case where:</em>
+<a id='L112' name='L112'></a><em class='comment'> *</em>
+<a id='L113' name='L113'></a><em class='comment'> *    - Mark-and-sweep queues an object to finalize_list for finalization.</em>
+<a id='L114' name='L114'></a><em class='comment'> *    - The finalizer is executed, FINALIZED is set, and object is queued</em>
+<a id='L115' name='L115'></a><em class='comment'> *      back to heap_allocated, waiting for a new mark-and-sweep round.</em>
+<a id='L116' name='L116'></a><em class='comment'> *    - The object's refcount drops to zero before mark-and-sweep has a</em>
+<a id='L117' name='L117'></a><em class='comment'> *      chance to run another round and make a rescue/free decision.</em>
+<a id='L118' name='L118'></a><em class='comment'> *</em>
+<a id='L119' name='L119'></a><em class='comment'> *  This is now handled by refzero code: if an object has a finalizer but</em>
+<a id='L120' name='L120'></a><em class='comment'> *  FINALIZED is already set, the object is freed without finalizer processing.</em>
+<a id='L121' name='L121'></a><em class='comment'> *  The outcome is the same as if mark-and-sweep was executed at that point;</em>
+<a id='L122' name='L122'></a><em class='comment'> *  mark-and-sweep would also free the object without another finalizer run.</em>
+<a id='L123' name='L123'></a><em class='comment'> *  This could also be changed so that the refzero-triggered finalizer *IS*</em>
+<a id='L124' name='L124'></a><em class='comment'> *  executed: being refzero collected implies someone has operated on the</em>
+<a id='L125' name='L125'></a><em class='comment'> *  object so it hasn't been totally unreachable the whole time.  This would</em>
+<a id='L126' name='L126'></a><em class='comment'> *  risk a finalizer loop however.</em>
+<a id='L127' name='L127'></a><em class='comment'> */</em>
+<a id='L128' name='L128'></a>
+<a id='L129' name='L129'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4414.html' title='Multiple referred from 24 places.'>duk_heap_process_finalize_list</a>(<a href='../D/5181.html' title='Multiple defined in 8 places.'>duk_heap</a> *heap) <em class='brace'>{</em>
+<a id='L130' name='L130'></a>        <a href='../D/5216.html' title='Multiple defined in 8 places.'>duk_heaphdr</a> *curr;
+<a id='L131' name='L131'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3065.html' title='Multiple defined in 3 places.'>DUK_USE_DEBUG</a>)
+<a id='L132' name='L132'></a>        <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> count = 0;
+<a id='L133' name='L133'></a><em class='sharp'>#endif</em>
+<a id='L134' name='L134'></a>
+<a id='L135' name='L135'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("duk_heap_process_finalize_list: %p", (<strong class='reserved'>void</strong> *) heap));
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a>        <strong class='reserved'>if</strong> (heap-&gt;pf_prevent_count != 0) <em class='brace'>{</em>
+<a id='L138' name='L138'></a>                <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("skip finalize_list processing: pf_prevent_count != 0"));
+<a id='L139' name='L139'></a>                <strong class='reserved'>return</strong>;
+<a id='L140' name='L140'></a>        <em class='brace'>}</em>
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a>        <em class='comment'>/* Heap alloc prevents mark-and-sweep before heap_thread is ready. */</em>
+<a id='L143' name='L143'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(heap != NULL);
+<a id='L144' name='L144'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(heap-&gt;heap_thread != NULL);
+<a id='L145' name='L145'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(heap-&gt;heap_thread-&gt;valstack != NULL);
+<a id='L146' name='L146'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3201.html' title='Multiple defined in 3 places.'>DUK_USE_REFERENCE_COUNTING</a>)
+<a id='L147' name='L147'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(heap-&gt;refzero_list == NULL);
+<a id='L148' name='L148'></a><em class='sharp'>#endif</em>
+<a id='L149' name='L149'></a>
+<a id='L150' name='L150'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(heap-&gt;pf_prevent_count == 0);
+<a id='L151' name='L151'></a>        heap-&gt;pf_prevent_count = 1;
+<a id='L152' name='L152'></a>
+<a id='L153' name='L153'></a>        <em class='comment'>/* Mark-and-sweep no longer needs to be prevented when running</em>
+<a id='L154' name='L154'></a><em class='comment'>         * finalizers: mark-and-sweep skips any rescue decisions if there</em>
+<a id='L155' name='L155'></a><em class='comment'>         * are any objects in finalize_list when mark-and-sweep is entered.</em>
+<a id='L156' name='L156'></a><em class='comment'>         * This protects finalized objects from incorrect rescue decisions</em>
+<a id='L157' name='L157'></a><em class='comment'>         * caused by finalize_list being a reachability root and only</em>
+<a id='L158' name='L158'></a><em class='comment'>         * partially processed.  Freeing decisions are not postponed.</em>
+<a id='L159' name='L159'></a><em class='comment'>         */</em>
+<a id='L160' name='L160'></a>
+<a id='L161' name='L161'></a>        <em class='comment'>/* When finalizer torture is enabled, make a fake finalizer call with</em>
+<a id='L162' name='L162'></a><em class='comment'>         * maximum side effects regardless of whether finalize_list is empty.</em>
+<a id='L163' name='L163'></a><em class='comment'>         */</em>
+<a id='L164' name='L164'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3109.html' title='Multiple defined in 3 places.'>DUK_USE_FINALIZER_TORTURE</a>)
+<a id='L165' name='L165'></a>        <a href='../D/4437.html' title='Multiple defined in 4 places.'>duk__run_global_torture_finalizer</a>(heap-&gt;heap_thread);
+<a id='L166' name='L166'></a><em class='sharp'>#endif</em>
+<a id='L167' name='L167'></a>
+<a id='L168' name='L168'></a>        <em class='comment'>/* Process finalize_list until it becomes empty.  There's currently no</em>
+<a id='L169' name='L169'></a><em class='comment'>         * protection against a finalizer always creating more garbage.</em>
+<a id='L170' name='L170'></a><em class='comment'>         */</em>
+<a id='L171' name='L171'></a>        <strong class='reserved'>while</strong> ((curr = heap-&gt;finalize_list) != NULL) <em class='brace'>{</em>
+<a id='L172' name='L172'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3201.html' title='Multiple defined in 3 places.'>DUK_USE_REFERENCE_COUNTING</a>)
+<a id='L173' name='L173'></a>                <a href='../D/4797.html' title='Multiple defined in 3 places.'>duk_bool_t</a> queue_back;
+<a id='L174' name='L174'></a><em class='sharp'>#endif</em>
+<a id='L175' name='L175'></a>
+<a id='L176' name='L176'></a>                <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("processing finalize_list entry: %p -&gt; %!iO", (<strong class='reserved'>void</strong> *) curr, curr));
+<a id='L177' name='L177'></a>
+<a id='L178' name='L178'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/1015.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_GET_TYPE</a>(curr) == <a href='../D/1775.html' title='Multiple defined in 4 places.'>DUK_HTYPE_OBJECT</a>);  <em class='comment'>/* Only objects have finalizers. */</em>
+<a id='L179' name='L179'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(!<a href='../D/1018.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_HAS_REACHABLE</a>(curr));
+<a id='L180' name='L180'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(!<a href='../D/1020.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_HAS_TEMPROOT</a>(curr));
+<a id='L181' name='L181'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/1016.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_HAS_FINALIZABLE</a>(curr));  <em class='comment'>/* All objects on finalize_list will have this flag (except object being finalized right now). */</em>
+<a id='L182' name='L182'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(!<a href='../D/1017.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_HAS_FINALIZED</a>(curr));   <em class='comment'>/* Queueing code ensures. */</em>
+<a id='L183' name='L183'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(!<a href='../D/1019.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_HAS_READONLY</a>(curr));  <em class='comment'>/* ROM objects never get freed (or finalized). */</em>
+<a id='L184' name='L184'></a>
+<a id='L185' name='L185'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3018.html' title='Multiple defined in 3 places.'>DUK_USE_ASSERTIONS</a>)
+<a id='L186' name='L186'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(heap-&gt;currently_finalizing == NULL);
+<a id='L187' name='L187'></a>                heap-&gt;currently_finalizing = curr;
+<a id='L188' name='L188'></a><em class='sharp'>#endif</em>
+<a id='L189' name='L189'></a>
+<a id='L190' name='L190'></a>                <em class='comment'>/* Clear FINALIZABLE for object being finalized, so that</em>
+<a id='L191' name='L191'></a><em class='comment'>                 * duk_push_heapptr() can properly ignore the object.</em>
+<a id='L192' name='L192'></a><em class='comment'>                 */</em>
+<a id='L193' name='L193'></a>                <a href='../D/985.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CLEAR_FINALIZABLE</a>(curr);
+<a id='L194' name='L194'></a>
+<a id='L195' name='L195'></a>                <strong class='reserved'>if</strong> (<a href='../D/1877.html' title='Multiple defined in 12 places.'>DUK_LIKELY</a>(!heap-&gt;pf_skip_finalizers)) <em class='brace'>{</em>
+<a id='L196' name='L196'></a>                        <em class='comment'>/* Run the finalizer, duk_heap_run_finalizer() sets</em>
+<a id='L197' name='L197'></a><em class='comment'>                         * and checks for FINALIZED to prevent the finalizer</em>
+<a id='L198' name='L198'></a><em class='comment'>                         * from executing multiple times per finalization cycle.</em>
+<a id='L199' name='L199'></a><em class='comment'>                         * (This safeguard shouldn't be actually needed anymore).</em>
+<a id='L200' name='L200'></a><em class='comment'>                         */</em>
+<a id='L201' name='L201'></a>
+<a id='L202' name='L202'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3201.html' title='Multiple defined in 3 places.'>DUK_USE_REFERENCE_COUNTING</a>)
+<a id='L203' name='L203'></a>                        <a href='../D/4797.html' title='Multiple defined in 3 places.'>duk_bool_t</a> had_zero_refcount;
+<a id='L204' name='L204'></a><em class='sharp'>#endif</em>
+<a id='L205' name='L205'></a>
+<a id='L206' name='L206'></a>                        <em class='comment'>/* The object's refcount is &gt;0 throughout so it won't be</em>
+<a id='L207' name='L207'></a><em class='comment'>                         * refzero processed prematurely.</em>
+<a id='L208' name='L208'></a><em class='comment'>                         */</em>
+<a id='L209' name='L209'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3201.html' title='Multiple defined in 3 places.'>DUK_USE_REFERENCE_COUNTING</a>)
+<a id='L210' name='L210'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/1014.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_GET_REFCOUNT</a>(curr) &gt;= 1);
+<a id='L211' name='L211'></a>                        had_zero_refcount = (<a href='../D/1014.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_GET_REFCOUNT</a>(curr) == 1);  <em class='comment'>/* Preincremented on finalize_list insert. */</em>
+<a id='L212' name='L212'></a><em class='sharp'>#endif</em>
+<a id='L213' name='L213'></a>
+<a id='L214' name='L214'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(!<a href='../D/1017.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_HAS_FINALIZED</a>(curr));
+<a id='L215' name='L215'></a>                        <a href='../D/5202.html' title='Multiple defined in 4 places.'>duk_heap_run_finalizer</a>(heap, (<a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a> *) curr);  <em class='comment'>/* must never longjmp */</em>
+<a id='L216' name='L216'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/1017.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_HAS_FINALIZED</a>(curr));
+<a id='L217' name='L217'></a>                        <em class='comment'>/* XXX: assert that object is still in finalize_list</em>
+<a id='L218' name='L218'></a><em class='comment'>                         * when duk_push_heapptr() allows automatic rescue.</em>
+<a id='L219' name='L219'></a><em class='comment'>                         */</em>
+<a id='L220' name='L220'></a>
+<a id='L221' name='L221'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3201.html' title='Multiple defined in 3 places.'>DUK_USE_REFERENCE_COUNTING</a>)
+<a id='L222' name='L222'></a>                        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("refcount after finalizer (includes bump): %ld", (<strong class='reserved'>long</strong>) <a href='../D/1014.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_GET_REFCOUNT</a>(curr)));
+<a id='L223' name='L223'></a>                        <strong class='reserved'>if</strong> (<a href='../D/1014.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_GET_REFCOUNT</a>(curr) == 1) <em class='brace'>{</em>  <em class='comment'>/* Only artificial bump in refcount? */</em>
+<a id='L224' name='L224'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3065.html' title='Multiple defined in 3 places.'>DUK_USE_DEBUG</a>)
+<a id='L225' name='L225'></a>                                <strong class='reserved'>if</strong> (had_zero_refcount) <em class='brace'>{</em>
+<a id='L226' name='L226'></a>                                        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("finalized object's refcount is zero -&gt; free immediately (refcount queued)"));
+<a id='L227' name='L227'></a>                                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L228' name='L228'></a>                                        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("finalized object's refcount is zero -&gt; free immediately (mark-and-sweep queued)"));
+<a id='L229' name='L229'></a>                                <em class='brace'>}</em>
+<a id='L230' name='L230'></a><em class='sharp'>#endif</em>
+<a id='L231' name='L231'></a>                                queue_back = 0;
+<a id='L232' name='L232'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong>
+<a id='L233' name='L233'></a><em class='sharp'>#endif</em>
+<a id='L234' name='L234'></a>                        <em class='brace'>{</em>
+<a id='L235' name='L235'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3201.html' title='Multiple defined in 3 places.'>DUK_USE_REFERENCE_COUNTING</a>)
+<a id='L236' name='L236'></a>                                queue_back = 1;
+<a id='L237' name='L237'></a>                                <strong class='reserved'>if</strong> (had_zero_refcount) <em class='brace'>{</em>
+<a id='L238' name='L238'></a>                                        <em class='comment'>/* When finalization is triggered</em>
+<a id='L239' name='L239'></a><em class='comment'>                                         * by refzero and we queue the object</em>
+<a id='L240' name='L240'></a><em class='comment'>                                         * back, clear FINALIZED right away</em>
+<a id='L241' name='L241'></a><em class='comment'>                                         * so that the object can be refinalized</em>
+<a id='L242' name='L242'></a><em class='comment'>                                         * immediately if necessary.</em>
+<a id='L243' name='L243'></a><em class='comment'>                                         */</em>
+<a id='L244' name='L244'></a>                                        <a href='../D/986.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CLEAR_FINALIZED</a>(curr);
+<a id='L245' name='L245'></a>                                <em class='brace'>}</em>
+<a id='L246' name='L246'></a><em class='sharp'>#endif</em>
+<a id='L247' name='L247'></a>                        <em class='brace'>}</em>
+<a id='L248' name='L248'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L249' name='L249'></a>                        <em class='comment'>/* Used during heap destruction: don't actually run finalizers</em>
+<a id='L250' name='L250'></a><em class='comment'>                         * because we're heading into forced finalization.  Instead,</em>
+<a id='L251' name='L251'></a><em class='comment'>                         * queue finalizable objects back to the heap_allocated list.</em>
+<a id='L252' name='L252'></a><em class='comment'>                         */</em>
+<a id='L253' name='L253'></a>                        <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("skip finalizers flag set, queue object to heap_allocated without finalizing"));
+<a id='L254' name='L254'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(!<a href='../D/1017.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_HAS_FINALIZED</a>(curr));
+<a id='L255' name='L255'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3201.html' title='Multiple defined in 3 places.'>DUK_USE_REFERENCE_COUNTING</a>)
+<a id='L256' name='L256'></a>                        queue_back = 1;
+<a id='L257' name='L257'></a><em class='sharp'>#endif</em>
+<a id='L258' name='L258'></a>                <em class='brace'>}</em>
+<a id='L259' name='L259'></a>
+<a id='L260' name='L260'></a>                <em class='comment'>/* Dequeue object from finalize_list.  Note that 'curr' may no</em>
+<a id='L261' name='L261'></a><em class='comment'>                 * longer be finalize_list head because new objects may have</em>
+<a id='L262' name='L262'></a><em class='comment'>                 * been queued to the list.  As a result we can't optimize for</em>
+<a id='L263' name='L263'></a><em class='comment'>                 * the single-linked heap case and must scan the list for</em>
+<a id='L264' name='L264'></a><em class='comment'>                 * removal, typically the scan is very short however.</em>
+<a id='L265' name='L265'></a><em class='comment'>                 */</em>
+<a id='L266' name='L266'></a>                <a href='../D/1079.html' title='Multiple defined in 4 places.'>DUK_HEAP_REMOVE_FROM_FINALIZE_LIST</a>(heap, curr);
+<a id='L267' name='L267'></a>
+<a id='L268' name='L268'></a>                <em class='comment'>/* Queue back to heap_allocated or free immediately. */</em>
+<a id='L269' name='L269'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3201.html' title='Multiple defined in 3 places.'>DUK_USE_REFERENCE_COUNTING</a>)
+<a id='L270' name='L270'></a>                <strong class='reserved'>if</strong> (queue_back) <em class='brace'>{</em>
+<a id='L271' name='L271'></a>                        <em class='comment'>/* FINALIZED is only cleared if object originally</em>
+<a id='L272' name='L272'></a><em class='comment'>                         * queued for finalization by refcounting.  For</em>
+<a id='L273' name='L273'></a><em class='comment'>                         * mark-and-sweep FINALIZED is left set, so that</em>
+<a id='L274' name='L274'></a><em class='comment'>                         * next mark-and-sweep round can make a rescue/free</em>
+<a id='L275' name='L275'></a><em class='comment'>                         * decision.</em>
+<a id='L276' name='L276'></a><em class='comment'>                         */</em>
+<a id='L277' name='L277'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/1014.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_GET_REFCOUNT</a>(curr) &gt;= 1);
+<a id='L278' name='L278'></a>                        <a href='../D/1034.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_PREDEC_REFCOUNT</a>(curr);  <em class='comment'>/* Remove artificial refcount bump. */</em>
+<a id='L279' name='L279'></a>                        <a href='../D/985.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CLEAR_FINALIZABLE</a>(curr);
+<a id='L280' name='L280'></a>                        <a href='../D/1073.html' title='Multiple defined in 4 places.'>DUK_HEAP_INSERT_INTO_HEAP_ALLOCATED</a>(heap, curr);
+<a id='L281' name='L281'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L282' name='L282'></a>                        <em class='comment'>/* No need to remove the refcount bump here. */</em>
+<a id='L283' name='L283'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/1015.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_GET_TYPE</a>(curr) == <a href='../D/1775.html' title='Multiple defined in 4 places.'>DUK_HTYPE_OBJECT</a>);  <em class='comment'>/* currently, always the case */</em>
+<a id='L284' name='L284'></a>                        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("refcount finalize after finalizer call: %!O", curr));
+<a id='L285' name='L285'></a>                        <a href='../D/5274.html' title='Multiple defined in 4 places.'>duk_hobject_refcount_finalize_norz</a>(heap, (<a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a> *) curr);
+<a id='L286' name='L286'></a>                        <a href='../D/5046.html' title='Multiple defined in 4 places.'>duk_free_hobject</a>(heap, (<a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a> *) curr);
+<a id='L287' name='L287'></a>                        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("freed hobject after finalization: %p", (<strong class='reserved'>void</strong> *) curr));
+<a id='L288' name='L288'></a>                <em class='brace'>}</em>
+<a id='L289' name='L289'></a><em class='sharp'>#else</em>  <em class='comment'>/* DUK_USE_REFERENCE_COUNTING */</em>
+<a id='L290' name='L290'></a>                <a href='../D/985.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CLEAR_FINALIZABLE</a>(curr);
+<a id='L291' name='L291'></a>                <a href='../D/1073.html' title='Multiple defined in 4 places.'>DUK_HEAP_INSERT_INTO_HEAP_ALLOCATED</a>(heap, curr);
+<a id='L292' name='L292'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_REFERENCE_COUNTING */</em>
+<a id='L293' name='L293'></a>
+<a id='L294' name='L294'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3065.html' title='Multiple defined in 3 places.'>DUK_USE_DEBUG</a>)
+<a id='L295' name='L295'></a>                count++;
+<a id='L296' name='L296'></a><em class='sharp'>#endif</em>
+<a id='L297' name='L297'></a>
+<a id='L298' name='L298'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3018.html' title='Multiple defined in 3 places.'>DUK_USE_ASSERTIONS</a>)
+<a id='L299' name='L299'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(heap-&gt;currently_finalizing != NULL);
+<a id='L300' name='L300'></a>                heap-&gt;currently_finalizing = NULL;
+<a id='L301' name='L301'></a><em class='sharp'>#endif</em>
+<a id='L302' name='L302'></a>        <em class='brace'>}</em>
+<a id='L303' name='L303'></a>
+<a id='L304' name='L304'></a>        <em class='comment'>/* finalize_list will always be processed completely. */</em>
+<a id='L305' name='L305'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(heap-&gt;finalize_list == NULL);
+<a id='L306' name='L306'></a>
+<a id='L307' name='L307'></a><em class='sharp'>#if</em> 0
+<a id='L308' name='L308'></a>        <em class='comment'>/* While NORZ macros are used above, this is unnecessary because the</em>
+<a id='L309' name='L309'></a><em class='comment'>         * only pending side effects are now finalizers, and finalize_list is</em>
+<a id='L310' name='L310'></a><em class='comment'>         * empty.</em>
+<a id='L311' name='L311'></a><em class='comment'>         */</em>
+<a id='L312' name='L312'></a>        <a href='../D/2282.html' title='Multiple defined in 12 places.'>DUK_REFZERO_CHECK_SLOW</a>(heap-&gt;heap_thread);
+<a id='L313' name='L313'></a><em class='sharp'>#endif</em>
+<a id='L314' name='L314'></a>
+<a id='L315' name='L315'></a>        <em class='comment'>/* Prevent count may be bumped while finalizers run, but should always</em>
+<a id='L316' name='L316'></a><em class='comment'>         * be reliably unbumped by the time we get here.</em>
+<a id='L317' name='L317'></a><em class='comment'>         */</em>
+<a id='L318' name='L318'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(heap-&gt;pf_prevent_count == 1);
+<a id='L319' name='L319'></a>        heap-&gt;pf_prevent_count = 0;
+<a id='L320' name='L320'></a>
+<a id='L321' name='L321'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3065.html' title='Multiple defined in 3 places.'>DUK_USE_DEBUG</a>)
+<a id='L322' name='L322'></a>        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("duk_heap_process_finalize_list: %ld finalizers called", (<strong class='reserved'>long</strong>) count));
+<a id='L323' name='L323'></a><em class='sharp'>#endif</em>
+<a id='L324' name='L324'></a><em class='brace'>}</em>
+<a id='L325' name='L325'></a>
+<a id='L326' name='L326'></a><em class='comment'>/*</em>
+<a id='L327' name='L327'></a><em class='comment'> *  Run an duk_hobject finalizer.  Must never throw an uncaught error</em>
+<a id='L328' name='L328'></a><em class='comment'> *  (but may throw caught errors).</em>
+<a id='L329' name='L329'></a><em class='comment'> *</em>
+<a id='L330' name='L330'></a><em class='comment'> *  There is no return value.  Any return value or error thrown by</em>
+<a id='L331' name='L331'></a><em class='comment'> *  the finalizer is ignored (although errors are debug logged).</em>
+<a id='L332' name='L332'></a><em class='comment'> *</em>
+<a id='L333' name='L333'></a><em class='comment'> *  Notes:</em>
+<a id='L334' name='L334'></a><em class='comment'> *</em>
+<a id='L335' name='L335'></a><em class='comment'> *    - The finalizer thread 'top' assertions are there because it is</em>
+<a id='L336' name='L336'></a><em class='comment'> *      critical that strict stack policy is observed (i.e. no cruft</em>
+<a id='L337' name='L337'></a><em class='comment'> *      left on the finalizer stack).</em>
+<a id='L338' name='L338'></a><em class='comment'> */</em>
+<a id='L339' name='L339'></a>
+<a id='L340' name='L340'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/3349.html' title='Multiple referred from 4 places.'>duk__finalize_helper</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <strong class='reserved'>void</strong> *udata) <em class='brace'>{</em>
+<a id='L341' name='L341'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr != NULL);
+<a id='L342' name='L342'></a>        <a href='../D/3010.html' title='Multiple defined in 9 places.'>DUK_UNREF</a>(udata);
+<a id='L343' name='L343'></a>
+<a id='L344' name='L344'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("protected finalization helper running"));
+<a id='L345' name='L345'></a>
+<a id='L346' name='L346'></a>        <em class='comment'>/* [... obj] */</em>
+<a id='L347' name='L347'></a>
+<a id='L348' name='L348'></a>        <em class='comment'>/* _Finalizer property is read without checking if the value is</em>
+<a id='L349' name='L349'></a><em class='comment'>         * callable or even exists.  This is intentional, and handled</em>
+<a id='L350' name='L350'></a><em class='comment'>         * by throwing an error which is caught by the safe call wrapper.</em>
+<a id='L351' name='L351'></a><em class='comment'>         *</em>
+<a id='L352' name='L352'></a><em class='comment'>         * XXX: Finalizer lookup should traverse the prototype chain (to allow</em>
+<a id='L353' name='L353'></a><em class='comment'>         * inherited finalizers) but should not invoke accessors or proxy object</em>
+<a id='L354' name='L354'></a><em class='comment'>         * behavior.  At the moment this lookup will invoke proxy behavior, so</em>
+<a id='L355' name='L355'></a><em class='comment'>         * caller must ensure that this function is not called if the target is</em>
+<a id='L356' name='L356'></a><em class='comment'>         * a Proxy.</em>
+<a id='L357' name='L357'></a><em class='comment'>         */</em>
+<a id='L358' name='L358'></a>        <a href='../D/5115.html' title='Multiple defined in 4 places.'>duk_get_prop_stridx_short</a>(thr, -1, <a href='../D/2445.html' title='Multiple defined in 3 places.'>DUK_STRIDX_INT_FINALIZER</a>);  <em class='comment'>/* -&gt; [... obj finalizer] */</em>
+<a id='L359' name='L359'></a>        <a href='../D/4972.html' title='Multiple defined in 4 places.'>duk_dup_m2</a>(thr);
+<a id='L360' name='L360'></a>        <a href='../D/5544.html' title='Multiple defined in 4 places.'>duk_push_boolean</a>(thr, <a href='../D/1068.html' title='Multiple defined in 4 places.'>DUK_HEAP_HAS_FINALIZER_NORESCUE</a>(thr-&gt;heap));
+<a id='L361' name='L361'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("calling finalizer"));
+<a id='L362' name='L362'></a>        <a href='../D/4816.html' title='Multiple defined in 4 places.'>duk_call</a>(thr, 2);  <em class='comment'>/* [ ... obj finalizer obj heapDestruct ]  -&gt; [ ... obj retval ] */</em>
+<a id='L363' name='L363'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("finalizer returned successfully"));
+<a id='L364' name='L364'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L365' name='L365'></a>
+<a id='L366' name='L366'></a>        <em class='comment'>/* Note: we rely on duk_safe_call() to fix up the stack for the caller,</em>
+<a id='L367' name='L367'></a><em class='comment'>         * so we don't need to pop stuff here.  There is no return value;</em>
+<a id='L368' name='L368'></a><em class='comment'>         * caller determines rescued status based on object refcount.</em>
+<a id='L369' name='L369'></a><em class='comment'>         */</em>
+<a id='L370' name='L370'></a><em class='brace'>}</em>
+<a id='L371' name='L371'></a>
+<a id='L372' name='L372'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4417.html' title='Multiple referred from 12 places.'>duk_heap_run_finalizer</a>(<a href='../D/5181.html' title='Multiple defined in 8 places.'>duk_heap</a> *heap, <a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a> *obj) <em class='brace'>{</em>
+<a id='L373' name='L373'></a>        <a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr;
+<a id='L374' name='L374'></a>        <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> rc;
+<a id='L375' name='L375'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3018.html' title='Multiple defined in 3 places.'>DUK_USE_ASSERTIONS</a>)
+<a id='L376' name='L376'></a>        <a href='../D/5319.html' title='Multiple defined in 3 places.'>duk_idx_t</a> entry_top;
+<a id='L377' name='L377'></a><em class='sharp'>#endif</em>
+<a id='L378' name='L378'></a>
+<a id='L379' name='L379'></a>        <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("running duk_hobject finalizer for object: %p", (<strong class='reserved'>void</strong> *) obj));
+<a id='L380' name='L380'></a>
+<a id='L381' name='L381'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(heap != NULL);
+<a id='L382' name='L382'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(heap-&gt;heap_thread != NULL);
+<a id='L383' name='L383'></a>        thr = heap-&gt;heap_thread;
+<a id='L384' name='L384'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(obj != NULL);
+<a id='L385' name='L385'></a>        <a href='../D/190.html' title='Multiple defined in 8 places.'>DUK_ASSERT_VALSTACK_SPACE</a>(heap-&gt;heap_thread, 1);
+<a id='L386' name='L386'></a>
+<a id='L387' name='L387'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3018.html' title='Multiple defined in 3 places.'>DUK_USE_ASSERTIONS</a>)
+<a id='L388' name='L388'></a>        entry_top = <a href='../D/5122.html' title='Multiple defined in 4 places.'>duk_get_top</a>(thr);
+<a id='L389' name='L389'></a><em class='sharp'>#endif</em>
+<a id='L390' name='L390'></a>        <em class='comment'>/*</em>
+<a id='L391' name='L391'></a><em class='comment'>         *  Get and call the finalizer.  All of this must be wrapped</em>
+<a id='L392' name='L392'></a><em class='comment'>         *  in a protected call, because even getting the finalizer</em>
+<a id='L393' name='L393'></a><em class='comment'>         *  may trigger an error (getter may throw one, for instance).</em>
+<a id='L394' name='L394'></a><em class='comment'>         */</em>
+<a id='L395' name='L395'></a>
+<a id='L396' name='L396'></a>        <em class='comment'>/* ROM objects could inherit a finalizer, but they are never deemed</em>
+<a id='L397' name='L397'></a><em class='comment'>         * unreachable by mark-and-sweep, and their refcount never falls to 0.</em>
+<a id='L398' name='L398'></a><em class='comment'>         */</em>
+<a id='L399' name='L399'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(!<a href='../D/1019.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_HAS_READONLY</a>((<a href='../D/5216.html' title='Multiple defined in 8 places.'>duk_heaphdr</a> *) obj));
+<a id='L400' name='L400'></a>
+<a id='L401' name='L401'></a>        <em class='comment'>/* Duktape 2.1: finalize_list never contains objects with FINALIZED</em>
+<a id='L402' name='L402'></a><em class='comment'>         * set, so no need to check here.</em>
+<a id='L403' name='L403'></a><em class='comment'>         */</em>
+<a id='L404' name='L404'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(!<a href='../D/1017.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_HAS_FINALIZED</a>((<a href='../D/5216.html' title='Multiple defined in 8 places.'>duk_heaphdr</a> *) obj));
+<a id='L405' name='L405'></a><em class='sharp'>#if</em> 0
+<a id='L406' name='L406'></a>        <strong class='reserved'>if</strong> (<a href='../D/1017.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_HAS_FINALIZED</a>((<a href='../D/5216.html' title='Multiple defined in 8 places.'>duk_heaphdr</a> *) obj)) <em class='brace'>{</em>
+<a id='L407' name='L407'></a>                <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("object already finalized, avoid running finalizer twice: %!O", obj));
+<a id='L408' name='L408'></a>                <strong class='reserved'>return</strong>;
+<a id='L409' name='L409'></a>        <em class='brace'>}</em>
+<a id='L410' name='L410'></a><em class='sharp'>#endif</em>
+<a id='L411' name='L411'></a>        <a href='../D/1037.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_SET_FINALIZED</a>((<a href='../D/5216.html' title='Multiple defined in 8 places.'>duk_heaphdr</a> *) obj);  <em class='comment'>/* ensure never re-entered until rescue cycle complete */</em>
+<a id='L412' name='L412'></a>
+<a id='L413' name='L413'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3086.html' title='Multiple defined in 3 places.'>DUK_USE_ES6_PROXY</a>)
+<a id='L414' name='L414'></a>        <strong class='reserved'>if</strong> (<a href='../D/1482.html' title='Multiple defined in 8 places.'>DUK_HOBJECT_IS_PROXY</a>(obj)) <em class='brace'>{</em>
+<a id='L415' name='L415'></a>                <em class='comment'>/* This may happen if duk_set_finalizer() or Duktape.fin() is</em>
+<a id='L416' name='L416'></a><em class='comment'>                 * called for a Proxy object.  In such cases the fast finalizer</em>
+<a id='L417' name='L417'></a><em class='comment'>                 * flag will be set on the Proxy, not the target, and neither</em>
+<a id='L418' name='L418'></a><em class='comment'>                 * will be finalized.</em>
+<a id='L419' name='L419'></a><em class='comment'>                 */</em>
+<a id='L420' name='L420'></a>                <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("object is a Proxy, skip finalizer call"));
+<a id='L421' name='L421'></a>                <strong class='reserved'>return</strong>;
+<a id='L422' name='L422'></a>        <em class='brace'>}</em>
+<a id='L423' name='L423'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_ES6_PROXY */</em>
+<a id='L424' name='L424'></a>
+<a id='L425' name='L425'></a>        <a href='../D/5580.html' title='Multiple defined in 4 places.'>duk_push_hobject</a>(thr, obj);  <em class='comment'>/* this also increases refcount by one */</em>
+<a id='L426' name='L426'></a>        rc = <a href='../D/5748.html' title='Multiple defined in 4 places.'>duk_safe_call</a>(thr, <a href='../D/4110.html' title='Multiple defined in 4 places.'>duk__finalize_helper</a>, NULL <em class='comment'>/*udata*/</em>, 0 <em class='comment'>/*nargs*/</em>, 1 <em class='comment'>/*nrets*/</em>);  <em class='comment'>/* -&gt; [... obj retval/error] */</em>
+<a id='L427' name='L427'></a>        <a href='../D/187.html' title='Multiple defined in 4 places.'>DUK_ASSERT_TOP</a>(thr, entry_top + 2);  <em class='comment'>/* duk_safe_call discipline */</em>
+<a id='L428' name='L428'></a>
+<a id='L429' name='L429'></a>        <strong class='reserved'>if</strong> (rc != <a href='../D/764.html' title='Multiple defined in 3 places.'>DUK_EXEC_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L430' name='L430'></a>                <em class='comment'>/* Note: we ask for one return value from duk_safe_call to get this</em>
+<a id='L431' name='L431'></a><em class='comment'>                 * error debugging here.</em>
+<a id='L432' name='L432'></a><em class='comment'>                 */</em>
+<a id='L433' name='L433'></a>                <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("wrapped finalizer call failed for object %p (ignored); error: %!T",
+<a id='L434' name='L434'></a>                                 (<strong class='reserved'>void</strong> *) obj, (<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *) <a href='../D/5126.html' title='Multiple defined in 4 places.'>duk_get_tval</a>(thr, -1)));
+<a id='L435' name='L435'></a>        <em class='brace'>}</em>
+<a id='L436' name='L436'></a>        <a href='../D/5522.html' title='Multiple defined in 8 places.'>duk_pop_2</a>(thr);  <em class='comment'>/* -&gt; [...] */</em>
+<a id='L437' name='L437'></a>
+<a id='L438' name='L438'></a>        <a href='../D/187.html' title='Multiple defined in 4 places.'>DUK_ASSERT_TOP</a>(thr, entry_top);
+<a id='L439' name='L439'></a><em class='brace'>}</em>
+<a id='L440' name='L440'></a>
+<a id='L441' name='L441'></a><em class='sharp'>#else</em>  <em class='comment'>/* DUK_USE_FINALIZER_SUPPORT */</em>
+<a id='L442' name='L442'></a>
+<a id='L443' name='L443'></a><em class='comment'>/* nothing */</em>
+<a id='L444' name='L444'></a>
+<a id='L445' name='L445'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_FINALIZER_SUPPORT */</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L14'>[^]</a><a href='#L372'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

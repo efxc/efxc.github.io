@@ -1,0 +1,350 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>examples/cpp-exceptions/cpp_exceptions.cpp</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1004.html'>examples</a>/<a href='../files/1010.html'>cpp-exceptions</a>/cpp_exceptions.cpp</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L66'>[^]</a><a href='#L176'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L66' title='Defined at 66.'>test1</a></li>
+<li><a href='#L73' title='Defined at 73.'>test1_safecall</a></li>
+<li><a href='#L83' title='Defined at 83.'>test2</a></li>
+<li><a href='#L94' title='Defined at 94.'>test2_safecall</a></li>
+<li><a href='#L108' title='Defined at 108.'>test3</a></li>
+<li><a href='#L115' title='Defined at 115.'>test3_safecall</a></li>
+<li><a href='#L126' title='Defined at 126.'>what</a></li>
+<li><a href='#L131' title='Defined at 131.'>test4</a></li>
+<li><a href='#L139' title='Defined at 139.'>test4_safecall</a></li>
+<li><a href='#L150' title='Defined at 150.'>what</a></li>
+<li><a href='#L155' title='Defined at 155.'>test5</a></li>
+<li><a href='#L163' title='Defined at 163.'>test5_safecall</a></li>
+<li><a href='#L168' title='Defined at 168.'>duk__print</a></li>
+<li><a href='#L176' title='Defined at 176.'>main</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Example of how to use DUK_USE_CPP_EXCEPTIONS to support automatic</em>
+<a id='L3' name='L3'></a><em class='comment'> *  variables (e.g. destructor calls) in Duktape/C functions.</em>
+<a id='L4' name='L4'></a><em class='comment'> *</em>
+<a id='L5' name='L5'></a><em class='comment'> *  Configure and compile with -DDUK_USE_CPP_EXCEPTIONS:</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> *    $ python2 tools/configure.py \</em>
+<a id='L8' name='L8'></a><em class='comment'> *          --source-directory src-input \</em>
+<a id='L9' name='L9'></a><em class='comment'> *          --output-directory /tmp/output \</em>
+<a id='L10' name='L10'></a><em class='comment'> *          --config-metadata config \</em>
+<a id='L11' name='L11'></a><em class='comment'> *          -DDUK_USE_CPP_EXCEPTIONS</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> *    $ g++ -otest -I/tmp/output \</em>
+<a id='L14' name='L14'></a><em class='comment'> *          /tmp/output/duktape.c cpp_exceptions.cpp -lm</em>
+<a id='L15' name='L15'></a><em class='comment'> *</em>
+<a id='L16' name='L16'></a><em class='comment'> *  When executed you should see something like:</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> *    $ ./test</em>
+<a id='L19' name='L19'></a><em class='comment'> *    my_class instance created</em>
+<a id='L20' name='L20'></a><em class='comment'> *    my_class instance destroyed      &lt;== destructor gets called</em>
+<a id='L21' name='L21'></a><em class='comment'> *    --&gt; rc=1 (SyntaxError: parse error (line 1))</em>
+<a id='L22' name='L22'></a><em class='comment'> *    [...]</em>
+<a id='L23' name='L23'></a><em class='comment'> *</em>
+<a id='L24' name='L24'></a><em class='comment'> *  Duktape uses a custom exception class (duk_internal_exception) which</em>
+<a id='L25' name='L25'></a><em class='comment'> *  doesn't inherit from any base class, so that catching any base classes</em>
+<a id='L26' name='L26'></a><em class='comment'> *  in user code won't accidentally catch exceptions thrown by Duktape.</em>
+<a id='L27' name='L27'></a><em class='comment'> */</em>
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a><em class='sharp'>#if</em> !<strong class='reserved'>defined</strong>(__cplusplus)
+<a id='L30' name='L30'></a><em class='sharp'>#error</em> compile <strong class='reserved'>using</strong> a c++ compiler
+<a id='L31' name='L31'></a><em class='sharp'>#endif</em>
+<a id='L32' name='L32'></a>
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L34' name='L34'></a><em class='sharp'>#include</em> &lt;exception&gt;
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> "<a href='../I/204.html'>duktape.h</a>"
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(__cplusplus) &amp;&amp; (__cplusplus &gt;= 201103L)
+<a id='L38' name='L38'></a><em class='sharp'>#define</em> <a href='../R/2955.html' title='Multiple referred from 2 places.'>NOEXCEPT</a> noexcept
+<a id='L39' name='L39'></a><em class='sharp'>#else</em>
+<a id='L40' name='L40'></a><em class='sharp'>#define</em> <a href='../R/2955.html' title='Multiple referred from 2 places.'>NOEXCEPT</a> <strong class='reserved'>throw</strong>()
+<a id='L41' name='L41'></a><em class='sharp'>#endif</em>
+<a id='L42' name='L42'></a>
+<a id='L43' name='L43'></a><em class='comment'>/*</em>
+<a id='L44' name='L44'></a><em class='comment'> *  Example class with a destructor</em>
+<a id='L45' name='L45'></a><em class='comment'> */</em>
+<a id='L46' name='L46'></a>
+<a id='L47' name='L47'></a><strong class='reserved'>class</strong> <a href='../R/5160.html' title='Multiple referred from 9 places.'>my_class</a> <em class='brace'>{</em>
+<a id='L48' name='L48'></a> <strong class='reserved'>public</strong>:
+<a id='L49' name='L49'></a>        <a href='../D/5995.html' title='Multiple defined in 3 places.'>my_class</a>();
+<a id='L50' name='L50'></a>        ~<a href='../D/5995.html' title='Multiple defined in 3 places.'>my_class</a>();
+<a id='L51' name='L51'></a><em class='brace'>}</em>;
+<a id='L52' name='L52'></a>
+<a id='L53' name='L53'></a><a href='../R/5160.html' title='Multiple referred from 9 places.'>my_class</a>::<a href='../D/5995.html' title='Multiple defined in 3 places.'>my_class</a>() <em class='brace'>{</em>
+<a id='L54' name='L54'></a>        printf("my_class instance created\n");
+<a id='L55' name='L55'></a><em class='brace'>}</em>
+<a id='L56' name='L56'></a>
+<a id='L57' name='L57'></a><a href='../R/5160.html' title='Multiple referred from 9 places.'>my_class</a>::~<a href='../D/5995.html' title='Multiple defined in 3 places.'>my_class</a>() <em class='brace'>{</em>
+<a id='L58' name='L58'></a>        printf("my_class instance destroyed\n");
+<a id='L59' name='L59'></a><em class='brace'>}</em>
+<a id='L60' name='L60'></a>
+<a id='L61' name='L61'></a><em class='comment'>/*</em>
+<a id='L62' name='L62'></a><em class='comment'> *  SyntaxError caused by eval exits Duktape/C function but destructors</em>
+<a id='L63' name='L63'></a><em class='comment'> *  are executed.</em>
+<a id='L64' name='L64'></a><em class='comment'> */</em>
+<a id='L65' name='L65'></a>
+<a id='L66' name='L66'></a><a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/5206.html' title='Multiple referred from 3 places.'>test1</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L67' name='L67'></a>        <a href='../D/5995.html' title='Multiple defined in 3 places.'>my_class</a> myclass;
+<a id='L68' name='L68'></a>
+<a id='L69' name='L69'></a>        <a href='../D/5028.html' title='Multiple defined in 3 places.'>duk_eval_string</a>(ctx, "aiee=");
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L72' name='L72'></a><em class='brace'>}</em>
+<a id='L73' name='L73'></a><a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../S/326.html#L194' title='Referred from 194 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test1_safecall</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx, <strong class='reserved'>void</strong> *udata) <em class='brace'>{</em>
+<a id='L74' name='L74'></a>        (<strong class='reserved'>void</strong>) udata;
+<a id='L75' name='L75'></a>        <strong class='reserved'>return</strong> <a href='../S/326.html#L66' title='Defined at 66 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test1</a>(ctx);
+<a id='L76' name='L76'></a><em class='brace'>}</em>
+<a id='L77' name='L77'></a>
+<a id='L78' name='L78'></a><em class='comment'>/*</em>
+<a id='L79' name='L79'></a><em class='comment'> *  You can use C++ exceptions inside Duktape/C functions for your own</em>
+<a id='L80' name='L80'></a><em class='comment'> *  purposes but you should catch them before they propagate to Duktape.</em>
+<a id='L81' name='L81'></a><em class='comment'> */</em>
+<a id='L82' name='L82'></a>
+<a id='L83' name='L83'></a><a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/5208.html' title='Multiple referred from 3 places.'>test2</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L84' name='L84'></a>        <a href='../D/5995.html' title='Multiple defined in 3 places.'>my_class</a> myclass;
+<a id='L85' name='L85'></a>
+<a id='L86' name='L86'></a>        <strong class='reserved'>try</strong> <em class='brace'>{</em>
+<a id='L87' name='L87'></a>                <strong class='reserved'>throw</strong> 123;
+<a id='L88' name='L88'></a>        <em class='brace'>}</em> <strong class='reserved'>catch</strong> (<strong class='reserved'>int</strong> myvalue) <em class='brace'>{</em>
+<a id='L89' name='L89'></a>                printf("Caught: %d\n", myvalue);
+<a id='L90' name='L90'></a>        <em class='brace'>}</em>
+<a id='L91' name='L91'></a>
+<a id='L92' name='L92'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L93' name='L93'></a><em class='brace'>}</em>
+<a id='L94' name='L94'></a><a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../S/326.html#L218' title='Referred from 218 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test2_safecall</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx, <strong class='reserved'>void</strong> *udata) <em class='brace'>{</em>
+<a id='L95' name='L95'></a>        (<strong class='reserved'>void</strong>) udata;
+<a id='L96' name='L96'></a>        <strong class='reserved'>return</strong> <a href='../S/326.html#L83' title='Defined at 83 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test2</a>(ctx);
+<a id='L97' name='L97'></a><em class='brace'>}</em>
+<a id='L98' name='L98'></a>
+<a id='L99' name='L99'></a><em class='comment'>/*</em>
+<a id='L100' name='L100'></a><em class='comment'> *  If you let your own C++ exceptions propagate out of a Duktape/C function</em>
+<a id='L101' name='L101'></a><em class='comment'> *  it will be caught by Duktape and considered a programming error.  Duktape</em>
+<a id='L102' name='L102'></a><em class='comment'> *  will catch the exception and convert it to a Duktape error.</em>
+<a id='L103' name='L103'></a><em class='comment'> *</em>
+<a id='L104' name='L104'></a><em class='comment'> *  This may be allowed in a later version once all the implications have been</em>
+<a id='L105' name='L105'></a><em class='comment'> *  worked out.</em>
+<a id='L106' name='L106'></a><em class='comment'> */</em>
+<a id='L107' name='L107'></a>
+<a id='L108' name='L108'></a><a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/5210.html' title='Multiple referred from 3 places.'>test3</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L109' name='L109'></a>        <a href='../D/5995.html' title='Multiple defined in 3 places.'>my_class</a> myclass;
+<a id='L110' name='L110'></a>
+<a id='L111' name='L111'></a>        <strong class='reserved'>throw</strong> 123;  <em class='comment'>/* ERROR: exception propagated to Duktape */</em>
+<a id='L112' name='L112'></a>
+<a id='L113' name='L113'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L114' name='L114'></a><em class='brace'>}</em>
+<a id='L115' name='L115'></a><a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../S/326.html#L242' title='Referred from 242 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test3_safecall</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx, <strong class='reserved'>void</strong> *udata) <em class='brace'>{</em>
+<a id='L116' name='L116'></a>        (<strong class='reserved'>void</strong>) udata;
+<a id='L117' name='L117'></a>        <strong class='reserved'>return</strong> <a href='../S/326.html#L108' title='Defined at 108 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test3</a>(ctx);
+<a id='L118' name='L118'></a><em class='brace'>}</em>
+<a id='L119' name='L119'></a>
+<a id='L120' name='L120'></a><em class='comment'>/*</em>
+<a id='L121' name='L121'></a><em class='comment'> *  Same as above, but if the exception inherits from std::exception, it's</em>
+<a id='L122' name='L122'></a><em class='comment'> *  "what()" will be included in the error message.</em>
+<a id='L123' name='L123'></a><em class='comment'> */</em>
+<a id='L124' name='L124'></a>
+<a id='L125' name='L125'></a><strong class='reserved'>class</strong> <a href='../S/326.html#L133' title='Referred from 133 in examples/cpp-exceptions/cpp_exceptions.cpp.'>my_exception</a> : <strong class='reserved'>public</strong> std::exception <em class='brace'>{</em>
+<a id='L126' name='L126'></a>        <strong class='reserved'>virtual</strong> <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../R/5219.html' title='Multiple referred from 32 places.'>what</a>() <strong class='reserved'>const</strong> <a href='../D/3711.html' title='Multiple defined in 2 places.'>NOEXCEPT</a> <em class='brace'>{</em>
+<a id='L127' name='L127'></a>                <strong class='reserved'>return</strong> "my_exception";
+<a id='L128' name='L128'></a>        <em class='brace'>}</em>
+<a id='L129' name='L129'></a><em class='brace'>}</em>;
+<a id='L130' name='L130'></a>
+<a id='L131' name='L131'></a><a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/5212.html' title='Multiple referred from 3 places.'>test4</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L132' name='L132'></a>        <a href='../D/5995.html' title='Multiple defined in 3 places.'>my_class</a> myclass;
+<a id='L133' name='L133'></a>        <a href='../S/326.html#L125' title='Defined at 125 in examples/cpp-exceptions/cpp_exceptions.cpp.'>my_exception</a> myexc;
+<a id='L134' name='L134'></a>
+<a id='L135' name='L135'></a>        <strong class='reserved'>throw</strong> myexc;  <em class='comment'>/* ERROR: exception propagated to Duktape */</em>
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L138' name='L138'></a><em class='brace'>}</em>
+<a id='L139' name='L139'></a><a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../S/326.html#L266' title='Referred from 266 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test4_safecall</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx, <strong class='reserved'>void</strong> *udata) <em class='brace'>{</em>
+<a id='L140' name='L140'></a>        (<strong class='reserved'>void</strong>) udata;
+<a id='L141' name='L141'></a>        <strong class='reserved'>return</strong> <a href='../S/326.html#L131' title='Defined at 131 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test4</a>(ctx);
+<a id='L142' name='L142'></a><em class='brace'>}</em>
+<a id='L143' name='L143'></a>
+<a id='L144' name='L144'></a><em class='comment'>/*</em>
+<a id='L145' name='L145'></a><em class='comment'> *  Same as above, but if the exception inherits from std::exception with</em>
+<a id='L146' name='L146'></a><em class='comment'> *  a NULL what().  Duktape will describe the error as 'unknown' if so.</em>
+<a id='L147' name='L147'></a><em class='comment'> */</em>
+<a id='L148' name='L148'></a>
+<a id='L149' name='L149'></a><strong class='reserved'>class</strong> <a href='../S/326.html#L157' title='Referred from 157 in examples/cpp-exceptions/cpp_exceptions.cpp.'>my_exception2</a> : <strong class='reserved'>public</strong> std::exception <em class='brace'>{</em>
+<a id='L150' name='L150'></a>        <strong class='reserved'>virtual</strong> <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../R/5219.html' title='Multiple referred from 32 places.'>what</a>() <strong class='reserved'>const</strong> <a href='../D/3711.html' title='Multiple defined in 2 places.'>NOEXCEPT</a> <em class='brace'>{</em>
+<a id='L151' name='L151'></a>                <strong class='reserved'>return</strong> NULL;
+<a id='L152' name='L152'></a>        <em class='brace'>}</em>
+<a id='L153' name='L153'></a><em class='brace'>}</em>;
+<a id='L154' name='L154'></a>
+<a id='L155' name='L155'></a><a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/5214.html' title='Multiple referred from 3 places.'>test5</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L156' name='L156'></a>        <a href='../D/5995.html' title='Multiple defined in 3 places.'>my_class</a> myclass;
+<a id='L157' name='L157'></a>        <a href='../S/326.html#L149' title='Defined at 149 in examples/cpp-exceptions/cpp_exceptions.cpp.'>my_exception2</a> myexc;
+<a id='L158' name='L158'></a>
+<a id='L159' name='L159'></a>        <strong class='reserved'>throw</strong> myexc;  <em class='comment'>/* ERROR: exception propagated to Duktape */</em>
+<a id='L160' name='L160'></a>
+<a id='L161' name='L161'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L162' name='L162'></a><em class='brace'>}</em>
+<a id='L163' name='L163'></a><a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../S/326.html#L290' title='Referred from 290 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test5_safecall</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx, <strong class='reserved'>void</strong> *udata) <em class='brace'>{</em>
+<a id='L164' name='L164'></a>        (<strong class='reserved'>void</strong>) udata;
+<a id='L165' name='L165'></a>        <strong class='reserved'>return</strong> <a href='../S/326.html#L155' title='Defined at 155 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test5</a>(ctx);
+<a id='L166' name='L166'></a><em class='brace'>}</em>
+<a id='L167' name='L167'></a>
+<a id='L168' name='L168'></a><strong class='reserved'>static</strong> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/3610.html' title='Multiple referred from 5 places.'>duk__print</a>(<a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx) <em class='brace'>{</em>
+<a id='L169' name='L169'></a>        <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(ctx, " ");
+<a id='L170' name='L170'></a>        <a href='../D/5320.html' title='Multiple defined in 4 places.'>duk_insert</a>(ctx, 0);
+<a id='L171' name='L171'></a>        <a href='../D/5388.html' title='Multiple defined in 4 places.'>duk_join</a>(ctx, <a href='../D/5122.html' title='Multiple defined in 4 places.'>duk_get_top</a>(ctx) - 1);
+<a id='L172' name='L172'></a>        printf("%s\n", <a href='../D/5752.html' title='Multiple defined in 3 places.'>duk_safe_to_string</a>(ctx, -1));
+<a id='L173' name='L173'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L174' name='L174'></a><em class='brace'>}</em>
+<a id='L175' name='L175'></a>
+<a id='L176' name='L176'></a><strong class='reserved'>int</strong> <a href='../R/5159.html' title='Multiple referred from 3 places.'>main</a>(<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> *argv[]) <em class='brace'>{</em>
+<a id='L177' name='L177'></a>        <a href='../D/4854.html' title='Multiple defined in 3 places.'>duk_context</a> *ctx = <a href='../D/4859.html' title='Multiple defined in 3 places.'>duk_create_heap_default</a>();
+<a id='L178' name='L178'></a>        <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> rc;
+<a id='L179' name='L179'></a>
+<a id='L180' name='L180'></a>        (<strong class='reserved'>void</strong>) argc; (<strong class='reserved'>void</strong>) argv;  <em class='comment'>/* suppress warning */</em>
+<a id='L181' name='L181'></a>
+<a id='L182' name='L182'></a>        <em class='comment'>/* Minimal print() provider. */</em>
+<a id='L183' name='L183'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(ctx, <a href='../D/4371.html' title='Multiple defined in 5 places.'>duk__print</a>, <a href='../D/3260.html' title='Multiple defined in 3 places.'>DUK_VARARGS</a>);
+<a id='L184' name='L184'></a>        <a href='../D/5637.html' title='Multiple defined in 4 places.'>duk_put_global_string</a>(ctx, "print");
+<a id='L185' name='L185'></a>
+<a id='L186' name='L186'></a>        printf("*** test1 - duk_pcall()\n");
+<a id='L187' name='L187'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(ctx, <a href='../S/326.html#L66' title='Defined at 66 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test1</a>, 0);
+<a id='L188' name='L188'></a>        rc = <a href='../D/5496.html' title='Multiple defined in 4 places.'>duk_pcall</a>(ctx, 0);
+<a id='L189' name='L189'></a>        printf("--&gt; rc=%ld (%s)\n", (<strong class='reserved'>long</strong>) rc, <a href='../D/5752.html' title='Multiple defined in 3 places.'>duk_safe_to_string</a>(ctx, -1));
+<a id='L190' name='L190'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L191' name='L191'></a>        printf("\n");
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a>        printf("*** test1 - duk_safe_call()\n");
+<a id='L194' name='L194'></a>        rc = <a href='../D/5748.html' title='Multiple defined in 4 places.'>duk_safe_call</a>(ctx, <a href='../S/326.html#L73' title='Defined at 73 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test1_safecall</a>, NULL, 0, 1);
+<a id='L195' name='L195'></a>        printf("--&gt; rc=%ld (%s)\n", (<strong class='reserved'>long</strong>) rc, <a href='../D/5752.html' title='Multiple defined in 3 places.'>duk_safe_to_string</a>(ctx, -1));
+<a id='L196' name='L196'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L197' name='L197'></a>        printf("\n");
+<a id='L198' name='L198'></a>
+<a id='L199' name='L199'></a>        printf("*** test1 - ecmascript try-catch\n");
+<a id='L200' name='L200'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(ctx, <a href='../S/326.html#L66' title='Defined at 66 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test1</a>, 0);
+<a id='L201' name='L201'></a>        <a href='../D/5637.html' title='Multiple defined in 4 places.'>duk_put_global_string</a>(ctx, "test1");
+<a id='L202' name='L202'></a>        <a href='../D/5029.html' title='Multiple defined in 3 places.'>duk_eval_string_noresult</a>(ctx,
+<a id='L203' name='L203'></a>                "try {\n"
+<a id='L204' name='L204'></a>                "    test1();\n"
+<a id='L205' name='L205'></a>                "} catch (e) {\n"
+<a id='L206' name='L206'></a>                "    print(e.stack || e);\n"
+<a id='L207' name='L207'></a>                "}\n");
+<a id='L208' name='L208'></a>        printf("\n");
+<a id='L209' name='L209'></a>
+<a id='L210' name='L210'></a>        printf("*** test2 - duk_pcall()\n");
+<a id='L211' name='L211'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(ctx, <a href='../S/326.html#L83' title='Defined at 83 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test2</a>, 0);
+<a id='L212' name='L212'></a>        rc = <a href='../D/5496.html' title='Multiple defined in 4 places.'>duk_pcall</a>(ctx, 0);
+<a id='L213' name='L213'></a>        printf("--&gt; rc=%ld (%s)\n", (<strong class='reserved'>long</strong>) rc, <a href='../D/5752.html' title='Multiple defined in 3 places.'>duk_safe_to_string</a>(ctx, -1));
+<a id='L214' name='L214'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L215' name='L215'></a>        printf("\n");
+<a id='L216' name='L216'></a>
+<a id='L217' name='L217'></a>        printf("*** test2 - duk_safe_call()\n");
+<a id='L218' name='L218'></a>        rc = <a href='../D/5748.html' title='Multiple defined in 4 places.'>duk_safe_call</a>(ctx, <a href='../S/326.html#L94' title='Defined at 94 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test2_safecall</a>, NULL, 0, 1);
+<a id='L219' name='L219'></a>        printf("--&gt; rc=%ld (%s)\n", (<strong class='reserved'>long</strong>) rc, <a href='../D/5752.html' title='Multiple defined in 3 places.'>duk_safe_to_string</a>(ctx, -1));
+<a id='L220' name='L220'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L221' name='L221'></a>        printf("\n");
+<a id='L222' name='L222'></a>
+<a id='L223' name='L223'></a>        printf("*** test2 - ecmascript try-catch\n");
+<a id='L224' name='L224'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(ctx, <a href='../S/326.html#L83' title='Defined at 83 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test2</a>, 0);
+<a id='L225' name='L225'></a>        <a href='../D/5637.html' title='Multiple defined in 4 places.'>duk_put_global_string</a>(ctx, "test2");
+<a id='L226' name='L226'></a>        <a href='../D/5029.html' title='Multiple defined in 3 places.'>duk_eval_string_noresult</a>(ctx,
+<a id='L227' name='L227'></a>                "try {\n"
+<a id='L228' name='L228'></a>                "    test2();\n"
+<a id='L229' name='L229'></a>                "} catch (e) {\n"
+<a id='L230' name='L230'></a>                "    print(e.stack || e);\n"
+<a id='L231' name='L231'></a>                "}\n");
+<a id='L232' name='L232'></a>        printf("\n");
+<a id='L233' name='L233'></a>
+<a id='L234' name='L234'></a>        printf("*** test3 - duk_pcall()\n");
+<a id='L235' name='L235'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(ctx, <a href='../S/326.html#L108' title='Defined at 108 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test3</a>, 0);
+<a id='L236' name='L236'></a>        rc = <a href='../D/5496.html' title='Multiple defined in 4 places.'>duk_pcall</a>(ctx, 0);
+<a id='L237' name='L237'></a>        printf("--&gt; rc=%ld (%s)\n", (<strong class='reserved'>long</strong>) rc, <a href='../D/5752.html' title='Multiple defined in 3 places.'>duk_safe_to_string</a>(ctx, -1));
+<a id='L238' name='L238'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L239' name='L239'></a>        printf("\n");
+<a id='L240' name='L240'></a>
+<a id='L241' name='L241'></a>        printf("*** test3 - duk_safe_call()\n");
+<a id='L242' name='L242'></a>        rc = <a href='../D/5748.html' title='Multiple defined in 4 places.'>duk_safe_call</a>(ctx, <a href='../S/326.html#L115' title='Defined at 115 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test3_safecall</a>, NULL, 0, 1);
+<a id='L243' name='L243'></a>        printf("--&gt; rc=%ld (%s)\n", (<strong class='reserved'>long</strong>) rc, <a href='../D/5752.html' title='Multiple defined in 3 places.'>duk_safe_to_string</a>(ctx, -1));
+<a id='L244' name='L244'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L245' name='L245'></a>        printf("\n");
+<a id='L246' name='L246'></a>
+<a id='L247' name='L247'></a>        printf("*** test3 - ecmascript try-catch\n");
+<a id='L248' name='L248'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(ctx, <a href='../S/326.html#L108' title='Defined at 108 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test3</a>, 0);
+<a id='L249' name='L249'></a>        <a href='../D/5637.html' title='Multiple defined in 4 places.'>duk_put_global_string</a>(ctx, "test3");
+<a id='L250' name='L250'></a>        <a href='../D/5029.html' title='Multiple defined in 3 places.'>duk_eval_string_noresult</a>(ctx,
+<a id='L251' name='L251'></a>                "try {\n"
+<a id='L252' name='L252'></a>                "    test3();\n"
+<a id='L253' name='L253'></a>                "} catch (e) {\n"
+<a id='L254' name='L254'></a>                "    print(e.stack || e);\n"
+<a id='L255' name='L255'></a>                "}\n");
+<a id='L256' name='L256'></a>        printf("\n");
+<a id='L257' name='L257'></a>
+<a id='L258' name='L258'></a>        printf("*** test4 - duk_pcall()\n");
+<a id='L259' name='L259'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(ctx, <a href='../S/326.html#L131' title='Defined at 131 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test4</a>, 0);
+<a id='L260' name='L260'></a>        rc = <a href='../D/5496.html' title='Multiple defined in 4 places.'>duk_pcall</a>(ctx, 0);
+<a id='L261' name='L261'></a>        printf("--&gt; rc=%ld (%s)\n", (<strong class='reserved'>long</strong>) rc, <a href='../D/5752.html' title='Multiple defined in 3 places.'>duk_safe_to_string</a>(ctx, -1));
+<a id='L262' name='L262'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L263' name='L263'></a>        printf("\n");
+<a id='L264' name='L264'></a>
+<a id='L265' name='L265'></a>        printf("*** test4 - duk_safe_call()\n");
+<a id='L266' name='L266'></a>        rc = <a href='../D/5748.html' title='Multiple defined in 4 places.'>duk_safe_call</a>(ctx, <a href='../S/326.html#L139' title='Defined at 139 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test4_safecall</a>, NULL, 0, 1);
+<a id='L267' name='L267'></a>        printf("--&gt; rc=%ld (%s)\n", (<strong class='reserved'>long</strong>) rc, <a href='../D/5752.html' title='Multiple defined in 3 places.'>duk_safe_to_string</a>(ctx, -1));
+<a id='L268' name='L268'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L269' name='L269'></a>        printf("\n");
+<a id='L270' name='L270'></a>
+<a id='L271' name='L271'></a>        printf("*** test4 - ecmascript try-catch\n");
+<a id='L272' name='L272'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(ctx, <a href='../S/326.html#L131' title='Defined at 131 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test4</a>, 0);
+<a id='L273' name='L273'></a>        <a href='../D/5637.html' title='Multiple defined in 4 places.'>duk_put_global_string</a>(ctx, "test4");
+<a id='L274' name='L274'></a>        <a href='../D/5029.html' title='Multiple defined in 3 places.'>duk_eval_string_noresult</a>(ctx,
+<a id='L275' name='L275'></a>                "try {\n"
+<a id='L276' name='L276'></a>                "    test4();\n"
+<a id='L277' name='L277'></a>                "} catch (e) {\n"
+<a id='L278' name='L278'></a>                "    print(e.stack || e);\n"
+<a id='L279' name='L279'></a>                "}\n");
+<a id='L280' name='L280'></a>        printf("\n");
+<a id='L281' name='L281'></a>
+<a id='L282' name='L282'></a>        printf("*** test5 - duk_pcall()\n");
+<a id='L283' name='L283'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(ctx, <a href='../S/326.html#L155' title='Defined at 155 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test5</a>, 0);
+<a id='L284' name='L284'></a>        rc = <a href='../D/5496.html' title='Multiple defined in 4 places.'>duk_pcall</a>(ctx, 0);
+<a id='L285' name='L285'></a>        printf("--&gt; rc=%ld (%s)\n", (<strong class='reserved'>long</strong>) rc, <a href='../D/5752.html' title='Multiple defined in 3 places.'>duk_safe_to_string</a>(ctx, -1));
+<a id='L286' name='L286'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L287' name='L287'></a>        printf("\n");
+<a id='L288' name='L288'></a>
+<a id='L289' name='L289'></a>        printf("*** test5 - duk_safe_call()\n");
+<a id='L290' name='L290'></a>        rc = <a href='../D/5748.html' title='Multiple defined in 4 places.'>duk_safe_call</a>(ctx, <a href='../S/326.html#L163' title='Defined at 163 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test5_safecall</a>, NULL, 0, 1);
+<a id='L291' name='L291'></a>        printf("--&gt; rc=%ld (%s)\n", (<strong class='reserved'>long</strong>) rc, <a href='../D/5752.html' title='Multiple defined in 3 places.'>duk_safe_to_string</a>(ctx, -1));
+<a id='L292' name='L292'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(ctx);
+<a id='L293' name='L293'></a>        printf("\n");
+<a id='L294' name='L294'></a>
+<a id='L295' name='L295'></a>        printf("*** test5 - ecmascript try-catch\n");
+<a id='L296' name='L296'></a>        <a href='../D/5549.html' title='Multiple defined in 4 places.'>duk_push_c_function</a>(ctx, <a href='../S/326.html#L155' title='Defined at 155 in examples/cpp-exceptions/cpp_exceptions.cpp.'>test5</a>, 0);
+<a id='L297' name='L297'></a>        <a href='../D/5637.html' title='Multiple defined in 4 places.'>duk_put_global_string</a>(ctx, "test5");
+<a id='L298' name='L298'></a>        <a href='../D/5029.html' title='Multiple defined in 3 places.'>duk_eval_string_noresult</a>(ctx,
+<a id='L299' name='L299'></a>                "try {\n"
+<a id='L300' name='L300'></a>                "    test5();\n"
+<a id='L301' name='L301'></a>                "} catch (e) {\n"
+<a id='L302' name='L302'></a>                "    print(e.stack || e);\n"
+<a id='L303' name='L303'></a>                "}\n");
+<a id='L304' name='L304'></a>        printf("\n");
+<a id='L305' name='L305'></a>
+<a id='L306' name='L306'></a>        printf("*** done\n");
+<a id='L307' name='L307'></a>
+<a id='L308' name='L308'></a>        <a href='../D/4940.html' title='Multiple defined in 4 places.'>duk_destroy_heap</a>(ctx);
+<a id='L309' name='L309'></a>
+<a id='L310' name='L310'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L311' name='L311'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L66'>[^]</a><a href='#L176'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

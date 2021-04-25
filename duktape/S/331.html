@@ -1,0 +1,452 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>examples/debug-trans-socket/duk_trans_socket_windows.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1004.html'>examples</a>/<a href='../files/1012.html'>debug-trans-socket</a>/duk_trans_socket_windows.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L81'>[^]</a><a href='#L397'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L81' title='Defined at 81.'>duk_trans_socket_init</a></li>
+<li><a href='#L155' title='Defined at 155.'>duk_trans_socket_finish</a></li>
+<li><a href='#L170' title='Defined at 170.'>duk_trans_socket_waitconn</a></li>
+<li><a href='#L219' title='Defined at 219.'>duk_trans_socket_read_cb</a></li>
+<li><a href='#L283' title='Defined at 283.'>duk_trans_socket_write_cb</a></li>
+<li><a href='#L336' title='Defined at 336.'>duk_trans_socket_peek_cb</a></li>
+<li><a href='#L375' title='Defined at 375.'>duk_trans_socket_read_flush_cb</a></li>
+<li><a href='#L397' title='Defined at 397.'>duk_trans_socket_write_flush_cb</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Example debug transport using a Windows TCP socket</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> *  Provides a TCP server socket which a debug client can connect to.</em>
+<a id='L5' name='L5'></a><em class='comment'> *  After that data is just passed through.</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> *  https://msdn.microsoft.com/en-us/library/windows/desktop/ms737593(v=vs.85).aspx</em>
+<a id='L8' name='L8'></a><em class='comment'> *</em>
+<a id='L9' name='L9'></a><em class='comment'> *  Compiling 'duk' with debugger support using MSVC (Visual Studio):</em>
+<a id='L10' name='L10'></a><em class='comment'> *</em>
+<a id='L11' name='L11'></a><em class='comment'> *    &gt; python2 tools\configure.py \</em>
+<a id='L12' name='L12'></a><em class='comment'> *          --output-directory prep</em>
+<a id='L13' name='L13'></a><em class='comment'> *          -DDUK_USE_DEBUGGER_SUPPORT -DDUK_USE_INTERRUPT_COUNTER</em>
+<a id='L14' name='L14'></a><em class='comment'> *    &gt; cl /W3 /O2 /Feduk.exe \</em>
+<a id='L15' name='L15'></a><em class='comment'> *          /DDUK_CMDLINE_DEBUGGER_SUPPORT</em>
+<a id='L16' name='L16'></a><em class='comment'> *          /Iexamples\debug-trans-socket /Iprep</em>
+<a id='L17' name='L17'></a><em class='comment'> *          examples\cmdline\duk_cmdline.c</em>
+<a id='L18' name='L18'></a><em class='comment'> *          examples\debug-trans-socket\duk_trans_socket_windows.c</em>
+<a id='L19' name='L19'></a><em class='comment'> *          prep\duktape.c</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> *  With MinGW:</em>
+<a id='L22' name='L22'></a><em class='comment'> *</em>
+<a id='L23' name='L23'></a><em class='comment'> *    $ python2 tools\configure.py \</em>
+<a id='L24' name='L24'></a><em class='comment'> *          --output-directory prep</em>
+<a id='L25' name='L25'></a><em class='comment'> *          -DDUK_USE_DEBUGGER_SUPPORT -DDUK_USE_INTERRUPT_COUNTER</em>
+<a id='L26' name='L26'></a><em class='comment'> *    $ gcc -oduk.exe -Wall -O2 \</em>
+<a id='L27' name='L27'></a><em class='comment'> *          -DDUK_CMDLINE_DEBUGGER_SUPPORT \</em>
+<a id='L28' name='L28'></a><em class='comment'> *          -Iexamples/debug-trans-socket -Iprep \</em>
+<a id='L29' name='L29'></a><em class='comment'> *          examples/cmdline/duk_cmdline.c \</em>
+<a id='L30' name='L30'></a><em class='comment'> *          examples/debug-trans-socket/duk_trans_socket_windows.c \</em>
+<a id='L31' name='L31'></a><em class='comment'> *          prep/duktape.c -lm -lws2_32</em>
+<a id='L32' name='L32'></a><em class='comment'> */</em>
+<a id='L33' name='L33'></a>
+<a id='L34' name='L34'></a><em class='sharp'>#undef</em> UNICODE
+<a id='L35' name='L35'></a><em class='sharp'>#if</em> !<strong class='reserved'>defined</strong>(<a href='../S/331.html#L36' title='Defined at 36 in examples/debug-trans-socket/duk_trans_socket_windows.c.'>WIN32_LEAN_AND_MEAN</a>)
+<a id='L36' name='L36'></a><em class='sharp'>#define</em> <a href='../S/331.html#L35' title='Referred from 35 in examples/debug-trans-socket/duk_trans_socket_windows.c.'>WIN32_LEAN_AND_MEAN</a>
+<a id='L37' name='L37'></a><em class='sharp'>#endif</em>
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a><em class='comment'>/* MinGW workaround for missing getaddrinfo() etc:</em>
+<a id='L40' name='L40'></a><em class='comment'> * http://programmingrants.blogspot.fi/2009/09/tips-on-undefined-reference-to.html</em>
+<a id='L41' name='L41'></a><em class='comment'> */</em>
+<a id='L42' name='L42'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(__MINGW32__) || <strong class='reserved'>defined</strong>(__MINGW64__)
+<a id='L43' name='L43'></a><em class='sharp'>#if</em> !<strong class='reserved'>defined</strong>(<a href='../S/331.html#L44' title='Defined at 44 in examples/debug-trans-socket/duk_trans_socket_windows.c.'>_WIN32_WINNT</a>)
+<a id='L44' name='L44'></a><em class='sharp'>#define</em> <a href='../R/2967.html' title='Multiple referred from 7 places.'>_WIN32_WINNT</a> 0x0501
+<a id='L45' name='L45'></a><em class='sharp'>#endif</em>
+<a id='L46' name='L46'></a><em class='sharp'>#endif</em>
+<a id='L47' name='L47'></a>
+<a id='L48' name='L48'></a><em class='sharp'>#include</em> &lt;windows.h&gt;
+<a id='L49' name='L49'></a><em class='sharp'>#include</em> &lt;winsock2.h&gt;
+<a id='L50' name='L50'></a><em class='sharp'>#include</em> &lt;ws2tcpip.h&gt;
+<a id='L51' name='L51'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L52' name='L52'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L53' name='L53'></a><em class='sharp'>#include</em> "<a href='../I/204.html'>duktape.h</a>"
+<a id='L54' name='L54'></a><em class='sharp'>#include</em> "<a href='328.html'>duk_trans_socket.h</a>"
+<a id='L55' name='L55'></a>
+<a id='L56' name='L56'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(_MSC_VER)
+<a id='L57' name='L57'></a><em class='sharp'>#pragma</em> comment (lib, "Ws2_32.lib")
+<a id='L58' name='L58'></a><em class='sharp'>#endif</em>
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a><em class='sharp'>#if</em> !<strong class='reserved'>defined</strong>(<a href='../D/609.html' title='Multiple defined in 2 places.'>DUK_DEBUG_PORT</a>)
+<a id='L61' name='L61'></a><em class='sharp'>#define</em> <a href='../R/486.html' title='Multiple referred from 6 places.'>DUK_DEBUG_PORT</a> 9091
+<a id='L62' name='L62'></a><em class='sharp'>#endif</em>
+<a id='L63' name='L63'></a><em class='sharp'>#if</em> !<strong class='reserved'>defined</strong>(<a href='../S/331.html#L64' title='Defined at 64 in examples/debug-trans-socket/duk_trans_socket_windows.c.'>DUK_DEBUG_ADDRESS</a>)
+<a id='L64' name='L64'></a><em class='sharp'>#define</em> <a href='../R/484.html' title='Multiple referred from 2 places.'>DUK_DEBUG_ADDRESS</a> "0.0.0.0"
+<a id='L65' name='L65'></a><em class='sharp'>#endif</em>
+<a id='L66' name='L66'></a><em class='sharp'>#define</em> <a href='../S/331.html#L67' title='Referred from 67 in examples/debug-trans-socket/duk_trans_socket_windows.c.'>DUK__STRINGIFY_HELPER</a>(x) #x
+<a id='L67' name='L67'></a><em class='sharp'>#define</em> <a href='../S/331.html#L103' title='Referred from 103 in examples/debug-trans-socket/duk_trans_socket_windows.c.'>DUK__STRINGIFY</a>(x) <a href='../D/3665.html' title='Multiple defined in 2 places.'>DUK__STRINGIFY_HELPER</a>(x)
+<a id='L68' name='L68'></a>
+<a id='L69' name='L69'></a><em class='sharp'>#if</em> 0
+<a id='L70' name='L70'></a><em class='sharp'>#define</em> <a href='../R/11.html' title='Multiple referred from 23 places.'>DEBUG_PRINTS</a>
+<a id='L71' name='L71'></a><em class='sharp'>#endif</em>
+<a id='L72' name='L72'></a>
+<a id='L73' name='L73'></a><strong class='reserved'>static</strong> SOCKET server_sock = INVALID_SOCKET;
+<a id='L74' name='L74'></a><strong class='reserved'>static</strong> SOCKET client_sock = INVALID_SOCKET;
+<a id='L75' name='L75'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> wsa_inited = 0;
+<a id='L76' name='L76'></a>
+<a id='L77' name='L77'></a><em class='comment'>/*</em>
+<a id='L78' name='L78'></a><em class='comment'> *  Transport init and finish</em>
+<a id='L79' name='L79'></a><em class='comment'> */</em>
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a><strong class='reserved'>void</strong> <a href='../R/5038.html' title='Multiple referred from 3 places.'>duk_trans_socket_init</a>(<strong class='reserved'>void</strong>) <em class='brace'>{</em>
+<a id='L82' name='L82'></a>        WSADATA wsa_data;
+<a id='L83' name='L83'></a>        <strong class='reserved'>struct</strong> addrinfo hints;
+<a id='L84' name='L84'></a>        <strong class='reserved'>struct</strong> addrinfo *result = NULL;
+<a id='L85' name='L85'></a>        <strong class='reserved'>int</strong> rc;
+<a id='L86' name='L86'></a>
+<a id='L87' name='L87'></a>        memset((<strong class='reserved'>void</strong> *) &amp;wsa_data, 0, <strong class='reserved'>sizeof</strong>(wsa_data));
+<a id='L88' name='L88'></a>        memset((<strong class='reserved'>void</strong> *) &amp;hints, 0, <strong class='reserved'>sizeof</strong>(hints));
+<a id='L89' name='L89'></a>
+<a id='L90' name='L90'></a>        rc = WSAStartup(MAKEWORD(2, 2), &amp;wsa_data);
+<a id='L91' name='L91'></a>        <strong class='reserved'>if</strong> (rc != 0) <em class='brace'>{</em>
+<a id='L92' name='L92'></a>                fprintf(stderr, "%s: WSAStartup() failed: %d\n", __FILE__, rc);
+<a id='L93' name='L93'></a>                fflush(stderr);
+<a id='L94' name='L94'></a>                <strong class='reserved'>goto</strong> fail;
+<a id='L95' name='L95'></a>        <em class='brace'>}</em>
+<a id='L96' name='L96'></a>        wsa_inited = 1;
+<a id='L97' name='L97'></a>
+<a id='L98' name='L98'></a>        hints.ai_family = AF_UNSPEC;
+<a id='L99' name='L99'></a>        hints.ai_socktype = SOCK_STREAM;
+<a id='L100' name='L100'></a>        hints.ai_protocol = IPPROTO_TCP;
+<a id='L101' name='L101'></a>        hints.ai_flags = AI_PASSIVE;
+<a id='L102' name='L102'></a>
+<a id='L103' name='L103'></a>        rc = getaddrinfo(<a href='../S/331.html#L64' title='Defined at 64 in examples/debug-trans-socket/duk_trans_socket_windows.c.'>DUK_DEBUG_ADDRESS</a>, <a href='../D/3664.html' title='Multiple defined in 2 places.'>DUK__STRINGIFY</a>(<a href='../D/609.html' title='Multiple defined in 2 places.'>DUK_DEBUG_PORT</a>), &amp;hints, &amp;result);
+<a id='L104' name='L104'></a>        <strong class='reserved'>if</strong> (rc != 0) <em class='brace'>{</em>
+<a id='L105' name='L105'></a>                fprintf(stderr, "%s: getaddrinfo() failed: %d\n", __FILE__, rc);
+<a id='L106' name='L106'></a>                fflush(stderr);
+<a id='L107' name='L107'></a>                <strong class='reserved'>goto</strong> fail;
+<a id='L108' name='L108'></a>        <em class='brace'>}</em>
+<a id='L109' name='L109'></a>
+<a id='L110' name='L110'></a>        server_sock = socket(result-&gt;ai_family, result-&gt;ai_socktype, result-&gt;ai_protocol);
+<a id='L111' name='L111'></a>        <strong class='reserved'>if</strong> (server_sock == INVALID_SOCKET) <em class='brace'>{</em>
+<a id='L112' name='L112'></a>                fprintf(stderr, "%s: socket() failed with error: %ld\n",
+<a id='L113' name='L113'></a>                        __FILE__, (<strong class='reserved'>long</strong>) WSAGetLastError());
+<a id='L114' name='L114'></a>                fflush(stderr);
+<a id='L115' name='L115'></a>                <strong class='reserved'>goto</strong> fail;
+<a id='L116' name='L116'></a>        <em class='brace'>}</em>
+<a id='L117' name='L117'></a>
+<a id='L118' name='L118'></a>        rc = bind(server_sock, result-&gt;ai_addr, (<strong class='reserved'>int</strong>) result-&gt;ai_addrlen);
+<a id='L119' name='L119'></a>        <strong class='reserved'>if</strong> (rc == SOCKET_ERROR) <em class='brace'>{</em>
+<a id='L120' name='L120'></a>                fprintf(stderr, "%s: bind() failed with error: %ld\n",
+<a id='L121' name='L121'></a>                        __FILE__, (<strong class='reserved'>long</strong>) WSAGetLastError());
+<a id='L122' name='L122'></a>                fflush(stderr);
+<a id='L123' name='L123'></a>                <strong class='reserved'>goto</strong> fail;
+<a id='L124' name='L124'></a>        <em class='brace'>}</em>
+<a id='L125' name='L125'></a>
+<a id='L126' name='L126'></a>        rc = listen(server_sock, SOMAXCONN);
+<a id='L127' name='L127'></a>        <strong class='reserved'>if</strong> (rc == SOCKET_ERROR) <em class='brace'>{</em>
+<a id='L128' name='L128'></a>                fprintf(stderr, "%s: listen() failed with error: %ld\n",
+<a id='L129' name='L129'></a>                        __FILE__, (<strong class='reserved'>long</strong>) WSAGetLastError());
+<a id='L130' name='L130'></a>                fflush(stderr);
+<a id='L131' name='L131'></a>                <strong class='reserved'>goto</strong> fail;
+<a id='L132' name='L132'></a>        <em class='brace'>}</em>
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a>        <strong class='reserved'>if</strong> (result != NULL) <em class='brace'>{</em>
+<a id='L135' name='L135'></a>                freeaddrinfo(result);
+<a id='L136' name='L136'></a>                result = NULL;
+<a id='L137' name='L137'></a>        <em class='brace'>}</em>
+<a id='L138' name='L138'></a>        <strong class='reserved'>return</strong>;
+<a id='L139' name='L139'></a>
+<a id='L140' name='L140'></a> fail:
+<a id='L141' name='L141'></a>        <strong class='reserved'>if</strong> (result != NULL) <em class='brace'>{</em>
+<a id='L142' name='L142'></a>                freeaddrinfo(result);
+<a id='L143' name='L143'></a>                result = NULL;
+<a id='L144' name='L144'></a>        <em class='brace'>}</em>
+<a id='L145' name='L145'></a>        <strong class='reserved'>if</strong> (server_sock != INVALID_SOCKET) <em class='brace'>{</em>
+<a id='L146' name='L146'></a>                (<strong class='reserved'>void</strong>) closesocket(server_sock);
+<a id='L147' name='L147'></a>                server_sock = INVALID_SOCKET;
+<a id='L148' name='L148'></a>        <em class='brace'>}</em>
+<a id='L149' name='L149'></a>        <strong class='reserved'>if</strong> (wsa_inited) <em class='brace'>{</em>
+<a id='L150' name='L150'></a>                WSACleanup();
+<a id='L151' name='L151'></a>                wsa_inited = 0;
+<a id='L152' name='L152'></a>        <em class='brace'>}</em>
+<a id='L153' name='L153'></a><em class='brace'>}</em>
+<a id='L154' name='L154'></a>
+<a id='L155' name='L155'></a><strong class='reserved'>void</strong> <a href='../R/5037.html' title='Multiple referred from 2 places.'>duk_trans_socket_finish</a>(<strong class='reserved'>void</strong>) <em class='brace'>{</em>
+<a id='L156' name='L156'></a>        <strong class='reserved'>if</strong> (client_sock != INVALID_SOCKET) <em class='brace'>{</em>
+<a id='L157' name='L157'></a>                (<strong class='reserved'>void</strong>) closesocket(client_sock);
+<a id='L158' name='L158'></a>                client_sock = INVALID_SOCKET;
+<a id='L159' name='L159'></a>        <em class='brace'>}</em>
+<a id='L160' name='L160'></a>        <strong class='reserved'>if</strong> (server_sock != INVALID_SOCKET) <em class='brace'>{</em>
+<a id='L161' name='L161'></a>                (<strong class='reserved'>void</strong>) closesocket(server_sock);
+<a id='L162' name='L162'></a>                server_sock = INVALID_SOCKET;
+<a id='L163' name='L163'></a>        <em class='brace'>}</em>
+<a id='L164' name='L164'></a>        <strong class='reserved'>if</strong> (wsa_inited) <em class='brace'>{</em>
+<a id='L165' name='L165'></a>                WSACleanup();
+<a id='L166' name='L166'></a>                wsa_inited = 0;
+<a id='L167' name='L167'></a>        <em class='brace'>}</em>
+<a id='L168' name='L168'></a><em class='brace'>}</em>
+<a id='L169' name='L169'></a>
+<a id='L170' name='L170'></a><strong class='reserved'>void</strong> <a href='../R/5042.html' title='Multiple referred from 3 places.'>duk_trans_socket_waitconn</a>(<strong class='reserved'>void</strong>) <em class='brace'>{</em>
+<a id='L171' name='L171'></a>        <strong class='reserved'>if</strong> (server_sock == INVALID_SOCKET) <em class='brace'>{</em>
+<a id='L172' name='L172'></a>                fprintf(stderr, "%s: no server socket, skip waiting for connection\n",
+<a id='L173' name='L173'></a>                        __FILE__);
+<a id='L174' name='L174'></a>                fflush(stderr);
+<a id='L175' name='L175'></a>                <strong class='reserved'>return</strong>;
+<a id='L176' name='L176'></a>        <em class='brace'>}</em>
+<a id='L177' name='L177'></a>        <strong class='reserved'>if</strong> (client_sock != INVALID_SOCKET) <em class='brace'>{</em>
+<a id='L178' name='L178'></a>                (<strong class='reserved'>void</strong>) closesocket(client_sock);
+<a id='L179' name='L179'></a>                client_sock = INVALID_SOCKET;
+<a id='L180' name='L180'></a>        <em class='brace'>}</em>
+<a id='L181' name='L181'></a>
+<a id='L182' name='L182'></a>        fprintf(stderr, "Waiting for debug connection on port %d\n", (<strong class='reserved'>int</strong>) <a href='../D/609.html' title='Multiple defined in 2 places.'>DUK_DEBUG_PORT</a>);
+<a id='L183' name='L183'></a>        fflush(stderr);
+<a id='L184' name='L184'></a>
+<a id='L185' name='L185'></a>        client_sock = accept(server_sock, NULL, NULL);
+<a id='L186' name='L186'></a>        <strong class='reserved'>if</strong> (client_sock == INVALID_SOCKET) <em class='brace'>{</em>
+<a id='L187' name='L187'></a>                fprintf(stderr, "%s: accept() failed with error %ld, skip waiting for connection\n",
+<a id='L188' name='L188'></a>                        __FILE__, (<strong class='reserved'>long</strong>) WSAGetLastError());
+<a id='L189' name='L189'></a>                fflush(stderr);
+<a id='L190' name='L190'></a>                <strong class='reserved'>goto</strong> fail;
+<a id='L191' name='L191'></a>        <em class='brace'>}</em>
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a>        fprintf(stderr, "Debug connection established\n");
+<a id='L194' name='L194'></a>        fflush(stderr);
+<a id='L195' name='L195'></a>
+<a id='L196' name='L196'></a>        <em class='comment'>/* XXX: For now, close the listen socket because we won't accept new</em>
+<a id='L197' name='L197'></a><em class='comment'>         * connections anyway.  A better implementation would allow multiple</em>
+<a id='L198' name='L198'></a><em class='comment'>         * debug attaches.</em>
+<a id='L199' name='L199'></a><em class='comment'>         */</em>
+<a id='L200' name='L200'></a>
+<a id='L201' name='L201'></a>        <strong class='reserved'>if</strong> (server_sock != INVALID_SOCKET) <em class='brace'>{</em>
+<a id='L202' name='L202'></a>                (<strong class='reserved'>void</strong>) closesocket(server_sock);
+<a id='L203' name='L203'></a>                server_sock = INVALID_SOCKET;
+<a id='L204' name='L204'></a>        <em class='brace'>}</em>
+<a id='L205' name='L205'></a>        <strong class='reserved'>return</strong>;
+<a id='L206' name='L206'></a>
+<a id='L207' name='L207'></a> fail:
+<a id='L208' name='L208'></a>        <strong class='reserved'>if</strong> (client_sock != INVALID_SOCKET) <em class='brace'>{</em>
+<a id='L209' name='L209'></a>                (<strong class='reserved'>void</strong>) closesocket(client_sock);
+<a id='L210' name='L210'></a>                client_sock = INVALID_SOCKET;
+<a id='L211' name='L211'></a>        <em class='brace'>}</em>
+<a id='L212' name='L212'></a><em class='brace'>}</em>
+<a id='L213' name='L213'></a>
+<a id='L214' name='L214'></a><em class='comment'>/*</em>
+<a id='L215' name='L215'></a><em class='comment'> *  Duktape callbacks</em>
+<a id='L216' name='L216'></a><em class='comment'> */</em>
+<a id='L217' name='L217'></a>
+<a id='L218' name='L218'></a><em class='comment'>/* Duktape debug transport callback: (possibly partial) read. */</em>
+<a id='L219' name='L219'></a><a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> <a href='../R/5040.html' title='Multiple referred from 3 places.'>duk_trans_socket_read_cb</a>(<strong class='reserved'>void</strong> *udata, <strong class='reserved'>char</strong> *buffer, <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> length) <em class='brace'>{</em>
+<a id='L220' name='L220'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L221' name='L221'></a>
+<a id='L222' name='L222'></a>        (<strong class='reserved'>void</strong>) udata;  <em class='comment'>/* not needed by the example */</em>
+<a id='L223' name='L223'></a>
+<a id='L224' name='L224'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/11.html' title='Multiple defined in 3 places.'>DEBUG_PRINTS</a>)
+<a id='L225' name='L225'></a>        fprintf(stderr, "%s: udata=%p, buffer=%p, length=%ld\n",
+<a id='L226' name='L226'></a>                __FUNCTION__, (<strong class='reserved'>void</strong> *) udata, (<strong class='reserved'>void</strong> *) buffer, (<strong class='reserved'>long</strong>) length);
+<a id='L227' name='L227'></a>        fflush(stderr);
+<a id='L228' name='L228'></a><em class='sharp'>#endif</em>
+<a id='L229' name='L229'></a>
+<a id='L230' name='L230'></a>        <strong class='reserved'>if</strong> (client_sock == INVALID_SOCKET) <em class='brace'>{</em>
+<a id='L231' name='L231'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L232' name='L232'></a>        <em class='brace'>}</em>
+<a id='L233' name='L233'></a>
+<a id='L234' name='L234'></a>        <strong class='reserved'>if</strong> (length == 0) <em class='brace'>{</em>
+<a id='L235' name='L235'></a>                <em class='comment'>/* This shouldn't happen. */</em>
+<a id='L236' name='L236'></a>                fprintf(stderr, "%s: read request length == 0, closing connection\n",
+<a id='L237' name='L237'></a>                        __FILE__);
+<a id='L238' name='L238'></a>                fflush(stderr);
+<a id='L239' name='L239'></a>                <strong class='reserved'>goto</strong> fail;
+<a id='L240' name='L240'></a>        <em class='brace'>}</em>
+<a id='L241' name='L241'></a>
+<a id='L242' name='L242'></a>        <strong class='reserved'>if</strong> (buffer == NULL) <em class='brace'>{</em>
+<a id='L243' name='L243'></a>                <em class='comment'>/* This shouldn't happen. */</em>
+<a id='L244' name='L244'></a>                fprintf(stderr, "%s: read request buffer == NULL, closing connection\n",
+<a id='L245' name='L245'></a>                        __FILE__);
+<a id='L246' name='L246'></a>                fflush(stderr);
+<a id='L247' name='L247'></a>                <strong class='reserved'>goto</strong> fail;
+<a id='L248' name='L248'></a>        <em class='brace'>}</em>
+<a id='L249' name='L249'></a>
+<a id='L250' name='L250'></a>        <em class='comment'>/* In a production quality implementation there would be a sanity</em>
+<a id='L251' name='L251'></a><em class='comment'>         * timeout here to recover from "black hole" disconnects.</em>
+<a id='L252' name='L252'></a><em class='comment'>         */</em>
+<a id='L253' name='L253'></a>
+<a id='L254' name='L254'></a>        ret = recv(client_sock, buffer, (<strong class='reserved'>int</strong>) length, 0);
+<a id='L255' name='L255'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L256' name='L256'></a>                fprintf(stderr, "%s: debug read failed, error %d, closing connection\n",
+<a id='L257' name='L257'></a>                        __FILE__, ret);
+<a id='L258' name='L258'></a>                fflush(stderr);
+<a id='L259' name='L259'></a>                <strong class='reserved'>goto</strong> fail;
+<a id='L260' name='L260'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (ret == 0) <em class='brace'>{</em>
+<a id='L261' name='L261'></a>                fprintf(stderr, "%s: debug read failed, ret == 0 (EOF), closing connection\n",
+<a id='L262' name='L262'></a>                        __FILE__);
+<a id='L263' name='L263'></a>                fflush(stderr);
+<a id='L264' name='L264'></a>                <strong class='reserved'>goto</strong> fail;
+<a id='L265' name='L265'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (ret &gt; (<strong class='reserved'>int</strong>) length) <em class='brace'>{</em>
+<a id='L266' name='L266'></a>                fprintf(stderr, "%s: debug read failed, ret too large (%ld &gt; %ld), closing connection\n",
+<a id='L267' name='L267'></a>                        __FILE__, (<strong class='reserved'>long</strong>) ret, (<strong class='reserved'>long</strong>) length);
+<a id='L268' name='L268'></a>                fflush(stderr);
+<a id='L269' name='L269'></a>                <strong class='reserved'>goto</strong> fail;
+<a id='L270' name='L270'></a>        <em class='brace'>}</em>
+<a id='L271' name='L271'></a>
+<a id='L272' name='L272'></a>        <strong class='reserved'>return</strong> (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) ret;
+<a id='L273' name='L273'></a>
+<a id='L274' name='L274'></a> fail:
+<a id='L275' name='L275'></a>        <strong class='reserved'>if</strong> (client_sock != INVALID_SOCKET) <em class='brace'>{</em>
+<a id='L276' name='L276'></a>                (<strong class='reserved'>void</strong>) closesocket(client_sock);
+<a id='L277' name='L277'></a>                client_sock = INVALID_SOCKET;
+<a id='L278' name='L278'></a>        <em class='brace'>}</em>
+<a id='L279' name='L279'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L280' name='L280'></a><em class='brace'>}</em>
+<a id='L281' name='L281'></a>
+<a id='L282' name='L282'></a><em class='comment'>/* Duktape debug transport callback: (possibly partial) write. */</em>
+<a id='L283' name='L283'></a><a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> <a href='../R/5043.html' title='Multiple referred from 3 places.'>duk_trans_socket_write_cb</a>(<strong class='reserved'>void</strong> *udata, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *buffer, <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> length) <em class='brace'>{</em>
+<a id='L284' name='L284'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L285' name='L285'></a>
+<a id='L286' name='L286'></a>        (<strong class='reserved'>void</strong>) udata;  <em class='comment'>/* not needed by the example */</em>
+<a id='L287' name='L287'></a>
+<a id='L288' name='L288'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/11.html' title='Multiple defined in 3 places.'>DEBUG_PRINTS</a>)
+<a id='L289' name='L289'></a>        fprintf(stderr, "%s: udata=%p, buffer=%p, length=%ld\n",
+<a id='L290' name='L290'></a>                __FUNCTION__, (<strong class='reserved'>void</strong> *) udata, (<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *) buffer, (<strong class='reserved'>long</strong>) length);
+<a id='L291' name='L291'></a>        fflush(stderr);
+<a id='L292' name='L292'></a><em class='sharp'>#endif</em>
+<a id='L293' name='L293'></a>
+<a id='L294' name='L294'></a>        <strong class='reserved'>if</strong> (client_sock == INVALID_SOCKET) <em class='brace'>{</em>
+<a id='L295' name='L295'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L296' name='L296'></a>        <em class='brace'>}</em>
+<a id='L297' name='L297'></a>
+<a id='L298' name='L298'></a>        <strong class='reserved'>if</strong> (length == 0) <em class='brace'>{</em>
+<a id='L299' name='L299'></a>                <em class='comment'>/* This shouldn't happen. */</em>
+<a id='L300' name='L300'></a>                fprintf(stderr, "%s: write request length == 0, closing connection\n",
+<a id='L301' name='L301'></a>                        __FILE__);
+<a id='L302' name='L302'></a>                fflush(stderr);
+<a id='L303' name='L303'></a>                <strong class='reserved'>goto</strong> fail;
+<a id='L304' name='L304'></a>        <em class='brace'>}</em>
+<a id='L305' name='L305'></a>
+<a id='L306' name='L306'></a>        <strong class='reserved'>if</strong> (buffer == NULL) <em class='brace'>{</em>
+<a id='L307' name='L307'></a>                <em class='comment'>/* This shouldn't happen. */</em>
+<a id='L308' name='L308'></a>                fprintf(stderr, "%s: write request buffer == NULL, closing connection\n",
+<a id='L309' name='L309'></a>                        __FILE__);
+<a id='L310' name='L310'></a>                fflush(stderr);
+<a id='L311' name='L311'></a>                <strong class='reserved'>goto</strong> fail;
+<a id='L312' name='L312'></a>        <em class='brace'>}</em>
+<a id='L313' name='L313'></a>
+<a id='L314' name='L314'></a>        <em class='comment'>/* In a production quality implementation there would be a sanity</em>
+<a id='L315' name='L315'></a><em class='comment'>         * timeout here to recover from "black hole" disconnects.</em>
+<a id='L316' name='L316'></a><em class='comment'>         */</em>
+<a id='L317' name='L317'></a>
+<a id='L318' name='L318'></a>        ret = send(client_sock, buffer, (<strong class='reserved'>int</strong>) length, 0);
+<a id='L319' name='L319'></a>        <strong class='reserved'>if</strong> (ret &lt;= 0 || ret &gt; (<strong class='reserved'>int</strong>) length) <em class='brace'>{</em>
+<a id='L320' name='L320'></a>                fprintf(stderr, "%s: debug write failed, ret %d, closing connection\n",
+<a id='L321' name='L321'></a>                        __FILE__, ret);
+<a id='L322' name='L322'></a>                fflush(stderr);
+<a id='L323' name='L323'></a>                <strong class='reserved'>goto</strong> fail;
+<a id='L324' name='L324'></a>        <em class='brace'>}</em>
+<a id='L325' name='L325'></a>
+<a id='L326' name='L326'></a>        <strong class='reserved'>return</strong> (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) ret;
+<a id='L327' name='L327'></a>
+<a id='L328' name='L328'></a> fail:
+<a id='L329' name='L329'></a>        <strong class='reserved'>if</strong> (client_sock != INVALID_SOCKET) <em class='brace'>{</em>
+<a id='L330' name='L330'></a>                (<strong class='reserved'>void</strong>) closesocket(INVALID_SOCKET);
+<a id='L331' name='L331'></a>                client_sock = INVALID_SOCKET;
+<a id='L332' name='L332'></a>        <em class='brace'>}</em>
+<a id='L333' name='L333'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L334' name='L334'></a><em class='brace'>}</em>
+<a id='L335' name='L335'></a>
+<a id='L336' name='L336'></a><a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> <a href='../R/5039.html' title='Multiple referred from 3 places.'>duk_trans_socket_peek_cb</a>(<strong class='reserved'>void</strong> *udata) <em class='brace'>{</em>
+<a id='L337' name='L337'></a>        u_long avail;
+<a id='L338' name='L338'></a>        <strong class='reserved'>int</strong> rc;
+<a id='L339' name='L339'></a>
+<a id='L340' name='L340'></a>        (<strong class='reserved'>void</strong>) udata;  <em class='comment'>/* not needed by the example */</em>
+<a id='L341' name='L341'></a>
+<a id='L342' name='L342'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/11.html' title='Multiple defined in 3 places.'>DEBUG_PRINTS</a>)
+<a id='L343' name='L343'></a>        fprintf(stderr, "%s: udata=%p\n", __FUNCTION__, (<strong class='reserved'>void</strong> *) udata);
+<a id='L344' name='L344'></a>        fflush(stderr);
+<a id='L345' name='L345'></a><em class='sharp'>#endif</em>
+<a id='L346' name='L346'></a>
+<a id='L347' name='L347'></a>        <strong class='reserved'>if</strong> (client_sock == INVALID_SOCKET) <em class='brace'>{</em>
+<a id='L348' name='L348'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L349' name='L349'></a>        <em class='brace'>}</em>
+<a id='L350' name='L350'></a>
+<a id='L351' name='L351'></a>        avail = 0;
+<a id='L352' name='L352'></a>        rc = ioctlsocket(client_sock, FIONREAD, &amp;avail);
+<a id='L353' name='L353'></a>        <strong class='reserved'>if</strong> (rc != 0) <em class='brace'>{</em>
+<a id='L354' name='L354'></a>                fprintf(stderr, "%s: ioctlsocket() returned %d, closing connection\n",
+<a id='L355' name='L355'></a>                        __FILE__, rc);
+<a id='L356' name='L356'></a>                fflush(stderr);
+<a id='L357' name='L357'></a>                <strong class='reserved'>goto</strong> fail;  <em class='comment'>/* also returns 0, which is correct */</em>
+<a id='L358' name='L358'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L359' name='L359'></a>                <strong class='reserved'>if</strong> (avail == 0) <em class='brace'>{</em>
+<a id='L360' name='L360'></a>                        <strong class='reserved'>return</strong> 0;  <em class='comment'>/* nothing to read */</em>
+<a id='L361' name='L361'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L362' name='L362'></a>                        <strong class='reserved'>return</strong> 1;  <em class='comment'>/* something to read */</em>
+<a id='L363' name='L363'></a>                <em class='brace'>}</em>
+<a id='L364' name='L364'></a>        <em class='brace'>}</em>
+<a id='L365' name='L365'></a>        <em class='comment'>/* never here */</em>
+<a id='L366' name='L366'></a>
+<a id='L367' name='L367'></a> fail:
+<a id='L368' name='L368'></a>        <strong class='reserved'>if</strong> (client_sock != INVALID_SOCKET) <em class='brace'>{</em>
+<a id='L369' name='L369'></a>                (<strong class='reserved'>void</strong>) closesocket(client_sock);
+<a id='L370' name='L370'></a>                client_sock = INVALID_SOCKET;
+<a id='L371' name='L371'></a>        <em class='brace'>}</em>
+<a id='L372' name='L372'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L373' name='L373'></a><em class='brace'>}</em>
+<a id='L374' name='L374'></a>
+<a id='L375' name='L375'></a><strong class='reserved'>void</strong> <a href='../R/5041.html' title='Multiple referred from 3 places.'>duk_trans_socket_read_flush_cb</a>(<strong class='reserved'>void</strong> *udata) <em class='brace'>{</em>
+<a id='L376' name='L376'></a>        (<strong class='reserved'>void</strong>) udata;  <em class='comment'>/* not needed by the example */</em>
+<a id='L377' name='L377'></a>
+<a id='L378' name='L378'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/11.html' title='Multiple defined in 3 places.'>DEBUG_PRINTS</a>)
+<a id='L379' name='L379'></a>        fprintf(stderr, "%s: udata=%p\n", __FUNCTION__, (<strong class='reserved'>void</strong> *) udata);
+<a id='L380' name='L380'></a>        fflush(stderr);
+<a id='L381' name='L381'></a><em class='sharp'>#endif</em>
+<a id='L382' name='L382'></a>
+<a id='L383' name='L383'></a>        <em class='comment'>/* Read flush: Duktape may not be making any more read calls at this</em>
+<a id='L384' name='L384'></a><em class='comment'>         * time.  If the transport maintains a receive window, it can use a</em>
+<a id='L385' name='L385'></a><em class='comment'>         * read flush as a signal to update the window status to the remote</em>
+<a id='L386' name='L386'></a><em class='comment'>         * peer.  A read flush is guaranteed to occur before Duktape stops</em>
+<a id='L387' name='L387'></a><em class='comment'>         * reading for a while; it may occur in other situations as well so</em>
+<a id='L388' name='L388'></a><em class='comment'>         * it's not a 100% reliable indication.</em>
+<a id='L389' name='L389'></a><em class='comment'>         */</em>
+<a id='L390' name='L390'></a>
+<a id='L391' name='L391'></a>        <em class='comment'>/* This TCP transport requires no read flush handling so ignore.</em>
+<a id='L392' name='L392'></a><em class='comment'>         * You can also pass a NULL to duk_debugger_attach() and not</em>
+<a id='L393' name='L393'></a><em class='comment'>         * implement this callback at all.</em>
+<a id='L394' name='L394'></a><em class='comment'>         */</em>
+<a id='L395' name='L395'></a><em class='brace'>}</em>
+<a id='L396' name='L396'></a>
+<a id='L397' name='L397'></a><strong class='reserved'>void</strong> <a href='../R/5044.html' title='Multiple referred from 3 places.'>duk_trans_socket_write_flush_cb</a>(<strong class='reserved'>void</strong> *udata) <em class='brace'>{</em>
+<a id='L398' name='L398'></a>        (<strong class='reserved'>void</strong>) udata;  <em class='comment'>/* not needed by the example */</em>
+<a id='L399' name='L399'></a>
+<a id='L400' name='L400'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/11.html' title='Multiple defined in 3 places.'>DEBUG_PRINTS</a>)
+<a id='L401' name='L401'></a>        fprintf(stderr, "%s: udata=%p\n", __FUNCTION__, (<strong class='reserved'>void</strong> *) udata);
+<a id='L402' name='L402'></a>        fflush(stderr);
+<a id='L403' name='L403'></a><em class='sharp'>#endif</em>
+<a id='L404' name='L404'></a>
+<a id='L405' name='L405'></a>        <em class='comment'>/* Write flush.  If the transport combines multiple writes</em>
+<a id='L406' name='L406'></a><em class='comment'>         * before actually sending, a write flush is an indication</em>
+<a id='L407' name='L407'></a><em class='comment'>         * to write out any pending bytes: Duktape may not be doing</em>
+<a id='L408' name='L408'></a><em class='comment'>         * any more writes on this occasion.</em>
+<a id='L409' name='L409'></a><em class='comment'>         */</em>
+<a id='L410' name='L410'></a>
+<a id='L411' name='L411'></a>        <em class='comment'>/* This TCP transport requires no write flush handling so ignore.</em>
+<a id='L412' name='L412'></a><em class='comment'>         * You can also pass a NULL to duk_debugger_attach() and not</em>
+<a id='L413' name='L413'></a><em class='comment'>         * implement this callback at all.</em>
+<a id='L414' name='L414'></a><em class='comment'>         */</em>
+<a id='L415' name='L415'></a>        <strong class='reserved'>return</strong>;
+<a id='L416' name='L416'></a><em class='brace'>}</em>
+<a id='L417' name='L417'></a>
+<a id='L418' name='L418'></a><em class='sharp'>#undef</em> <a href='../S/331.html#L67' title='Referred from 67 in examples/debug-trans-socket/duk_trans_socket_windows.c.'>DUK__STRINGIFY_HELPER</a>
+<a id='L419' name='L419'></a><em class='sharp'>#undef</em> <a href='../S/331.html#L103' title='Referred from 103 in examples/debug-trans-socket/duk_trans_socket_windows.c.'>DUK__STRINGIFY</a>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L81'>[^]</a><a href='#L397'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

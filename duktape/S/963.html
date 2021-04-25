@@ -1,0 +1,653 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>extras/alloc-pool/duk_alloc_pool.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1020.html'>extras</a>/<a href='../files/1021.html'>alloc-pool</a>/duk_alloc_pool.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L38'>[^]</a><a href='#L591'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L38' title='Defined at 38.'>duk__alloc_pool_dprintf</a></li>
+<li><a href='#L50' title='Defined at 50.'>duk_alloc_pool_init</a></li>
+<li><a href='#L225' title='Defined at 225.'>duk__alloc_pool_set_waste_marker</a></li>
+<li><a href='#L243' title='Defined at 243.'>duk__alloc_pool_set_waste_marker</a></li>
+<li><a href='#L249' title='Defined at 249.'>duk__alloc_pool_get_waste_estimate</a></li>
+<li><a href='#L273' title='Defined at 273.'>duk__alloc_pool_get_waste_estimate</a></li>
+<li><a href='#L279' title='Defined at 279.'>duk__alloc_pool_ptr_in_freelist</a></li>
+<li><a href='#L290' title='Defined at 290.'>duk_alloc_pool_get_pool_stats</a></li>
+<li><a href='#L321' title='Defined at 321.'>duk_alloc_pool_get_global_stats</a></li>
+<li><a href='#L351' title='Defined at 351.'>duk__alloc_pool_update_highwater</a></li>
+<li><a href='#L398' title='Defined at 398.'>duk__alloc_pool_update_highwater</a></li>
+<li><a href='#L407' title='Defined at 407.'>duk_alloc_pool</a></li>
+<li><a href='#L441' title='Defined at 441.'>duk_realloc_pool</a></li>
+<li><a href='#L532' title='Defined at 532.'>duk_free_pool</a></li>
+<li><a href='#L570' title='Defined at 570.'>duk__alloc_pool_romptr_init</a></li>
+<li><a href='#L591' title='Defined at 591.'>duk_alloc_pool_enc16_rom</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Pool allocator for low memory targets.</em>
+<a id='L3' name='L3'></a><em class='comment'> */</em>
+<a id='L4' name='L4'></a>
+<a id='L5' name='L5'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L6' name='L6'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L7' name='L7'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L8' name='L8'></a><em class='sharp'>#include</em> &lt;stdint.h&gt;
+<a id='L9' name='L9'></a><em class='sharp'>#include</em> &lt;stdarg.h&gt;
+<a id='L10' name='L10'></a><em class='sharp'>#include</em> "<a href='../I/204.html'>duktape.h</a>"
+<a id='L11' name='L11'></a><em class='sharp'>#include</em> "<a href='961.html'>duk_alloc_pool.h</a>"
+<a id='L12' name='L12'></a>
+<a id='L13' name='L13'></a><em class='comment'>/* Define to enable some debug printfs. */</em>
+<a id='L14' name='L14'></a><em class='comment'>/* #define DUK_ALLOC_POOL_DEBUG */</em>
+<a id='L15' name='L15'></a>
+<a id='L16' name='L16'></a><em class='comment'>/* Define to enable approximate waste tracking. */</em>
+<a id='L17' name='L17'></a><em class='comment'>/* #define DUK_ALLOC_POOL_TRACK_WASTE */</em>
+<a id='L18' name='L18'></a>
+<a id='L19' name='L19'></a><em class='comment'>/* Define to track global highwater for used and waste bytes.  VERY SLOW, only</em>
+<a id='L20' name='L20'></a><em class='comment'> * useful for manual testing.</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a><em class='comment'>/* #define DUK_ALLOC_POOL_TRACK_HIGHWATER */</em>
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/961.html#L24' title='Defined at 24 in extras/alloc-pool/duk_alloc_pool.h.'>DUK_ALLOC_POOL_ROMPTR_COMPRESSION</a>)
+<a id='L25' name='L25'></a><em class='sharp'>#if</em> 0  <em class='comment'>/* This extern declaration is provided by duktape.h, array provided by duktape.c. */</em>
+<a id='L26' name='L26'></a><strong class='reserved'>extern</strong> <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> * <strong class='reserved'>const</strong> duk_rom_compressed_pointers[];
+<a id='L27' name='L27'></a><em class='sharp'>#endif</em>
+<a id='L28' name='L28'></a><strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *duk_alloc_pool_romptr_low = NULL;
+<a id='L29' name='L29'></a><strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *duk_alloc_pool_romptr_high = NULL;
+<a id='L30' name='L30'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../S/963.html#L570' title='Defined at 570 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_romptr_init</a>(<strong class='reserved'>void</strong>);
+<a id='L31' name='L31'></a><em class='sharp'>#endif</em>
+<a id='L32' name='L32'></a>
+<a id='L33' name='L33'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3127.html' title='Multiple defined in 3 places.'>DUK_USE_HEAPPTR16</a>)
+<a id='L34' name='L34'></a><strong class='reserved'>void</strong> *duk_alloc_pool_ptrcomp_base = NULL;
+<a id='L35' name='L35'></a><em class='sharp'>#endif</em>
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_DEBUG)
+<a id='L38' name='L38'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/3004.html' title='Multiple referred from 12 places.'>duk__alloc_pool_dprintf</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *fmt, ...) <em class='brace'>{</em>
+<a id='L39' name='L39'></a>        va_list ap;
+<a id='L40' name='L40'></a>        va_start(ap, fmt);
+<a id='L41' name='L41'></a>        vfprintf(stderr, fmt, ap);
+<a id='L42' name='L42'></a>        va_end(ap);
+<a id='L43' name='L43'></a><em class='brace'>}</em>
+<a id='L44' name='L44'></a><em class='sharp'>#endif</em>
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a><em class='comment'>/*</em>
+<a id='L47' name='L47'></a><em class='comment'> *  Pool initialization</em>
+<a id='L48' name='L48'></a><em class='comment'> */</em>
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a><strong class='reserved'>void</strong> *<a href='../R/3808.html' title='Multiple referred from 3 places.'>duk_alloc_pool_init</a>(<strong class='reserved'>char</strong> *buffer,
+<a id='L51' name='L51'></a>                          size_t size,
+<a id='L52' name='L52'></a>                          <strong class='reserved'>const</strong> <a href='../S/961.html#L39' title='Defined at 39 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_config</a> *configs,
+<a id='L53' name='L53'></a>                          <a href='../S/961.html#L57' title='Defined at 57 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_state</a> *states,
+<a id='L54' name='L54'></a>                          <strong class='reserved'>int</strong> num_pools,
+<a id='L55' name='L55'></a>                          <a href='../S/961.html#L79' title='Defined at 79 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_global</a> *global) <em class='brace'>{</em>
+<a id='L56' name='L56'></a>        <strong class='reserved'>double</strong> t_min, t_max, t_curr, x;
+<a id='L57' name='L57'></a>        <strong class='reserved'>int</strong> step, i, j, n;
+<a id='L58' name='L58'></a>        size_t total;
+<a id='L59' name='L59'></a>        <strong class='reserved'>char</strong> *p;
+<a id='L60' name='L60'></a>
+<a id='L61' name='L61'></a>        <em class='comment'>/* XXX: check that 'size' is not too large when using pointer</em>
+<a id='L62' name='L62'></a><em class='comment'>         * compression.</em>
+<a id='L63' name='L63'></a><em class='comment'>         */</em>
+<a id='L64' name='L64'></a>
+<a id='L65' name='L65'></a>        <em class='comment'>/* To optimize pool counts first come up with a 't' which still allows</em>
+<a id='L66' name='L66'></a><em class='comment'>         * total pool size to fit within user provided region.  After that</em>
+<a id='L67' name='L67'></a><em class='comment'>         * sprinkle any remaining bytes to the counts.  Binary search with a</em>
+<a id='L68' name='L68'></a><em class='comment'>         * fixed step count; last round uses 't_min' as 't_curr' to ensure it</em>
+<a id='L69' name='L69'></a><em class='comment'>         * succeeds.</em>
+<a id='L70' name='L70'></a><em class='comment'>         */</em>
+<a id='L71' name='L71'></a>
+<a id='L72' name='L72'></a>        t_min = 0.0;  <em class='comment'>/* Unless config is insane, this should always be "good". */</em>
+<a id='L73' name='L73'></a>        t_max = 1e6;
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a>        <strong class='reserved'>for</strong> (step = 0; ; step++) <em class='brace'>{</em>
+<a id='L76' name='L76'></a>                <strong class='reserved'>if</strong> (step &gt;= 100) <em class='brace'>{</em>
+<a id='L77' name='L77'></a>                        <em class='comment'>/* Force "known good", rerun config, and break out.</em>
+<a id='L78' name='L78'></a><em class='comment'>                         * Deals with rounding corner cases where t_curr is</em>
+<a id='L79' name='L79'></a><em class='comment'>                         * persistently "bad" even though t_min is a valid</em>
+<a id='L80' name='L80'></a><em class='comment'>                         * solution.</em>
+<a id='L81' name='L81'></a><em class='comment'>                         */</em>
+<a id='L82' name='L82'></a>                        t_curr = t_min;
+<a id='L83' name='L83'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L84' name='L84'></a>                        t_curr = (t_min + t_max) / 2.0;
+<a id='L85' name='L85'></a>                <em class='brace'>}</em>
+<a id='L86' name='L86'></a>
+<a id='L87' name='L87'></a>                <strong class='reserved'>for</strong> (i = 0, total = 0; i &lt; num_pools; i++) <em class='brace'>{</em>
+<a id='L88' name='L88'></a>                        states[i].size = configs[i].size;
+<a id='L89' name='L89'></a>
+<a id='L90' name='L90'></a>                        <em class='comment'>/* Target bytes = A*t + B ==&gt; target count = (A*t + B) / block_size.</em>
+<a id='L91' name='L91'></a><em class='comment'>                         * Rely on A and B being small enough so that 'x' won't wrap.</em>
+<a id='L92' name='L92'></a><em class='comment'>                         */</em>
+<a id='L93' name='L93'></a>                        x = ((<strong class='reserved'>double</strong>) configs[i].a * t_curr + (<strong class='reserved'>double</strong>) configs[i].b) / (<strong class='reserved'>double</strong>) configs[i].size;
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a>                        states[i].count = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong>) x;
+<a id='L96' name='L96'></a>                        total += (size_t) states[i].size * (size_t) states[i].count;
+<a id='L97' name='L97'></a>                        <strong class='reserved'>if</strong> (total &gt; size) <em class='brace'>{</em>
+<a id='L98' name='L98'></a>                                <strong class='reserved'>goto</strong> bad;
+<a id='L99' name='L99'></a>                        <em class='brace'>}</em>
+<a id='L100' name='L100'></a>                <em class='brace'>}</em>
+<a id='L101' name='L101'></a>
+<a id='L102' name='L102'></a>                <em class='comment'>/* t_curr is good. */</em>
+<a id='L103' name='L103'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_DEBUG)
+<a id='L104' name='L104'></a>                <a href='../S/963.html#L38' title='Defined at 38 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_dprintf</a>("duk_alloc_pool_init: step=%d, t=[%lf %lf %lf] -&gt; total %ld/%ld (good)\n",
+<a id='L105' name='L105'></a>                                        step, t_min, t_curr, t_max, (<strong class='reserved'>long</strong>) total, (<strong class='reserved'>long</strong>) size);
+<a id='L106' name='L106'></a><em class='sharp'>#endif</em>
+<a id='L107' name='L107'></a>                <strong class='reserved'>if</strong> (step &gt;= 100) <em class='brace'>{</em>
+<a id='L108' name='L108'></a>                        <em class='comment'>/* Keep state[] initialization state.  The state was</em>
+<a id='L109' name='L109'></a><em class='comment'>                         * created using the highest 't_min'.</em>
+<a id='L110' name='L110'></a><em class='comment'>                         */</em>
+<a id='L111' name='L111'></a>                        <strong class='reserved'>break</strong>;
+<a id='L112' name='L112'></a>                <em class='brace'>}</em>
+<a id='L113' name='L113'></a>                t_min = t_curr;
+<a id='L114' name='L114'></a>                <strong class='reserved'>continue</strong>;
+<a id='L115' name='L115'></a>
+<a id='L116' name='L116'></a>         bad:
+<a id='L117' name='L117'></a>                <em class='comment'>/* t_curr is bad. */</em>
+<a id='L118' name='L118'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_DEBUG)
+<a id='L119' name='L119'></a>                <a href='../S/963.html#L38' title='Defined at 38 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_dprintf</a>("duk_alloc_pool_init: step=%d, t=[%lf %lf %lf] -&gt; total %ld/%ld (bad)\n",
+<a id='L120' name='L120'></a>                                        step, t_min, t_curr, t_max, (<strong class='reserved'>long</strong>) total, (<strong class='reserved'>long</strong>) size);
+<a id='L121' name='L121'></a><em class='sharp'>#endif</em>
+<a id='L122' name='L122'></a>
+<a id='L123' name='L123'></a>                <strong class='reserved'>if</strong> (step &gt;= 1000) <em class='brace'>{</em>
+<a id='L124' name='L124'></a>                        <em class='comment'>/* Cannot find any good solution; shouldn't happen</em>
+<a id='L125' name='L125'></a><em class='comment'>                         * unless config is bad or 'size' is so small that</em>
+<a id='L126' name='L126'></a><em class='comment'>                         * even a baseline allocation won't fit.</em>
+<a id='L127' name='L127'></a><em class='comment'>                         */</em>
+<a id='L128' name='L128'></a>                        <strong class='reserved'>return</strong> NULL;
+<a id='L129' name='L129'></a>                <em class='brace'>}</em>
+<a id='L130' name='L130'></a>                t_max = t_curr;
+<a id='L131' name='L131'></a>                <em class='comment'>/* continue */</em>
+<a id='L132' name='L132'></a>        <em class='brace'>}</em>
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a>        <em class='comment'>/* The base configuration is now good; sprinkle any leftovers to</em>
+<a id='L135' name='L135'></a><em class='comment'>         * pools in descending order.  Note that for good t_curr, 'total'</em>
+<a id='L136' name='L136'></a><em class='comment'>         * indicates allocated bytes so far and 'size - total' indicates</em>
+<a id='L137' name='L137'></a><em class='comment'>         * leftovers.</em>
+<a id='L138' name='L138'></a><em class='comment'>         */</em>
+<a id='L139' name='L139'></a>        <strong class='reserved'>for</strong> (i = num_pools - 1; i &gt;= 0; i--) <em class='brace'>{</em>
+<a id='L140' name='L140'></a>                <strong class='reserved'>while</strong> (size - total &gt;= states[i].size) <em class='brace'>{</em>
+<a id='L141' name='L141'></a>                        <em class='comment'>/* Ignore potential wrapping of states[i].count as the count</em>
+<a id='L142' name='L142'></a><em class='comment'>                         * is 32 bits and shouldn't wrap in practice.</em>
+<a id='L143' name='L143'></a><em class='comment'>                         */</em>
+<a id='L144' name='L144'></a>                        states[i].count++;
+<a id='L145' name='L145'></a>                        total += states[i].size;
+<a id='L146' name='L146'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_DEBUG)
+<a id='L147' name='L147'></a>                        <a href='../S/963.html#L38' title='Defined at 38 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_dprintf</a>("duk_alloc_pool_init: sprinkle %ld bytes (%ld left after) to pool index %ld, new count %ld\n",
+<a id='L148' name='L148'></a>                                                (<strong class='reserved'>long</strong>) states[i].size, (<strong class='reserved'>long</strong>) (size - total), (<strong class='reserved'>long</strong>) i, (<strong class='reserved'>long</strong>) states[i].count);
+<a id='L149' name='L149'></a><em class='sharp'>#endif</em>
+<a id='L150' name='L150'></a>                <em class='brace'>}</em>
+<a id='L151' name='L151'></a>        <em class='brace'>}</em>
+<a id='L152' name='L152'></a>
+<a id='L153' name='L153'></a>        <em class='comment'>/* Pool counts are final.  Allocate the user supplied region based</em>
+<a id='L154' name='L154'></a><em class='comment'>         * on the final counts, initialize free lists for each block size,</em>
+<a id='L155' name='L155'></a><em class='comment'>         * and otherwise finalize 'state' for use.</em>
+<a id='L156' name='L156'></a><em class='comment'>         */</em>
+<a id='L157' name='L157'></a>        p = buffer;
+<a id='L158' name='L158'></a>        global-&gt;num_pools = num_pools;
+<a id='L159' name='L159'></a>        global-&gt;states = states;
+<a id='L160' name='L160'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_TRACK_HIGHWATER)
+<a id='L161' name='L161'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_DEBUG)
+<a id='L162' name='L162'></a>        <a href='../S/963.html#L38' title='Defined at 38 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_dprintf</a>("duk_alloc_pool_init: global highwater mark tracking enabled, THIS IS VERY SLOW!\n");
+<a id='L163' name='L163'></a><em class='sharp'>#endif</em>
+<a id='L164' name='L164'></a>        global-&gt;hwm_used_bytes = 0U;
+<a id='L165' name='L165'></a>        global-&gt;hwm_waste_bytes = 0U;
+<a id='L166' name='L166'></a><em class='sharp'>#endif</em>
+<a id='L167' name='L167'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_TRACK_WASTE)
+<a id='L168' name='L168'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_DEBUG)
+<a id='L169' name='L169'></a>        <a href='../S/963.html#L38' title='Defined at 38 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_dprintf</a>("duk_alloc_pool_init: approximate waste tracking enabled\n");
+<a id='L170' name='L170'></a><em class='sharp'>#endif</em>
+<a id='L171' name='L171'></a><em class='sharp'>#endif</em>
+<a id='L172' name='L172'></a>
+<a id='L173' name='L173'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3127.html' title='Multiple defined in 3 places.'>DUK_USE_HEAPPTR16</a>)
+<a id='L174' name='L174'></a>        <em class='comment'>/* Register global base value for pointer compression, assumes</em>
+<a id='L175' name='L175'></a><em class='comment'>         * a single active pool  -4 allows a single subtract to be used and</em>
+<a id='L176' name='L176'></a><em class='comment'>         * still ensures no non-NULL pointer encodes to zero.</em>
+<a id='L177' name='L177'></a><em class='comment'>         */</em>
+<a id='L178' name='L178'></a>        duk_alloc_pool_ptrcomp_base = (<strong class='reserved'>void</strong> *) (p - 4);
+<a id='L179' name='L179'></a><em class='sharp'>#endif</em>
+<a id='L180' name='L180'></a>
+<a id='L181' name='L181'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; num_pools; i++) <em class='brace'>{</em>
+<a id='L182' name='L182'></a>                n = (<strong class='reserved'>int</strong>) states[i].count;
+<a id='L183' name='L183'></a>                <strong class='reserved'>if</strong> (n &gt; 0) <em class='brace'>{</em>
+<a id='L184' name='L184'></a>                        states[i].first = (<a href='../D/5516.html' title='Multiple defined in 2 places.'>duk_pool_free</a> *) p;
+<a id='L185' name='L185'></a>                        <strong class='reserved'>for</strong> (j = 0; j &lt; n; j++) <em class='brace'>{</em>
+<a id='L186' name='L186'></a>                                <strong class='reserved'>char</strong> *p_next = p + states[i].size;
+<a id='L187' name='L187'></a>                                ((<a href='../D/5516.html' title='Multiple defined in 2 places.'>duk_pool_free</a> *) p)-&gt;next =
+<a id='L188' name='L188'></a>                                        (j == n - 1) ? (<a href='../D/5516.html' title='Multiple defined in 2 places.'>duk_pool_free</a> *) NULL : (<a href='../D/5516.html' title='Multiple defined in 2 places.'>duk_pool_free</a> *) p_next;
+<a id='L189' name='L189'></a>                                p = p_next;
+<a id='L190' name='L190'></a>                        <em class='brace'>}</em>
+<a id='L191' name='L191'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L192' name='L192'></a>                        states[i].first = (<a href='../D/5516.html' title='Multiple defined in 2 places.'>duk_pool_free</a> *) NULL;
+<a id='L193' name='L193'></a>                <em class='brace'>}</em>
+<a id='L194' name='L194'></a>                states[i].alloc_end = p;
+<a id='L195' name='L195'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_TRACK_HIGHWATER)
+<a id='L196' name='L196'></a>                states[i].hwm_used_count = 0;
+<a id='L197' name='L197'></a><em class='sharp'>#endif</em>
+<a id='L198' name='L198'></a>                <em class='comment'>/* All members of 'state' now initialized. */</em>
+<a id='L199' name='L199'></a>
+<a id='L200' name='L200'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_DEBUG)
+<a id='L201' name='L201'></a>                <a href='../S/963.html#L38' title='Defined at 38 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_dprintf</a>("duk_alloc_pool_init: block size %5ld, count %5ld, %8ld total bytes, "
+<a id='L202' name='L202'></a>                                        "end %p\n",
+<a id='L203' name='L203'></a>                                        (<strong class='reserved'>long</strong>) states[i].size, (<strong class='reserved'>long</strong>) states[i].count,
+<a id='L204' name='L204'></a>                                        (<strong class='reserved'>long</strong>) states[i].size * (<strong class='reserved'>long</strong>) states[i].count,
+<a id='L205' name='L205'></a>                                        (<strong class='reserved'>void</strong> *) states[i].alloc_end);
+<a id='L206' name='L206'></a><em class='sharp'>#endif</em>
+<a id='L207' name='L207'></a>        <em class='brace'>}</em>
+<a id='L208' name='L208'></a>
+<a id='L209' name='L209'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/961.html#L24' title='Defined at 24 in extras/alloc-pool/duk_alloc_pool.h.'>DUK_ALLOC_POOL_ROMPTR_COMPRESSION</a>)
+<a id='L210' name='L210'></a>        <em class='comment'>/* ROM pointer compression precomputation.  Assumes a single active</em>
+<a id='L211' name='L211'></a><em class='comment'>         * pool.</em>
+<a id='L212' name='L212'></a><em class='comment'>         */</em>
+<a id='L213' name='L213'></a>        <a href='../S/963.html#L570' title='Defined at 570 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_romptr_init</a>();
+<a id='L214' name='L214'></a><em class='sharp'>#endif</em>
+<a id='L215' name='L215'></a>
+<a id='L216' name='L216'></a>        <em class='comment'>/* Use 'global' as udata. */</em>
+<a id='L217' name='L217'></a>        <strong class='reserved'>return</strong> (<strong class='reserved'>void</strong> *) global;
+<a id='L218' name='L218'></a><em class='brace'>}</em>
+<a id='L219' name='L219'></a>
+<a id='L220' name='L220'></a><em class='comment'>/*</em>
+<a id='L221' name='L221'></a><em class='comment'> *  Misc helpers</em>
+<a id='L222' name='L222'></a><em class='comment'> */</em>
+<a id='L223' name='L223'></a>
+<a id='L224' name='L224'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_TRACK_WASTE)
+<a id='L225' name='L225'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/3008.html' title='Multiple referred from 4 places.'>duk__alloc_pool_set_waste_marker</a>(<strong class='reserved'>void</strong> *ptr, size_t used, size_t size) <em class='brace'>{</em>
+<a id='L226' name='L226'></a>        <em class='comment'>/* Rely on the base pointer and size being divisible by 4 and thus</em>
+<a id='L227' name='L227'></a><em class='comment'>         * aligned.  Use 32-bit markers: a 4-byte resolution is good enough,</em>
+<a id='L228' name='L228'></a><em class='comment'>         * and comparing 32 bits at a time makes false waste estimates less</em>
+<a id='L229' name='L229'></a><em class='comment'>         * likely than when comparing as bytes.</em>
+<a id='L230' name='L230'></a><em class='comment'>         */</em>
+<a id='L231' name='L231'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> *p, *p_start, *p_end;
+<a id='L232' name='L232'></a>        size_t used_round;
+<a id='L233' name='L233'></a>
+<a id='L234' name='L234'></a>        used_round = (used + 3U) &amp; ~0x03U;  <em class='comment'>/* round up to 4 */</em>
+<a id='L235' name='L235'></a>        p_end = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> *) ((<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) ptr + size);
+<a id='L236' name='L236'></a>        p_start = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> *) ((<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) ptr + used_round);
+<a id='L237' name='L237'></a>        p = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> *) p_start;
+<a id='L238' name='L238'></a>        <strong class='reserved'>while</strong> (p != p_end) <em class='brace'>{</em>
+<a id='L239' name='L239'></a>                *p++ = <a href='../S/961.html#L14' title='Defined at 14 in extras/alloc-pool/duk_alloc_pool.h.'>DUK_ALLOC_POOL_WASTE_MARKER</a>;
+<a id='L240' name='L240'></a>        <em class='brace'>}</em>
+<a id='L241' name='L241'></a><em class='brace'>}</em>
+<a id='L242' name='L242'></a><em class='sharp'>#else</em>  <em class='comment'>/* DUK_ALLOC_POOL_TRACK_WASTE */</em>
+<a id='L243' name='L243'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/3008.html' title='Multiple referred from 4 places.'>duk__alloc_pool_set_waste_marker</a>(<strong class='reserved'>void</strong> *ptr, size_t used, size_t size) <em class='brace'>{</em>
+<a id='L244' name='L244'></a>        (<strong class='reserved'>void</strong>) ptr; (<strong class='reserved'>void</strong>) used; (<strong class='reserved'>void</strong>) size;
+<a id='L245' name='L245'></a><em class='brace'>}</em>
+<a id='L246' name='L246'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_ALLOC_POOL_TRACK_WASTE */</em>
+<a id='L247' name='L247'></a>
+<a id='L248' name='L248'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_TRACK_WASTE)
+<a id='L249' name='L249'></a><strong class='reserved'>static</strong> size_t <a href='../S/963.html#L303' title='Referred from 303 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_get_waste_estimate</a>(<strong class='reserved'>void</strong> *ptr, size_t size) <em class='brace'>{</em>
+<a id='L250' name='L250'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> *p, *p_end, *p_start;
+<a id='L251' name='L251'></a>
+<a id='L252' name='L252'></a>        <em class='comment'>/* Assumes size is &gt;= 4. */</em>
+<a id='L253' name='L253'></a>        p_start = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> *) ptr;
+<a id='L254' name='L254'></a>        p_end = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> *) ((<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) ptr + size);
+<a id='L255' name='L255'></a>        p = p_end;
+<a id='L256' name='L256'></a>
+<a id='L257' name='L257'></a>        <em class='comment'>/* This scan may cause harmless valgrind complaints: there may be</em>
+<a id='L258' name='L258'></a><em class='comment'>         * uninitialized bytes within the legitimate allocation or between</em>
+<a id='L259' name='L259'></a><em class='comment'>         * the start of the waste marker and the end of the allocation.</em>
+<a id='L260' name='L260'></a><em class='comment'>         */</em>
+<a id='L261' name='L261'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L262' name='L262'></a>                p--;
+<a id='L263' name='L263'></a>                <strong class='reserved'>if</strong> (*p == <a href='../S/961.html#L14' title='Defined at 14 in extras/alloc-pool/duk_alloc_pool.h.'>DUK_ALLOC_POOL_WASTE_MARKER</a>) <em class='brace'>{</em>
+<a id='L264' name='L264'></a>                        ;
+<a id='L265' name='L265'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L266' name='L266'></a>                        <strong class='reserved'>return</strong> (size_t) (p_end - p - 1) * 4U;
+<a id='L267' name='L267'></a>                <em class='brace'>}</em>
+<a id='L268' name='L268'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (p != p_start);
+<a id='L269' name='L269'></a>
+<a id='L270' name='L270'></a>        <strong class='reserved'>return</strong> size;
+<a id='L271' name='L271'></a><em class='brace'>}</em>
+<a id='L272' name='L272'></a><em class='sharp'>#else</em>  <em class='comment'>/* DUK_ALLOC_POOL_TRACK_WASTE */</em>
+<a id='L273' name='L273'></a><strong class='reserved'>static</strong> size_t <a href='../S/963.html#L303' title='Referred from 303 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_get_waste_estimate</a>(<strong class='reserved'>void</strong> *ptr, size_t size) <em class='brace'>{</em>
+<a id='L274' name='L274'></a>        (<strong class='reserved'>void</strong>) ptr; (<strong class='reserved'>void</strong>) size;
+<a id='L275' name='L275'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L276' name='L276'></a><em class='brace'>}</em>
+<a id='L277' name='L277'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_ALLOC_POOL_TRACK_WASTE */</em>
+<a id='L278' name='L278'></a>
+<a id='L279' name='L279'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/963.html#L300' title='Referred from 300 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_ptr_in_freelist</a>(<a href='../S/961.html#L57' title='Defined at 57 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_state</a> *s, <strong class='reserved'>void</strong> *ptr) <em class='brace'>{</em>
+<a id='L280' name='L280'></a>        <a href='../D/5516.html' title='Multiple defined in 2 places.'>duk_pool_free</a> *curr;
+<a id='L281' name='L281'></a>
+<a id='L282' name='L282'></a>        <strong class='reserved'>for</strong> (curr = s-&gt;first; curr != NULL; curr = curr-&gt;next) <em class='brace'>{</em>
+<a id='L283' name='L283'></a>                <strong class='reserved'>if</strong> ((<strong class='reserved'>void</strong> *) curr == ptr) <em class='brace'>{</em>
+<a id='L284' name='L284'></a>                        <strong class='reserved'>return</strong> 1;
+<a id='L285' name='L285'></a>                <em class='brace'>}</em>
+<a id='L286' name='L286'></a>        <em class='brace'>}</em>
+<a id='L287' name='L287'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L288' name='L288'></a><em class='brace'>}</em>
+<a id='L289' name='L289'></a>
+<a id='L290' name='L290'></a><strong class='reserved'>void</strong> <a href='../R/3807.html' title='Multiple referred from 4 places.'>duk_alloc_pool_get_pool_stats</a>(<a href='../S/961.html#L57' title='Defined at 57 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_state</a> *s, <a href='../S/961.html#L67' title='Defined at 67 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_stats</a> *res) <em class='brace'>{</em>
+<a id='L291' name='L291'></a>        <strong class='reserved'>void</strong> *curr;
+<a id='L292' name='L292'></a>        size_t free_count;
+<a id='L293' name='L293'></a>        size_t used_count;
+<a id='L294' name='L294'></a>        size_t waste_bytes;
+<a id='L295' name='L295'></a>
+<a id='L296' name='L296'></a>        curr = s-&gt;alloc_end - (s-&gt;size * s-&gt;count);
+<a id='L297' name='L297'></a>        free_count = 0U;
+<a id='L298' name='L298'></a>        waste_bytes = 0U;
+<a id='L299' name='L299'></a>        <strong class='reserved'>while</strong> (curr != s-&gt;alloc_end) <em class='brace'>{</em>
+<a id='L300' name='L300'></a>                <strong class='reserved'>if</strong> (<a href='../S/963.html#L279' title='Defined at 279 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_ptr_in_freelist</a>(s, curr)) <em class='brace'>{</em>
+<a id='L301' name='L301'></a>                        free_count++;
+<a id='L302' name='L302'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L303' name='L303'></a>                        waste_bytes += <a href='../D/3762.html' title='Multiple defined in 2 places.'>duk__alloc_pool_get_waste_estimate</a>(curr, s-&gt;size);
+<a id='L304' name='L304'></a>                <em class='brace'>}</em>
+<a id='L305' name='L305'></a>                curr = curr + s-&gt;size;
+<a id='L306' name='L306'></a>        <em class='brace'>}</em>
+<a id='L307' name='L307'></a>        used_count = (size_t) (s-&gt;count - free_count);
+<a id='L308' name='L308'></a>
+<a id='L309' name='L309'></a>        res-&gt;used_count = used_count;
+<a id='L310' name='L310'></a>        res-&gt;used_bytes = (size_t) (used_count * s-&gt;size);
+<a id='L311' name='L311'></a>        res-&gt;free_count = free_count;
+<a id='L312' name='L312'></a>        res-&gt;free_bytes = (size_t) (free_count * s-&gt;size);
+<a id='L313' name='L313'></a>        res-&gt;waste_bytes = waste_bytes;
+<a id='L314' name='L314'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_TRACK_HIGHWATER)
+<a id='L315' name='L315'></a>        res-&gt;hwm_used_count = s-&gt;hwm_used_count;
+<a id='L316' name='L316'></a><em class='sharp'>#else</em>
+<a id='L317' name='L317'></a>        res-&gt;hwm_used_count = 0U;
+<a id='L318' name='L318'></a><em class='sharp'>#endif</em>
+<a id='L319' name='L319'></a><em class='brace'>}</em>
+<a id='L320' name='L320'></a>
+<a id='L321' name='L321'></a><strong class='reserved'>void</strong> <a href='../R/3806.html' title='Multiple referred from 2 places.'>duk_alloc_pool_get_global_stats</a>(<a href='../S/961.html#L79' title='Defined at 79 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_global</a> *g, <a href='../S/961.html#L88' title='Defined at 88 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_global_stats</a> *res) <em class='brace'>{</em>
+<a id='L322' name='L322'></a>        <strong class='reserved'>int</strong> i;
+<a id='L323' name='L323'></a>        size_t total_used = 0U;
+<a id='L324' name='L324'></a>        size_t total_free = 0U;
+<a id='L325' name='L325'></a>        size_t total_waste = 0U;
+<a id='L326' name='L326'></a>
+<a id='L327' name='L327'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; g-&gt;num_pools; i++) <em class='brace'>{</em>
+<a id='L328' name='L328'></a>                <a href='../S/961.html#L57' title='Defined at 57 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_state</a> *s = &amp;g-&gt;states[i];
+<a id='L329' name='L329'></a>                <a href='../S/961.html#L67' title='Defined at 67 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_stats</a> stats;
+<a id='L330' name='L330'></a>
+<a id='L331' name='L331'></a>                <a href='../S/963.html#L290' title='Defined at 290 in extras/alloc-pool/duk_alloc_pool.c.'>duk_alloc_pool_get_pool_stats</a>(s, &amp;stats);
+<a id='L332' name='L332'></a>
+<a id='L333' name='L333'></a>                total_used += stats.used_bytes;
+<a id='L334' name='L334'></a>                total_free += stats.free_bytes;
+<a id='L335' name='L335'></a>                total_waste += stats.waste_bytes;
+<a id='L336' name='L336'></a>        <em class='brace'>}</em>
+<a id='L337' name='L337'></a>
+<a id='L338' name='L338'></a>        res-&gt;used_bytes = total_used;
+<a id='L339' name='L339'></a>        res-&gt;free_bytes = total_free;
+<a id='L340' name='L340'></a>        res-&gt;waste_bytes = total_waste;
+<a id='L341' name='L341'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_TRACK_HIGHWATER)
+<a id='L342' name='L342'></a>        res-&gt;hwm_used_bytes = g-&gt;hwm_used_bytes;
+<a id='L343' name='L343'></a>        res-&gt;hwm_waste_bytes = g-&gt;hwm_waste_bytes;
+<a id='L344' name='L344'></a><em class='sharp'>#else</em>
+<a id='L345' name='L345'></a>        res-&gt;hwm_used_bytes = 0U;
+<a id='L346' name='L346'></a>        res-&gt;hwm_waste_bytes = 0U;
+<a id='L347' name='L347'></a><em class='sharp'>#endif</em>
+<a id='L348' name='L348'></a><em class='brace'>}</em>
+<a id='L349' name='L349'></a>
+<a id='L350' name='L350'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_TRACK_HIGHWATER)
+<a id='L351' name='L351'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/3009.html' title='Multiple referred from 4 places.'>duk__alloc_pool_update_highwater</a>(<a href='../S/961.html#L79' title='Defined at 79 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_global</a> *g) <em class='brace'>{</em>
+<a id='L352' name='L352'></a>        <strong class='reserved'>int</strong> i;
+<a id='L353' name='L353'></a>        size_t total_used = 0U;
+<a id='L354' name='L354'></a>        size_t total_free = 0U;
+<a id='L355' name='L355'></a>        size_t total_waste = 0U;
+<a id='L356' name='L356'></a>
+<a id='L357' name='L357'></a>        <em class='comment'>/* Per pool highwater used count, useful to checking if a pool is</em>
+<a id='L358' name='L358'></a><em class='comment'>         * too small.</em>
+<a id='L359' name='L359'></a><em class='comment'>         */</em>
+<a id='L360' name='L360'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; g-&gt;num_pools; i++) <em class='brace'>{</em>
+<a id='L361' name='L361'></a>                <a href='../S/961.html#L57' title='Defined at 57 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_state</a> *s = &amp;g-&gt;states[i];
+<a id='L362' name='L362'></a>                <a href='../S/961.html#L67' title='Defined at 67 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_stats</a> stats;
+<a id='L363' name='L363'></a>
+<a id='L364' name='L364'></a>                <a href='../S/963.html#L290' title='Defined at 290 in extras/alloc-pool/duk_alloc_pool.c.'>duk_alloc_pool_get_pool_stats</a>(s, &amp;stats);
+<a id='L365' name='L365'></a>                <strong class='reserved'>if</strong> (stats.used_count &gt; s-&gt;hwm_used_count) <em class='brace'>{</em>
+<a id='L366' name='L366'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_DEBUG)
+<a id='L367' name='L367'></a>                        <a href='../S/963.html#L38' title='Defined at 38 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_dprintf</a>("duk__alloc_pool_update_highwater: pool %ld (%ld bytes) highwater updated: count %ld -&gt; %ld\n",
+<a id='L368' name='L368'></a>                                                (<strong class='reserved'>long</strong>) i, (<strong class='reserved'>long</strong>) s-&gt;size,
+<a id='L369' name='L369'></a>                                                (<strong class='reserved'>long</strong>) s-&gt;hwm_used_count, (<strong class='reserved'>long</strong>) stats.used_count);
+<a id='L370' name='L370'></a><em class='sharp'>#endif</em>
+<a id='L371' name='L371'></a>                        s-&gt;hwm_used_count = stats.used_count;
+<a id='L372' name='L372'></a>                <em class='brace'>}</em>
+<a id='L373' name='L373'></a>
+<a id='L374' name='L374'></a>                total_used += stats.used_bytes;
+<a id='L375' name='L375'></a>                total_free += stats.free_bytes;
+<a id='L376' name='L376'></a>                total_waste += stats.waste_bytes;
+<a id='L377' name='L377'></a>        <em class='brace'>}</em>
+<a id='L378' name='L378'></a>
+<a id='L379' name='L379'></a>        <em class='comment'>/* Global highwater mark for used and waste bytes.  Both fields are</em>
+<a id='L380' name='L380'></a><em class='comment'>         * updated from the same snapshot based on highest used count.</em>
+<a id='L381' name='L381'></a><em class='comment'>         * This is VERY, VERY slow and only useful for development.</em>
+<a id='L382' name='L382'></a><em class='comment'>         * (Note that updating HWM states for pools individually and then</em>
+<a id='L383' name='L383'></a><em class='comment'>         * summing them won't create a consistent global snapshot.  There</em>
+<a id='L384' name='L384'></a><em class='comment'>         * are still easy ways to make this much, much faster.)</em>
+<a id='L385' name='L385'></a><em class='comment'>         */</em>
+<a id='L386' name='L386'></a>        <strong class='reserved'>if</strong> (total_used &gt; g-&gt;hwm_used_bytes) <em class='brace'>{</em>
+<a id='L387' name='L387'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_DEBUG)
+<a id='L388' name='L388'></a>                <a href='../S/963.html#L38' title='Defined at 38 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_dprintf</a>("duk__alloc_pool_update_highwater: global highwater updated: used=%ld, bytes=%ld -&gt; "
+<a id='L389' name='L389'></a>                                        "used=%ld, bytes=%ld\n",
+<a id='L390' name='L390'></a>                                        (<strong class='reserved'>long</strong>) g-&gt;hwm_used_bytes, (<strong class='reserved'>long</strong>) g-&gt;hwm_waste_bytes,
+<a id='L391' name='L391'></a>                                        (<strong class='reserved'>long</strong>) total_used, (<strong class='reserved'>long</strong>) total_waste);
+<a id='L392' name='L392'></a><em class='sharp'>#endif</em>
+<a id='L393' name='L393'></a>                g-&gt;hwm_used_bytes = total_used;
+<a id='L394' name='L394'></a>                g-&gt;hwm_waste_bytes = total_waste;
+<a id='L395' name='L395'></a>        <em class='brace'>}</em>
+<a id='L396' name='L396'></a><em class='brace'>}</em>
+<a id='L397' name='L397'></a><em class='sharp'>#else</em>  <em class='comment'>/* DUK_ALLOC_POOL_TRACK_HIGHWATER */</em>
+<a id='L398' name='L398'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/3009.html' title='Multiple referred from 4 places.'>duk__alloc_pool_update_highwater</a>(<a href='../S/961.html#L79' title='Defined at 79 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_global</a> *g) <em class='brace'>{</em>
+<a id='L399' name='L399'></a>        (<strong class='reserved'>void</strong>) g;
+<a id='L400' name='L400'></a><em class='brace'>}</em>
+<a id='L401' name='L401'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_ALLOC_POOL_TRACK_HIGHWATER */</em>
+<a id='L402' name='L402'></a>
+<a id='L403' name='L403'></a><em class='comment'>/*</em>
+<a id='L404' name='L404'></a><em class='comment'> *  Allocation providers</em>
+<a id='L405' name='L405'></a><em class='comment'> */</em>
+<a id='L406' name='L406'></a>
+<a id='L407' name='L407'></a><strong class='reserved'>void</strong> *<a href='../R/3802.html' title='Multiple referred from 5 places.'>duk_alloc_pool</a>(<strong class='reserved'>void</strong> *udata, <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> size) <em class='brace'>{</em>
+<a id='L408' name='L408'></a>        <a href='../S/961.html#L79' title='Defined at 79 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_global</a> *g = (<a href='../S/961.html#L79' title='Defined at 79 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_global</a> *) udata;
+<a id='L409' name='L409'></a>        <strong class='reserved'>int</strong> i, n;
+<a id='L410' name='L410'></a>
+<a id='L411' name='L411'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_DEBUG)
+<a id='L412' name='L412'></a>        <a href='../S/963.html#L38' title='Defined at 38 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_dprintf</a>("duk_alloc_pool: %p %ld\n", udata, (<strong class='reserved'>long</strong>) size);
+<a id='L413' name='L413'></a><em class='sharp'>#endif</em>
+<a id='L414' name='L414'></a>
+<a id='L415' name='L415'></a>        <strong class='reserved'>if</strong> (size == 0) <em class='brace'>{</em>
+<a id='L416' name='L416'></a>                <strong class='reserved'>return</strong> NULL;
+<a id='L417' name='L417'></a>        <em class='brace'>}</em>
+<a id='L418' name='L418'></a>
+<a id='L419' name='L419'></a>        <strong class='reserved'>for</strong> (i = 0, n = g-&gt;num_pools; i &lt; n; i++) <em class='brace'>{</em>
+<a id='L420' name='L420'></a>                <a href='../S/961.html#L57' title='Defined at 57 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_state</a> *st = g-&gt;states + i;
+<a id='L421' name='L421'></a>
+<a id='L422' name='L422'></a>                <strong class='reserved'>if</strong> (size &lt;= st-&gt;size) <em class='brace'>{</em>
+<a id='L423' name='L423'></a>                        <a href='../D/5516.html' title='Multiple defined in 2 places.'>duk_pool_free</a> *res = st-&gt;first;
+<a id='L424' name='L424'></a>                        <strong class='reserved'>if</strong> (res != NULL) <em class='brace'>{</em>
+<a id='L425' name='L425'></a>                                st-&gt;first = res-&gt;next;
+<a id='L426' name='L426'></a>                                <a href='../D/3765.html' title='Multiple defined in 2 places.'>duk__alloc_pool_set_waste_marker</a>((<strong class='reserved'>void</strong> *) res, size, st-&gt;size);
+<a id='L427' name='L427'></a>                                <a href='../D/3766.html' title='Multiple defined in 2 places.'>duk__alloc_pool_update_highwater</a>(g);
+<a id='L428' name='L428'></a>                                <strong class='reserved'>return</strong> (<strong class='reserved'>void</strong> *) res;
+<a id='L429' name='L429'></a>                        <em class='brace'>}</em>
+<a id='L430' name='L430'></a>                <em class='brace'>}</em>
+<a id='L431' name='L431'></a>
+<a id='L432' name='L432'></a>                <em class='comment'>/* Allocation doesn't fit or no free entries, try to borrow</em>
+<a id='L433' name='L433'></a><em class='comment'>                 * from the next block size.  There's no support for preventing</em>
+<a id='L434' name='L434'></a><em class='comment'>                 * a borrow at present.</em>
+<a id='L435' name='L435'></a><em class='comment'>                 */</em>
+<a id='L436' name='L436'></a>        <em class='brace'>}</em>
+<a id='L437' name='L437'></a>
+<a id='L438' name='L438'></a>        <strong class='reserved'>return</strong> NULL;
+<a id='L439' name='L439'></a><em class='brace'>}</em>
+<a id='L440' name='L440'></a>
+<a id='L441' name='L441'></a><strong class='reserved'>void</strong> *<a href='../R/4865.html' title='Multiple referred from 4 places.'>duk_realloc_pool</a>(<strong class='reserved'>void</strong> *udata, <strong class='reserved'>void</strong> *ptr, <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> size) <em class='brace'>{</em>
+<a id='L442' name='L442'></a>        <a href='../S/961.html#L79' title='Defined at 79 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_global</a> *g = (<a href='../S/961.html#L79' title='Defined at 79 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_global</a> *) udata;
+<a id='L443' name='L443'></a>        <strong class='reserved'>int</strong> i, j, n;
+<a id='L444' name='L444'></a>
+<a id='L445' name='L445'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_DEBUG)
+<a id='L446' name='L446'></a>        <a href='../S/963.html#L38' title='Defined at 38 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_dprintf</a>("duk_realloc_pool: %p %p %ld\n", udata, ptr, (<strong class='reserved'>long</strong>) size);
+<a id='L447' name='L447'></a><em class='sharp'>#endif</em>
+<a id='L448' name='L448'></a>
+<a id='L449' name='L449'></a>        <strong class='reserved'>if</strong> (ptr == NULL) <em class='brace'>{</em>
+<a id='L450' name='L450'></a>                <strong class='reserved'>return</strong> <a href='../S/963.html#L407' title='Defined at 407 in extras/alloc-pool/duk_alloc_pool.c.'>duk_alloc_pool</a>(udata, size);
+<a id='L451' name='L451'></a>        <em class='brace'>}</em>
+<a id='L452' name='L452'></a>        <strong class='reserved'>if</strong> (size == 0) <em class='brace'>{</em>
+<a id='L453' name='L453'></a>                <a href='../S/963.html#L532' title='Defined at 532 in extras/alloc-pool/duk_alloc_pool.c.'>duk_free_pool</a>(udata, ptr);
+<a id='L454' name='L454'></a>                <strong class='reserved'>return</strong> NULL;
+<a id='L455' name='L455'></a>        <em class='brace'>}</em>
+<a id='L456' name='L456'></a>
+<a id='L457' name='L457'></a>        <em class='comment'>/* Non-NULL pointers are necessarily from the pool so we should</em>
+<a id='L458' name='L458'></a><em class='comment'>         * always be able to find the allocation.</em>
+<a id='L459' name='L459'></a><em class='comment'>         */</em>
+<a id='L460' name='L460'></a>
+<a id='L461' name='L461'></a>        <strong class='reserved'>for</strong> (i = 0, n = g-&gt;num_pools; i &lt; n; i++) <em class='brace'>{</em>
+<a id='L462' name='L462'></a>                <a href='../S/961.html#L57' title='Defined at 57 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_state</a> *st = g-&gt;states + i;
+<a id='L463' name='L463'></a>                <strong class='reserved'>char</strong> *new_ptr;
+<a id='L464' name='L464'></a>
+<a id='L465' name='L465'></a>                <em class='comment'>/* Because 'ptr' is assumed to be in the pool and pools are</em>
+<a id='L466' name='L466'></a><em class='comment'>                 * allocated in sequence, it suffices to check for end pointer</em>
+<a id='L467' name='L467'></a><em class='comment'>                 * only.</em>
+<a id='L468' name='L468'></a><em class='comment'>                 */</em>
+<a id='L469' name='L469'></a>                <strong class='reserved'>if</strong> ((<strong class='reserved'>char</strong> *) ptr &gt;= st-&gt;alloc_end) <em class='brace'>{</em>
+<a id='L470' name='L470'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L471' name='L471'></a>                <em class='brace'>}</em>
+<a id='L472' name='L472'></a>
+<a id='L473' name='L473'></a>                <strong class='reserved'>if</strong> (size &lt;= st-&gt;size) <em class='brace'>{</em>
+<a id='L474' name='L474'></a>                        <em class='comment'>/* Allocation still fits existing allocation.  Check if</em>
+<a id='L475' name='L475'></a><em class='comment'>                         * we can shrink the allocation to a smaller block size</em>
+<a id='L476' name='L476'></a><em class='comment'>                         * (smallest possible).</em>
+<a id='L477' name='L477'></a><em class='comment'>                         */</em>
+<a id='L478' name='L478'></a>                        <strong class='reserved'>for</strong> (j = 0; j &lt; i; j++) <em class='brace'>{</em>
+<a id='L479' name='L479'></a>                                <a href='../S/961.html#L57' title='Defined at 57 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_state</a> *st2 = g-&gt;states + j;
+<a id='L480' name='L480'></a>
+<a id='L481' name='L481'></a>                                <strong class='reserved'>if</strong> (size &lt;= st2-&gt;size) <em class='brace'>{</em>
+<a id='L482' name='L482'></a>                                        new_ptr = (<strong class='reserved'>char</strong> *) st2-&gt;first;
+<a id='L483' name='L483'></a>                                        <strong class='reserved'>if</strong> (new_ptr != NULL) <em class='brace'>{</em>
+<a id='L484' name='L484'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_DEBUG)
+<a id='L485' name='L485'></a>                                                <a href='../S/963.html#L38' title='Defined at 38 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_dprintf</a>("duk_realloc_pool: shrink, block size %ld -&gt; %ld\n",
+<a id='L486' name='L486'></a>                                                                        (<strong class='reserved'>long</strong>) st-&gt;size, (<strong class='reserved'>long</strong>) st2-&gt;size);
+<a id='L487' name='L487'></a><em class='sharp'>#endif</em>
+<a id='L488' name='L488'></a>                                                st2-&gt;first = ((<a href='../D/5516.html' title='Multiple defined in 2 places.'>duk_pool_free</a> *) new_ptr)-&gt;next;
+<a id='L489' name='L489'></a>                                                memcpy((<strong class='reserved'>void</strong> *) new_ptr, (<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *) ptr, (size_t) size);
+<a id='L490' name='L490'></a>                                                ((<a href='../D/5516.html' title='Multiple defined in 2 places.'>duk_pool_free</a> *) ptr)-&gt;next = st-&gt;first;
+<a id='L491' name='L491'></a>                                                st-&gt;first = (<a href='../D/5516.html' title='Multiple defined in 2 places.'>duk_pool_free</a> *) ptr;
+<a id='L492' name='L492'></a>                                                <a href='../D/3765.html' title='Multiple defined in 2 places.'>duk__alloc_pool_set_waste_marker</a>((<strong class='reserved'>void</strong> *) new_ptr, size, st2-&gt;size);
+<a id='L493' name='L493'></a>                                                <a href='../D/3766.html' title='Multiple defined in 2 places.'>duk__alloc_pool_update_highwater</a>(g);
+<a id='L494' name='L494'></a>                                                <strong class='reserved'>return</strong> (<strong class='reserved'>void</strong> *) new_ptr;
+<a id='L495' name='L495'></a>                                        <em class='brace'>}</em>
+<a id='L496' name='L496'></a>                                <em class='brace'>}</em>
+<a id='L497' name='L497'></a>                        <em class='brace'>}</em>
+<a id='L498' name='L498'></a>
+<a id='L499' name='L499'></a>                        <em class='comment'>/* Failed to shrink; return existing pointer. */</em>
+<a id='L500' name='L500'></a>                        <a href='../D/3765.html' title='Multiple defined in 2 places.'>duk__alloc_pool_set_waste_marker</a>((<strong class='reserved'>void</strong> *) ptr, size, st-&gt;size);
+<a id='L501' name='L501'></a>                        <strong class='reserved'>return</strong> ptr;
+<a id='L502' name='L502'></a>                <em class='brace'>}</em>
+<a id='L503' name='L503'></a>
+<a id='L504' name='L504'></a>                <em class='comment'>/* Find first free larger block. */</em>
+<a id='L505' name='L505'></a>                <strong class='reserved'>for</strong> (j = i + 1; j &lt; n; j++) <em class='brace'>{</em>
+<a id='L506' name='L506'></a>                        <a href='../S/961.html#L57' title='Defined at 57 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_state</a> *st2 = g-&gt;states + j;
+<a id='L507' name='L507'></a>
+<a id='L508' name='L508'></a>                        <strong class='reserved'>if</strong> (size &lt;= st2-&gt;size) <em class='brace'>{</em>
+<a id='L509' name='L509'></a>                                new_ptr = (<strong class='reserved'>char</strong> *) st2-&gt;first;
+<a id='L510' name='L510'></a>                                <strong class='reserved'>if</strong> (new_ptr != NULL) <em class='brace'>{</em>
+<a id='L511' name='L511'></a>                                        st2-&gt;first = ((<a href='../D/5516.html' title='Multiple defined in 2 places.'>duk_pool_free</a> *) new_ptr)-&gt;next;
+<a id='L512' name='L512'></a>                                        memcpy((<strong class='reserved'>void</strong> *) new_ptr, (<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *) ptr, (size_t) st-&gt;size);
+<a id='L513' name='L513'></a>                                        ((<a href='../D/5516.html' title='Multiple defined in 2 places.'>duk_pool_free</a> *) ptr)-&gt;next = st-&gt;first;
+<a id='L514' name='L514'></a>                                        st-&gt;first = (<a href='../D/5516.html' title='Multiple defined in 2 places.'>duk_pool_free</a> *) ptr;
+<a id='L515' name='L515'></a>                                        <a href='../D/3765.html' title='Multiple defined in 2 places.'>duk__alloc_pool_set_waste_marker</a>((<strong class='reserved'>void</strong> *) new_ptr, size, st2-&gt;size);
+<a id='L516' name='L516'></a>                                        <a href='../D/3766.html' title='Multiple defined in 2 places.'>duk__alloc_pool_update_highwater</a>(g);
+<a id='L517' name='L517'></a>                                        <strong class='reserved'>return</strong> (<strong class='reserved'>void</strong> *) new_ptr;
+<a id='L518' name='L518'></a>                                <em class='brace'>}</em>
+<a id='L519' name='L519'></a>                        <em class='brace'>}</em>
+<a id='L520' name='L520'></a>                <em class='brace'>}</em>
+<a id='L521' name='L521'></a>
+<a id='L522' name='L522'></a>                <em class='comment'>/* Failed to resize. */</em>
+<a id='L523' name='L523'></a>                <strong class='reserved'>return</strong> NULL;
+<a id='L524' name='L524'></a>        <em class='brace'>}</em>
+<a id='L525' name='L525'></a>
+<a id='L526' name='L526'></a>        <em class='comment'>/* We should never be here because 'ptr' should be a valid pool</em>
+<a id='L527' name='L527'></a><em class='comment'>         * entry and thus always found above.</em>
+<a id='L528' name='L528'></a><em class='comment'>         */</em>
+<a id='L529' name='L529'></a>        <strong class='reserved'>return</strong> NULL;
+<a id='L530' name='L530'></a><em class='brace'>}</em>
+<a id='L531' name='L531'></a>
+<a id='L532' name='L532'></a><strong class='reserved'>void</strong> <a href='../R/4270.html' title='Multiple referred from 5 places.'>duk_free_pool</a>(<strong class='reserved'>void</strong> *udata, <strong class='reserved'>void</strong> *ptr) <em class='brace'>{</em>
+<a id='L533' name='L533'></a>        <a href='../S/961.html#L79' title='Defined at 79 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_global</a> *g = (<a href='../S/961.html#L79' title='Defined at 79 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_global</a> *) udata;
+<a id='L534' name='L534'></a>        <strong class='reserved'>int</strong> i, n;
+<a id='L535' name='L535'></a>
+<a id='L536' name='L536'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(DUK_ALLOC_POOL_DEBUG)
+<a id='L537' name='L537'></a>        <a href='../S/963.html#L38' title='Defined at 38 in extras/alloc-pool/duk_alloc_pool.c.'>duk__alloc_pool_dprintf</a>("duk_free_pool: %p %p\n", udata, ptr);
+<a id='L538' name='L538'></a><em class='sharp'>#endif</em>
+<a id='L539' name='L539'></a>
+<a id='L540' name='L540'></a>        <strong class='reserved'>if</strong> (ptr == NULL) <em class='brace'>{</em>
+<a id='L541' name='L541'></a>                <strong class='reserved'>return</strong>;
+<a id='L542' name='L542'></a>        <em class='brace'>}</em>
+<a id='L543' name='L543'></a>
+<a id='L544' name='L544'></a>        <strong class='reserved'>for</strong> (i = 0, n = g-&gt;num_pools; i &lt; n; i++) <em class='brace'>{</em>
+<a id='L545' name='L545'></a>                <a href='../S/961.html#L57' title='Defined at 57 in extras/alloc-pool/duk_alloc_pool.h.'>duk_pool_state</a> *st = g-&gt;states + i;
+<a id='L546' name='L546'></a>
+<a id='L547' name='L547'></a>                <em class='comment'>/* Enough to check end address only. */</em>
+<a id='L548' name='L548'></a>                <strong class='reserved'>if</strong> ((<strong class='reserved'>char</strong> *) ptr &gt;= st-&gt;alloc_end) <em class='brace'>{</em>
+<a id='L549' name='L549'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L550' name='L550'></a>                <em class='brace'>}</em>
+<a id='L551' name='L551'></a>
+<a id='L552' name='L552'></a>                ((<a href='../D/5516.html' title='Multiple defined in 2 places.'>duk_pool_free</a> *) ptr)-&gt;next = st-&gt;first;
+<a id='L553' name='L553'></a>                st-&gt;first = (<a href='../D/5516.html' title='Multiple defined in 2 places.'>duk_pool_free</a> *) ptr;
+<a id='L554' name='L554'></a><em class='sharp'>#if</em> 0  <em class='comment'>/* never necessary when freeing */</em>
+<a id='L555' name='L555'></a>                <a href='../D/3766.html' title='Multiple defined in 2 places.'>duk__alloc_pool_update_highwater</a>(g);
+<a id='L556' name='L556'></a><em class='sharp'>#endif</em>
+<a id='L557' name='L557'></a>                <strong class='reserved'>return</strong>;
+<a id='L558' name='L558'></a>        <em class='brace'>}</em>
+<a id='L559' name='L559'></a>
+<a id='L560' name='L560'></a>        <em class='comment'>/* We should never be here because 'ptr' should be a valid pool</em>
+<a id='L561' name='L561'></a><em class='comment'>         * entry and thus always found above.</em>
+<a id='L562' name='L562'></a><em class='comment'>         */</em>
+<a id='L563' name='L563'></a><em class='brace'>}</em>
+<a id='L564' name='L564'></a>
+<a id='L565' name='L565'></a><em class='comment'>/*</em>
+<a id='L566' name='L566'></a><em class='comment'> *  Pointer compression</em>
+<a id='L567' name='L567'></a><em class='comment'> */</em>
+<a id='L568' name='L568'></a>
+<a id='L569' name='L569'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/961.html#L24' title='Defined at 24 in extras/alloc-pool/duk_alloc_pool.h.'>DUK_ALLOC_POOL_ROMPTR_COMPRESSION</a>)
+<a id='L570' name='L570'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/3007.html' title='Multiple referred from 2 places.'>duk__alloc_pool_romptr_init</a>(<strong class='reserved'>void</strong>) <em class='brace'>{</em>
+<a id='L571' name='L571'></a>        <em class='comment'>/* Scan ROM pointer range for faster detection of "is 'p' a ROM pointer"</em>
+<a id='L572' name='L572'></a><em class='comment'>         * later on.</em>
+<a id='L573' name='L573'></a><em class='comment'>         */</em>
+<a id='L574' name='L574'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> * <strong class='reserved'>const</strong> * ptrs = (<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> * <strong class='reserved'>const</strong> *) duk_rom_compressed_pointers;
+<a id='L575' name='L575'></a>        duk_alloc_pool_romptr_low = duk_alloc_pool_romptr_high = (<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *) *ptrs;
+<a id='L576' name='L576'></a>        <strong class='reserved'>while</strong> (*ptrs) <em class='brace'>{</em>
+<a id='L577' name='L577'></a>                <strong class='reserved'>if</strong> (*ptrs &gt; duk_alloc_pool_romptr_high) <em class='brace'>{</em>
+<a id='L578' name='L578'></a>                        duk_alloc_pool_romptr_high = (<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *) *ptrs;
+<a id='L579' name='L579'></a>                <em class='brace'>}</em>
+<a id='L580' name='L580'></a>                <strong class='reserved'>if</strong> (*ptrs &lt; duk_alloc_pool_romptr_low) <em class='brace'>{</em>
+<a id='L581' name='L581'></a>                        duk_alloc_pool_romptr_low = (<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *) *ptrs;
+<a id='L582' name='L582'></a>                <em class='brace'>}</em>
+<a id='L583' name='L583'></a>                ptrs++;
+<a id='L584' name='L584'></a>        <em class='brace'>}</em>
+<a id='L585' name='L585'></a><em class='brace'>}</em>
+<a id='L586' name='L586'></a><em class='sharp'>#endif</em>
+<a id='L587' name='L587'></a>
+<a id='L588' name='L588'></a><em class='comment'>/* Encode/decode functions are defined in the header to allow inlining. */</em>
+<a id='L589' name='L589'></a>
+<a id='L590' name='L590'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../S/961.html#L24' title='Defined at 24 in extras/alloc-pool/duk_alloc_pool.h.'>DUK_ALLOC_POOL_ROMPTR_COMPRESSION</a>)
+<a id='L591' name='L591'></a><a href='../D/5883.html' title='Multiple defined in 9 places.'>duk_uint16_t</a> <a href='../R/3805.html' title='Multiple referred from 2 places.'>duk_alloc_pool_enc16_rom</a>(<strong class='reserved'>void</strong> *ptr) <em class='brace'>{</em>
+<a id='L592' name='L592'></a>        <em class='comment'>/* The if-condition should be the fastest possible check</em>
+<a id='L593' name='L593'></a><em class='comment'>         * for "is 'ptr' in ROM?".  If pointer is in ROM, we'd like</em>
+<a id='L594' name='L594'></a><em class='comment'>         * to compress it quickly.  Here we just scan a ~1K array</em>
+<a id='L595' name='L595'></a><em class='comment'>         * which is very bad for performance.</em>
+<a id='L596' name='L596'></a><em class='comment'>         */</em>
+<a id='L597' name='L597'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> * <strong class='reserved'>const</strong> * ptrs = duk_rom_compressed_pointers;
+<a id='L598' name='L598'></a>        <strong class='reserved'>while</strong> (*ptrs) <em class='brace'>{</em>
+<a id='L599' name='L599'></a>                <strong class='reserved'>if</strong> (*ptrs == ptr) <em class='brace'>{</em>
+<a id='L600' name='L600'></a>                        <strong class='reserved'>return</strong> <a href='../S/961.html#L25' title='Defined at 25 in extras/alloc-pool/duk_alloc_pool.h.'>DUK_ALLOC_POOL_ROMPTR_FIRST</a> + (<a href='../D/5883.html' title='Multiple defined in 9 places.'>duk_uint16_t</a>) (ptrs - duk_rom_compressed_pointers);
+<a id='L601' name='L601'></a>                <em class='brace'>}</em>
+<a id='L602' name='L602'></a>                ptrs++;
+<a id='L603' name='L603'></a>        <em class='brace'>}</em>
+<a id='L604' name='L604'></a>
+<a id='L605' name='L605'></a>        <em class='comment'>/* We should really never be here: Duktape should only be</em>
+<a id='L606' name='L606'></a><em class='comment'>         * compressing pointers which are in the ROM compressed</em>
+<a id='L607' name='L607'></a><em class='comment'>         * pointers list, which are known at 'make dist' time.</em>
+<a id='L608' name='L608'></a><em class='comment'>         * We go on, causing a pointer compression error.</em>
+<a id='L609' name='L609'></a><em class='comment'>         */</em>
+<a id='L610' name='L610'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L611' name='L611'></a><em class='brace'>}</em>
+<a id='L612' name='L612'></a><em class='sharp'>#endif</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L38'>[^]</a><a href='#L591'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

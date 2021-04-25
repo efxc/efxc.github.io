@@ -1,0 +1,275 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src-separate/duk_hstring.h</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1032.html'>src-separate</a>/duk_hstring.h</h2>
+<em class='comment'>/* [&lt;][&gt;][^][v][top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'><a href='../J/153.html' title='Multiple included from 2 places.'>INCLUDED FROM</a></h2>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Heap string representation.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> *  Strings are byte sequences ordinarily stored in extended UTF-8 format,</em>
+<a id='L5' name='L5'></a><em class='comment'> *  allowing values larger than the official UTF-8 range (used internally)</em>
+<a id='L6' name='L6'></a><em class='comment'> *  and also allowing UTF-8 encoding of surrogate pairs (CESU-8 format).</em>
+<a id='L7' name='L7'></a><em class='comment'> *  Strings may also be invalid UTF-8 altogether which is the case e.g. with</em>
+<a id='L8' name='L8'></a><em class='comment'> *  strings used as internal property names and raw buffers converted to</em>
+<a id='L9' name='L9'></a><em class='comment'> *  strings.  In such cases the 'clen' field contains an inaccurate value.</em>
+<a id='L10' name='L10'></a><em class='comment'> *</em>
+<a id='L11' name='L11'></a><em class='comment'> *  ECMAScript requires support for 32-bit long strings.  However, since each</em>
+<a id='L12' name='L12'></a><em class='comment'> *  16-bit codepoint can take 3 bytes in CESU-8, this representation can only</em>
+<a id='L13' name='L13'></a><em class='comment'> *  support about 1.4G codepoint long strings in extreme cases.  This is not</em>
+<a id='L14' name='L14'></a><em class='comment'> *  really a practical issue.</em>
+<a id='L15' name='L15'></a><em class='comment'> */</em>
+<a id='L16' name='L16'></a>
+<a id='L17' name='L17'></a><em class='sharp'>#if</em> !<strong class='reserved'>defined</strong>(<a href='../D/1567.html' title='Multiple defined in 4 places.'>DUK_HSTRING_H_INCLUDED</a>)
+<a id='L18' name='L18'></a><em class='sharp'>#define</em> <a href='../R/1120.html' title='Multiple referred from 4 places.'>DUK_HSTRING_H_INCLUDED</a>
+<a id='L19' name='L19'></a>
+<a id='L20' name='L20'></a><em class='comment'>/* Impose a maximum string length for now.  Restricted artificially to</em>
+<a id='L21' name='L21'></a><em class='comment'> * ensure adding a heap header length won't overflow size_t.  The limit</em>
+<a id='L22' name='L22'></a><em class='comment'> * should be synchronized with DUK_HBUFFER_MAX_BYTELEN.</em>
+<a id='L23' name='L23'></a><em class='comment'> *</em>
+<a id='L24' name='L24'></a><em class='comment'> * E5.1 makes provisions to support strings longer than 4G characters.</em>
+<a id='L25' name='L25'></a><em class='comment'> * This limit should be eliminated on 64-bit platforms (and increased</em>
+<a id='L26' name='L26'></a><em class='comment'> * closer to maximum support on 32-bit platforms).</em>
+<a id='L27' name='L27'></a><em class='comment'> */</em>
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3229.html' title='Multiple defined in 3 places.'>DUK_USE_STRLEN16</a>)
+<a id='L30' name='L30'></a><em class='sharp'>#define</em> <a href='../R/1123.html' title='Multiple referred from 52 places.'>DUK_HSTRING_MAX_BYTELEN</a>                     (0x0000ffffUL)
+<a id='L31' name='L31'></a><em class='sharp'>#else</em>
+<a id='L32' name='L32'></a><em class='sharp'>#define</em> <a href='../R/1123.html' title='Multiple referred from 52 places.'>DUK_HSTRING_MAX_BYTELEN</a>                     (0x7fffffffUL)
+<a id='L33' name='L33'></a><em class='sharp'>#endif</em>
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='comment'>/* XXX: could add flags for "is valid CESU-8" (ECMAScript compatible strings),</em>
+<a id='L36' name='L36'></a><em class='comment'> * "is valid UTF-8", "is valid extended UTF-8" (internal strings are not,</em>
+<a id='L37' name='L37'></a><em class='comment'> * regexp bytecode is), and "contains non-BMP characters".  These are not</em>
+<a id='L38' name='L38'></a><em class='comment'> * needed right now.</em>
+<a id='L39' name='L39'></a><em class='comment'> */</em>
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a><em class='comment'>/* With lowmem builds the high 16 bits of duk_heaphdr are used for other</em>
+<a id='L42' name='L42'></a><em class='comment'> * purposes, so this leaves 7 duk_heaphdr flags and 9 duk_hstring flags.</em>
+<a id='L43' name='L43'></a><em class='comment'> */</em>
+<a id='L44' name='L44'></a><em class='sharp'>#define</em> <a href='../R/1096.html' title='Multiple referred from 12 places.'>DUK_HSTRING_FLAG_ASCII</a>                      <a href='../D/1051.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_USER_FLAG</a>(0)  <em class='comment'>/* string is ASCII, clen == blen */</em>
+<a id='L45' name='L45'></a><em class='sharp'>#define</em> <a href='../R/1095.html' title='Multiple referred from 16 places.'>DUK_HSTRING_FLAG_ARRIDX</a>                     <a href='../D/1051.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_USER_FLAG</a>(1)  <em class='comment'>/* string is a valid array index */</em>
+<a id='L46' name='L46'></a><em class='sharp'>#define</em> <a href='../R/1103.html' title='Multiple referred from 20 places.'>DUK_HSTRING_FLAG_SYMBOL</a>                     <a href='../D/1051.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_USER_FLAG</a>(2)  <em class='comment'>/* string is a symbol (invalid utf-8) */</em>
+<a id='L47' name='L47'></a><em class='sharp'>#define</em> <a href='../R/1099.html' title='Multiple referred from 16 places.'>DUK_HSTRING_FLAG_HIDDEN</a>                     <a href='../D/1051.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_USER_FLAG</a>(3)  <em class='comment'>/* string is a hidden symbol (implies symbol, Duktape 1.x internal string) */</em>
+<a id='L48' name='L48'></a><em class='sharp'>#define</em> <a href='../R/1101.html' title='Multiple referred from 16 places.'>DUK_HSTRING_FLAG_RESERVED_WORD</a>              <a href='../D/1051.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_USER_FLAG</a>(4)  <em class='comment'>/* string is a reserved word (non-strict) */</em>
+<a id='L49' name='L49'></a><em class='sharp'>#define</em> <a href='../R/1102.html' title='Multiple referred from 16 places.'>DUK_HSTRING_FLAG_STRICT_RESERVED_WORD</a>       <a href='../D/1051.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_USER_FLAG</a>(5)  <em class='comment'>/* string is a reserved word (strict) */</em>
+<a id='L50' name='L50'></a><em class='sharp'>#define</em> <a href='../R/1097.html' title='Multiple referred from 16 places.'>DUK_HSTRING_FLAG_EVAL_OR_ARGUMENTS</a>          <a href='../D/1051.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_USER_FLAG</a>(6)  <em class='comment'>/* string is 'eval' or 'arguments' */</em>
+<a id='L51' name='L51'></a><em class='sharp'>#define</em> <a href='../R/1098.html' title='Multiple referred from 20 places.'>DUK_HSTRING_FLAG_EXTDATA</a>                    <a href='../D/1051.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_USER_FLAG</a>(7)  <em class='comment'>/* string data is external (duk_hstring_external) */</em>
+<a id='L52' name='L52'></a><em class='sharp'>#define</em> <a href='../R/1100.html' title='Multiple referred from 12 places.'>DUK_HSTRING_FLAG_PINNED_LITERAL</a>             <a href='../D/1051.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_USER_FLAG</a>(8)  <em class='comment'>/* string is a literal, and pinned */</em>
+<a id='L53' name='L53'></a>
+<a id='L54' name='L54'></a><em class='sharp'>#define</em> <a href='../R/1112.html' title='Multiple referred from 16 places.'>DUK_HSTRING_HAS_ASCII</a>(x)                    <a href='../D/984.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CHECK_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1542.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_ASCII</a>)
+<a id='L55' name='L55'></a><em class='sharp'>#define</em> <a href='../R/1111.html' title='Multiple referred from 44 places.'>DUK_HSTRING_HAS_ARRIDX</a>(x)                   <a href='../D/984.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CHECK_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1541.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_ARRIDX</a>)
+<a id='L56' name='L56'></a><em class='sharp'>#define</em> <a href='../R/1119.html' title='Multiple referred from 108 places.'>DUK_HSTRING_HAS_SYMBOL</a>(x)                   <a href='../D/984.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CHECK_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1549.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_SYMBOL</a>)
+<a id='L57' name='L57'></a><em class='sharp'>#define</em> <a href='../R/1115.html' title='Multiple referred from 24 places.'>DUK_HSTRING_HAS_HIDDEN</a>(x)                   <a href='../D/984.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CHECK_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1545.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_HIDDEN</a>)
+<a id='L58' name='L58'></a><em class='sharp'>#define</em> <a href='../R/1117.html' title='Multiple referred from 4 places.'>DUK_HSTRING_HAS_RESERVED_WORD</a>(x)            <a href='../D/984.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CHECK_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1547.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_RESERVED_WORD</a>)
+<a id='L59' name='L59'></a><em class='sharp'>#define</em> <a href='../R/1118.html' title='Multiple referred from 12 places.'>DUK_HSTRING_HAS_STRICT_RESERVED_WORD</a>(x)     <a href='../D/984.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CHECK_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1548.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_STRICT_RESERVED_WORD</a>)
+<a id='L60' name='L60'></a><em class='sharp'>#define</em> <a href='../R/1113.html' title='Multiple referred from 8 places.'>DUK_HSTRING_HAS_EVAL_OR_ARGUMENTS</a>(x)        <a href='../D/984.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CHECK_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1543.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_EVAL_OR_ARGUMENTS</a>)
+<a id='L61' name='L61'></a><em class='sharp'>#define</em> <a href='../R/1114.html' title='Multiple referred from 16 places.'>DUK_HSTRING_HAS_EXTDATA</a>(x)                  <a href='../D/984.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CHECK_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1544.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_EXTDATA</a>)
+<a id='L62' name='L62'></a><em class='sharp'>#define</em> <a href='../R/1116.html' title='Multiple referred from 20 places.'>DUK_HSTRING_HAS_PINNED_LITERAL</a>(x)           <a href='../D/984.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CHECK_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1546.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_PINNED_LITERAL</a>)
+<a id='L63' name='L63'></a>
+<a id='L64' name='L64'></a><em class='sharp'>#define</em> <a href='../R/1126.html' title='Multiple referred from 16 places.'>DUK_HSTRING_SET_ASCII</a>(x)                    <a href='../D/1040.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_SET_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1542.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_ASCII</a>)
+<a id='L65' name='L65'></a><em class='sharp'>#define</em> <a href='../R/1125.html' title='Multiple referred from 4 places.'>DUK_HSTRING_SET_ARRIDX</a>(x)                   <a href='../D/1040.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_SET_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1541.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_ARRIDX</a>)
+<a id='L66' name='L66'></a><em class='sharp'>#define</em> <a href='../R/1134.html' title='Multiple referred from 8 places.'>DUK_HSTRING_SET_SYMBOL</a>(x)                   <a href='../D/1040.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_SET_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1549.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_SYMBOL</a>)
+<a id='L67' name='L67'></a><em class='sharp'>#define</em> <a href='../R/1130.html' title='Multiple referred from 4 places.'>DUK_HSTRING_SET_HIDDEN</a>(x)                   <a href='../D/1040.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_SET_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1545.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_HIDDEN</a>)
+<a id='L68' name='L68'></a><em class='sharp'>#define</em> <a href='../R/1132.html' title='Multiple referred from 4 places.'>DUK_HSTRING_SET_RESERVED_WORD</a>(x)            <a href='../D/1040.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_SET_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1547.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_RESERVED_WORD</a>)
+<a id='L69' name='L69'></a><em class='sharp'>#define</em> <a href='../R/1133.html' title='Multiple referred from 4 places.'>DUK_HSTRING_SET_STRICT_RESERVED_WORD</a>(x)     <a href='../D/1040.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_SET_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1548.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_STRICT_RESERVED_WORD</a>)
+<a id='L70' name='L70'></a><em class='sharp'>#define</em> <a href='../R/1128.html' title='Multiple referred from 4 places.'>DUK_HSTRING_SET_EVAL_OR_ARGUMENTS</a>(x)        <a href='../D/1040.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_SET_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1543.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_EVAL_OR_ARGUMENTS</a>)
+<a id='L71' name='L71'></a><em class='sharp'>#define</em> DUK_HSTRING_SET_EXTDATA(x)                  <a href='../D/1040.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_SET_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1544.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_EXTDATA</a>)
+<a id='L72' name='L72'></a><em class='sharp'>#define</em> <a href='../R/1131.html' title='Multiple referred from 4 places.'>DUK_HSTRING_SET_PINNED_LITERAL</a>(x)           <a href='../D/1040.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_SET_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1546.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_PINNED_LITERAL</a>)
+<a id='L73' name='L73'></a>
+<a id='L74' name='L74'></a><em class='sharp'>#define</em> DUK_HSTRING_CLEAR_ASCII(x)                  <a href='../D/987.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CLEAR_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1542.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_ASCII</a>)
+<a id='L75' name='L75'></a><em class='sharp'>#define</em> DUK_HSTRING_CLEAR_ARRIDX(x)                 <a href='../D/987.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CLEAR_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1541.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_ARRIDX</a>)
+<a id='L76' name='L76'></a><em class='sharp'>#define</em> DUK_HSTRING_CLEAR_SYMBOL(x)                 <a href='../D/987.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CLEAR_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1549.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_SYMBOL</a>)
+<a id='L77' name='L77'></a><em class='sharp'>#define</em> DUK_HSTRING_CLEAR_HIDDEN(x)                 <a href='../D/987.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CLEAR_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1545.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_HIDDEN</a>)
+<a id='L78' name='L78'></a><em class='sharp'>#define</em> DUK_HSTRING_CLEAR_RESERVED_WORD(x)          <a href='../D/987.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CLEAR_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1547.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_RESERVED_WORD</a>)
+<a id='L79' name='L79'></a><em class='sharp'>#define</em> DUK_HSTRING_CLEAR_STRICT_RESERVED_WORD(x)   <a href='../D/987.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CLEAR_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1548.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_STRICT_RESERVED_WORD</a>)
+<a id='L80' name='L80'></a><em class='sharp'>#define</em> DUK_HSTRING_CLEAR_EVAL_OR_ARGUMENTS(x)      <a href='../D/987.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CLEAR_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1543.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_EVAL_OR_ARGUMENTS</a>)
+<a id='L81' name='L81'></a><em class='sharp'>#define</em> DUK_HSTRING_CLEAR_EXTDATA(x)                <a href='../D/987.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CLEAR_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1544.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_EXTDATA</a>)
+<a id='L82' name='L82'></a><em class='sharp'>#define</em> <a href='../R/1090.html' title='Multiple referred from 4 places.'>DUK_HSTRING_CLEAR_PINNED_LITERAL</a>(x)         <a href='../D/987.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_CLEAR_FLAG_BITS</a>(&amp;(x)-&gt;hdr, <a href='../D/1546.html' title='Multiple defined in 4 places.'>DUK_HSTRING_FLAG_PINNED_LITERAL</a>)
+<a id='L83' name='L83'></a>
+<a id='L84' name='L84'></a><em class='sharp'>#if</em> 0  <em class='comment'>/* Slightly smaller code without explicit flag, but explicit flag</em>
+<a id='L85' name='L85'></a><em class='comment'>        * is very useful when 'clen' is dropped.</em>
+<a id='L86' name='L86'></a><em class='comment'>        */</em>
+<a id='L87' name='L87'></a><em class='sharp'>#define</em> <a href='../R/1122.html' title='Multiple referred from 8 places.'>DUK_HSTRING_IS_ASCII</a>(x)                     (<a href='../D/1552.html' title='Multiple defined in 8 places.'>DUK_HSTRING_GET_BYTELEN</a>((x)) == <a href='../D/1553.html' title='Multiple defined in 12 places.'>DUK_HSTRING_GET_CHARLEN</a>((x)))
+<a id='L88' name='L88'></a><em class='sharp'>#endif</em>
+<a id='L89' name='L89'></a><em class='sharp'>#define</em> <a href='../R/1122.html' title='Multiple referred from 8 places.'>DUK_HSTRING_IS_ASCII</a>(x)                     <a href='../D/1559.html' title='Multiple defined in 4 places.'>DUK_HSTRING_HAS_ASCII</a>((x))  <em class='comment'>/* lazily set! */</em>
+<a id='L90' name='L90'></a><em class='sharp'>#define</em> DUK_HSTRING_IS_EMPTY(x)                     (<a href='../D/1552.html' title='Multiple defined in 8 places.'>DUK_HSTRING_GET_BYTELEN</a>((x)) == 0)
+<a id='L91' name='L91'></a>
+<a id='L92' name='L92'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3223.html' title='Multiple defined in 3 places.'>DUK_USE_STRHASH16</a>)
+<a id='L93' name='L93'></a><em class='sharp'>#define</em> <a href='../R/1110.html' title='Multiple referred from 80 places.'>DUK_HSTRING_GET_HASH</a>(x)                     ((x)-&gt;hdr.h_flags &gt;&gt; 16)
+<a id='L94' name='L94'></a><em class='sharp'>#define</em> <a href='../R/1129.html' title='Multiple referred from 4 places.'>DUK_HSTRING_SET_HASH</a>(x,v) <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L95' name='L95'></a>                (x)-&gt;hdr.h_flags = ((x)-&gt;hdr.h_flags &amp; 0x0000ffffUL) | ((v) &lt;&lt; 16); \
+<a id='L96' name='L96'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L97' name='L97'></a><em class='sharp'>#else</em>
+<a id='L98' name='L98'></a><em class='sharp'>#define</em> <a href='../R/1110.html' title='Multiple referred from 80 places.'>DUK_HSTRING_GET_HASH</a>(x)                     ((x)-&gt;hash)
+<a id='L99' name='L99'></a><em class='sharp'>#define</em> <a href='../R/1129.html' title='Multiple referred from 4 places.'>DUK_HSTRING_SET_HASH</a>(x,v) <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L100' name='L100'></a>                (x)-&gt;hash = (v); \
+<a id='L101' name='L101'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L102' name='L102'></a><em class='sharp'>#endif</em>
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3229.html' title='Multiple defined in 3 places.'>DUK_USE_STRLEN16</a>)
+<a id='L105' name='L105'></a><em class='sharp'>#define</em> <a href='../R/1106.html' title='Multiple referred from 412 places.'>DUK_HSTRING_GET_BYTELEN</a>(x)                  ((x)-&gt;hdr.h_strextra16)
+<a id='L106' name='L106'></a><em class='sharp'>#define</em> <a href='../R/1127.html' title='Multiple referred from 4 places.'>DUK_HSTRING_SET_BYTELEN</a>(x,v) <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L107' name='L107'></a>                (x)-&gt;hdr.h_strextra16 = (v); \
+<a id='L108' name='L108'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L109' name='L109'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3145.html' title='Multiple defined in 3 places.'>DUK_USE_HSTRING_CLEN</a>)
+<a id='L110' name='L110'></a><em class='sharp'>#define</em> <a href='../R/1107.html' title='Multiple referred from 140 places.'>DUK_HSTRING_GET_CHARLEN</a>(x)                  <a href='../D/5293.html' title='Multiple defined in 12 places.'>duk_hstring_get_charlen</a>((x))
+<a id='L111' name='L111'></a><em class='sharp'>#define</em> DUK_HSTRING_SET_CHARLEN(x,v) <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L112' name='L112'></a>                (x)-&gt;clen16 = (v); \
+<a id='L113' name='L113'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L114' name='L114'></a><em class='sharp'>#else</em>
+<a id='L115' name='L115'></a><em class='sharp'>#define</em> <a href='../R/1107.html' title='Multiple referred from 140 places.'>DUK_HSTRING_GET_CHARLEN</a>(x)                  <a href='../D/5293.html' title='Multiple defined in 12 places.'>duk_hstring_get_charlen</a>((x))
+<a id='L116' name='L116'></a><em class='sharp'>#define</em> DUK_HSTRING_SET_CHARLEN(x,v) <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L117' name='L117'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(0);  <em class='comment'>/* should never be called */</em> \
+<a id='L118' name='L118'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L119' name='L119'></a><em class='sharp'>#endif</em>
+<a id='L120' name='L120'></a><em class='sharp'>#else</em>
+<a id='L121' name='L121'></a><em class='sharp'>#define</em> <a href='../R/1106.html' title='Multiple referred from 412 places.'>DUK_HSTRING_GET_BYTELEN</a>(x)                  ((x)-&gt;blen)
+<a id='L122' name='L122'></a><em class='sharp'>#define</em> <a href='../R/1127.html' title='Multiple referred from 4 places.'>DUK_HSTRING_SET_BYTELEN</a>(x,v) <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L123' name='L123'></a>                (x)-&gt;blen = (v); \
+<a id='L124' name='L124'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L125' name='L125'></a><em class='sharp'>#define</em> <a href='../R/1107.html' title='Multiple referred from 140 places.'>DUK_HSTRING_GET_CHARLEN</a>(x)                  <a href='../D/5293.html' title='Multiple defined in 12 places.'>duk_hstring_get_charlen</a>((x))
+<a id='L126' name='L126'></a><em class='sharp'>#define</em> DUK_HSTRING_SET_CHARLEN(x,v) <strong class='reserved'>do</strong> <em class='brace'>{</em> \
+<a id='L127' name='L127'></a>                (x)-&gt;clen = (v); \
+<a id='L128' name='L128'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L129' name='L129'></a><em class='sharp'>#endif</em>
+<a id='L130' name='L130'></a>
+<a id='L131' name='L131'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3146.html' title='Multiple defined in 3 places.'>DUK_USE_HSTRING_EXTDATA</a>)
+<a id='L132' name='L132'></a><em class='sharp'>#define</em> <a href='../R/1109.html' title='Multiple referred from 12 places.'>DUK_HSTRING_GET_EXTDATA</a>(x) \
+<a id='L133' name='L133'></a>        ((x)-&gt;extdata)
+<a id='L134' name='L134'></a><em class='sharp'>#define</em> <a href='../R/1108.html' title='Multiple referred from 348 places.'>DUK_HSTRING_GET_DATA</a>(x) \
+<a id='L135' name='L135'></a>        (<a href='../D/1561.html' title='Multiple defined in 4 places.'>DUK_HSTRING_HAS_EXTDATA</a>((x)) ? \
+<a id='L136' name='L136'></a>                <a href='../D/1556.html' title='Multiple defined in 4 places.'>DUK_HSTRING_GET_EXTDATA</a>((<strong class='reserved'>const</strong> <a href='../D/5292.html' title='Multiple defined in 8 places.'>duk_hstring_external</a> *) (x)) : ((<strong class='reserved'>const</strong> <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) ((x) + 1)))
+<a id='L137' name='L137'></a><em class='sharp'>#else</em>
+<a id='L138' name='L138'></a><em class='sharp'>#define</em> <a href='../R/1108.html' title='Multiple referred from 348 places.'>DUK_HSTRING_GET_DATA</a>(x) \
+<a id='L139' name='L139'></a>        ((<strong class='reserved'>const</strong> <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) ((x) + 1))
+<a id='L140' name='L140'></a><em class='sharp'>#endif</em>
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a><em class='sharp'>#define</em> DUK_HSTRING_GET_DATA_END(x) \
+<a id='L143' name='L143'></a>        (<a href='../D/1554.html' title='Multiple defined in 8 places.'>DUK_HSTRING_GET_DATA</a>((x)) + (x)-&gt;blen)
+<a id='L144' name='L144'></a>
+<a id='L145' name='L145'></a><em class='comment'>/* Marker value; in E5 2^32-1 is not a valid array index (2^32-2 is highest</em>
+<a id='L146' name='L146'></a><em class='comment'> * valid).</em>
+<a id='L147' name='L147'></a><em class='comment'> */</em>
+<a id='L148' name='L148'></a><em class='sharp'>#define</em> <a href='../R/1124.html' title='Multiple referred from 28 places.'>DUK_HSTRING_NO_ARRAY_INDEX</a>  (0xffffffffUL)
+<a id='L149' name='L149'></a>
+<a id='L150' name='L150'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3144.html' title='Multiple defined in 3 places.'>DUK_USE_HSTRING_ARRIDX</a>)
+<a id='L151' name='L151'></a><em class='sharp'>#define</em> <a href='../R/1104.html' title='Multiple referred from 20 places.'>DUK_HSTRING_GET_ARRIDX_FAST</a>(h)  ((h)-&gt;arridx)
+<a id='L152' name='L152'></a><em class='sharp'>#define</em> <a href='../R/1105.html' title='Multiple referred from 20 places.'>DUK_HSTRING_GET_ARRIDX_SLOW</a>(h)  ((h)-&gt;arridx)
+<a id='L153' name='L153'></a><em class='sharp'>#else</em>
+<a id='L154' name='L154'></a><em class='comment'>/* Get array index related to string (or return DUK_HSTRING_NO_ARRAY_INDEX);</em>
+<a id='L155' name='L155'></a><em class='comment'> * avoids helper call if string has no array index value.</em>
+<a id='L156' name='L156'></a><em class='comment'> */</em>
+<a id='L157' name='L157'></a><em class='sharp'>#define</em> <a href='../R/1104.html' title='Multiple referred from 20 places.'>DUK_HSTRING_GET_ARRIDX_FAST</a>(h)  \
+<a id='L158' name='L158'></a>        (<a href='../D/1558.html' title='Multiple defined in 4 places.'>DUK_HSTRING_HAS_ARRIDX</a>((h)) ? <a href='../D/5422.html' title='Multiple defined in 4 places.'>duk_js_to_arrayindex_hstring_fast_known</a>((h)) : <a href='../D/1574.html' title='Multiple defined in 4 places.'>DUK_HSTRING_NO_ARRAY_INDEX</a>)
+<a id='L159' name='L159'></a>
+<a id='L160' name='L160'></a><em class='comment'>/* Slower but more compact variant. */</em>
+<a id='L161' name='L161'></a><em class='sharp'>#define</em> <a href='../R/1105.html' title='Multiple referred from 20 places.'>DUK_HSTRING_GET_ARRIDX_SLOW</a>(h)  \
+<a id='L162' name='L162'></a>        (<a href='../D/5421.html' title='Multiple defined in 4 places.'>duk_js_to_arrayindex_hstring_fast</a>((h)))
+<a id='L163' name='L163'></a><em class='sharp'>#endif</em>
+<a id='L164' name='L164'></a>
+<a id='L165' name='L165'></a><em class='comment'>/* XXX: these actually fit into duk_hstring */</em>
+<a id='L166' name='L166'></a><em class='sharp'>#define</em> <a href='../R/2010.html' title='Multiple referred from 8 places.'>DUK_SYMBOL_TYPE_HIDDEN</a> 0
+<a id='L167' name='L167'></a><em class='sharp'>#define</em> <a href='../R/2009.html' title='Multiple referred from 4 places.'>DUK_SYMBOL_TYPE_GLOBAL</a> 1
+<a id='L168' name='L168'></a><em class='sharp'>#define</em> <a href='../R/2011.html' title='Multiple referred from 4 places.'>DUK_SYMBOL_TYPE_LOCAL</a> 2
+<a id='L169' name='L169'></a><em class='sharp'>#define</em> <a href='../R/2012.html' title='Multiple referred from 4 places.'>DUK_SYMBOL_TYPE_WELLKNOWN</a> 3
+<a id='L170' name='L170'></a>
+<a id='L171' name='L171'></a><em class='comment'>/* Assertion for duk_hstring validity. */</em>
+<a id='L172' name='L172'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3018.html' title='Multiple defined in 3 places.'>DUK_USE_ASSERTIONS</a>)
+<a id='L173' name='L173'></a><a href='../D/1793.html' title='Multiple defined in 60 places.'>DUK_INTERNAL_DECL</a> <strong class='reserved'>void</strong> <a href='../D/5287.html' title='Multiple defined in 4 places.'>duk_hstring_assert_valid</a>(<a href='../D/5286.html' title='Multiple defined in 8 places.'>duk_hstring</a> *h);
+<a id='L174' name='L174'></a><em class='sharp'>#define</em> <a href='../R/1089.html' title='Multiple referred from 8 places.'>DUK_HSTRING_ASSERT_VALID</a>(h)  <strong class='reserved'>do</strong> <em class='brace'>{</em> <a href='../D/5287.html' title='Multiple defined in 4 places.'>duk_hstring_assert_valid</a>((h)); <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L175' name='L175'></a><em class='sharp'>#else</em>
+<a id='L176' name='L176'></a><em class='sharp'>#define</em> <a href='../R/1089.html' title='Multiple referred from 8 places.'>DUK_HSTRING_ASSERT_VALID</a>(h)  <strong class='reserved'>do</strong> <em class='brace'>{</em><em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L177' name='L177'></a><em class='sharp'>#endif</em>
+<a id='L178' name='L178'></a>
+<a id='L179' name='L179'></a><em class='comment'>/*</em>
+<a id='L180' name='L180'></a><em class='comment'> *  Misc</em>
+<a id='L181' name='L181'></a><em class='comment'> */</em>
+<a id='L182' name='L182'></a>
+<a id='L183' name='L183'></a><strong class='reserved'>struct</strong> <a href='../R/4501.html' title='Multiple referred from 1904 places.'>duk_hstring</a> <em class='brace'>{</em>
+<a id='L184' name='L184'></a>        <em class='comment'>/* Smaller heaphdr than for other objects, because strings are held</em>
+<a id='L185' name='L185'></a><em class='comment'>         * in string intern table which requires no link pointers.  Much of</em>
+<a id='L186' name='L186'></a><em class='comment'>         * the 32-bit flags field is unused by flags, so we can stuff a 16-bit</em>
+<a id='L187' name='L187'></a><em class='comment'>         * field in there.</em>
+<a id='L188' name='L188'></a><em class='comment'>         */</em>
+<a id='L189' name='L189'></a>        <a href='../D/5226.html' title='Multiple defined in 8 places.'>duk_heaphdr_string</a> hdr;
+<a id='L190' name='L190'></a>
+<a id='L191' name='L191'></a>        <em class='comment'>/* String hash. */</em>
+<a id='L192' name='L192'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3223.html' title='Multiple defined in 3 places.'>DUK_USE_STRHASH16</a>)
+<a id='L193' name='L193'></a>        <em class='comment'>/* If 16-bit hash is in use, stuff it into duk_heaphdr_string flags. */</em>
+<a id='L194' name='L194'></a><em class='sharp'>#else</em>
+<a id='L195' name='L195'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> hash;
+<a id='L196' name='L196'></a><em class='sharp'>#endif</em>
+<a id='L197' name='L197'></a>
+<a id='L198' name='L198'></a>        <em class='comment'>/* Precomputed array index (or DUK_HSTRING_NO_ARRAY_INDEX). */</em>
+<a id='L199' name='L199'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3144.html' title='Multiple defined in 3 places.'>DUK_USE_HSTRING_ARRIDX</a>)
+<a id='L200' name='L200'></a>        <a href='../D/5880.html' title='Multiple defined in 3 places.'>duk_uarridx_t</a> arridx;
+<a id='L201' name='L201'></a><em class='sharp'>#endif</em>
+<a id='L202' name='L202'></a>
+<a id='L203' name='L203'></a>        <em class='comment'>/* Length in bytes (not counting NUL term). */</em>
+<a id='L204' name='L204'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3229.html' title='Multiple defined in 3 places.'>DUK_USE_STRLEN16</a>)
+<a id='L205' name='L205'></a>        <em class='comment'>/* placed in duk_heaphdr_string */</em>
+<a id='L206' name='L206'></a><em class='sharp'>#else</em>
+<a id='L207' name='L207'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> blen;
+<a id='L208' name='L208'></a><em class='sharp'>#endif</em>
+<a id='L209' name='L209'></a>
+<a id='L210' name='L210'></a>        <em class='comment'>/* Length in codepoints (must be E5 compatible). */</em>
+<a id='L211' name='L211'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3229.html' title='Multiple defined in 3 places.'>DUK_USE_STRLEN16</a>)
+<a id='L212' name='L212'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3145.html' title='Multiple defined in 3 places.'>DUK_USE_HSTRING_CLEN</a>)
+<a id='L213' name='L213'></a>        <a href='../D/5883.html' title='Multiple defined in 9 places.'>duk_uint16_t</a> clen16;
+<a id='L214' name='L214'></a><em class='sharp'>#else</em>
+<a id='L215' name='L215'></a>        <em class='comment'>/* computed live */</em>
+<a id='L216' name='L216'></a><em class='sharp'>#endif</em>
+<a id='L217' name='L217'></a><em class='sharp'>#else</em>
+<a id='L218' name='L218'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> clen;
+<a id='L219' name='L219'></a><em class='sharp'>#endif</em>
+<a id='L220' name='L220'></a>
+<a id='L221' name='L221'></a>        <em class='comment'>/*</em>
+<a id='L222' name='L222'></a><em class='comment'>         *  String data of 'blen+1' bytes follows (+1 for NUL termination</em>
+<a id='L223' name='L223'></a><em class='comment'>         *  convenience for C API).  No alignment needs to be guaranteed</em>
+<a id='L224' name='L224'></a><em class='comment'>         *  for strings, but fields above should guarantee alignment-by-4</em>
+<a id='L225' name='L225'></a><em class='comment'>         *  (but not alignment-by-8).</em>
+<a id='L226' name='L226'></a><em class='comment'>         */</em>
+<a id='L227' name='L227'></a><em class='brace'>}</em>;
+<a id='L228' name='L228'></a>
+<a id='L229' name='L229'></a><em class='comment'>/* The external string struct is defined even when the feature is inactive. */</em>
+<a id='L230' name='L230'></a><strong class='reserved'>struct</strong> <a href='../R/4507.html' title='Multiple referred from 36 places.'>duk_hstring_external</a> <em class='brace'>{</em>
+<a id='L231' name='L231'></a>        <a href='../D/5286.html' title='Multiple defined in 8 places.'>duk_hstring</a> str;
+<a id='L232' name='L232'></a>
+<a id='L233' name='L233'></a>        <em class='comment'>/*</em>
+<a id='L234' name='L234'></a><em class='comment'>         *  For an external string, the NUL-terminated string data is stored</em>
+<a id='L235' name='L235'></a><em class='comment'>         *  externally.  The user must guarantee that data behind this pointer</em>
+<a id='L236' name='L236'></a><em class='comment'>         *  doesn't change while it's used.</em>
+<a id='L237' name='L237'></a><em class='comment'>         */</em>
+<a id='L238' name='L238'></a>
+<a id='L239' name='L239'></a>        <strong class='reserved'>const</strong> <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *extdata;
+<a id='L240' name='L240'></a><em class='brace'>}</em>;
+<a id='L241' name='L241'></a>
+<a id='L242' name='L242'></a><em class='comment'>/*</em>
+<a id='L243' name='L243'></a><em class='comment'> *  Prototypes</em>
+<a id='L244' name='L244'></a><em class='comment'> */</em>
+<a id='L245' name='L245'></a>
+<a id='L246' name='L246'></a><a href='../D/1793.html' title='Multiple defined in 60 places.'>DUK_INTERNAL_DECL</a> <a href='../D/5881.html' title='Multiple defined in 3 places.'>duk_ucodepoint_t</a> <a href='../D/5288.html' title='Multiple defined in 4 places.'>duk_hstring_char_code_at_raw</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/5286.html' title='Multiple defined in 8 places.'>duk_hstring</a> *h, <a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a> pos, <a href='../D/4797.html' title='Multiple defined in 3 places.'>duk_bool_t</a> surrogate_aware);
+<a id='L247' name='L247'></a><a href='../D/1793.html' title='Multiple defined in 60 places.'>DUK_INTERNAL_DECL</a> <a href='../D/4797.html' title='Multiple defined in 3 places.'>duk_bool_t</a> <a href='../D/5291.html' title='Multiple defined in 4 places.'>duk_hstring_equals_ascii_cstring</a>(<a href='../D/5286.html' title='Multiple defined in 8 places.'>duk_hstring</a> *h, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *cstr);
+<a id='L248' name='L248'></a><a href='../D/1793.html' title='Multiple defined in 60 places.'>DUK_INTERNAL_DECL</a> <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> <a href='../D/5293.html' title='Multiple defined in 12 places.'>duk_hstring_get_charlen</a>(<a href='../D/5286.html' title='Multiple defined in 8 places.'>duk_hstring</a> *h);
+<a id='L249' name='L249'></a><em class='sharp'>#if</em> !<strong class='reserved'>defined</strong>(<a href='../D/3147.html' title='Multiple defined in 3 places.'>DUK_USE_HSTRING_LAZY_CLEN</a>)
+<a id='L250' name='L250'></a><a href='../D/1793.html' title='Multiple defined in 60 places.'>DUK_INTERNAL_DECL</a> <strong class='reserved'>void</strong> <a href='../D/5294.html' title='Multiple defined in 4 places.'>duk_hstring_init_charlen</a>(<a href='../D/5286.html' title='Multiple defined in 8 places.'>duk_hstring</a> *h);
+<a id='L251' name='L251'></a><em class='sharp'>#endif</em>
+<a id='L252' name='L252'></a>
+<a id='L253' name='L253'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_HSTRING_H_INCLUDED */</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;][^][v]<a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

@@ -1,0 +1,447 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src-separate/duk_hthread_stacks.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1032.html'>src-separate</a>/duk_hthread_stacks.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L13'>[^]</a><a href='#L369'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L13' title='Defined at 13.'>duk_hthread_catcher_unwind_norz</a></li>
+<li><a href='#L43' title='Defined at 43.'>duk_hthread_catcher_unwind_nolexenv_norz</a></li>
+<li><a href='#L64' title='Defined at 64.'>duk__hthread_catcher_alloc_slow</a></li>
+<li><a href='#L73' title='Defined at 73.'>duk_hthread_catcher_alloc</a></li>
+<li><a href='#L87' title='Defined at 87.'>duk_hthread_catcher_alloc</a></li>
+<li><a href='#L92' title='Defined at 92.'>duk_hthread_catcher_free</a></li>
+<li><a href='#L109' title='Defined at 109.'>duk__hthread_activation_alloc_slow</a></li>
+<li><a href='#L118' title='Defined at 118.'>duk_hthread_activation_alloc</a></li>
+<li><a href='#L132' title='Defined at 132.'>duk_hthread_activation_alloc</a></li>
+<li><a href='#L138' title='Defined at 138.'>duk_hthread_activation_free</a></li>
+<li><a href='#L154' title='Defined at 154.'>duk__activation_unwind_nofree_norz</a></li>
+<li><a href='#L314' title='Defined at 314.'>duk_hthread_activation_unwind_norz</a></li>
+<li><a href='#L339' title='Defined at 339.'>duk_hthread_activation_unwind_reuse_norz</a></li>
+<li><a href='#L348' title='Defined at 348.'>duk_hthread_get_activation_for_level</a></li>
+<li><a href='#L369' title='Defined at 369.'>duk_hthread_valstack_torture_realloc</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Thread stack (mainly call stack) primitives: allocation of activations,</em>
+<a id='L3' name='L3'></a><em class='comment'> *  unwinding catchers and activations, etc.</em>
+<a id='L4' name='L4'></a><em class='comment'> *</em>
+<a id='L5' name='L5'></a><em class='comment'> *  Value stack handling is a part of the API implementation.</em>
+<a id='L6' name='L6'></a><em class='comment'> */</em>
+<a id='L7' name='L7'></a>
+<a id='L8' name='L8'></a><em class='sharp'>#include</em> "<a href='../I/161.html'>duk_internal.h</a>"
+<a id='L9' name='L9'></a>
+<a id='L10' name='L10'></a><em class='comment'>/* Unwind the topmost catcher of the current activation (caller must check that</em>
+<a id='L11' name='L11'></a><em class='comment'> * both exist) without side effects.</em>
+<a id='L12' name='L12'></a><em class='comment'> */</em>
+<a id='L13' name='L13'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4522.html' title='Multiple referred from 32 places.'>duk_hthread_catcher_unwind_norz</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *act) <em class='brace'>{</em>
+<a id='L14' name='L14'></a>        <a href='../D/4821.html' title='Multiple defined in 8 places.'>duk_catcher</a> *cat;
+<a id='L15' name='L15'></a>
+<a id='L16' name='L16'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr != NULL);
+<a id='L17' name='L17'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(act != NULL);
+<a id='L18' name='L18'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(act-&gt;cat != NULL);  <em class='comment'>/* caller must check */</em>
+<a id='L19' name='L19'></a>        cat = act-&gt;cat;
+<a id='L20' name='L20'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(cat != NULL);
+<a id='L21' name='L21'></a>
+<a id='L22' name='L22'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("unwinding catch stack entry %p (lexenv check is done)", (<strong class='reserved'>void</strong> *) cat));
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a>        <strong class='reserved'>if</strong> (<a href='../D/406.html' title='Multiple defined in 4 places.'>DUK_CAT_HAS_LEXENV_ACTIVE</a>(cat)) <em class='brace'>{</em>
+<a id='L25' name='L25'></a>                <a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a> *env;
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a>                env = act-&gt;lex_env;             <em class='comment'>/* current lex_env of the activation (created for catcher) */</em>
+<a id='L28' name='L28'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(env != NULL);        <em class='comment'>/* must be, since env was created when catcher was created */</em>
+<a id='L29' name='L29'></a>                act-&gt;lex_env = <a href='../D/1436.html' title='Multiple defined in 8 places.'>DUK_HOBJECT_GET_PROTOTYPE</a>(thr-&gt;heap, env);  <em class='comment'>/* prototype is lex_env before catcher created */</em>
+<a id='L30' name='L30'></a>                <a href='../D/1467.html' title='Multiple defined in 12 places.'>DUK_HOBJECT_INCREF</a>(thr, act-&gt;lex_env);
+<a id='L31' name='L31'></a>                <a href='../D/1364.html' title='Multiple defined in 12 places.'>DUK_HOBJECT_DECREF_NORZ</a>(thr, env);
+<a id='L32' name='L32'></a>
+<a id='L33' name='L33'></a>                <em class='comment'>/* There is no need to decref anything else than 'env': if 'env'</em>
+<a id='L34' name='L34'></a><em class='comment'>                 * becomes unreachable, refzero will handle decref'ing its prototype.</em>
+<a id='L35' name='L35'></a><em class='comment'>                 */</em>
+<a id='L36' name='L36'></a>        <em class='brace'>}</em>
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a>        act-&gt;cat = cat-&gt;parent;
+<a id='L39' name='L39'></a>        <a href='../D/5305.html' title='Multiple defined in 4 places.'>duk_hthread_catcher_free</a>(thr, cat);
+<a id='L40' name='L40'></a><em class='brace'>}</em>
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a><em class='comment'>/* Same as above, but caller is certain no catcher-related lexenv may exist. */</em>
+<a id='L43' name='L43'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4521.html' title='Multiple referred from 8 places.'>duk_hthread_catcher_unwind_nolexenv_norz</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *act) <em class='brace'>{</em>
+<a id='L44' name='L44'></a>        <a href='../D/4821.html' title='Multiple defined in 8 places.'>duk_catcher</a> *cat;
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr != NULL);
+<a id='L47' name='L47'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(act != NULL);
+<a id='L48' name='L48'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(act-&gt;cat != NULL);  <em class='comment'>/* caller must check */</em>
+<a id='L49' name='L49'></a>        cat = act-&gt;cat;
+<a id='L50' name='L50'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(cat != NULL);
+<a id='L51' name='L51'></a>
+<a id='L52' name='L52'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("unwinding catch stack entry %p (lexenv check is not done)", (<strong class='reserved'>void</strong> *) cat));
+<a id='L53' name='L53'></a>
+<a id='L54' name='L54'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(!<a href='../D/406.html' title='Multiple defined in 4 places.'>DUK_CAT_HAS_LEXENV_ACTIVE</a>(cat));
+<a id='L55' name='L55'></a>
+<a id='L56' name='L56'></a>        act-&gt;cat = cat-&gt;parent;
+<a id='L57' name='L57'></a>        <a href='../D/5305.html' title='Multiple defined in 4 places.'>duk_hthread_catcher_free</a>(thr, cat);
+<a id='L58' name='L58'></a><em class='brace'>}</em>
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a>
+<a id='L61' name='L61'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3032.html' title='Multiple defined in 3 places.'>DUK_USE_CACHE_CATCHER</a>)
+<a id='L62' name='L62'></a><a href='../D/1921.html' title='Multiple defined in 21 places.'>DUK_NOINLINE</a>
+<a id='L63' name='L63'></a><em class='sharp'>#endif</em>
+<a id='L64' name='L64'></a><a href='../D/4821.html' title='Multiple defined in 8 places.'>duk_catcher</a> *<a href='../R/3442.html' title='Multiple referred from 8 places.'>duk__hthread_catcher_alloc_slow</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L65' name='L65'></a>        <a href='../D/4821.html' title='Multiple defined in 8 places.'>duk_catcher</a> *cat;
+<a id='L66' name='L66'></a>
+<a id='L67' name='L67'></a>        cat = (<a href='../D/4821.html' title='Multiple defined in 8 places.'>duk_catcher</a> *) <a href='../D/25.html' title='Multiple defined in 4 places.'>DUK_ALLOC_CHECKED</a>(thr, <strong class='reserved'>sizeof</strong>(<a href='../D/4821.html' title='Multiple defined in 8 places.'>duk_catcher</a>));
+<a id='L68' name='L68'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(cat != NULL);
+<a id='L69' name='L69'></a>        <strong class='reserved'>return</strong> cat;
+<a id='L70' name='L70'></a><em class='brace'>}</em>
+<a id='L71' name='L71'></a>
+<a id='L72' name='L72'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3032.html' title='Multiple defined in 3 places.'>DUK_USE_CACHE_CATCHER</a>)
+<a id='L73' name='L73'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/1780.html' title='Multiple defined in 21 places.'>DUK_INLINE</a> <a href='../D/4821.html' title='Multiple defined in 8 places.'>duk_catcher</a> *<a href='../R/4519.html' title='Multiple referred from 12 places.'>duk_hthread_catcher_alloc</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L74' name='L74'></a>        <a href='../D/4821.html' title='Multiple defined in 8 places.'>duk_catcher</a> *cat;
+<a id='L75' name='L75'></a>
+<a id='L76' name='L76'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr != NULL);
+<a id='L77' name='L77'></a>
+<a id='L78' name='L78'></a>        cat = thr-&gt;heap-&gt;catcher_free;
+<a id='L79' name='L79'></a>        <strong class='reserved'>if</strong> (<a href='../D/1877.html' title='Multiple defined in 12 places.'>DUK_LIKELY</a>(cat != NULL)) <em class='brace'>{</em>
+<a id='L80' name='L80'></a>                thr-&gt;heap-&gt;catcher_free = cat-&gt;parent;
+<a id='L81' name='L81'></a>                <strong class='reserved'>return</strong> cat;
+<a id='L82' name='L82'></a>        <em class='brace'>}</em>
+<a id='L83' name='L83'></a>
+<a id='L84' name='L84'></a>        <strong class='reserved'>return</strong> <a href='../D/4203.html' title='Multiple defined in 4 places.'>duk__hthread_catcher_alloc_slow</a>(thr);
+<a id='L85' name='L85'></a><em class='brace'>}</em>
+<a id='L86' name='L86'></a><em class='sharp'>#else</em>  <em class='comment'>/* DUK_USE_CACHE_CATCHER */</em>
+<a id='L87' name='L87'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/4821.html' title='Multiple defined in 8 places.'>duk_catcher</a> *<a href='../R/4519.html' title='Multiple referred from 12 places.'>duk_hthread_catcher_alloc</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L88' name='L88'></a>        <strong class='reserved'>return</strong> <a href='../D/4203.html' title='Multiple defined in 4 places.'>duk__hthread_catcher_alloc_slow</a>(thr);
+<a id='L89' name='L89'></a><em class='brace'>}</em>
+<a id='L90' name='L90'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_CACHE_CATCHER */</em>
+<a id='L91' name='L91'></a>
+<a id='L92' name='L92'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4520.html' title='Multiple referred from 12 places.'>duk_hthread_catcher_free</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/4821.html' title='Multiple defined in 8 places.'>duk_catcher</a> *cat) <em class='brace'>{</em>
+<a id='L93' name='L93'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr != NULL);
+<a id='L94' name='L94'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(cat != NULL);
+<a id='L95' name='L95'></a>
+<a id='L96' name='L96'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3032.html' title='Multiple defined in 3 places.'>DUK_USE_CACHE_CATCHER</a>)
+<a id='L97' name='L97'></a>        <em class='comment'>/* Unconditional caching for now; freed in mark-and-sweep. */</em>
+<a id='L98' name='L98'></a>        cat-&gt;parent = thr-&gt;heap-&gt;catcher_free;
+<a id='L99' name='L99'></a>        thr-&gt;heap-&gt;catcher_free = cat;
+<a id='L100' name='L100'></a><em class='sharp'>#else</em>
+<a id='L101' name='L101'></a>        <a href='../D/792.html' title='Multiple defined in 4 places.'>DUK_FREE_CHECKED</a>(thr, (<strong class='reserved'>void</strong> *) cat);
+<a id='L102' name='L102'></a><em class='sharp'>#endif</em>
+<a id='L103' name='L103'></a><em class='brace'>}</em>
+<a id='L104' name='L104'></a>
+<a id='L105' name='L105'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a>
+<a id='L106' name='L106'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3031.html' title='Multiple defined in 3 places.'>DUK_USE_CACHE_ACTIVATION</a>)
+<a id='L107' name='L107'></a><a href='../D/1921.html' title='Multiple defined in 21 places.'>DUK_NOINLINE</a>
+<a id='L108' name='L108'></a><em class='sharp'>#endif</em>
+<a id='L109' name='L109'></a><a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *<a href='../R/3441.html' title='Multiple referred from 8 places.'>duk__hthread_activation_alloc_slow</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L110' name='L110'></a>        <a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *act;
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a>        act = (<a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *) <a href='../D/25.html' title='Multiple defined in 4 places.'>DUK_ALLOC_CHECKED</a>(thr, <strong class='reserved'>sizeof</strong>(<a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a>));
+<a id='L113' name='L113'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(act != NULL);
+<a id='L114' name='L114'></a>        <strong class='reserved'>return</strong> act;
+<a id='L115' name='L115'></a><em class='brace'>}</em>
+<a id='L116' name='L116'></a>
+<a id='L117' name='L117'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3031.html' title='Multiple defined in 3 places.'>DUK_USE_CACHE_ACTIVATION</a>)
+<a id='L118' name='L118'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/1780.html' title='Multiple defined in 21 places.'>DUK_INLINE</a> <a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *<a href='../R/4512.html' title='Multiple referred from 8 places.'>duk_hthread_activation_alloc</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L119' name='L119'></a>        <a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *act;
+<a id='L120' name='L120'></a>
+<a id='L121' name='L121'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr != NULL);
+<a id='L122' name='L122'></a>
+<a id='L123' name='L123'></a>        act = thr-&gt;heap-&gt;activation_free;
+<a id='L124' name='L124'></a>        <strong class='reserved'>if</strong> (<a href='../D/1877.html' title='Multiple defined in 12 places.'>DUK_LIKELY</a>(act != NULL)) <em class='brace'>{</em>
+<a id='L125' name='L125'></a>                thr-&gt;heap-&gt;activation_free = act-&gt;parent;
+<a id='L126' name='L126'></a>                <strong class='reserved'>return</strong> act;
+<a id='L127' name='L127'></a>        <em class='brace'>}</em>
+<a id='L128' name='L128'></a>
+<a id='L129' name='L129'></a>        <strong class='reserved'>return</strong> <a href='../D/4202.html' title='Multiple defined in 4 places.'>duk__hthread_activation_alloc_slow</a>(thr);
+<a id='L130' name='L130'></a><em class='brace'>}</em>
+<a id='L131' name='L131'></a><em class='sharp'>#else</em>  <em class='comment'>/* DUK_USE_CACHE_ACTIVATION */</em>
+<a id='L132' name='L132'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *<a href='../R/4512.html' title='Multiple referred from 8 places.'>duk_hthread_activation_alloc</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L133' name='L133'></a>        <strong class='reserved'>return</strong> <a href='../D/4202.html' title='Multiple defined in 4 places.'>duk__hthread_activation_alloc_slow</a>(thr);
+<a id='L134' name='L134'></a><em class='brace'>}</em>
+<a id='L135' name='L135'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_CACHE_ACTIVATION */</em>
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a>
+<a id='L138' name='L138'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4513.html' title='Multiple referred from 8 places.'>duk_hthread_activation_free</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *act) <em class='brace'>{</em>
+<a id='L139' name='L139'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr != NULL);
+<a id='L140' name='L140'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(act != NULL);
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3031.html' title='Multiple defined in 3 places.'>DUK_USE_CACHE_ACTIVATION</a>)
+<a id='L143' name='L143'></a>        <em class='comment'>/* Unconditional caching for now; freed in mark-and-sweep. */</em>
+<a id='L144' name='L144'></a>        act-&gt;parent = thr-&gt;heap-&gt;activation_free;
+<a id='L145' name='L145'></a>        thr-&gt;heap-&gt;activation_free = act;
+<a id='L146' name='L146'></a><em class='sharp'>#else</em>
+<a id='L147' name='L147'></a>        <a href='../D/792.html' title='Multiple defined in 4 places.'>DUK_FREE_CHECKED</a>(thr, (<strong class='reserved'>void</strong> *) act);
+<a id='L148' name='L148'></a><em class='sharp'>#endif</em>
+<a id='L149' name='L149'></a><em class='brace'>}</em>
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a><em class='comment'>/* Internal helper: process the unwind for the topmost activation of a thread,</em>
+<a id='L152' name='L152'></a><em class='comment'> * but leave the duk_activation in place for possible tailcall reuse.</em>
+<a id='L153' name='L153'></a><em class='comment'> */</em>
+<a id='L154' name='L154'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/2991.html' title='Multiple referred from 8 places.'>duk__activation_unwind_nofree_norz</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L155' name='L155'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3069.html' title='Multiple defined in 3 places.'>DUK_USE_DEBUGGER_SUPPORT</a>)
+<a id='L156' name='L156'></a>        <a href='../D/5181.html' title='Multiple defined in 8 places.'>duk_heap</a> *heap;
+<a id='L157' name='L157'></a><em class='sharp'>#endif</em>
+<a id='L158' name='L158'></a>        <a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *act;
+<a id='L159' name='L159'></a>        <a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a> *func;
+<a id='L160' name='L160'></a>        <a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a> *tmp;
+<a id='L161' name='L161'></a>
+<a id='L162' name='L162'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr != NULL);
+<a id='L163' name='L163'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr-&gt;callstack_curr != NULL);  <em class='comment'>/* caller must check */</em>
+<a id='L164' name='L164'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr-&gt;callstack_top &gt; 0);
+<a id='L165' name='L165'></a>        act = thr-&gt;callstack_curr;
+<a id='L166' name='L166'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(act != NULL);
+<a id='L167' name='L167'></a>        <em class='comment'>/* With lightfuncs, act 'func' may be NULL. */</em>
+<a id='L168' name='L168'></a>
+<a id='L169' name='L169'></a>        <em class='comment'>/* With duk_activation records allocated separately, 'act' is a stable</em>
+<a id='L170' name='L170'></a><em class='comment'>         * pointer and not affected by side effects.</em>
+<a id='L171' name='L171'></a><em class='comment'>         */</em>
+<a id='L172' name='L172'></a>
+<a id='L173' name='L173'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3174.html' title='Multiple defined in 3 places.'>DUK_USE_NONSTD_FUNC_CALLER_PROPERTY</a>)
+<a id='L174' name='L174'></a>        <em class='comment'>/*</em>
+<a id='L175' name='L175'></a><em class='comment'>         *  Restore 'caller' property for non-strict callee functions.</em>
+<a id='L176' name='L176'></a><em class='comment'>         */</em>
+<a id='L177' name='L177'></a>
+<a id='L178' name='L178'></a>        func = <a href='../D/23.html' title='Multiple defined in 4 places.'>DUK_ACT_GET_FUNC</a>(act);
+<a id='L179' name='L179'></a>        <strong class='reserved'>if</strong> (func != NULL &amp;&amp; !<a href='../D/1460.html' title='Multiple defined in 4 places.'>DUK_HOBJECT_HAS_STRICT</a>(func)) <em class='brace'>{</em>
+<a id='L180' name='L180'></a>                <a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *tv_caller;
+<a id='L181' name='L181'></a>                <a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> tv_tmp;
+<a id='L182' name='L182'></a>                <a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a> *h_tmp;
+<a id='L183' name='L183'></a>
+<a id='L184' name='L184'></a>                tv_caller = <a href='../D/5250.html' title='Multiple defined in 4 places.'>duk_hobject_find_entry_tval_ptr_stridx</a>(thr-&gt;heap, func, <a href='../D/2390.html' title='Multiple defined in 3 places.'>DUK_STRIDX_CALLER</a>);
+<a id='L185' name='L185'></a>
+<a id='L186' name='L186'></a>                <em class='comment'>/* The act-&gt;prev_caller should only be set if the entry for 'caller'</em>
+<a id='L187' name='L187'></a><em class='comment'>                 * exists (as it is only set in that case, and the property is not</em>
+<a id='L188' name='L188'></a><em class='comment'>                 * configurable), but handle all the cases anyway.</em>
+<a id='L189' name='L189'></a><em class='comment'>                 */</em>
+<a id='L190' name='L190'></a>
+<a id='L191' name='L191'></a>                <strong class='reserved'>if</strong> (tv_caller) <em class='brace'>{</em>
+<a id='L192' name='L192'></a>                        <a href='../D/2905.html' title='Multiple defined in 8 places.'>DUK_TVAL_SET_TVAL</a>(&amp;tv_tmp, tv_caller);
+<a id='L193' name='L193'></a>                        <strong class='reserved'>if</strong> (act-&gt;prev_caller) <em class='brace'>{</em>
+<a id='L194' name='L194'></a>                                <em class='comment'>/* Just transfer the refcount from act-&gt;prev_caller to tv_caller,</em>
+<a id='L195' name='L195'></a><em class='comment'>                                 * so no need for a refcount update.  This is the expected case.</em>
+<a id='L196' name='L196'></a><em class='comment'>                                 */</em>
+<a id='L197' name='L197'></a>                                <a href='../D/2896.html' title='Multiple defined in 8 places.'>DUK_TVAL_SET_OBJECT</a>(tv_caller, act-&gt;prev_caller);
+<a id='L198' name='L198'></a>                                act-&gt;prev_caller = NULL;
+<a id='L199' name='L199'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L200' name='L200'></a>                                <a href='../D/2886.html' title='Multiple defined in 8 places.'>DUK_TVAL_SET_NULL</a>(tv_caller);   <em class='comment'>/* no incref needed */</em>
+<a id='L201' name='L201'></a>                                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(act-&gt;prev_caller == NULL);
+<a id='L202' name='L202'></a>                        <em class='brace'>}</em>
+<a id='L203' name='L203'></a>                        <a href='../D/2820.html' title='Multiple defined in 12 places.'>DUK_TVAL_DECREF_NORZ</a>(thr, &amp;tv_tmp);
+<a id='L204' name='L204'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L205' name='L205'></a>                        h_tmp = act-&gt;prev_caller;
+<a id='L206' name='L206'></a>                        <strong class='reserved'>if</strong> (h_tmp) <em class='brace'>{</em>
+<a id='L207' name='L207'></a>                                act-&gt;prev_caller = NULL;
+<a id='L208' name='L208'></a>                                <a href='../D/1364.html' title='Multiple defined in 12 places.'>DUK_HOBJECT_DECREF_NORZ</a>(thr, h_tmp);
+<a id='L209' name='L209'></a>                        <em class='brace'>}</em>
+<a id='L210' name='L210'></a>                <em class='brace'>}</em>
+<a id='L211' name='L211'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(act-&gt;prev_caller == NULL);
+<a id='L212' name='L212'></a>        <em class='brace'>}</em>
+<a id='L213' name='L213'></a><em class='sharp'>#endif</em>
+<a id='L214' name='L214'></a>
+<a id='L215' name='L215'></a>        <em class='comment'>/*</em>
+<a id='L216' name='L216'></a><em class='comment'>         *  Unwind debugger state.  If we unwind while stepping</em>
+<a id='L217' name='L217'></a><em class='comment'>         *  (for any step type), pause execution.  This is the</em>
+<a id='L218' name='L218'></a><em class='comment'>         *  only place explicitly handling a step out.</em>
+<a id='L219' name='L219'></a><em class='comment'>         */</em>
+<a id='L220' name='L220'></a>
+<a id='L221' name='L221'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3069.html' title='Multiple defined in 3 places.'>DUK_USE_DEBUGGER_SUPPORT</a>)
+<a id='L222' name='L222'></a>        heap = thr-&gt;heap;
+<a id='L223' name='L223'></a>        <strong class='reserved'>if</strong> (heap-&gt;dbg_pause_act == thr-&gt;callstack_curr) <em class='brace'>{</em>
+<a id='L224' name='L224'></a>                <strong class='reserved'>if</strong> (heap-&gt;dbg_pause_flags &amp; <a href='../D/2224.html' title='Multiple defined in 4 places.'>DUK_PAUSE_FLAG_FUNC_EXIT</a>) <em class='brace'>{</em>
+<a id='L225' name='L225'></a>                        <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("PAUSE TRIGGERED by function exit"));
+<a id='L226' name='L226'></a>                        <a href='../D/4889.html' title='Multiple defined in 4 places.'>duk_debug_set_paused</a>(heap);
+<a id='L227' name='L227'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L228' name='L228'></a>                        <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("unwound past dbg_pause_act, set to NULL"));
+<a id='L229' name='L229'></a>                        heap-&gt;dbg_pause_act = NULL;  <em class='comment'>/* avoid stale pointers */</em>
+<a id='L230' name='L230'></a>                <em class='brace'>}</em>
+<a id='L231' name='L231'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(heap-&gt;dbg_pause_act == NULL);
+<a id='L232' name='L232'></a>        <em class='brace'>}</em>
+<a id='L233' name='L233'></a><em class='sharp'>#endif</em>
+<a id='L234' name='L234'></a>
+<a id='L235' name='L235'></a>        <em class='comment'>/*</em>
+<a id='L236' name='L236'></a><em class='comment'>         *  Unwind catchers.</em>
+<a id='L237' name='L237'></a><em class='comment'>         *</em>
+<a id='L238' name='L238'></a><em class='comment'>         *  Since there are no references in the catcher structure,</em>
+<a id='L239' name='L239'></a><em class='comment'>         *  unwinding is quite simple.  The only thing we need to</em>
+<a id='L240' name='L240'></a><em class='comment'>         *  look out for is popping a possible lexical environment</em>
+<a id='L241' name='L241'></a><em class='comment'>         *  established for an active catch clause.</em>
+<a id='L242' name='L242'></a><em class='comment'>         */</em>
+<a id='L243' name='L243'></a>
+<a id='L244' name='L244'></a>        <strong class='reserved'>while</strong> (act-&gt;cat != NULL) <em class='brace'>{</em>
+<a id='L245' name='L245'></a>                <a href='../D/5307.html' title='Multiple defined in 4 places.'>duk_hthread_catcher_unwind_norz</a>(thr, act);
+<a id='L246' name='L246'></a>        <em class='brace'>}</em>
+<a id='L247' name='L247'></a>
+<a id='L248' name='L248'></a>        <em class='comment'>/*</em>
+<a id='L249' name='L249'></a><em class='comment'>         *  Close environment record(s) if they exist.</em>
+<a id='L250' name='L250'></a><em class='comment'>         *</em>
+<a id='L251' name='L251'></a><em class='comment'>         *  Only variable environments are closed.  If lex_env != var_env, it</em>
+<a id='L252' name='L252'></a><em class='comment'>         *  cannot currently contain any register bound declarations.</em>
+<a id='L253' name='L253'></a><em class='comment'>         *</em>
+<a id='L254' name='L254'></a><em class='comment'>         *  Only environments created for a NEWENV function are closed.  If an</em>
+<a id='L255' name='L255'></a><em class='comment'>         *  environment is created for e.g. an eval call, it must not be closed.</em>
+<a id='L256' name='L256'></a><em class='comment'>         */</em>
+<a id='L257' name='L257'></a>
+<a id='L258' name='L258'></a>        func = <a href='../D/23.html' title='Multiple defined in 4 places.'>DUK_ACT_GET_FUNC</a>(act);
+<a id='L259' name='L259'></a>        <strong class='reserved'>if</strong> (func != NULL &amp;&amp; !<a href='../D/1457.html' title='Multiple defined in 4 places.'>DUK_HOBJECT_HAS_NEWENV</a>(func)) <em class='brace'>{</em>
+<a id='L260' name='L260'></a>                <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("skip closing environments, envs not owned by this activation"));
+<a id='L261' name='L261'></a>                <strong class='reserved'>goto</strong> skip_env_close;
+<a id='L262' name='L262'></a>        <em class='brace'>}</em>
+<a id='L263' name='L263'></a>        <em class='comment'>/* func is NULL for lightfunc */</em>
+<a id='L264' name='L264'></a>
+<a id='L265' name='L265'></a>        <em class='comment'>/* Catch sites are required to clean up their environments</em>
+<a id='L266' name='L266'></a><em class='comment'>         * in FINALLY part before propagating, so this should</em>
+<a id='L267' name='L267'></a><em class='comment'>         * always hold here.</em>
+<a id='L268' name='L268'></a><em class='comment'>         */</em>
+<a id='L269' name='L269'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(act-&gt;lex_env == act-&gt;var_env);
+<a id='L270' name='L270'></a>
+<a id='L271' name='L271'></a>        <em class='comment'>/* XXX: Closing the environment record copies values from registers</em>
+<a id='L272' name='L272'></a><em class='comment'>         * into the scope object.  It's side effect free as such, but may</em>
+<a id='L273' name='L273'></a><em class='comment'>         * currently run out of memory which causes an error throw.  This is</em>
+<a id='L274' name='L274'></a><em class='comment'>         * an actual sandboxing problem for error unwinds, and needs to be</em>
+<a id='L275' name='L275'></a><em class='comment'>         * fixed e.g. by preallocating the scope property slots.</em>
+<a id='L276' name='L276'></a><em class='comment'>         */</em>
+<a id='L277' name='L277'></a>        <strong class='reserved'>if</strong> (act-&gt;var_env != NULL) <em class='brace'>{</em>
+<a id='L278' name='L278'></a>                <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("closing var_env record %p -&gt; %!O",
+<a id='L279' name='L279'></a>                                     (<strong class='reserved'>void</strong> *) act-&gt;var_env, (<a href='../D/5216.html' title='Multiple defined in 8 places.'>duk_heaphdr</a> *) act-&gt;var_env));
+<a id='L280' name='L280'></a>                <a href='../D/5392.html' title='Multiple defined in 4 places.'>duk_js_close_environment_record</a>(thr, act-&gt;var_env);
+<a id='L281' name='L281'></a>        <em class='brace'>}</em>
+<a id='L282' name='L282'></a>
+<a id='L283' name='L283'></a> skip_env_close:
+<a id='L284' name='L284'></a>
+<a id='L285' name='L285'></a>        <em class='comment'>/*</em>
+<a id='L286' name='L286'></a><em class='comment'>         *  Update preventcount</em>
+<a id='L287' name='L287'></a><em class='comment'>         */</em>
+<a id='L288' name='L288'></a>
+<a id='L289' name='L289'></a>        <strong class='reserved'>if</strong> (act-&gt;flags &amp; <a href='../D/20.html' title='Multiple defined in 4 places.'>DUK_ACT_FLAG_PREVENT_YIELD</a>) <em class='brace'>{</em>
+<a id='L290' name='L290'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr-&gt;callstack_preventcount &gt;= 1);
+<a id='L291' name='L291'></a>                thr-&gt;callstack_preventcount--;
+<a id='L292' name='L292'></a>        <em class='brace'>}</em>
+<a id='L293' name='L293'></a>
+<a id='L294' name='L294'></a>        <em class='comment'>/*</em>
+<a id='L295' name='L295'></a><em class='comment'>         *  Reference count updates, using NORZ macros so we don't</em>
+<a id='L296' name='L296'></a><em class='comment'>         *  need to handle side effects.</em>
+<a id='L297' name='L297'></a><em class='comment'>         *</em>
+<a id='L298' name='L298'></a><em class='comment'>         *  duk_activation pointers like act-&gt;var_env are intentionally</em>
+<a id='L299' name='L299'></a><em class='comment'>         *  left as garbage and not NULLed.  Without side effects they</em>
+<a id='L300' name='L300'></a><em class='comment'>         *  can't be used when the values are dangling/garbage.</em>
+<a id='L301' name='L301'></a><em class='comment'>         */</em>
+<a id='L302' name='L302'></a>
+<a id='L303' name='L303'></a>        <a href='../D/1365.html' title='Multiple defined in 8 places.'>DUK_HOBJECT_DECREF_NORZ_ALLOWNULL</a>(thr, act-&gt;var_env);
+<a id='L304' name='L304'></a>        <a href='../D/1365.html' title='Multiple defined in 8 places.'>DUK_HOBJECT_DECREF_NORZ_ALLOWNULL</a>(thr, act-&gt;lex_env);
+<a id='L305' name='L305'></a>        tmp = <a href='../D/23.html' title='Multiple defined in 4 places.'>DUK_ACT_GET_FUNC</a>(act);
+<a id='L306' name='L306'></a>        <a href='../D/1365.html' title='Multiple defined in 8 places.'>DUK_HOBJECT_DECREF_NORZ_ALLOWNULL</a>(thr, tmp);
+<a id='L307' name='L307'></a>        <a href='../D/3010.html' title='Multiple defined in 9 places.'>DUK_UNREF</a>(tmp);
+<a id='L308' name='L308'></a><em class='brace'>}</em>
+<a id='L309' name='L309'></a>
+<a id='L310' name='L310'></a><em class='comment'>/* Unwind topmost duk_activation of a thread, caller must ensure that an</em>
+<a id='L311' name='L311'></a><em class='comment'> * activation exists.  The call is side effect free, except that scope</em>
+<a id='L312' name='L312'></a><em class='comment'> * closure may currently throw an out-of-memory error.</em>
+<a id='L313' name='L313'></a><em class='comment'> */</em>
+<a id='L314' name='L314'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4514.html' title='Multiple referred from 36 places.'>duk_hthread_activation_unwind_norz</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L315' name='L315'></a>        <a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *act;
+<a id='L316' name='L316'></a>
+<a id='L317' name='L317'></a>        <a href='../D/3748.html' title='Multiple defined in 4 places.'>duk__activation_unwind_nofree_norz</a>(thr);
+<a id='L318' name='L318'></a>
+<a id='L319' name='L319'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr-&gt;callstack_curr != NULL);
+<a id='L320' name='L320'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(thr-&gt;callstack_top &gt; 0);
+<a id='L321' name='L321'></a>        act = thr-&gt;callstack_curr;
+<a id='L322' name='L322'></a>        thr-&gt;callstack_curr = act-&gt;parent;
+<a id='L323' name='L323'></a>        thr-&gt;callstack_top--;
+<a id='L324' name='L324'></a>
+<a id='L325' name='L325'></a>        <em class='comment'>/* Ideally we'd restore value stack reserve here to caller's value.</em>
+<a id='L326' name='L326'></a><em class='comment'>         * This doesn't work for current unwind call sites however, because</em>
+<a id='L327' name='L327'></a><em class='comment'>         * the current (unwound) value stack top may be above the reserve.</em>
+<a id='L328' name='L328'></a><em class='comment'>         * Thus value stack reserve is restored by the call sites.</em>
+<a id='L329' name='L329'></a><em class='comment'>         */</em>
+<a id='L330' name='L330'></a>
+<a id='L331' name='L331'></a>        <em class='comment'>/* XXX: inline for performance builds? */</em>
+<a id='L332' name='L332'></a>        <a href='../D/5298.html' title='Multiple defined in 4 places.'>duk_hthread_activation_free</a>(thr, act);
+<a id='L333' name='L333'></a>
+<a id='L334' name='L334'></a>        <em class='comment'>/* We could clear the book-keeping variables like retval_byteoff for</em>
+<a id='L335' name='L335'></a><em class='comment'>         * the topmost activation, but don't do so now as it's not necessary.</em>
+<a id='L336' name='L336'></a><em class='comment'>         */</em>
+<a id='L337' name='L337'></a><em class='brace'>}</em>
+<a id='L338' name='L338'></a>
+<a id='L339' name='L339'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4515.html' title='Multiple referred from 8 places.'>duk_hthread_activation_unwind_reuse_norz</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L340' name='L340'></a>        <a href='../D/3748.html' title='Multiple defined in 4 places.'>duk__activation_unwind_nofree_norz</a>(thr);
+<a id='L341' name='L341'></a><em class='brace'>}</em>
+<a id='L342' name='L342'></a>
+<a id='L343' name='L343'></a><em class='comment'>/* Get duk_activation for given callstack level or NULL if level is invalid</em>
+<a id='L344' name='L344'></a><em class='comment'> * or deeper than the call stack.  Level -1 refers to current activation, -2</em>
+<a id='L345' name='L345'></a><em class='comment'> * to its caller, etc.  Starting from Duktape 2.2 finding the activation is</em>
+<a id='L346' name='L346'></a><em class='comment'> * a linked list scan which gets more expensive the deeper the lookup is.</em>
+<a id='L347' name='L347'></a><em class='comment'> */</em>
+<a id='L348' name='L348'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *<a href='../R/4527.html' title='Multiple referred from 24 places.'>duk_hthread_get_activation_for_level</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> level) <em class='brace'>{</em>
+<a id='L349' name='L349'></a>        <a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *act;
+<a id='L350' name='L350'></a>
+<a id='L351' name='L351'></a>        <strong class='reserved'>if</strong> (level &gt;= 0) <em class='brace'>{</em>
+<a id='L352' name='L352'></a>                <strong class='reserved'>return</strong> NULL;
+<a id='L353' name='L353'></a>        <em class='brace'>}</em>
+<a id='L354' name='L354'></a>        act = thr-&gt;callstack_curr;
+<a id='L355' name='L355'></a>        <strong class='reserved'>for</strong> (;;) <em class='brace'>{</em>
+<a id='L356' name='L356'></a>                <strong class='reserved'>if</strong> (act == NULL) <em class='brace'>{</em>
+<a id='L357' name='L357'></a>                        <strong class='reserved'>return</strong> act;
+<a id='L358' name='L358'></a>                <em class='brace'>}</em>
+<a id='L359' name='L359'></a>                <strong class='reserved'>if</strong> (level == -1) <em class='brace'>{</em>
+<a id='L360' name='L360'></a>                        <strong class='reserved'>return</strong> act;
+<a id='L361' name='L361'></a>                <em class='brace'>}</em>
+<a id='L362' name='L362'></a>                level++;
+<a id='L363' name='L363'></a>                act = act-&gt;parent;
+<a id='L364' name='L364'></a>        <em class='brace'>}</em>
+<a id='L365' name='L365'></a>        <em class='comment'>/* never here */</em>
+<a id='L366' name='L366'></a><em class='brace'>}</em>
+<a id='L367' name='L367'></a>
+<a id='L368' name='L368'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3109.html' title='Multiple defined in 3 places.'>DUK_USE_FINALIZER_TORTURE</a>)
+<a id='L369' name='L369'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4533.html' title='Multiple referred from 12 places.'>duk_hthread_valstack_torture_realloc</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L370' name='L370'></a>        <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> alloc_size;
+<a id='L371' name='L371'></a>        <a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *new_ptr;
+<a id='L372' name='L372'></a>        <a href='../D/5539.html' title='Multiple defined in 3 places.'>duk_ptrdiff_t</a> alloc_end_off;
+<a id='L373' name='L373'></a>        <a href='../D/5539.html' title='Multiple defined in 3 places.'>duk_ptrdiff_t</a> end_off;
+<a id='L374' name='L374'></a>        <a href='../D/5539.html' title='Multiple defined in 3 places.'>duk_ptrdiff_t</a> bottom_off;
+<a id='L375' name='L375'></a>        <a href='../D/5539.html' title='Multiple defined in 3 places.'>duk_ptrdiff_t</a> top_off;
+<a id='L376' name='L376'></a>
+<a id='L377' name='L377'></a>        <strong class='reserved'>if</strong> (thr-&gt;valstack == NULL) <em class='brace'>{</em>
+<a id='L378' name='L378'></a>                <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("skip valstack torture realloc, valstack is NULL"));
+<a id='L379' name='L379'></a>                <strong class='reserved'>return</strong>;
+<a id='L380' name='L380'></a>        <em class='brace'>}</em>
+<a id='L381' name='L381'></a>
+<a id='L382' name='L382'></a>        alloc_end_off = (<a href='../D/5539.html' title='Multiple defined in 3 places.'>duk_ptrdiff_t</a>) ((<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) thr-&gt;valstack_alloc_end - (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) thr-&gt;valstack);
+<a id='L383' name='L383'></a>        end_off = (<a href='../D/5539.html' title='Multiple defined in 3 places.'>duk_ptrdiff_t</a>) ((<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) thr-&gt;valstack_end - (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) thr-&gt;valstack);
+<a id='L384' name='L384'></a>        bottom_off = (<a href='../D/5539.html' title='Multiple defined in 3 places.'>duk_ptrdiff_t</a>) ((<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) thr-&gt;valstack_bottom - (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) thr-&gt;valstack);
+<a id='L385' name='L385'></a>        top_off = (<a href='../D/5539.html' title='Multiple defined in 3 places.'>duk_ptrdiff_t</a>) ((<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) thr-&gt;valstack_top - (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) thr-&gt;valstack);
+<a id='L386' name='L386'></a>        alloc_size = (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) alloc_end_off;
+<a id='L387' name='L387'></a>        <strong class='reserved'>if</strong> (alloc_size == 0) <em class='brace'>{</em>
+<a id='L388' name='L388'></a>                <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("skip valstack torture realloc, alloc_size is zero"));
+<a id='L389' name='L389'></a>                <strong class='reserved'>return</strong>;
+<a id='L390' name='L390'></a>        <em class='brace'>}</em>
+<a id='L391' name='L391'></a>
+<a id='L392' name='L392'></a>        <em class='comment'>/* Use DUK_ALLOC_RAW() to avoid side effects. */</em>
+<a id='L393' name='L393'></a>        new_ptr = (<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *) <a href='../D/33.html' title='Multiple defined in 4 places.'>DUK_ALLOC_RAW</a>(thr-&gt;heap, alloc_size);
+<a id='L394' name='L394'></a>        <strong class='reserved'>if</strong> (new_ptr != NULL) <em class='brace'>{</em>
+<a id='L395' name='L395'></a>                <a href='../D/5460.html' title='Multiple defined in 8 places.'>duk_memcpy</a>((<strong class='reserved'>void</strong> *) new_ptr, (<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *) thr-&gt;valstack, alloc_size);
+<a id='L396' name='L396'></a>                <a href='../D/5465.html' title='Multiple defined in 8 places.'>duk_memset</a>((<strong class='reserved'>void</strong> *) thr-&gt;valstack, 0x55, alloc_size);
+<a id='L397' name='L397'></a>                <a href='../D/792.html' title='Multiple defined in 4 places.'>DUK_FREE_CHECKED</a>(thr, (<strong class='reserved'>void</strong> *) thr-&gt;valstack);
+<a id='L398' name='L398'></a>                thr-&gt;valstack = new_ptr;
+<a id='L399' name='L399'></a>                thr-&gt;valstack_alloc_end = (<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *) ((<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) new_ptr + alloc_end_off);
+<a id='L400' name='L400'></a>                thr-&gt;valstack_end = (<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *) ((<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) new_ptr + end_off);
+<a id='L401' name='L401'></a>                thr-&gt;valstack_bottom = (<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *) ((<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) new_ptr + bottom_off);
+<a id='L402' name='L402'></a>                thr-&gt;valstack_top = (<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *) ((<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) new_ptr + top_off);
+<a id='L403' name='L403'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L404' name='L404'></a>                <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("failed to realloc valstack for torture, ignore"));
+<a id='L405' name='L405'></a>        <em class='brace'>}</em>
+<a id='L406' name='L406'></a><em class='brace'>}</em>
+<a id='L407' name='L407'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_FINALIZER_TORTURE */</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L13'>[^]</a><a href='#L369'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

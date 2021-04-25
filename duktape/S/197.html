@@ -1,0 +1,272 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src-separate/duk_hobject_pc2line.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1032.html'>src-separate</a>/duk_hobject_pc2line.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L15'>[^]</a><a href='#L221'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L15' title='Defined at 15.'>duk_hobject_pc2line_pack</a></li>
+<li><a href='#L123' title='Defined at 123.'>duk__hobject_pc2line_query_raw</a></li>
+<li><a href='#L221' title='Defined at 221.'>duk_hobject_pc2line_query</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Helpers for creating and querying pc2line debug data, which</em>
+<a id='L3' name='L3'></a><em class='comment'> *  converts a bytecode program counter to a source line number.</em>
+<a id='L4' name='L4'></a><em class='comment'> *</em>
+<a id='L5' name='L5'></a><em class='comment'> *  The run-time pc2line data is bit-packed, and documented in:</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> *    doc/function-objects.rst</em>
+<a id='L8' name='L8'></a><em class='comment'> */</em>
+<a id='L9' name='L9'></a>
+<a id='L10' name='L10'></a><em class='sharp'>#include</em> "<a href='../I/161.html'>duk_internal.h</a>"
+<a id='L11' name='L11'></a>
+<a id='L12' name='L12'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3193.html' title='Multiple defined in 3 places.'>DUK_USE_PC2LINE</a>)
+<a id='L13' name='L13'></a>
+<a id='L14' name='L14'></a><em class='comment'>/* Generate pc2line data for an instruction sequence, leaving a buffer on stack top. */</em>
+<a id='L15' name='L15'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4482.html' title='Multiple referred from 8 places.'>duk_hobject_pc2line_pack</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/4848.html' title='Multiple defined in 8 places.'>duk_compiler_instr</a> *instrs, <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> length) <em class='brace'>{</em>
+<a id='L16' name='L16'></a>        <a href='../D/5160.html' title='Multiple defined in 8 places.'>duk_hbuffer_dynamic</a> *h_buf;
+<a id='L17' name='L17'></a>        <a href='../D/4796.html' title='Multiple defined in 8 places.'>duk_bitencoder_ctx</a> be_ctx_alloc;
+<a id='L18' name='L18'></a>        <a href='../D/4796.html' title='Multiple defined in 8 places.'>duk_bitencoder_ctx</a> *be_ctx = &amp;be_ctx_alloc;
+<a id='L19' name='L19'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> *hdr;
+<a id='L20' name='L20'></a>        <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> new_size;
+<a id='L21' name='L21'></a>        <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> num_header_entries;
+<a id='L22' name='L22'></a>        <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> curr_offset;
+<a id='L23' name='L23'></a>        <a href='../D/5332.html' title='Multiple defined in 6 places.'>duk_int_fast32_t</a> curr_line, next_line, diff_line;
+<a id='L24' name='L24'></a>        <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> curr_pc;
+<a id='L25' name='L25'></a>        <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> hdr_index;
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(length &lt;= <a href='../D/440.html' title='Multiple defined in 4 places.'>DUK_COMPILER_MAX_BYTECODE_LENGTH</a>);
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a>        num_header_entries = (length + <a href='../D/2230.html' title='Multiple defined in 4 places.'>DUK_PC2LINE_SKIP</a> - 1) / <a href='../D/2230.html' title='Multiple defined in 4 places.'>DUK_PC2LINE_SKIP</a>;
+<a id='L30' name='L30'></a>        curr_offset = (<a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a>) (<strong class='reserved'>sizeof</strong>(<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) + num_header_entries * <strong class='reserved'>sizeof</strong>(<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) * 2);
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a>        <a href='../D/5557.html' title='Multiple defined in 3 places.'>duk_push_dynamic_buffer</a>(thr, (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) curr_offset);
+<a id='L33' name='L33'></a>        h_buf = (<a href='../D/5160.html' title='Multiple defined in 8 places.'>duk_hbuffer_dynamic</a> *) <a href='../D/5436.html' title='Multiple defined in 4 places.'>duk_known_hbuffer</a>(thr, -1);
+<a id='L34' name='L34'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/918.html' title='Multiple defined in 4 places.'>DUK_HBUFFER_HAS_DYNAMIC</a>(h_buf) &amp;&amp; !<a href='../D/919.html' title='Multiple defined in 4 places.'>DUK_HBUFFER_HAS_EXTERNAL</a>(h_buf));
+<a id='L35' name='L35'></a>
+<a id='L36' name='L36'></a>        hdr = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> *) <a href='../D/900.html' title='Multiple defined in 8 places.'>DUK_HBUFFER_DYNAMIC_GET_DATA_PTR</a>(thr-&gt;heap, h_buf);
+<a id='L37' name='L37'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(hdr != NULL);
+<a id='L38' name='L38'></a>        hdr[0] = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) length;  <em class='comment'>/* valid pc range is [0, length[ */</em>
+<a id='L39' name='L39'></a>
+<a id='L40' name='L40'></a>        curr_pc = 0U;
+<a id='L41' name='L41'></a>        <strong class='reserved'>while</strong> (curr_pc &lt; length) <em class='brace'>{</em>
+<a id='L42' name='L42'></a>                new_size = (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) (curr_offset + <a href='../D/2229.html' title='Multiple defined in 4 places.'>DUK_PC2LINE_MAX_DIFF_LENGTH</a>);
+<a id='L43' name='L43'></a>                <a href='../D/5166.html' title='Multiple defined in 4 places.'>duk_hbuffer_resize</a>(thr, h_buf, new_size);
+<a id='L44' name='L44'></a>
+<a id='L45' name='L45'></a>                hdr = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> *) <a href='../D/900.html' title='Multiple defined in 8 places.'>DUK_HBUFFER_DYNAMIC_GET_DATA_PTR</a>(thr-&gt;heap, h_buf);
+<a id='L46' name='L46'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(hdr != NULL);
+<a id='L47' name='L47'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(curr_pc &lt; length);
+<a id='L48' name='L48'></a>                hdr_index = 1 + (curr_pc / <a href='../D/2230.html' title='Multiple defined in 4 places.'>DUK_PC2LINE_SKIP</a>) * 2;
+<a id='L49' name='L49'></a>                curr_line = (<a href='../D/5332.html' title='Multiple defined in 6 places.'>duk_int_fast32_t</a>) instrs[curr_pc].line;
+<a id='L50' name='L50'></a>                hdr[hdr_index + 0] = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) curr_line;
+<a id='L51' name='L51'></a>                hdr[hdr_index + 1] = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) curr_offset;
+<a id='L52' name='L52'></a>
+<a id='L53' name='L53'></a><em class='sharp'>#if</em> 0
+<a id='L54' name='L54'></a>                <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("hdr[%ld]: pc=%ld line=%ld offset=%ld",
+<a id='L55' name='L55'></a>                                     (<strong class='reserved'>long</strong>) (curr_pc / <a href='../D/2230.html' title='Multiple defined in 4 places.'>DUK_PC2LINE_SKIP</a>),
+<a id='L56' name='L56'></a>                                     (<strong class='reserved'>long</strong>) curr_pc,
+<a id='L57' name='L57'></a>                                     (<strong class='reserved'>long</strong>) hdr[hdr_index + 0],
+<a id='L58' name='L58'></a>                                     (<strong class='reserved'>long</strong>) hdr[hdr_index + 1]));
+<a id='L59' name='L59'></a><em class='sharp'>#endif</em>
+<a id='L60' name='L60'></a>
+<a id='L61' name='L61'></a>                <a href='../D/5467.html' title='Multiple defined in 8 places.'>duk_memzero</a>(be_ctx, <strong class='reserved'>sizeof</strong>(*be_ctx));
+<a id='L62' name='L62'></a>                be_ctx-&gt;data = ((<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) hdr) + curr_offset;
+<a id='L63' name='L63'></a>                be_ctx-&gt;length = (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) <a href='../D/2229.html' title='Multiple defined in 4 places.'>DUK_PC2LINE_MAX_DIFF_LENGTH</a>;
+<a id='L64' name='L64'></a>
+<a id='L65' name='L65'></a>                <strong class='reserved'>for</strong> (;;) <em class='brace'>{</em>
+<a id='L66' name='L66'></a>                        curr_pc++;
+<a id='L67' name='L67'></a>                        <strong class='reserved'>if</strong> ( ((curr_pc % <a href='../D/2230.html' title='Multiple defined in 4 places.'>DUK_PC2LINE_SKIP</a>) == 0) ||  <em class='comment'>/* end of diff run */</em>
+<a id='L68' name='L68'></a>                             (curr_pc &gt;= length) ) <em class='brace'>{</em>                 <em class='comment'>/* end of bytecode */</em>
+<a id='L69' name='L69'></a>                                <strong class='reserved'>break</strong>;
+<a id='L70' name='L70'></a>                        <em class='brace'>}</em>
+<a id='L71' name='L71'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(curr_pc &lt; length);
+<a id='L72' name='L72'></a>                        next_line = (<a href='../D/5328.html' title='Multiple defined in 9 places.'>duk_int32_t</a>) instrs[curr_pc].line;
+<a id='L73' name='L73'></a>                        diff_line = next_line - curr_line;
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a><em class='sharp'>#if</em> 0
+<a id='L76' name='L76'></a>                        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("curr_line=%ld, next_line=%ld -&gt; diff_line=%ld",
+<a id='L77' name='L77'></a>                                             (<strong class='reserved'>long</strong>) curr_line, (<strong class='reserved'>long</strong>) next_line, (<strong class='reserved'>long</strong>) diff_line));
+<a id='L78' name='L78'></a><em class='sharp'>#endif</em>
+<a id='L79' name='L79'></a>
+<a id='L80' name='L80'></a>                        <strong class='reserved'>if</strong> (diff_line == 0) <em class='brace'>{</em>
+<a id='L81' name='L81'></a>                                <em class='comment'>/* 0 */</em>
+<a id='L82' name='L82'></a>                                <a href='../D/4581.html' title='Multiple defined in 4 places.'>duk_be_encode</a>(be_ctx, 0, 1);
+<a id='L83' name='L83'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (diff_line &gt;= 1 &amp;&amp; diff_line &lt;= 4) <em class='brace'>{</em>
+<a id='L84' name='L84'></a>                                <em class='comment'>/* 1 0 &lt;2 bits&gt; */</em>
+<a id='L85' name='L85'></a>                                <a href='../D/4581.html' title='Multiple defined in 4 places.'>duk_be_encode</a>(be_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) ((0x02 &lt;&lt; 2) + (diff_line - 1)), 4);
+<a id='L86' name='L86'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (diff_line &gt;= -0x80 &amp;&amp; diff_line &lt;= 0x7f) <em class='brace'>{</em>
+<a id='L87' name='L87'></a>                                <em class='comment'>/* 1 1 0 &lt;8 bits&gt; */</em>
+<a id='L88' name='L88'></a>                                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(diff_line + 0x80 &gt;= 0 &amp;&amp; diff_line + 0x80 &lt;= 0xff);
+<a id='L89' name='L89'></a>                                <a href='../D/4581.html' title='Multiple defined in 4 places.'>duk_be_encode</a>(be_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) ((0x06 &lt;&lt; 8) + (diff_line + 0x80)), 11);
+<a id='L90' name='L90'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L91' name='L91'></a>                                <em class='comment'>/* 1 1 1 &lt;32 bits&gt;</em>
+<a id='L92' name='L92'></a><em class='comment'>                                 * Encode in two parts to avoid bitencode 24-bit limitation</em>
+<a id='L93' name='L93'></a><em class='comment'>                                 */</em>
+<a id='L94' name='L94'></a>                                <a href='../D/4581.html' title='Multiple defined in 4 places.'>duk_be_encode</a>(be_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) ((0x07 &lt;&lt; 16) + ((next_line &gt;&gt; 16) &amp; 0xffff)), 19);
+<a id='L95' name='L95'></a>                                <a href='../D/4581.html' title='Multiple defined in 4 places.'>duk_be_encode</a>(be_ctx, (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>) (next_line &amp; 0xffff), 16);
+<a id='L96' name='L96'></a>                        <em class='brace'>}</em>
+<a id='L97' name='L97'></a>
+<a id='L98' name='L98'></a>                        curr_line = next_line;
+<a id='L99' name='L99'></a>                <em class='brace'>}</em>
+<a id='L100' name='L100'></a>
+<a id='L101' name='L101'></a>                <a href='../D/4582.html' title='Multiple defined in 4 places.'>duk_be_finish</a>(be_ctx);
+<a id='L102' name='L102'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(!be_ctx-&gt;truncated);
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a>                <em class='comment'>/* be_ctx-&gt;offset == length of encoded bitstream */</em>
+<a id='L105' name='L105'></a>                curr_offset += (<a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a>) be_ctx-&gt;offset;
+<a id='L106' name='L106'></a>        <em class='brace'>}</em>
+<a id='L107' name='L107'></a>
+<a id='L108' name='L108'></a>        <em class='comment'>/* compact */</em>
+<a id='L109' name='L109'></a>        new_size = (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) curr_offset;
+<a id='L110' name='L110'></a>        <a href='../D/5166.html' title='Multiple defined in 4 places.'>duk_hbuffer_resize</a>(thr, h_buf, new_size);
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a>        (<strong class='reserved'>void</strong>) <a href='../D/5796.html' title='Multiple defined in 3 places.'>duk_to_fixed_buffer</a>(thr, -1, NULL);
+<a id='L113' name='L113'></a>
+<a id='L114' name='L114'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("final pc2line data: pc_limit=%ld, length=%ld, %lf bits/opcode --&gt; %!ixT",
+<a id='L115' name='L115'></a>                             (<strong class='reserved'>long</strong>) length, (<strong class='reserved'>long</strong>) new_size, (<strong class='reserved'>double</strong>) new_size * 8.0 / (<strong class='reserved'>double</strong>) length,
+<a id='L116' name='L116'></a>                             (<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *) <a href='../D/5126.html' title='Multiple defined in 4 places.'>duk_get_tval</a>(thr, -1)));
+<a id='L117' name='L117'></a><em class='brace'>}</em>
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a><em class='comment'>/* PC is unsigned.  If caller does PC arithmetic and gets a negative result,</em>
+<a id='L120' name='L120'></a><em class='comment'> * it will map to a large PC which is out of bounds and causes a zero to be</em>
+<a id='L121' name='L121'></a><em class='comment'> * returned.</em>
+<a id='L122' name='L122'></a><em class='comment'> */</em>
+<a id='L123' name='L123'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> <a href='../R/3434.html' title='Multiple referred from 4 places.'>duk__hobject_pc2line_query_raw</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/5162.html' title='Multiple defined in 8 places.'>duk_hbuffer_fixed</a> *buf, <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> pc) <em class='brace'>{</em>
+<a id='L124' name='L124'></a>        <a href='../D/4795.html' title='Multiple defined in 8 places.'>duk_bitdecoder_ctx</a> bd_ctx_alloc;
+<a id='L125' name='L125'></a>        <a href='../D/4795.html' title='Multiple defined in 8 places.'>duk_bitdecoder_ctx</a> *bd_ctx = &amp;bd_ctx_alloc;
+<a id='L126' name='L126'></a>        <a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> *hdr;
+<a id='L127' name='L127'></a>        <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> start_offset;
+<a id='L128' name='L128'></a>        <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> pc_limit;
+<a id='L129' name='L129'></a>        <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> hdr_index;
+<a id='L130' name='L130'></a>        <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> pc_base;
+<a id='L131' name='L131'></a>        <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> n;
+<a id='L132' name='L132'></a>        <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> curr_line;
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(buf != NULL);
+<a id='L135' name='L135'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(!<a href='../D/918.html' title='Multiple defined in 4 places.'>DUK_HBUFFER_HAS_DYNAMIC</a>((<a href='../D/5155.html' title='Multiple defined in 8 places.'>duk_hbuffer</a> *) buf) &amp;&amp; !<a href='../D/919.html' title='Multiple defined in 4 places.'>DUK_HBUFFER_HAS_EXTERNAL</a>((<a href='../D/5155.html' title='Multiple defined in 8 places.'>duk_hbuffer</a> *) buf));
+<a id='L136' name='L136'></a>        <a href='../D/3010.html' title='Multiple defined in 9 places.'>DUK_UNREF</a>(thr);
+<a id='L137' name='L137'></a>
+<a id='L138' name='L138'></a>        <em class='comment'>/*</em>
+<a id='L139' name='L139'></a><em class='comment'>         *  Use the index in the header to find the right starting point</em>
+<a id='L140' name='L140'></a><em class='comment'>         */</em>
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a>        hdr_index = pc / <a href='../D/2230.html' title='Multiple defined in 4 places.'>DUK_PC2LINE_SKIP</a>;
+<a id='L143' name='L143'></a>        pc_base = hdr_index * <a href='../D/2230.html' title='Multiple defined in 4 places.'>DUK_PC2LINE_SKIP</a>;
+<a id='L144' name='L144'></a>        n = pc - pc_base;
+<a id='L145' name='L145'></a>
+<a id='L146' name='L146'></a>        <strong class='reserved'>if</strong> (<a href='../D/912.html' title='Multiple defined in 4 places.'>DUK_HBUFFER_FIXED_GET_SIZE</a>(buf) &lt;= <strong class='reserved'>sizeof</strong>(<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a>)) <em class='brace'>{</em>
+<a id='L147' name='L147'></a>                <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("pc2line lookup failed: buffer is smaller than minimal header"));
+<a id='L148' name='L148'></a>                <strong class='reserved'>goto</strong> pc2line_error;
+<a id='L149' name='L149'></a>        <em class='brace'>}</em>
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a>        hdr = (<a href='../D/5884.html' title='Multiple defined in 9 places.'>duk_uint32_t</a> *) (<strong class='reserved'>void</strong> *) <a href='../D/911.html' title='Multiple defined in 4 places.'>DUK_HBUFFER_FIXED_GET_DATA_PTR</a>(thr-&gt;heap, buf);
+<a id='L152' name='L152'></a>        pc_limit = hdr[0];
+<a id='L153' name='L153'></a>        <strong class='reserved'>if</strong> (pc &gt;= pc_limit) <em class='brace'>{</em>
+<a id='L154' name='L154'></a>                <em class='comment'>/* Note: pc is unsigned and cannot be negative */</em>
+<a id='L155' name='L155'></a>                <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("pc2line lookup failed: pc out of bounds (pc=%ld, limit=%ld)",
+<a id='L156' name='L156'></a>                                   (<strong class='reserved'>long</strong>) pc, (<strong class='reserved'>long</strong>) pc_limit));
+<a id='L157' name='L157'></a>                <strong class='reserved'>goto</strong> pc2line_error;
+<a id='L158' name='L158'></a>        <em class='brace'>}</em>
+<a id='L159' name='L159'></a>
+<a id='L160' name='L160'></a>        curr_line = hdr[1 + hdr_index * 2];
+<a id='L161' name='L161'></a>        start_offset = hdr[1 + hdr_index * 2 + 1];
+<a id='L162' name='L162'></a>        <strong class='reserved'>if</strong> ((<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) start_offset &gt; <a href='../D/912.html' title='Multiple defined in 4 places.'>DUK_HBUFFER_FIXED_GET_SIZE</a>(buf)) <em class='brace'>{</em>
+<a id='L163' name='L163'></a>                <a href='../D/602.html' title='Multiple defined in 12 places.'>DUK_DD</a>(<a href='../D/605.html' title='Multiple defined in 24 places.'>DUK_DDPRINT</a>("pc2line lookup failed: start_offset out of bounds (start_offset=%ld, buffer_size=%ld)",
+<a id='L164' name='L164'></a>                                   (<strong class='reserved'>long</strong>) start_offset, (<strong class='reserved'>long</strong>) <a href='../D/917.html' title='Multiple defined in 8 places.'>DUK_HBUFFER_GET_SIZE</a>((<a href='../D/5155.html' title='Multiple defined in 8 places.'>duk_hbuffer</a> *) buf)));
+<a id='L165' name='L165'></a>                <strong class='reserved'>goto</strong> pc2line_error;
+<a id='L166' name='L166'></a>        <em class='brace'>}</em>
+<a id='L167' name='L167'></a>
+<a id='L168' name='L168'></a>        <em class='comment'>/*</em>
+<a id='L169' name='L169'></a><em class='comment'>         *  Iterate the bitstream (line diffs) until PC is reached</em>
+<a id='L170' name='L170'></a><em class='comment'>         */</em>
+<a id='L171' name='L171'></a>
+<a id='L172' name='L172'></a>        <a href='../D/5467.html' title='Multiple defined in 8 places.'>duk_memzero</a>(bd_ctx, <strong class='reserved'>sizeof</strong>(*bd_ctx));
+<a id='L173' name='L173'></a>        bd_ctx-&gt;data = ((<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) hdr) + start_offset;
+<a id='L174' name='L174'></a>        bd_ctx-&gt;length = (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) (<a href='../D/912.html' title='Multiple defined in 4 places.'>DUK_HBUFFER_FIXED_GET_SIZE</a>(buf) - start_offset);
+<a id='L175' name='L175'></a>
+<a id='L176' name='L176'></a><em class='sharp'>#if</em> 0
+<a id='L177' name='L177'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("pc2line lookup: pc=%ld -&gt; hdr_index=%ld, pc_base=%ld, n=%ld, start_offset=%ld",
+<a id='L178' name='L178'></a>                             (<strong class='reserved'>long</strong>) pc, (<strong class='reserved'>long</strong>) hdr_index, (<strong class='reserved'>long</strong>) pc_base, (<strong class='reserved'>long</strong>) n, (<strong class='reserved'>long</strong>) start_offset));
+<a id='L179' name='L179'></a><em class='sharp'>#endif</em>
+<a id='L180' name='L180'></a>
+<a id='L181' name='L181'></a>        <strong class='reserved'>while</strong> (n &gt; 0) <em class='brace'>{</em>
+<a id='L182' name='L182'></a><em class='sharp'>#if</em> 0
+<a id='L183' name='L183'></a>                <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("lookup: n=%ld, curr_line=%ld", (<strong class='reserved'>long</strong>) n, (<strong class='reserved'>long</strong>) curr_line));
+<a id='L184' name='L184'></a><em class='sharp'>#endif</em>
+<a id='L185' name='L185'></a>
+<a id='L186' name='L186'></a>                <strong class='reserved'>if</strong> (<a href='../D/4577.html' title='Multiple defined in 4 places.'>duk_bd_decode_flag</a>(bd_ctx)) <em class='brace'>{</em>
+<a id='L187' name='L187'></a>                        <strong class='reserved'>if</strong> (<a href='../D/4577.html' title='Multiple defined in 4 places.'>duk_bd_decode_flag</a>(bd_ctx)) <em class='brace'>{</em>
+<a id='L188' name='L188'></a>                                <strong class='reserved'>if</strong> (<a href='../D/4577.html' title='Multiple defined in 4 places.'>duk_bd_decode_flag</a>(bd_ctx)) <em class='brace'>{</em>
+<a id='L189' name='L189'></a>                                        <em class='comment'>/* 1 1 1 &lt;32 bits&gt; */</em>
+<a id='L190' name='L190'></a>                                        <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> t;
+<a id='L191' name='L191'></a>                                        t = <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(bd_ctx, 16);  <em class='comment'>/* workaround: max nbits = 24 now */</em>
+<a id='L192' name='L192'></a>                                        t = (t &lt;&lt; 16) + <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(bd_ctx, 16);
+<a id='L193' name='L193'></a>                                        curr_line = t;
+<a id='L194' name='L194'></a>                                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L195' name='L195'></a>                                        <em class='comment'>/* 1 1 0 &lt;8 bits&gt; */</em>
+<a id='L196' name='L196'></a>                                        <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> t;
+<a id='L197' name='L197'></a>                                        t = <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(bd_ctx, 8);
+<a id='L198' name='L198'></a>                                        curr_line = curr_line + t - 0x80;
+<a id='L199' name='L199'></a>                                <em class='brace'>}</em>
+<a id='L200' name='L200'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L201' name='L201'></a>                                <em class='comment'>/* 1 0 &lt;2 bits&gt; */</em>
+<a id='L202' name='L202'></a>                                <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> t;
+<a id='L203' name='L203'></a>                                t = <a href='../D/4575.html' title='Multiple defined in 4 places.'>duk_bd_decode</a>(bd_ctx, 2);
+<a id='L204' name='L204'></a>                                curr_line = curr_line + t + 1;
+<a id='L205' name='L205'></a>                        <em class='brace'>}</em>
+<a id='L206' name='L206'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L207' name='L207'></a>                        <em class='comment'>/* 0: no change */</em>
+<a id='L208' name='L208'></a>                <em class='brace'>}</em>
+<a id='L209' name='L209'></a>
+<a id='L210' name='L210'></a>                n--;
+<a id='L211' name='L211'></a>        <em class='brace'>}</em>
+<a id='L212' name='L212'></a>
+<a id='L213' name='L213'></a>        <a href='../D/603.html' title='Multiple defined in 12 places.'>DUK_DDD</a>(<a href='../D/604.html' title='Multiple defined in 24 places.'>DUK_DDDPRINT</a>("pc2line lookup result: pc %ld -&gt; line %ld", (<strong class='reserved'>long</strong>) pc, (<strong class='reserved'>long</strong>) curr_line));
+<a id='L214' name='L214'></a>        <strong class='reserved'>return</strong> curr_line;
+<a id='L215' name='L215'></a>
+<a id='L216' name='L216'></a> pc2line_error:
+<a id='L217' name='L217'></a>        <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("pc2line conversion failed for pc=%ld", (<strong class='reserved'>long</strong>) pc));
+<a id='L218' name='L218'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L219' name='L219'></a><em class='brace'>}</em>
+<a id='L220' name='L220'></a>
+<a id='L221' name='L221'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> <a href='../R/4483.html' title='Multiple referred from 28 places.'>duk_hobject_pc2line_query</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/5319.html' title='Multiple defined in 3 places.'>duk_idx_t</a> idx_func, <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> pc) <em class='brace'>{</em>
+<a id='L222' name='L222'></a>        <a href='../D/5162.html' title='Multiple defined in 8 places.'>duk_hbuffer_fixed</a> *pc2line;
+<a id='L223' name='L223'></a>        <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> line;
+<a id='L224' name='L224'></a>
+<a id='L225' name='L225'></a>        <em class='comment'>/* XXX: now that pc2line is used by the debugger quite heavily in</em>
+<a id='L226' name='L226'></a><em class='comment'>         * checked execution, this should be optimized to avoid value stack</em>
+<a id='L227' name='L227'></a><em class='comment'>         * and perhaps also implement some form of pc2line caching (see</em>
+<a id='L228' name='L228'></a><em class='comment'>         * future work in debugger.rst).</em>
+<a id='L229' name='L229'></a><em class='comment'>         */</em>
+<a id='L230' name='L230'></a>
+<a id='L231' name='L231'></a>        <a href='../D/5940.html' title='Multiple defined in 4 places.'>duk_xget_owndataprop_stridx_short</a>(thr, idx_func, <a href='../D/2449.html' title='Multiple defined in 3 places.'>DUK_STRIDX_INT_PC2LINE</a>);
+<a id='L232' name='L232'></a>        pc2line = (<a href='../D/5162.html' title='Multiple defined in 8 places.'>duk_hbuffer_fixed</a> *) (<strong class='reserved'>void</strong> *) <a href='../D/5080.html' title='Multiple defined in 4 places.'>duk_get_hbuffer</a>(thr, -1);
+<a id='L233' name='L233'></a>        <strong class='reserved'>if</strong> (pc2line != NULL) <em class='brace'>{</em>
+<a id='L234' name='L234'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(!<a href='../D/918.html' title='Multiple defined in 4 places.'>DUK_HBUFFER_HAS_DYNAMIC</a>((<a href='../D/5155.html' title='Multiple defined in 8 places.'>duk_hbuffer</a> *) pc2line) &amp;&amp; !<a href='../D/919.html' title='Multiple defined in 4 places.'>DUK_HBUFFER_HAS_EXTERNAL</a>((<a href='../D/5155.html' title='Multiple defined in 8 places.'>duk_hbuffer</a> *) pc2line));
+<a id='L235' name='L235'></a>                line = <a href='../D/4195.html' title='Multiple defined in 4 places.'>duk__hobject_pc2line_query_raw</a>(thr, pc2line, (<a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a>) pc);
+<a id='L236' name='L236'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L237' name='L237'></a>                line = 0;
+<a id='L238' name='L238'></a>        <em class='brace'>}</em>
+<a id='L239' name='L239'></a>        <a href='../D/5521.html' title='Multiple defined in 8 places.'>duk_pop</a>(thr);
+<a id='L240' name='L240'></a>
+<a id='L241' name='L241'></a>        <strong class='reserved'>return</strong> line;
+<a id='L242' name='L242'></a><em class='brace'>}</em>
+<a id='L243' name='L243'></a>
+<a id='L244' name='L244'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_PC2LINE */</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L15'>[^]</a><a href='#L221'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

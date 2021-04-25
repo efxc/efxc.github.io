@@ -1,0 +1,183 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src-separate/duk_tval.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1032.html'>src-separate</a>/duk_tval.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L22'>[^]</a><a href='#L149'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L22' title='Defined at 22.'>duk_tval_set_number_chkfast_fast</a></li>
+<li><a href='#L65' title='Defined at 65.'>duk_tval_set_number_chkfast_slow</a></li>
+<li><a href='#L74' title='Defined at 74.'>duk_tval_get_number_packed</a></li>
+<li><a href='#L100' title='Defined at 100.'>duk_tval_get_number_unpacked</a></li>
+<li><a href='#L124' title='Defined at 124.'>duk_tval_get_number_unpacked_fastint</a></li>
+<li><a href='#L149' title='Defined at 149.'>duk_tval_assert_valid</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='sharp'>#include</em> "<a href='../I/161.html'>duk_internal.h</a>"
+<a id='L2' name='L2'></a>
+<a id='L3' name='L3'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3104.html' title='Multiple defined in 3 places.'>DUK_USE_FASTINT</a>)
+<a id='L4' name='L4'></a>
+<a id='L5' name='L5'></a><em class='comment'>/*</em>
+<a id='L6' name='L6'></a><em class='comment'> *  Manually optimized double-to-fastint downgrade check.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> *  This check has a large impact on performance, especially for fastint</em>
+<a id='L9' name='L9'></a><em class='comment'> *  slow paths, so must be changed carefully.  The code should probably be</em>
+<a id='L10' name='L10'></a><em class='comment'> *  optimized for the case where the result does not fit into a fastint,</em>
+<a id='L11' name='L11'></a><em class='comment'> *  to minimize the penalty for "slow path code" dealing with fractions etc.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> *  At least on one tested soft float ARM platform double-to-int64 coercion</em>
+<a id='L14' name='L14'></a><em class='comment'> *  is very slow (and sometimes produces incorrect results, see self tests).</em>
+<a id='L15' name='L15'></a><em class='comment'> *  This algorithm combines a fastint compatibility check and extracting the</em>
+<a id='L16' name='L16'></a><em class='comment'> *  integer value from an IEEE double for setting the tagged fastint.  For</em>
+<a id='L17' name='L17'></a><em class='comment'> *  other platforms a more naive approach might be better.</em>
+<a id='L18' name='L18'></a><em class='comment'> *</em>
+<a id='L19' name='L19'></a><em class='comment'> *  See doc/fastint.rst for details.</em>
+<a id='L20' name='L20'></a><em class='comment'> */</em>
+<a id='L21' name='L21'></a>
+<a id='L22' name='L22'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/36.html' title='Multiple defined in 21 places.'>DUK_ALWAYS_INLINE</a> <strong class='reserved'>void</strong> <a href='../R/5054.html' title='Multiple referred from 16 places.'>duk_tval_set_number_chkfast_fast</a>(<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *tv, <a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a> x) <em class='brace'>{</em>
+<a id='L23' name='L23'></a>        <a href='../D/4964.html' title='Multiple defined in 8 places.'>duk_double_union</a> du;
+<a id='L24' name='L24'></a>        <a href='../D/5329.html' title='Multiple defined in 21 places.'>duk_int64_t</a> i;
+<a id='L25' name='L25'></a>        <a href='../D/5767.html' title='Multiple defined in 3 places.'>duk_small_int_t</a> expt;
+<a id='L26' name='L26'></a>        <a href='../D/5767.html' title='Multiple defined in 3 places.'>duk_small_int_t</a> shift;
+<a id='L27' name='L27'></a>
+<a id='L28' name='L28'></a>        <em class='comment'>/* XXX: optimize for packed duk_tval directly? */</em>
+<a id='L29' name='L29'></a>
+<a id='L30' name='L30'></a>        du.d = x;
+<a id='L31' name='L31'></a>        i = (<a href='../D/5329.html' title='Multiple defined in 21 places.'>duk_int64_t</a>) <a href='../D/554.html' title='Multiple defined in 4 places.'>DUK_DBLUNION_GET_INT64</a>(&amp;du);
+<a id='L32' name='L32'></a>        expt = (<a href='../D/5767.html' title='Multiple defined in 3 places.'>duk_small_int_t</a>) ((i &gt;&gt; 52) &amp; 0x07ff);
+<a id='L33' name='L33'></a>        shift = expt - 1023;
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a>        <strong class='reserved'>if</strong> (shift &gt;= 0 &amp;&amp; shift &lt;= 46) <em class='brace'>{</em>  <em class='comment'>/* exponents 1023 to 1069 */</em>
+<a id='L36' name='L36'></a>                <a href='../D/5329.html' title='Multiple defined in 21 places.'>duk_int64_t</a> t;
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a>                <strong class='reserved'>if</strong> (((<a href='../D/1777.html' title='Multiple defined in 6 places.'>DUK_I64_CONSTANT</a>(0x000fffffffffffff) &gt;&gt; shift) &amp; i) == 0) <em class='brace'>{</em>
+<a id='L39' name='L39'></a>                        t = i | <a href='../D/1777.html' title='Multiple defined in 6 places.'>DUK_I64_CONSTANT</a>(0x0010000000000000);  <em class='comment'>/* implicit leading one */</em>
+<a id='L40' name='L40'></a>                        t = t &amp; <a href='../D/1777.html' title='Multiple defined in 6 places.'>DUK_I64_CONSTANT</a>(0x001fffffffffffff);
+<a id='L41' name='L41'></a>                        t = t &gt;&gt; (52 - shift);
+<a id='L42' name='L42'></a>                        <strong class='reserved'>if</strong> (i &lt; 0) <em class='brace'>{</em>
+<a id='L43' name='L43'></a>                                t = -t;
+<a id='L44' name='L44'></a>                        <em class='brace'>}</em>
+<a id='L45' name='L45'></a>                        <a href='../D/2872.html' title='Multiple defined in 8 places.'>DUK_TVAL_SET_FASTINT</a>(tv, t);
+<a id='L46' name='L46'></a>                        <strong class='reserved'>return</strong>;
+<a id='L47' name='L47'></a>                <em class='brace'>}</em>
+<a id='L48' name='L48'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (shift == -1023) <em class='brace'>{</em>  <em class='comment'>/* exponent 0 */</em>
+<a id='L49' name='L49'></a>                <strong class='reserved'>if</strong> (i &gt;= 0 &amp;&amp; (i &amp; <a href='../D/1777.html' title='Multiple defined in 6 places.'>DUK_I64_CONSTANT</a>(0x000fffffffffffff)) == 0) <em class='brace'>{</em>
+<a id='L50' name='L50'></a>                        <em class='comment'>/* Note: reject negative zero. */</em>
+<a id='L51' name='L51'></a>                        <a href='../D/2872.html' title='Multiple defined in 8 places.'>DUK_TVAL_SET_FASTINT</a>(tv, (<a href='../D/5329.html' title='Multiple defined in 21 places.'>duk_int64_t</a>) 0);
+<a id='L52' name='L52'></a>                        <strong class='reserved'>return</strong>;
+<a id='L53' name='L53'></a>                <em class='brace'>}</em>
+<a id='L54' name='L54'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (shift == 47) <em class='brace'>{</em>  <em class='comment'>/* exponent 1070 */</em>
+<a id='L55' name='L55'></a>                <strong class='reserved'>if</strong> (i &lt; 0 &amp;&amp; (i &amp; <a href='../D/1777.html' title='Multiple defined in 6 places.'>DUK_I64_CONSTANT</a>(0x000fffffffffffff)) == 0) <em class='brace'>{</em>
+<a id='L56' name='L56'></a>                        <a href='../D/2872.html' title='Multiple defined in 8 places.'>DUK_TVAL_SET_FASTINT</a>(tv, (<a href='../D/5329.html' title='Multiple defined in 21 places.'>duk_int64_t</a>) <a href='../D/771.html' title='Multiple defined in 4 places.'>DUK_FASTINT_MIN</a>);
+<a id='L57' name='L57'></a>                        <strong class='reserved'>return</strong>;
+<a id='L58' name='L58'></a>                <em class='brace'>}</em>
+<a id='L59' name='L59'></a>        <em class='brace'>}</em>
+<a id='L60' name='L60'></a>
+<a id='L61' name='L61'></a>        <a href='../D/2868.html' title='Multiple defined in 16 places.'>DUK_TVAL_SET_DOUBLE</a>(tv, x);
+<a id='L62' name='L62'></a>        <strong class='reserved'>return</strong>;
+<a id='L63' name='L63'></a><em class='brace'>}</em>
+<a id='L64' name='L64'></a>
+<a id='L65' name='L65'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/1921.html' title='Multiple defined in 21 places.'>DUK_NOINLINE</a> <strong class='reserved'>void</strong> <a href='../R/5055.html' title='Multiple referred from 12 places.'>duk_tval_set_number_chkfast_slow</a>(<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *tv, <a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a> x) <em class='brace'>{</em>
+<a id='L66' name='L66'></a>        <a href='../D/5873.html' title='Multiple defined in 4 places.'>duk_tval_set_number_chkfast_fast</a>(tv, x);
+<a id='L67' name='L67'></a><em class='brace'>}</em>
+<a id='L68' name='L68'></a>
+<a id='L69' name='L69'></a><em class='comment'>/*</em>
+<a id='L70' name='L70'></a><em class='comment'> *  Manually optimized number-to-double conversion</em>
+<a id='L71' name='L71'></a><em class='comment'> */</em>
+<a id='L72' name='L72'></a>
+<a id='L73' name='L73'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3104.html' title='Multiple defined in 3 places.'>DUK_USE_FASTINT</a>) &amp;&amp; <strong class='reserved'>defined</strong>(<a href='../D/3185.html' title='Multiple defined in 57 places.'>DUK_USE_PACKED_TVAL</a>)
+<a id='L74' name='L74'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/36.html' title='Multiple defined in 21 places.'>DUK_ALWAYS_INLINE</a> <a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a> <a href='../R/5050.html' title='Multiple referred from 8 places.'>duk_tval_get_number_packed</a>(<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *tv) <em class='brace'>{</em>
+<a id='L75' name='L75'></a>        <a href='../D/4964.html' title='Multiple defined in 8 places.'>duk_double_union</a> du;
+<a id='L76' name='L76'></a>        <a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> t;
+<a id='L77' name='L77'></a>
+<a id='L78' name='L78'></a>        t = (<a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a>) <a href='../D/557.html' title='Multiple defined in 8 places.'>DUK_DBLUNION_GET_UINT64</a>(tv);
+<a id='L79' name='L79'></a>        <strong class='reserved'>if</strong> ((t &gt;&gt; 48) != <a href='../D/2689.html' title='Multiple defined in 8 places.'>DUK_TAG_FASTINT</a>) <em class='brace'>{</em>
+<a id='L80' name='L80'></a>                <strong class='reserved'>return</strong> tv-&gt;d;
+<a id='L81' name='L81'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (t &amp; <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x0000800000000000)) <em class='brace'>{</em>
+<a id='L82' name='L82'></a>                t = (<a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a>) (-((<a href='../D/5329.html' title='Multiple defined in 21 places.'>duk_int64_t</a>) t));  <em class='comment'>/* avoid unary minus on unsigned */</em>
+<a id='L83' name='L83'></a>                t = t &amp; <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x0000ffffffffffff);  <em class='comment'>/* negative */</em>
+<a id='L84' name='L84'></a>                t |= <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0xc330000000000000);
+<a id='L85' name='L85'></a>                <a href='../D/576.html' title='Multiple defined in 8 places.'>DUK_DBLUNION_SET_UINT64</a>(&amp;du, t);
+<a id='L86' name='L86'></a>                <strong class='reserved'>return</strong> du.d + 4503599627370496.0;  <em class='comment'>/* 1 &lt;&lt; 52 */</em>
+<a id='L87' name='L87'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (t != 0) <em class='brace'>{</em>
+<a id='L88' name='L88'></a>                t &amp;= <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x0000ffffffffffff);  <em class='comment'>/* positive */</em>
+<a id='L89' name='L89'></a>                t |= <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x4330000000000000);
+<a id='L90' name='L90'></a>                <a href='../D/576.html' title='Multiple defined in 8 places.'>DUK_DBLUNION_SET_UINT64</a>(&amp;du, t);
+<a id='L91' name='L91'></a>                <strong class='reserved'>return</strong> du.d - 4503599627370496.0;  <em class='comment'>/* 1 &lt;&lt; 52 */</em>
+<a id='L92' name='L92'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L93' name='L93'></a>                <strong class='reserved'>return</strong> 0.0;  <em class='comment'>/* zero */</em>
+<a id='L94' name='L94'></a>        <em class='brace'>}</em>
+<a id='L95' name='L95'></a><em class='brace'>}</em>
+<a id='L96' name='L96'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_FASTINT &amp;&amp; DUK_USE_PACKED_TVAL */</em>
+<a id='L97' name='L97'></a>
+<a id='L98' name='L98'></a><em class='sharp'>#if</em> 0  <em class='comment'>/* unused */</em>
+<a id='L99' name='L99'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3104.html' title='Multiple defined in 3 places.'>DUK_USE_FASTINT</a>) &amp;&amp; !<strong class='reserved'>defined</strong>(<a href='../D/3185.html' title='Multiple defined in 57 places.'>DUK_USE_PACKED_TVAL</a>)
+<a id='L100' name='L100'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/36.html' title='Multiple defined in 21 places.'>DUK_ALWAYS_INLINE</a> <a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a> <a href='../R/5051.html' title='Multiple referred from 8 places.'>duk_tval_get_number_unpacked</a>(<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *tv) <em class='brace'>{</em>
+<a id='L101' name='L101'></a>        <a href='../D/4964.html' title='Multiple defined in 8 places.'>duk_double_union</a> du;
+<a id='L102' name='L102'></a>        <a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> t;
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(tv-&gt;t == <a href='../D/2695.html' title='Multiple defined in 4 places.'>DUK_TAG_NUMBER</a> || tv-&gt;t == <a href='../D/2689.html' title='Multiple defined in 8 places.'>DUK_TAG_FASTINT</a>);
+<a id='L105' name='L105'></a>
+<a id='L106' name='L106'></a>        <strong class='reserved'>if</strong> (tv-&gt;t == <a href='../D/2689.html' title='Multiple defined in 8 places.'>DUK_TAG_FASTINT</a>) <em class='brace'>{</em>
+<a id='L107' name='L107'></a>                <strong class='reserved'>if</strong> (tv-&gt;v.fi &gt;= 0) <em class='brace'>{</em>
+<a id='L108' name='L108'></a>                        t = <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x4330000000000000) | (<a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a>) tv-&gt;v.fi;
+<a id='L109' name='L109'></a>                        <a href='../D/576.html' title='Multiple defined in 8 places.'>DUK_DBLUNION_SET_UINT64</a>(&amp;du, t);
+<a id='L110' name='L110'></a>                        <strong class='reserved'>return</strong> du.d - 4503599627370496.0;  <em class='comment'>/* 1 &lt;&lt; 52 */</em>
+<a id='L111' name='L111'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L112' name='L112'></a>                        t = <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0xc330000000000000) | (<a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a>) (-tv-&gt;v.fi);
+<a id='L113' name='L113'></a>                        <a href='../D/576.html' title='Multiple defined in 8 places.'>DUK_DBLUNION_SET_UINT64</a>(&amp;du, t);
+<a id='L114' name='L114'></a>                        <strong class='reserved'>return</strong> du.d + 4503599627370496.0;  <em class='comment'>/* 1 &lt;&lt; 52 */</em>
+<a id='L115' name='L115'></a>                <em class='brace'>}</em>
+<a id='L116' name='L116'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L117' name='L117'></a>                <strong class='reserved'>return</strong> tv-&gt;v.d;
+<a id='L118' name='L118'></a>        <em class='brace'>}</em>
+<a id='L119' name='L119'></a><em class='brace'>}</em>
+<a id='L120' name='L120'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_FASTINT &amp;&amp; DUK_USE_PACKED_TVAL */</em>
+<a id='L121' name='L121'></a><em class='sharp'>#endif</em>  <em class='comment'>/* 0 */</em>
+<a id='L122' name='L122'></a>
+<a id='L123' name='L123'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3104.html' title='Multiple defined in 3 places.'>DUK_USE_FASTINT</a>) &amp;&amp; !<strong class='reserved'>defined</strong>(<a href='../D/3185.html' title='Multiple defined in 57 places.'>DUK_USE_PACKED_TVAL</a>)
+<a id='L124' name='L124'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/36.html' title='Multiple defined in 21 places.'>DUK_ALWAYS_INLINE</a> <a href='../D/4957.html' title='Multiple defined in 3 places.'>duk_double_t</a> <a href='../R/5052.html' title='Multiple referred from 8 places.'>duk_tval_get_number_unpacked_fastint</a>(<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *tv) <em class='brace'>{</em>
+<a id='L125' name='L125'></a>        <a href='../D/4964.html' title='Multiple defined in 8 places.'>duk_double_union</a> du;
+<a id='L126' name='L126'></a>        <a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a> t;
+<a id='L127' name='L127'></a>
+<a id='L128' name='L128'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(tv-&gt;t == <a href='../D/2689.html' title='Multiple defined in 8 places.'>DUK_TAG_FASTINT</a>);
+<a id='L129' name='L129'></a>
+<a id='L130' name='L130'></a>        <strong class='reserved'>if</strong> (tv-&gt;v.fi &gt;= 0) <em class='brace'>{</em>
+<a id='L131' name='L131'></a>                t = <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0x4330000000000000) | (<a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a>) tv-&gt;v.fi;
+<a id='L132' name='L132'></a>                <a href='../D/576.html' title='Multiple defined in 8 places.'>DUK_DBLUNION_SET_UINT64</a>(&amp;du, t);
+<a id='L133' name='L133'></a>                <strong class='reserved'>return</strong> du.d - 4503599627370496.0;  <em class='comment'>/* 1 &lt;&lt; 52 */</em>
+<a id='L134' name='L134'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L135' name='L135'></a>                t = <a href='../D/2950.html' title='Multiple defined in 6 places.'>DUK_U64_CONSTANT</a>(0xc330000000000000) | (<a href='../D/5885.html' title='Multiple defined in 21 places.'>duk_uint64_t</a>) (-tv-&gt;v.fi);
+<a id='L136' name='L136'></a>                <a href='../D/576.html' title='Multiple defined in 8 places.'>DUK_DBLUNION_SET_UINT64</a>(&amp;du, t);
+<a id='L137' name='L137'></a>                <strong class='reserved'>return</strong> du.d + 4503599627370496.0;  <em class='comment'>/* 1 &lt;&lt; 52 */</em>
+<a id='L138' name='L138'></a>        <em class='brace'>}</em>
+<a id='L139' name='L139'></a><em class='brace'>}</em>
+<a id='L140' name='L140'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_FASTINT &amp;&amp; DUK_USE_PACKED_TVAL */</em>
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_FASTINT */</em>
+<a id='L143' name='L143'></a>
+<a id='L144' name='L144'></a><em class='comment'>/*</em>
+<a id='L145' name='L145'></a><em class='comment'> *  Assertion helpers.</em>
+<a id='L146' name='L146'></a><em class='comment'> */</em>
+<a id='L147' name='L147'></a>
+<a id='L148' name='L148'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3018.html' title='Multiple defined in 3 places.'>DUK_USE_ASSERTIONS</a>)
+<a id='L149' name='L149'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/5047.html' title='Multiple referred from 8 places.'>duk_tval_assert_valid</a>(<a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *tv) <em class='brace'>{</em>
+<a id='L150' name='L150'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(tv != NULL);
+<a id='L151' name='L151'></a><em class='brace'>}</em>
+<a id='L152' name='L152'></a><em class='sharp'>#endif</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L22'>[^]</a><a href='#L149'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

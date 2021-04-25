@@ -1,0 +1,571 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src-input/duk_bi_encoding.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1030.html'>src-input</a>/duk_bi_encoding.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L44'>[^]</a><a href='#L525'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L44' title='Defined at 44.'>duk__utf8_emit_repl</a></li>
+<li><a href='#L51' title='Defined at 51.'>duk__utf8_decode_init</a></li>
+<li><a href='#L62' title='Defined at 62.'>duk__utf8_decode_next</a></li>
+<li><a href='#L147' title='Defined at 147.'>duk__utf8_encode_char</a></li>
+<li><a href='#L206' title='Defined at 206.'>duk__decode_helper</a></li>
+<li><a href='#L343' title='Defined at 343.'>duk_bi_textencoder_constructor</a></li>
+<li><a href='#L352' title='Defined at 352.'>duk_bi_textencoder_prototype_encoding_getter</a></li>
+<li><a href='#L357' title='Defined at 357.'>duk_bi_textencoder_prototype_encode</a></li>
+<li><a href='#L440' title='Defined at 440.'>duk_bi_textdecoder_constructor</a></li>
+<li><a href='#L475' title='Defined at 475.'>duk__get_textdecoder_context</a></li>
+<li><a href='#L484' title='Defined at 484.'>duk_bi_textdecoder_prototype_shared_getter</a></li>
+<li><a href='#L508' title='Defined at 508.'>duk_bi_textdecoder_prototype_decode</a></li>
+<li><a href='#L525' title='Defined at 525.'>duk_textdecoder_decode_utf8_nodejs</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  WHATWG Encoding API built-ins</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> *  API specification: https://encoding.spec.whatwg.org/#api</em>
+<a id='L5' name='L5'></a><em class='comment'> *  Web IDL: https://www.w3.org/TR/WebIDL/</em>
+<a id='L6' name='L6'></a><em class='comment'> */</em>
+<a id='L7' name='L7'></a>
+<a id='L8' name='L8'></a><em class='sharp'>#include</em> "<a href='../I/161.html'>duk_internal.h</a>"
+<a id='L9' name='L9'></a>
+<a id='L10' name='L10'></a><em class='comment'>/*</em>
+<a id='L11' name='L11'></a><em class='comment'> *  Data structures for encoding/decoding</em>
+<a id='L12' name='L12'></a><em class='comment'> */</em>
+<a id='L13' name='L13'></a>
+<a id='L14' name='L14'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>struct</strong> <em class='brace'>{</em>
+<a id='L15' name='L15'></a>        <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *out;      <em class='comment'>/* where to write next byte(s) */</em>
+<a id='L16' name='L16'></a>        <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> lead;  <em class='comment'>/* lead surrogate */</em>
+<a id='L17' name='L17'></a><em class='brace'>}</em> <a href='../R/3315.html' title='Multiple referred from 12 places.'>duk__encode_context</a>;
+<a id='L18' name='L18'></a>
+<a id='L19' name='L19'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>struct</strong> <em class='brace'>{</em>
+<a id='L20' name='L20'></a>        <em class='comment'>/* UTF-8 decoding state */</em>
+<a id='L21' name='L21'></a>        <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> codepoint;  <em class='comment'>/* built up incrementally */</em>
+<a id='L22' name='L22'></a>        <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> upper;          <em class='comment'>/* max value of next byte (decode error otherwise) */</em>
+<a id='L23' name='L23'></a>        <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> lower;          <em class='comment'>/* min value of next byte (ditto) */</em>
+<a id='L24' name='L24'></a>        <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> needed;         <em class='comment'>/* how many more bytes we need */</em>
+<a id='L25' name='L25'></a>        <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> bom_handled;    <em class='comment'>/* BOM seen or no longer expected */</em>
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a>        <em class='comment'>/* Decoder configuration */</em>
+<a id='L28' name='L28'></a>        <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> fatal;
+<a id='L29' name='L29'></a>        <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> ignore_bom;
+<a id='L30' name='L30'></a><em class='brace'>}</em> <a href='../R/3256.html' title='Multiple referred from 44 places.'>duk__decode_context</a>;
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a><em class='comment'>/* The signed duk_codepoint_t type is used to signal a decoded codepoint</em>
+<a id='L33' name='L33'></a><em class='comment'> * (&gt;= 0) or various other states using negative values.</em>
+<a id='L34' name='L34'></a><em class='comment'> */</em>
+<a id='L35' name='L35'></a><em class='sharp'>#define</em> <a href='../R/2616.html' title='Multiple referred from 20 places.'>DUK__CP_CONTINUE</a>   (-1)  <em class='comment'>/* continue to next byte, no completed codepoint */</em>
+<a id='L36' name='L36'></a><em class='sharp'>#define</em> <a href='../R/2617.html' title='Multiple referred from 8 places.'>DUK__CP_ERROR</a>      (-2)  <em class='comment'>/* decoding error */</em>
+<a id='L37' name='L37'></a><em class='sharp'>#define</em> <a href='../R/2618.html' title='Multiple referred from 12 places.'>DUK__CP_RETRY</a>      (-3)  <em class='comment'>/* decoding error; retry last byte */</em>
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a><em class='comment'>/*</em>
+<a id='L40' name='L40'></a><em class='comment'> *  Raw helpers for encoding/decoding</em>
+<a id='L41' name='L41'></a><em class='comment'> */</em>
+<a id='L42' name='L42'></a>
+<a id='L43' name='L43'></a><em class='comment'>/* Emit UTF-8 (= CESU-8) encoded U+FFFD (replacement char), i.e. ef bf bd. */</em>
+<a id='L44' name='L44'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *<a href='../R/3784.html' title='Multiple referred from 8 places.'>duk__utf8_emit_repl</a>(<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *ptr) <em class='brace'>{</em>
+<a id='L45' name='L45'></a>        *ptr++ = 0xef;
+<a id='L46' name='L46'></a>        *ptr++ = 0xbf;
+<a id='L47' name='L47'></a>        *ptr++ = 0xbd;
+<a id='L48' name='L48'></a>        <strong class='reserved'>return</strong> ptr;
+<a id='L49' name='L49'></a><em class='brace'>}</em>
+<a id='L50' name='L50'></a>
+<a id='L51' name='L51'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3782.html' title='Multiple referred from 12 places.'>duk__utf8_decode_init</a>(<a href='../D/4017.html' title='Multiple defined in 4 places.'>duk__decode_context</a> *dec_ctx) <em class='brace'>{</em>
+<a id='L52' name='L52'></a>        <em class='comment'>/* (Re)init the decoding state of 'dec_ctx' but leave decoder</em>
+<a id='L53' name='L53'></a><em class='comment'>         * configuration fields untouched.</em>
+<a id='L54' name='L54'></a><em class='comment'>         */</em>
+<a id='L55' name='L55'></a>        dec_ctx-&gt;codepoint = 0x0000L;
+<a id='L56' name='L56'></a>        dec_ctx-&gt;upper = 0xbf;
+<a id='L57' name='L57'></a>        dec_ctx-&gt;lower = 0x80;
+<a id='L58' name='L58'></a>        dec_ctx-&gt;needed = 0;
+<a id='L59' name='L59'></a>        dec_ctx-&gt;bom_handled = 0;
+<a id='L60' name='L60'></a><em class='brace'>}</em>
+<a id='L61' name='L61'></a>
+<a id='L62' name='L62'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> <a href='../R/3783.html' title='Multiple referred from 4 places.'>duk__utf8_decode_next</a>(<a href='../D/4017.html' title='Multiple defined in 4 places.'>duk__decode_context</a> *dec_ctx, <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> x) <em class='brace'>{</em>
+<a id='L63' name='L63'></a>        <em class='comment'>/*</em>
+<a id='L64' name='L64'></a><em class='comment'>         *  UTF-8 algorithm based on the Encoding specification:</em>
+<a id='L65' name='L65'></a><em class='comment'>         *  https://encoding.spec.whatwg.org/#utf-8-decoder</em>
+<a id='L66' name='L66'></a><em class='comment'>         *</em>
+<a id='L67' name='L67'></a><em class='comment'>         *  Two main states: decoding initial byte vs. decoding continuation</em>
+<a id='L68' name='L68'></a><em class='comment'>         *  bytes.  Shortest length encoding is validated by restricting the</em>
+<a id='L69' name='L69'></a><em class='comment'>         *  allowed range of first continuation byte using 'lower' and 'upper'.</em>
+<a id='L70' name='L70'></a><em class='comment'>         */</em>
+<a id='L71' name='L71'></a>
+<a id='L72' name='L72'></a>        <strong class='reserved'>if</strong> (dec_ctx-&gt;needed == 0) <em class='brace'>{</em>
+<a id='L73' name='L73'></a>                <em class='comment'>/* process initial byte */</em>
+<a id='L74' name='L74'></a>                <strong class='reserved'>if</strong> (x &lt;= 0x7f) <em class='brace'>{</em>
+<a id='L75' name='L75'></a>                        <em class='comment'>/* U+0000-U+007F, 1 byte (ASCII) */</em>
+<a id='L76' name='L76'></a>                        <strong class='reserved'>return</strong> (<a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a>) x;
+<a id='L77' name='L77'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (x &gt;= 0xc2 &amp;&amp; x &lt;= 0xdf) <em class='brace'>{</em>
+<a id='L78' name='L78'></a>                        <em class='comment'>/* U+0080-U+07FF, 2 bytes */</em>
+<a id='L79' name='L79'></a>                        dec_ctx-&gt;needed = 1;
+<a id='L80' name='L80'></a>                        dec_ctx-&gt;codepoint = x &amp; 0x1f;
+<a id='L81' name='L81'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(dec_ctx-&gt;lower == 0x80);
+<a id='L82' name='L82'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(dec_ctx-&gt;upper == 0xbf);
+<a id='L83' name='L83'></a>                        <strong class='reserved'>return</strong> <a href='../D/3345.html' title='Multiple defined in 6 places.'>DUK__CP_CONTINUE</a>;
+<a id='L84' name='L84'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (x &gt;= 0xe0 &amp;&amp; x &lt;= 0xef) <em class='brace'>{</em>
+<a id='L85' name='L85'></a>                        <em class='comment'>/* U+0800-U+FFFF, 3 bytes */</em>
+<a id='L86' name='L86'></a>                        <strong class='reserved'>if</strong> (x == 0xe0) <em class='brace'>{</em>
+<a id='L87' name='L87'></a>                                dec_ctx-&gt;lower = 0xa0;
+<a id='L88' name='L88'></a>                                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(dec_ctx-&gt;upper == 0xbf);
+<a id='L89' name='L89'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (x == 0xed) <em class='brace'>{</em>
+<a id='L90' name='L90'></a>                                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(dec_ctx-&gt;lower == 0x80);
+<a id='L91' name='L91'></a>                                dec_ctx-&gt;upper = 0x9f;
+<a id='L92' name='L92'></a>                        <em class='brace'>}</em>
+<a id='L93' name='L93'></a>                        dec_ctx-&gt;needed = 2;
+<a id='L94' name='L94'></a>                        dec_ctx-&gt;codepoint = x &amp; 0x0f;
+<a id='L95' name='L95'></a>                        <strong class='reserved'>return</strong> <a href='../D/3345.html' title='Multiple defined in 6 places.'>DUK__CP_CONTINUE</a>;
+<a id='L96' name='L96'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (x &gt;= 0xf0 &amp;&amp; x &lt;= 0xf4) <em class='brace'>{</em>
+<a id='L97' name='L97'></a>                        <em class='comment'>/* U+010000-U+10FFFF, 4 bytes */</em>
+<a id='L98' name='L98'></a>                        <strong class='reserved'>if</strong> (x == 0xf0) <em class='brace'>{</em>
+<a id='L99' name='L99'></a>                                dec_ctx-&gt;lower = 0x90;
+<a id='L100' name='L100'></a>                                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(dec_ctx-&gt;upper == 0xbf);
+<a id='L101' name='L101'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (x == 0xf4) <em class='brace'>{</em>
+<a id='L102' name='L102'></a>                                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(dec_ctx-&gt;lower == 0x80);
+<a id='L103' name='L103'></a>                                dec_ctx-&gt;upper = 0x8f;
+<a id='L104' name='L104'></a>                        <em class='brace'>}</em>
+<a id='L105' name='L105'></a>                        dec_ctx-&gt;needed = 3;
+<a id='L106' name='L106'></a>                        dec_ctx-&gt;codepoint = x &amp; 0x07;
+<a id='L107' name='L107'></a>                        <strong class='reserved'>return</strong> <a href='../D/3345.html' title='Multiple defined in 6 places.'>DUK__CP_CONTINUE</a>;
+<a id='L108' name='L108'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L109' name='L109'></a>                        <em class='comment'>/* not a legal initial byte */</em>
+<a id='L110' name='L110'></a>                        <strong class='reserved'>return</strong> <a href='../D/3346.html' title='Multiple defined in 6 places.'>DUK__CP_ERROR</a>;
+<a id='L111' name='L111'></a>                <em class='brace'>}</em>
+<a id='L112' name='L112'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L113' name='L113'></a>                <em class='comment'>/* process continuation byte */</em>
+<a id='L114' name='L114'></a>                <strong class='reserved'>if</strong> (x &gt;= dec_ctx-&gt;lower &amp;&amp; x &lt;= dec_ctx-&gt;upper) <em class='brace'>{</em>
+<a id='L115' name='L115'></a>                        dec_ctx-&gt;lower = 0x80;
+<a id='L116' name='L116'></a>                        dec_ctx-&gt;upper = 0xbf;
+<a id='L117' name='L117'></a>                        dec_ctx-&gt;codepoint = (dec_ctx-&gt;codepoint &lt;&lt; 6) | (x &amp; 0x3f);
+<a id='L118' name='L118'></a>                        <strong class='reserved'>if</strong> (--dec_ctx-&gt;needed &gt; 0) <em class='brace'>{</em>
+<a id='L119' name='L119'></a>                                <em class='comment'>/* need more bytes */</em>
+<a id='L120' name='L120'></a>                                <strong class='reserved'>return</strong> <a href='../D/3345.html' title='Multiple defined in 6 places.'>DUK__CP_CONTINUE</a>;
+<a id='L121' name='L121'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L122' name='L122'></a>                                <em class='comment'>/* got a codepoint */</em>
+<a id='L123' name='L123'></a>                                <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> ret;
+<a id='L124' name='L124'></a>                                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(dec_ctx-&gt;codepoint &lt;= 0x10ffffL);  <em class='comment'>/* Decoding rules guarantee. */</em>
+<a id='L125' name='L125'></a>                                ret = dec_ctx-&gt;codepoint;
+<a id='L126' name='L126'></a>                                dec_ctx-&gt;codepoint = 0x0000L;
+<a id='L127' name='L127'></a>                                dec_ctx-&gt;needed = 0;
+<a id='L128' name='L128'></a>                                <strong class='reserved'>return</strong> ret;
+<a id='L129' name='L129'></a>                        <em class='brace'>}</em>
+<a id='L130' name='L130'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L131' name='L131'></a>                        <em class='comment'>/* We just encountered an illegal UTF-8 continuation byte.  This might</em>
+<a id='L132' name='L132'></a><em class='comment'>                         * be the initial byte of the next character; if we return a plain</em>
+<a id='L133' name='L133'></a><em class='comment'>                         * error status and the decoder is in replacement mode, the character</em>
+<a id='L134' name='L134'></a><em class='comment'>                         * will be masked.  We still need to alert the caller to the error</em>
+<a id='L135' name='L135'></a><em class='comment'>                         * though.</em>
+<a id='L136' name='L136'></a><em class='comment'>                         */</em>
+<a id='L137' name='L137'></a>                        dec_ctx-&gt;codepoint = 0x0000L;
+<a id='L138' name='L138'></a>                        dec_ctx-&gt;needed = 0;
+<a id='L139' name='L139'></a>                        dec_ctx-&gt;lower = 0x80;
+<a id='L140' name='L140'></a>                        dec_ctx-&gt;upper = 0xbf;
+<a id='L141' name='L141'></a>                        <strong class='reserved'>return</strong> <a href='../D/3347.html' title='Multiple defined in 6 places.'>DUK__CP_RETRY</a>;
+<a id='L142' name='L142'></a>                <em class='brace'>}</em>
+<a id='L143' name='L143'></a>        <em class='brace'>}</em>
+<a id='L144' name='L144'></a><em class='brace'>}</em>
+<a id='L145' name='L145'></a>
+<a id='L146' name='L146'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3080.html' title='Multiple defined in 3 places.'>DUK_USE_ENCODING_BUILTINS</a>)
+<a id='L147' name='L147'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3785.html' title='Multiple referred from 4 places.'>duk__utf8_encode_char</a>(<strong class='reserved'>void</strong> *udata, <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> codepoint) <em class='brace'>{</em>
+<a id='L148' name='L148'></a>        <a href='../D/4076.html' title='Multiple defined in 4 places.'>duk__encode_context</a> *enc_ctx;
+<a id='L149' name='L149'></a>
+<a id='L150' name='L150'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(codepoint &gt;= 0);
+<a id='L151' name='L151'></a>        enc_ctx = (<a href='../D/4076.html' title='Multiple defined in 4 places.'>duk__encode_context</a> *) udata;
+<a id='L152' name='L152'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(enc_ctx != NULL);
+<a id='L153' name='L153'></a>
+<a id='L154' name='L154'></a><em class='sharp'>#if</em> !<strong class='reserved'>defined</strong>(<a href='../D/3196.html' title='Multiple defined in 3 places.'>DUK_USE_PREFER_SIZE</a>)
+<a id='L155' name='L155'></a>        <strong class='reserved'>if</strong> (codepoint &lt;= 0x7f &amp;&amp; enc_ctx-&gt;lead == 0x0000L) <em class='brace'>{</em>
+<a id='L156' name='L156'></a>                <em class='comment'>/* Fast path for ASCII. */</em>
+<a id='L157' name='L157'></a>                *enc_ctx-&gt;out++ = (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a>) codepoint;
+<a id='L158' name='L158'></a>                <strong class='reserved'>return</strong>;
+<a id='L159' name='L159'></a>        <em class='brace'>}</em>
+<a id='L160' name='L160'></a><em class='sharp'>#endif</em>
+<a id='L161' name='L161'></a>
+<a id='L162' name='L162'></a>        <strong class='reserved'>if</strong> (<a href='../D/3007.html' title='Multiple defined in 12 places.'>DUK_UNLIKELY</a>(codepoint &gt; 0x10ffffL)) <em class='brace'>{</em>
+<a id='L163' name='L163'></a>                <em class='comment'>/* cannot legally encode in UTF-8 */</em>
+<a id='L164' name='L164'></a>                codepoint = <a href='../D/2999.html' title='Multiple defined in 4 places.'>DUK_UNICODE_CP_REPLACEMENT_CHARACTER</a>;
+<a id='L165' name='L165'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (codepoint &gt;= 0xd800L &amp;&amp; codepoint &lt;= 0xdfffL) <em class='brace'>{</em>
+<a id='L166' name='L166'></a>                <strong class='reserved'>if</strong> (codepoint &lt;= 0xdbffL) <em class='brace'>{</em>
+<a id='L167' name='L167'></a>                        <em class='comment'>/* high surrogate */</em>
+<a id='L168' name='L168'></a>                        <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> prev_lead = enc_ctx-&gt;lead;
+<a id='L169' name='L169'></a>                        enc_ctx-&gt;lead = codepoint;
+<a id='L170' name='L170'></a>                        <strong class='reserved'>if</strong> (prev_lead == 0x0000L) <em class='brace'>{</em>
+<a id='L171' name='L171'></a>                                <em class='comment'>/* high surrogate, no output */</em>
+<a id='L172' name='L172'></a>                                <strong class='reserved'>return</strong>;
+<a id='L173' name='L173'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L174' name='L174'></a>                                <em class='comment'>/* consecutive high surrogates, consider first one unpaired */</em>
+<a id='L175' name='L175'></a>                                codepoint = <a href='../D/2999.html' title='Multiple defined in 4 places.'>DUK_UNICODE_CP_REPLACEMENT_CHARACTER</a>;
+<a id='L176' name='L176'></a>                        <em class='brace'>}</em>
+<a id='L177' name='L177'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L178' name='L178'></a>                        <em class='comment'>/* low surrogate */</em>
+<a id='L179' name='L179'></a>                        <strong class='reserved'>if</strong> (enc_ctx-&gt;lead != 0x0000L) <em class='brace'>{</em>
+<a id='L180' name='L180'></a>                                codepoint = (<a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a>) (0x010000L + ((enc_ctx-&gt;lead - 0xd800L) &lt;&lt; 10) + (codepoint - 0xdc00L));
+<a id='L181' name='L181'></a>                                enc_ctx-&gt;lead = 0x0000L;
+<a id='L182' name='L182'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L183' name='L183'></a>                                <em class='comment'>/* unpaired low surrogate */</em>
+<a id='L184' name='L184'></a>                                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(enc_ctx-&gt;lead == 0x0000L);
+<a id='L185' name='L185'></a>                                codepoint = <a href='../D/2999.html' title='Multiple defined in 4 places.'>DUK_UNICODE_CP_REPLACEMENT_CHARACTER</a>;
+<a id='L186' name='L186'></a>                        <em class='brace'>}</em>
+<a id='L187' name='L187'></a>                <em class='brace'>}</em>
+<a id='L188' name='L188'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L189' name='L189'></a>                <strong class='reserved'>if</strong> (enc_ctx-&gt;lead != 0x0000L) <em class='brace'>{</em>
+<a id='L190' name='L190'></a>                        <em class='comment'>/* unpaired high surrogate: emit replacement character and the input codepoint */</em>
+<a id='L191' name='L191'></a>                        enc_ctx-&gt;lead = 0x0000L;
+<a id='L192' name='L192'></a>                        enc_ctx-&gt;out = <a href='../D/4546.html' title='Multiple defined in 4 places.'>duk__utf8_emit_repl</a>(enc_ctx-&gt;out);
+<a id='L193' name='L193'></a>                <em class='brace'>}</em>
+<a id='L194' name='L194'></a>        <em class='brace'>}</em>
+<a id='L195' name='L195'></a>
+<a id='L196' name='L196'></a>        <em class='comment'>/* Codepoint may be original input, a decoded surrogate pair, or may</em>
+<a id='L197' name='L197'></a><em class='comment'>         * have been replaced with U+FFFD.</em>
+<a id='L198' name='L198'></a><em class='comment'>         */</em>
+<a id='L199' name='L199'></a>        enc_ctx-&gt;out += <a href='../D/5903.html' title='Multiple defined in 4 places.'>duk_unicode_encode_xutf8</a>((<a href='../D/5881.html' title='Multiple defined in 3 places.'>duk_ucodepoint_t</a>) codepoint, enc_ctx-&gt;out);
+<a id='L200' name='L200'></a><em class='brace'>}</em>
+<a id='L201' name='L201'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_ENCODING_BUILTINS */</em>
+<a id='L202' name='L202'></a>
+<a id='L203' name='L203'></a><em class='comment'>/* Shared helper for buffer-to-string using a TextDecoder() compatible UTF-8</em>
+<a id='L204' name='L204'></a><em class='comment'> * decoder.</em>
+<a id='L205' name='L205'></a><em class='comment'> */</em>
+<a id='L206' name='L206'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/3257.html' title='Multiple referred from 8 places.'>duk__decode_helper</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/4017.html' title='Multiple defined in 4 places.'>duk__decode_context</a> *dec_ctx) <em class='brace'>{</em>
+<a id='L207' name='L207'></a>        <strong class='reserved'>const</strong> <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *input;
+<a id='L208' name='L208'></a>        <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> len = 0;
+<a id='L209' name='L209'></a>        <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> len_tmp;
+<a id='L210' name='L210'></a>        <a href='../D/4797.html' title='Multiple defined in 3 places.'>duk_bool_t</a> stream = 0;
+<a id='L211' name='L211'></a>        <a href='../D/4836.html' title='Multiple defined in 3 places.'>duk_codepoint_t</a> codepoint;
+<a id='L212' name='L212'></a>        <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *output;
+<a id='L213' name='L213'></a>        <strong class='reserved'>const</strong> <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *in;
+<a id='L214' name='L214'></a>        <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *out;
+<a id='L215' name='L215'></a>
+<a id='L216' name='L216'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(dec_ctx != NULL);
+<a id='L217' name='L217'></a>
+<a id='L218' name='L218'></a>        <em class='comment'>/* Careful with input buffer pointer: any side effects involving</em>
+<a id='L219' name='L219'></a><em class='comment'>         * code execution (e.g. getters, coercion calls, and finalizers)</em>
+<a id='L220' name='L220'></a><em class='comment'>         * may cause a resize and invalidate a pointer we've read.  This</em>
+<a id='L221' name='L221'></a><em class='comment'>         * is why the pointer is actually looked up at the last minute.</em>
+<a id='L222' name='L222'></a><em class='comment'>         * Argument validation must still happen first to match WHATWG</em>
+<a id='L223' name='L223'></a><em class='comment'>         * required side effect order.</em>
+<a id='L224' name='L224'></a><em class='comment'>         */</em>
+<a id='L225' name='L225'></a>
+<a id='L226' name='L226'></a>        <strong class='reserved'>if</strong> (<a href='../D/5380.html' title='Multiple defined in 4 places.'>duk_is_undefined</a>(thr, 0)) <em class='brace'>{</em>
+<a id='L227' name='L227'></a>                <a href='../D/5566.html' title='Multiple defined in 4 places.'>duk_push_fixed_buffer_nozero</a>(thr, 0);
+<a id='L228' name='L228'></a>                <a href='../D/5702.html' title='Multiple defined in 4 places.'>duk_replace</a>(thr, 0);
+<a id='L229' name='L229'></a>        <em class='brace'>}</em>
+<a id='L230' name='L230'></a>        (<strong class='reserved'>void</strong>) <a href='../D/5705.html' title='Multiple defined in 4 places.'>duk_require_buffer_data</a>(thr, 0, &amp;len);  <em class='comment'>/* Need 'len', avoid pointer. */</em>
+<a id='L231' name='L231'></a>
+<a id='L232' name='L232'></a>        <strong class='reserved'>if</strong> (<a href='../D/4833.html' title='Multiple defined in 4 places.'>duk_check_type_mask</a>(thr, 1, <a href='../D/2940.html' title='Multiple defined in 3 places.'>DUK_TYPE_MASK_UNDEFINED</a> |
+<a id='L233' name='L233'></a>                                        <a href='../D/2933.html' title='Multiple defined in 3 places.'>DUK_TYPE_MASK_NULL</a> |
+<a id='L234' name='L234'></a>                                        <a href='../D/2932.html' title='Multiple defined in 3 places.'>DUK_TYPE_MASK_NONE</a>)) <em class='brace'>{</em>
+<a id='L235' name='L235'></a>                <em class='comment'>/* Use defaults, treat missing value like undefined. */</em>
+<a id='L236' name='L236'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L237' name='L237'></a>                <a href='../D/5739.html' title='Multiple defined in 3 places.'>duk_require_type_mask</a>(thr, 1, <a href='../D/2940.html' title='Multiple defined in 3 places.'>DUK_TYPE_MASK_UNDEFINED</a> |
+<a id='L238' name='L238'></a>                                              <a href='../D/2933.html' title='Multiple defined in 3 places.'>DUK_TYPE_MASK_NULL</a> |
+<a id='L239' name='L239'></a>                                              <a href='../D/2931.html' title='Multiple defined in 3 places.'>DUK_TYPE_MASK_LIGHTFUNC</a> |
+<a id='L240' name='L240'></a>                                              <a href='../D/2930.html' title='Multiple defined in 3 places.'>DUK_TYPE_MASK_BUFFER</a> |
+<a id='L241' name='L241'></a>                                              <a href='../D/2935.html' title='Multiple defined in 3 places.'>DUK_TYPE_MASK_OBJECT</a>);
+<a id='L242' name='L242'></a>                <strong class='reserved'>if</strong> (<a href='../D/5110.html' title='Multiple defined in 6 places.'>duk_get_prop_literal</a>(thr, 1, "stream")) <em class='brace'>{</em>
+<a id='L243' name='L243'></a>                        stream = <a href='../D/5790.html' title='Multiple defined in 4 places.'>duk_to_boolean</a>(thr, -1);
+<a id='L244' name='L244'></a>                <em class='brace'>}</em>
+<a id='L245' name='L245'></a>        <em class='brace'>}</em>
+<a id='L246' name='L246'></a>
+<a id='L247' name='L247'></a>        <em class='comment'>/* Allowance is 3*len in the general case because all bytes may potentially</em>
+<a id='L248' name='L248'></a><em class='comment'>         * become U+FFFD.  If the first byte completes a non-BMP codepoint it will</em>
+<a id='L249' name='L249'></a><em class='comment'>         * decode to a CESU-8 surrogate pair (6 bytes) so we allow 3 extra bytes to</em>
+<a id='L250' name='L250'></a><em class='comment'>         * compensate: (1*3)+3 = 6.  Non-BMP codepoints are safe otherwise because</em>
+<a id='L251' name='L251'></a><em class='comment'>         * the 4-&gt;6 expansion is well under the 3x allowance.</em>
+<a id='L252' name='L252'></a><em class='comment'>         *</em>
+<a id='L253' name='L253'></a><em class='comment'>         * XXX: As with TextEncoder, need a better buffer allocation strategy here.</em>
+<a id='L254' name='L254'></a><em class='comment'>         */</em>
+<a id='L255' name='L255'></a>        <strong class='reserved'>if</strong> (len &gt;= (<a href='../D/925.html' title='Multiple defined in 8 places.'>DUK_HBUFFER_MAX_BYTELEN</a> / 3) - 3) <em class='brace'>{</em>
+<a id='L256' name='L256'></a>                <a href='../D/745.html' title='Multiple defined in 8 places.'>DUK_ERROR_TYPE</a>(thr, <a href='../D/2661.html' title='Multiple defined in 4 places.'>DUK_STR_RESULT_TOO_LONG</a>);
+<a id='L257' name='L257'></a>                <a href='../D/3267.html' title='Multiple defined in 6 places.'>DUK_WO_NORETURN</a>(<strong class='reserved'>return</strong> 0;);
+<a id='L258' name='L258'></a>        <em class='brace'>}</em>
+<a id='L259' name='L259'></a>        output = (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) <a href='../D/5566.html' title='Multiple defined in 4 places.'>duk_push_fixed_buffer_nozero</a>(thr, 3 + (3 * len));  <em class='comment'>/* used parts will be always manually written over */</em>
+<a id='L260' name='L260'></a>
+<a id='L261' name='L261'></a>        input = (<strong class='reserved'>const</strong> <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) <a href='../D/5063.html' title='Multiple defined in 4 places.'>duk_get_buffer_data</a>(thr, 0, &amp;len_tmp);
+<a id='L262' name='L262'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(input != NULL || len == 0);
+<a id='L263' name='L263'></a>        <strong class='reserved'>if</strong> (<a href='../D/3007.html' title='Multiple defined in 12 places.'>DUK_UNLIKELY</a>(len != len_tmp)) <em class='brace'>{</em>
+<a id='L264' name='L264'></a>                <em class='comment'>/* Very unlikely but possible: source buffer was resized by</em>
+<a id='L265' name='L265'></a><em class='comment'>                 * a side effect when fixed buffer was pushed.  Output buffer</em>
+<a id='L266' name='L266'></a><em class='comment'>                 * may not be large enough to hold output, so just fail if</em>
+<a id='L267' name='L267'></a><em class='comment'>                 * length has changed.</em>
+<a id='L268' name='L268'></a><em class='comment'>                 */</em>
+<a id='L269' name='L269'></a>                <a href='../D/462.html' title='Multiple defined in 12 places.'>DUK_D</a>(<a href='../D/679.html' title='Multiple defined in 24 places.'>DUK_DPRINT</a>("input buffer resized by side effect, fail"));
+<a id='L270' name='L270'></a>                <strong class='reserved'>goto</strong> fail_type;
+<a id='L271' name='L271'></a>        <em class='brace'>}</em>
+<a id='L272' name='L272'></a>
+<a id='L273' name='L273'></a>        <em class='comment'>/* From this point onwards it's critical that no side effect occur</em>
+<a id='L274' name='L274'></a><em class='comment'>         * which may disturb 'input': finalizer execution, property accesses,</em>
+<a id='L275' name='L275'></a><em class='comment'>         * active coercions, etc.  Even an allocation related mark-and-sweep</em>
+<a id='L276' name='L276'></a><em class='comment'>         * may affect the pointer because it may trigger a pending finalizer.</em>
+<a id='L277' name='L277'></a><em class='comment'>         */</em>
+<a id='L278' name='L278'></a>
+<a id='L279' name='L279'></a>        in = input;
+<a id='L280' name='L280'></a>        out = output;
+<a id='L281' name='L281'></a>        <strong class='reserved'>while</strong> (in &lt; input + len) <em class='brace'>{</em>
+<a id='L282' name='L282'></a>                codepoint = <a href='../D/4545.html' title='Multiple defined in 4 places.'>duk__utf8_decode_next</a>(dec_ctx, *in++);
+<a id='L283' name='L283'></a>                <strong class='reserved'>if</strong> (codepoint &lt; 0) <em class='brace'>{</em>
+<a id='L284' name='L284'></a>                        <strong class='reserved'>if</strong> (codepoint == <a href='../D/3345.html' title='Multiple defined in 6 places.'>DUK__CP_CONTINUE</a>) <em class='brace'>{</em>
+<a id='L285' name='L285'></a>                                <strong class='reserved'>continue</strong>;
+<a id='L286' name='L286'></a>                        <em class='brace'>}</em>
+<a id='L287' name='L287'></a>
+<a id='L288' name='L288'></a>                        <em class='comment'>/* Decoding error with or without retry. */</em>
+<a id='L289' name='L289'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(codepoint == <a href='../D/3346.html' title='Multiple defined in 6 places.'>DUK__CP_ERROR</a> || codepoint == <a href='../D/3347.html' title='Multiple defined in 6 places.'>DUK__CP_RETRY</a>);
+<a id='L290' name='L290'></a>                        <strong class='reserved'>if</strong> (codepoint == <a href='../D/3347.html' title='Multiple defined in 6 places.'>DUK__CP_RETRY</a>) <em class='brace'>{</em>
+<a id='L291' name='L291'></a>                                --in;  <em class='comment'>/* retry last byte */</em>
+<a id='L292' name='L292'></a>                        <em class='brace'>}</em>
+<a id='L293' name='L293'></a>                        <em class='comment'>/* replacement mode: replace with U+FFFD */</em>
+<a id='L294' name='L294'></a>                        codepoint = <a href='../D/2999.html' title='Multiple defined in 4 places.'>DUK_UNICODE_CP_REPLACEMENT_CHARACTER</a>;
+<a id='L295' name='L295'></a>                        <strong class='reserved'>if</strong> (dec_ctx-&gt;fatal) <em class='brace'>{</em>
+<a id='L296' name='L296'></a>                                <em class='comment'>/* fatal mode: throw a TypeError */</em>
+<a id='L297' name='L297'></a>                                <strong class='reserved'>goto</strong> fail_type;
+<a id='L298' name='L298'></a>                        <em class='brace'>}</em>
+<a id='L299' name='L299'></a>                        <em class='comment'>/* Continue with 'codepoint', Unicode replacement. */</em>
+<a id='L300' name='L300'></a>                <em class='brace'>}</em>
+<a id='L301' name='L301'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(codepoint &gt;= 0x0000L &amp;&amp; codepoint &lt;= 0x10ffffL);
+<a id='L302' name='L302'></a>
+<a id='L303' name='L303'></a>                <strong class='reserved'>if</strong> (!dec_ctx-&gt;bom_handled) <em class='brace'>{</em>
+<a id='L304' name='L304'></a>                        dec_ctx-&gt;bom_handled = 1;
+<a id='L305' name='L305'></a>                        <strong class='reserved'>if</strong> (codepoint == 0xfeffL &amp;&amp; !dec_ctx-&gt;ignore_bom) <em class='brace'>{</em>
+<a id='L306' name='L306'></a>                                <strong class='reserved'>continue</strong>;
+<a id='L307' name='L307'></a>                        <em class='brace'>}</em>
+<a id='L308' name='L308'></a>                <em class='brace'>}</em>
+<a id='L309' name='L309'></a>
+<a id='L310' name='L310'></a>                out += <a href='../D/5902.html' title='Multiple defined in 4 places.'>duk_unicode_encode_cesu8</a>((<a href='../D/5881.html' title='Multiple defined in 3 places.'>duk_ucodepoint_t</a>) codepoint, out);
+<a id='L311' name='L311'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(out &lt;= output + (3 + (3 * len)));
+<a id='L312' name='L312'></a>        <em class='brace'>}</em>
+<a id='L313' name='L313'></a>
+<a id='L314' name='L314'></a>        <strong class='reserved'>if</strong> (!stream) <em class='brace'>{</em>
+<a id='L315' name='L315'></a>                <strong class='reserved'>if</strong> (dec_ctx-&gt;needed != 0) <em class='brace'>{</em>
+<a id='L316' name='L316'></a>                        <em class='comment'>/* truncated sequence at end of buffer */</em>
+<a id='L317' name='L317'></a>                        <strong class='reserved'>if</strong> (dec_ctx-&gt;fatal) <em class='brace'>{</em>
+<a id='L318' name='L318'></a>                                <strong class='reserved'>goto</strong> fail_type;
+<a id='L319' name='L319'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L320' name='L320'></a>                                out += <a href='../D/5902.html' title='Multiple defined in 4 places.'>duk_unicode_encode_cesu8</a>(<a href='../D/2999.html' title='Multiple defined in 4 places.'>DUK_UNICODE_CP_REPLACEMENT_CHARACTER</a>, out);
+<a id='L321' name='L321'></a>                                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(out &lt;= output + (3 + (3 * len)));
+<a id='L322' name='L322'></a>                        <em class='brace'>}</em>
+<a id='L323' name='L323'></a>                <em class='brace'>}</em>
+<a id='L324' name='L324'></a>                <a href='../D/4544.html' title='Multiple defined in 4 places.'>duk__utf8_decode_init</a>(dec_ctx);  <em class='comment'>/* Initialize decoding state for potential reuse. */</em>
+<a id='L325' name='L325'></a>        <em class='brace'>}</em>
+<a id='L326' name='L326'></a>
+<a id='L327' name='L327'></a>        <em class='comment'>/* Output buffer is fixed and thus stable even if there had been</em>
+<a id='L328' name='L328'></a><em class='comment'>         * side effects (which there shouldn't be).</em>
+<a id='L329' name='L329'></a><em class='comment'>         */</em>
+<a id='L330' name='L330'></a>        <a href='../D/5595.html' title='Multiple defined in 4 places.'>duk_push_lstring</a>(thr, (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *) output, (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) (out - output));
+<a id='L331' name='L331'></a>        <strong class='reserved'>return</strong> 1;
+<a id='L332' name='L332'></a>
+<a id='L333' name='L333'></a> fail_type:
+<a id='L334' name='L334'></a>        <a href='../D/745.html' title='Multiple defined in 8 places.'>DUK_ERROR_TYPE</a>(thr, <a href='../D/2679.html' title='Multiple defined in 4 places.'>DUK_STR_UTF8_DECODE_FAILED</a>);
+<a id='L335' name='L335'></a>        <a href='../D/3267.html' title='Multiple defined in 6 places.'>DUK_WO_NORETURN</a>(<strong class='reserved'>return</strong> 0;);
+<a id='L336' name='L336'></a><em class='brace'>}</em>
+<a id='L337' name='L337'></a>
+<a id='L338' name='L338'></a><em class='comment'>/*</em>
+<a id='L339' name='L339'></a><em class='comment'> *  Built-in bindings</em>
+<a id='L340' name='L340'></a><em class='comment'> */</em>
+<a id='L341' name='L341'></a>
+<a id='L342' name='L342'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3080.html' title='Multiple defined in 3 places.'>DUK_USE_ENCODING_BUILTINS</a>)
+<a id='L343' name='L343'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/4010.html' title='Multiple referred from 6 places.'>duk_bi_textencoder_constructor</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L344' name='L344'></a>        <em class='comment'>/* TextEncoder currently requires no persistent state, so the constructor</em>
+<a id='L345' name='L345'></a><em class='comment'>         * does nothing on purpose.</em>
+<a id='L346' name='L346'></a><em class='comment'>         */</em>
+<a id='L347' name='L347'></a>
+<a id='L348' name='L348'></a>        <a href='../D/5709.html' title='Multiple defined in 4 places.'>duk_require_constructor_call</a>(thr);
+<a id='L349' name='L349'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L350' name='L350'></a><em class='brace'>}</em>
+<a id='L351' name='L351'></a>
+<a id='L352' name='L352'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/4012.html' title='Multiple referred from 6 places.'>duk_bi_textencoder_prototype_encoding_getter</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L353' name='L353'></a>        <a href='../D/5593.html' title='Multiple defined in 6 places.'>duk_push_literal</a>(thr, "utf-8");
+<a id='L354' name='L354'></a>        <strong class='reserved'>return</strong> 1;
+<a id='L355' name='L355'></a><em class='brace'>}</em>
+<a id='L356' name='L356'></a>
+<a id='L357' name='L357'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/4011.html' title='Multiple referred from 6 places.'>duk_bi_textencoder_prototype_encode</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L358' name='L358'></a>        <a href='../D/4076.html' title='Multiple defined in 4 places.'>duk__encode_context</a> enc_ctx;
+<a id='L359' name='L359'></a>        <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> len;
+<a id='L360' name='L360'></a>        <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> final_len;
+<a id='L361' name='L361'></a>        <a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *output;
+<a id='L362' name='L362'></a>
+<a id='L363' name='L363'></a>        <a href='../D/187.html' title='Multiple defined in 4 places.'>DUK_ASSERT_TOP</a>(thr, 1);
+<a id='L364' name='L364'></a>        <strong class='reserved'>if</strong> (<a href='../D/5380.html' title='Multiple defined in 4 places.'>duk_is_undefined</a>(thr, 0)) <em class='brace'>{</em>
+<a id='L365' name='L365'></a>                len = 0;
+<a id='L366' name='L366'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L367' name='L367'></a>                <a href='../D/5286.html' title='Multiple defined in 8 places.'>duk_hstring</a> *h_input;
+<a id='L368' name='L368'></a>
+<a id='L369' name='L369'></a>                h_input = <a href='../D/5798.html' title='Multiple defined in 4 places.'>duk_to_hstring</a>(thr, 0);
+<a id='L370' name='L370'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(h_input != NULL);
+<a id='L371' name='L371'></a>
+<a id='L372' name='L372'></a>                len = (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) <a href='../D/1553.html' title='Multiple defined in 12 places.'>DUK_HSTRING_GET_CHARLEN</a>(h_input);
+<a id='L373' name='L373'></a>                <strong class='reserved'>if</strong> (len &gt;= <a href='../D/925.html' title='Multiple defined in 8 places.'>DUK_HBUFFER_MAX_BYTELEN</a> / 3) <em class='brace'>{</em>
+<a id='L374' name='L374'></a>                        <a href='../D/745.html' title='Multiple defined in 8 places.'>DUK_ERROR_TYPE</a>(thr, <a href='../D/2661.html' title='Multiple defined in 4 places.'>DUK_STR_RESULT_TOO_LONG</a>);
+<a id='L375' name='L375'></a>                        <a href='../D/3267.html' title='Multiple defined in 6 places.'>DUK_WO_NORETURN</a>(<strong class='reserved'>return</strong> 0;);
+<a id='L376' name='L376'></a>                <em class='brace'>}</em>
+<a id='L377' name='L377'></a>        <em class='brace'>}</em>
+<a id='L378' name='L378'></a>
+<a id='L379' name='L379'></a>        <em class='comment'>/* Allowance is 3*len because all bytes can potentially be replaced with</em>
+<a id='L380' name='L380'></a><em class='comment'>         * U+FFFD -- which rather inconveniently encodes to 3 bytes in UTF-8.</em>
+<a id='L381' name='L381'></a><em class='comment'>         * Rely on dynamic buffer data pointer stability: no other code has</em>
+<a id='L382' name='L382'></a><em class='comment'>         * access to the data pointer.</em>
+<a id='L383' name='L383'></a><em class='comment'>         *</em>
+<a id='L384' name='L384'></a><em class='comment'>         * XXX: The buffer allocation strategy used here is rather inefficient.</em>
+<a id='L385' name='L385'></a><em class='comment'>         * Maybe switch to a chunk-based strategy, or preprocess the string to</em>
+<a id='L386' name='L386'></a><em class='comment'>         * figure out the space needed ahead of time?</em>
+<a id='L387' name='L387'></a><em class='comment'>         */</em>
+<a id='L388' name='L388'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(3 * len &gt;= len);
+<a id='L389' name='L389'></a>        output = (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) <a href='../D/5557.html' title='Multiple defined in 3 places.'>duk_push_dynamic_buffer</a>(thr, 3 * len);
+<a id='L390' name='L390'></a>
+<a id='L391' name='L391'></a>        <strong class='reserved'>if</strong> (len &gt; 0) <em class='brace'>{</em>
+<a id='L392' name='L392'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(<a href='../D/5374.html' title='Multiple defined in 4 places.'>duk_is_string</a>(thr, 0));  <em class='comment'>/* True if len &gt; 0. */</em>
+<a id='L393' name='L393'></a>
+<a id='L394' name='L394'></a>                <em class='comment'>/* XXX: duk_decode_string() is used to process the input</em>
+<a id='L395' name='L395'></a><em class='comment'>                 * string.  For standard ECMAScript strings, represented</em>
+<a id='L396' name='L396'></a><em class='comment'>                 * internally as CESU-8, this is fine.  However, behavior</em>
+<a id='L397' name='L397'></a><em class='comment'>                 * beyond CESU-8 is not very strict: codepoints using an</em>
+<a id='L398' name='L398'></a><em class='comment'>                 * extended form of UTF-8 are also accepted, and invalid</em>
+<a id='L399' name='L399'></a><em class='comment'>                 * codepoint sequences (which are allowed in Duktape strings)</em>
+<a id='L400' name='L400'></a><em class='comment'>                 * are not handled as well as they could (e.g. invalid</em>
+<a id='L401' name='L401'></a><em class='comment'>                 * continuation bytes may mask following codepoints).</em>
+<a id='L402' name='L402'></a><em class='comment'>                 * This is how ECMAScript code would also see such strings.</em>
+<a id='L403' name='L403'></a><em class='comment'>                 * Maybe replace duk_decode_string() with an explicit strict</em>
+<a id='L404' name='L404'></a><em class='comment'>                 * CESU-8 decoder here?</em>
+<a id='L405' name='L405'></a><em class='comment'>                 */</em>
+<a id='L406' name='L406'></a>                enc_ctx.lead = 0x0000L;
+<a id='L407' name='L407'></a>                enc_ctx.out = output;
+<a id='L408' name='L408'></a>                <a href='../D/4923.html' title='Multiple defined in 4 places.'>duk_decode_string</a>(thr, 0, <a href='../D/4547.html' title='Multiple defined in 4 places.'>duk__utf8_encode_char</a>, (<strong class='reserved'>void</strong> *) &amp;enc_ctx);
+<a id='L409' name='L409'></a>                <strong class='reserved'>if</strong> (enc_ctx.lead != 0x0000L) <em class='brace'>{</em>
+<a id='L410' name='L410'></a>                        <em class='comment'>/* unpaired high surrogate at end of string */</em>
+<a id='L411' name='L411'></a>                        enc_ctx.out = <a href='../D/4546.html' title='Multiple defined in 4 places.'>duk__utf8_emit_repl</a>(enc_ctx.out);
+<a id='L412' name='L412'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(enc_ctx.out &lt;= output + (3 * len));
+<a id='L413' name='L413'></a>                <em class='brace'>}</em>
+<a id='L414' name='L414'></a>
+<a id='L415' name='L415'></a>                <em class='comment'>/* The output buffer is usually very much oversized, so shrink it to</em>
+<a id='L416' name='L416'></a><em class='comment'>                 * actually needed size.  Pointer stability assumed up to this point.</em>
+<a id='L417' name='L417'></a><em class='comment'>                 */</em>
+<a id='L418' name='L418'></a>                <a href='../D/187.html' title='Multiple defined in 4 places.'>DUK_ASSERT_TOP</a>(thr, 2);
+<a id='L419' name='L419'></a>                <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(output == (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a> *) <a href='../D/5063.html' title='Multiple defined in 4 places.'>duk_get_buffer_data</a>(thr, -1, NULL));
+<a id='L420' name='L420'></a>
+<a id='L421' name='L421'></a>                final_len = (<a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a>) (enc_ctx.out - output);
+<a id='L422' name='L422'></a>                <a href='../D/5744.html' title='Multiple defined in 4 places.'>duk_resize_buffer</a>(thr, -1, final_len);
+<a id='L423' name='L423'></a>                <em class='comment'>/* 'output' and 'enc_ctx.out' are potentially invalidated by the resize. */</em>
+<a id='L424' name='L424'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L425' name='L425'></a>                final_len = 0;
+<a id='L426' name='L426'></a>        <em class='brace'>}</em>
+<a id='L427' name='L427'></a>
+<a id='L428' name='L428'></a>        <em class='comment'>/* Standard WHATWG output is a Uint8Array.  Here the Uint8Array will</em>
+<a id='L429' name='L429'></a><em class='comment'>         * be backed by a dynamic buffer which differs from e.g. Uint8Arrays</em>
+<a id='L430' name='L430'></a><em class='comment'>         * created as 'new Uint8Array(N)'.  ECMAScript code won't see the</em>
+<a id='L431' name='L431'></a><em class='comment'>         * difference but C code will.  When bufferobjects are not supported,</em>
+<a id='L432' name='L432'></a><em class='comment'>         * returns a plain dynamic buffer.</em>
+<a id='L433' name='L433'></a><em class='comment'>         */</em>
+<a id='L434' name='L434'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3027.html' title='Multiple defined in 3 places.'>DUK_USE_BUFFEROBJECT_SUPPORT</a>)
+<a id='L435' name='L435'></a>        <a href='../D/5546.html' title='Multiple defined in 8 places.'>duk_push_buffer_object</a>(thr, -1, 0, final_len, <a href='../D/311.html' title='Multiple defined in 3 places.'>DUK_BUFOBJ_UINT8ARRAY</a>);
+<a id='L436' name='L436'></a><em class='sharp'>#endif</em>
+<a id='L437' name='L437'></a>        <strong class='reserved'>return</strong> 1;
+<a id='L438' name='L438'></a><em class='brace'>}</em>
+<a id='L439' name='L439'></a>
+<a id='L440' name='L440'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/4007.html' title='Multiple referred from 6 places.'>duk_bi_textdecoder_constructor</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L441' name='L441'></a>        <a href='../D/4017.html' title='Multiple defined in 4 places.'>duk__decode_context</a> *dec_ctx;
+<a id='L442' name='L442'></a>        <a href='../D/4797.html' title='Multiple defined in 3 places.'>duk_bool_t</a> fatal = 0;
+<a id='L443' name='L443'></a>        <a href='../D/4797.html' title='Multiple defined in 3 places.'>duk_bool_t</a> ignore_bom = 0;
+<a id='L444' name='L444'></a>
+<a id='L445' name='L445'></a>        <a href='../D/187.html' title='Multiple defined in 4 places.'>DUK_ASSERT_TOP</a>(thr, 2);
+<a id='L446' name='L446'></a>        <a href='../D/5709.html' title='Multiple defined in 4 places.'>duk_require_constructor_call</a>(thr);
+<a id='L447' name='L447'></a>        <strong class='reserved'>if</strong> (!<a href='../D/5380.html' title='Multiple defined in 4 places.'>duk_is_undefined</a>(thr, 0)) <em class='brace'>{</em>
+<a id='L448' name='L448'></a>                <em class='comment'>/* XXX: For now ignore 'label' (encoding identifier). */</em>
+<a id='L449' name='L449'></a>                <a href='../D/5818.html' title='Multiple defined in 4 places.'>duk_to_string</a>(thr, 0);
+<a id='L450' name='L450'></a>        <em class='brace'>}</em>
+<a id='L451' name='L451'></a>        <strong class='reserved'>if</strong> (!<a href='../D/5365.html' title='Multiple defined in 3 places.'>duk_is_null_or_undefined</a>(thr, 1)) <em class='brace'>{</em>
+<a id='L452' name='L452'></a>                <strong class='reserved'>if</strong> (<a href='../D/5110.html' title='Multiple defined in 6 places.'>duk_get_prop_literal</a>(thr, 1, "fatal")) <em class='brace'>{</em>
+<a id='L453' name='L453'></a>                        fatal = <a href='../D/5790.html' title='Multiple defined in 4 places.'>duk_to_boolean</a>(thr, -1);
+<a id='L454' name='L454'></a>                <em class='brace'>}</em>
+<a id='L455' name='L455'></a>                <strong class='reserved'>if</strong> (<a href='../D/5110.html' title='Multiple defined in 6 places.'>duk_get_prop_literal</a>(thr, 1, "ignoreBOM")) <em class='brace'>{</em>
+<a id='L456' name='L456'></a>                        ignore_bom = <a href='../D/5790.html' title='Multiple defined in 4 places.'>duk_to_boolean</a>(thr, -1);
+<a id='L457' name='L457'></a>                <em class='brace'>}</em>
+<a id='L458' name='L458'></a>        <em class='brace'>}</em>
+<a id='L459' name='L459'></a>
+<a id='L460' name='L460'></a>        <a href='../D/5615.html' title='Multiple defined in 4 places.'>duk_push_this</a>(thr);
+<a id='L461' name='L461'></a>
+<a id='L462' name='L462'></a>        <em class='comment'>/* The decode context is not assumed to be zeroed; all fields are</em>
+<a id='L463' name='L463'></a><em class='comment'>         * initialized explicitly.</em>
+<a id='L464' name='L464'></a><em class='comment'>         */</em>
+<a id='L465' name='L465'></a>        dec_ctx = (<a href='../D/4017.html' title='Multiple defined in 4 places.'>duk__decode_context</a> *) <a href='../D/5565.html' title='Multiple defined in 3 places.'>duk_push_fixed_buffer</a>(thr, <strong class='reserved'>sizeof</strong>(<a href='../D/4017.html' title='Multiple defined in 4 places.'>duk__decode_context</a>));
+<a id='L466' name='L466'></a>        dec_ctx-&gt;fatal = (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a>) fatal;
+<a id='L467' name='L467'></a>        dec_ctx-&gt;ignore_bom = (<a href='../D/5886.html' title='Multiple defined in 6 places.'>duk_uint8_t</a>) ignore_bom;
+<a id='L468' name='L468'></a>        <a href='../D/4544.html' title='Multiple defined in 4 places.'>duk__utf8_decode_init</a>(dec_ctx);  <em class='comment'>/* Initializes remaining fields. */</em>
+<a id='L469' name='L469'></a>
+<a id='L470' name='L470'></a>        <a href='../D/5642.html' title='Multiple defined in 6 places.'>duk_put_prop_literal</a>(thr, -2, <a href='../D/1795.html' title='Multiple defined in 3 places.'>DUK_INTERNAL_SYMBOL</a>("Context"));
+<a id='L471' name='L471'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L472' name='L472'></a><em class='brace'>}</em>
+<a id='L473' name='L473'></a>
+<a id='L474' name='L474'></a><em class='comment'>/* Get TextDecoder context from 'this'; leaves garbage on stack. */</em>
+<a id='L475' name='L475'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <a href='../D/4017.html' title='Multiple defined in 4 places.'>duk__decode_context</a> *<a href='../R/3379.html' title='Multiple referred from 8 places.'>duk__get_textdecoder_context</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L476' name='L476'></a>        <a href='../D/4017.html' title='Multiple defined in 4 places.'>duk__decode_context</a> *dec_ctx;
+<a id='L477' name='L477'></a>        <a href='../D/5615.html' title='Multiple defined in 4 places.'>duk_push_this</a>(thr);
+<a id='L478' name='L478'></a>        <a href='../D/5110.html' title='Multiple defined in 6 places.'>duk_get_prop_literal</a>(thr, -1, <a href='../D/1795.html' title='Multiple defined in 3 places.'>DUK_INTERNAL_SYMBOL</a>("Context"));
+<a id='L479' name='L479'></a>        dec_ctx = (<a href='../D/4017.html' title='Multiple defined in 4 places.'>duk__decode_context</a> *) <a href='../D/5704.html' title='Multiple defined in 4 places.'>duk_require_buffer</a>(thr, -1, NULL);
+<a id='L480' name='L480'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(dec_ctx != NULL);
+<a id='L481' name='L481'></a>        <strong class='reserved'>return</strong> dec_ctx;
+<a id='L482' name='L482'></a><em class='brace'>}</em>
+<a id='L483' name='L483'></a>
+<a id='L484' name='L484'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/4009.html' title='Multiple referred from 6 places.'>duk_bi_textdecoder_prototype_shared_getter</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L485' name='L485'></a>        <a href='../D/4017.html' title='Multiple defined in 4 places.'>duk__decode_context</a> *dec_ctx;
+<a id='L486' name='L486'></a>        <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> magic;
+<a id='L487' name='L487'></a>
+<a id='L488' name='L488'></a>        dec_ctx = <a href='../D/4140.html' title='Multiple defined in 4 places.'>duk__get_textdecoder_context</a>(thr);
+<a id='L489' name='L489'></a>        magic = <a href='../D/5072.html' title='Multiple defined in 4 places.'>duk_get_current_magic</a>(thr);
+<a id='L490' name='L490'></a>        <strong class='reserved'>switch</strong> (magic) <em class='brace'>{</em>
+<a id='L491' name='L491'></a>        <strong class='reserved'>case</strong> 0:
+<a id='L492' name='L492'></a>                <em class='comment'>/* Encoding is now fixed, so _Context lookup is only needed to</em>
+<a id='L493' name='L493'></a><em class='comment'>                 * validate the 'this' binding (TypeError if not TextDecoder-like).</em>
+<a id='L494' name='L494'></a><em class='comment'>                 */</em>
+<a id='L495' name='L495'></a>                <a href='../D/5593.html' title='Multiple defined in 6 places.'>duk_push_literal</a>(thr, "utf-8");
+<a id='L496' name='L496'></a>                <strong class='reserved'>break</strong>;
+<a id='L497' name='L497'></a>        <strong class='reserved'>case</strong> 1:
+<a id='L498' name='L498'></a>                <a href='../D/5544.html' title='Multiple defined in 4 places.'>duk_push_boolean</a>(thr, dec_ctx-&gt;fatal);
+<a id='L499' name='L499'></a>                <strong class='reserved'>break</strong>;
+<a id='L500' name='L500'></a>        <strong class='reserved'>default</strong>:
+<a id='L501' name='L501'></a>                <a href='../D/5544.html' title='Multiple defined in 4 places.'>duk_push_boolean</a>(thr, dec_ctx-&gt;ignore_bom);
+<a id='L502' name='L502'></a>                <strong class='reserved'>break</strong>;
+<a id='L503' name='L503'></a>        <em class='brace'>}</em>
+<a id='L504' name='L504'></a>
+<a id='L505' name='L505'></a>        <strong class='reserved'>return</strong> 1;
+<a id='L506' name='L506'></a><em class='brace'>}</em>
+<a id='L507' name='L507'></a>
+<a id='L508' name='L508'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/4008.html' title='Multiple referred from 6 places.'>duk_bi_textdecoder_prototype_decode</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L509' name='L509'></a>        <a href='../D/4017.html' title='Multiple defined in 4 places.'>duk__decode_context</a> *dec_ctx;
+<a id='L510' name='L510'></a>
+<a id='L511' name='L511'></a>        dec_ctx = <a href='../D/4140.html' title='Multiple defined in 4 places.'>duk__get_textdecoder_context</a>(thr);
+<a id='L512' name='L512'></a>        <strong class='reserved'>return</strong> <a href='../D/4018.html' title='Multiple defined in 4 places.'>duk__decode_helper</a>(thr, dec_ctx);
+<a id='L513' name='L513'></a><em class='brace'>}</em>
+<a id='L514' name='L514'></a><em class='sharp'>#endif</em>  <em class='comment'>/* DUK_USE_ENCODING_BUILTINS */</em>
+<a id='L515' name='L515'></a>
+<a id='L516' name='L516'></a><em class='comment'>/*</em>
+<a id='L517' name='L517'></a><em class='comment'> *  Internal helper for Node.js Buffer</em>
+<a id='L518' name='L518'></a><em class='comment'> */</em>
+<a id='L519' name='L519'></a>
+<a id='L520' name='L520'></a><em class='comment'>/* Internal helper used for Node.js Buffer .toString().  Value stack convention</em>
+<a id='L521' name='L521'></a><em class='comment'> * is currently odd: it mimics TextDecoder .decode() so that argument must be at</em>
+<a id='L522' name='L522'></a><em class='comment'> * index 0, and decode options (not present for Buffer) at index 1.  Return value</em>
+<a id='L523' name='L523'></a><em class='comment'> * is a Duktape/C function return value.</em>
+<a id='L524' name='L524'></a><em class='comment'> */</em>
+<a id='L525' name='L525'></a><a href='../D/1792.html' title='Multiple defined in 60 places.'>DUK_INTERNAL</a> <a href='../D/5747.html' title='Multiple defined in 3 places.'>duk_ret_t</a> <a href='../R/4963.html' title='Multiple referred from 8 places.'>duk_textdecoder_decode_utf8_nodejs</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr) <em class='brace'>{</em>
+<a id='L526' name='L526'></a>        <a href='../D/4017.html' title='Multiple defined in 4 places.'>duk__decode_context</a> dec_ctx;
+<a id='L527' name='L527'></a>
+<a id='L528' name='L528'></a>        dec_ctx.fatal = 0;  <em class='comment'>/* use replacement chars */</em>
+<a id='L529' name='L529'></a>        dec_ctx.ignore_bom = 1;  <em class='comment'>/* ignore BOMs (matches Node.js Buffer .toString()) */</em>
+<a id='L530' name='L530'></a>        <a href='../D/4544.html' title='Multiple defined in 4 places.'>duk__utf8_decode_init</a>(&amp;dec_ctx);
+<a id='L531' name='L531'></a>
+<a id='L532' name='L532'></a>        <strong class='reserved'>return</strong> <a href='../D/4018.html' title='Multiple defined in 4 places.'>duk__decode_helper</a>(thr, &amp;dec_ctx);
+<a id='L533' name='L533'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L44'>[^]</a><a href='#L525'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

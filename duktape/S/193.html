@@ -1,0 +1,257 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src-separate/duk_api_inspect.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/1032.html'>src-separate</a>/duk_api_inspect.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L10'>[^]</a><a href='#L186'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L10' title='Defined at 10.'>duk__inspect_multiple_uint</a></li>
+<li><a href='#L57' title='Defined at 57.'>duk_inspect_value</a></li>
+<li><a href='#L186' title='Defined at 186.'>duk_inspect_callstack_entry</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> *  Inspection</em>
+<a id='L3' name='L3'></a><em class='comment'> */</em>
+<a id='L4' name='L4'></a>
+<a id='L5' name='L5'></a><em class='sharp'>#include</em> "<a href='../I/161.html'>duk_internal.h</a>"
+<a id='L6' name='L6'></a>
+<a id='L7' name='L7'></a><em class='comment'>/* For footprint efficient multiple value setting: arrays are much better than</em>
+<a id='L8' name='L8'></a><em class='comment'> * varargs, format string with parsing is often better than string pointer arrays.</em>
+<a id='L9' name='L9'></a><em class='comment'> */</em>
+<a id='L10' name='L10'></a><a href='../D/1887.html' title='Multiple defined in 21 places.'>DUK_LOCAL</a> <strong class='reserved'>void</strong> <a href='../R/3460.html' title='Multiple referred from 4 places.'>duk__inspect_multiple_uint</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *fmt, <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> *vals) <em class='brace'>{</em>
+<a id='L11' name='L11'></a>        <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> val;
+<a id='L12' name='L12'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *p;
+<a id='L13' name='L13'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *p_curr;
+<a id='L14' name='L14'></a>        <a href='../D/5765.html' title='Multiple defined in 3 places.'>duk_size_t</a> len;
+<a id='L15' name='L15'></a>
+<a id='L16' name='L16'></a>        <strong class='reserved'>for</strong> (p = fmt;;) <em class='brace'>{</em>
+<a id='L17' name='L17'></a>                len = <a href='../D/2556.html' title='Multiple defined in 3 places.'>DUK_STRLEN</a>(p);
+<a id='L18' name='L18'></a>                p_curr = p;
+<a id='L19' name='L19'></a>                p += len + 1;
+<a id='L20' name='L20'></a>                <strong class='reserved'>if</strong> (len == 0) <em class='brace'>{</em>
+<a id='L21' name='L21'></a>                        <em class='comment'>/* Double NUL (= empty key) terminates. */</em>
+<a id='L22' name='L22'></a>                        <strong class='reserved'>break</strong>;
+<a id='L23' name='L23'></a>                <em class='brace'>}</em>
+<a id='L24' name='L24'></a>                val = *vals++;
+<a id='L25' name='L25'></a>                <strong class='reserved'>if</strong> (val &gt;= 0) <em class='brace'>{</em>
+<a id='L26' name='L26'></a>                        <em class='comment'>/* Negative values are markers to skip key. */</em>
+<a id='L27' name='L27'></a>                        <a href='../D/5607.html' title='Multiple defined in 4 places.'>duk_push_string</a>(thr, p_curr);
+<a id='L28' name='L28'></a>                        <a href='../D/5589.html' title='Multiple defined in 4 places.'>duk_push_int</a>(thr, val);
+<a id='L29' name='L29'></a>                        <a href='../D/5639.html' title='Multiple defined in 4 places.'>duk_put_prop</a>(thr, -3);
+<a id='L30' name='L30'></a>                <em class='brace'>}</em>
+<a id='L31' name='L31'></a>        <em class='brace'>}</em>
+<a id='L32' name='L32'></a><em class='brace'>}</em>
+<a id='L33' name='L33'></a>
+<a id='L34' name='L34'></a><em class='comment'>/* Raw helper to extract internal information / statistics about a value.</em>
+<a id='L35' name='L35'></a><em class='comment'> * The return value is an object with properties that are version specific.</em>
+<a id='L36' name='L36'></a><em class='comment'> * The properties must not expose anything that would lead to security</em>
+<a id='L37' name='L37'></a><em class='comment'> * issues (e.g. exposing compiled function 'data' buffer might be an issue).</em>
+<a id='L38' name='L38'></a><em class='comment'> * Currently only counts and sizes and such are given so there shouldn't</em>
+<a id='L39' name='L39'></a><em class='comment'> * be security implications.</em>
+<a id='L40' name='L40'></a><em class='comment'> */</em>
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a><em class='sharp'>#define</em> <a href='../R/2730.html' title='Multiple referred from 8 places.'>DUK__IDX_TYPE</a>     0
+<a id='L43' name='L43'></a><em class='sharp'>#define</em> <a href='../R/2720.html' title='Multiple referred from 4 places.'>DUK__IDX_ITAG</a>     1
+<a id='L44' name='L44'></a><em class='sharp'>#define</em> <a href='../R/2725.html' title='Multiple referred from 4 places.'>DUK__IDX_REFC</a>     2
+<a id='L45' name='L45'></a><em class='sharp'>#define</em> <a href='../R/2718.html' title='Multiple referred from 40 places.'>DUK__IDX_HBYTES</a>   3
+<a id='L46' name='L46'></a><em class='sharp'>#define</em> <a href='../R/2711.html' title='Multiple referred from 4 places.'>DUK__IDX_CLASS</a>    4
+<a id='L47' name='L47'></a><em class='sharp'>#define</em> <a href='../R/2724.html' title='Multiple referred from 4 places.'>DUK__IDX_PBYTES</a>   5
+<a id='L48' name='L48'></a><em class='sharp'>#define</em> <a href='../R/2715.html' title='Multiple referred from 4 places.'>DUK__IDX_ESIZE</a>    6
+<a id='L49' name='L49'></a><em class='sharp'>#define</em> <a href='../R/2714.html' title='Multiple referred from 4 places.'>DUK__IDX_ENEXT</a>    7
+<a id='L50' name='L50'></a><em class='sharp'>#define</em> <a href='../R/2709.html' title='Multiple referred from 4 places.'>DUK__IDX_ASIZE</a>    8
+<a id='L51' name='L51'></a><em class='sharp'>#define</em> <a href='../R/2719.html' title='Multiple referred from 4 places.'>DUK__IDX_HSIZE</a>    9
+<a id='L52' name='L52'></a><em class='sharp'>#define</em> <a href='../R/2710.html' title='Multiple referred from 4 places.'>DUK__IDX_BCBYTES</a>  10
+<a id='L53' name='L53'></a><em class='sharp'>#define</em> <a href='../R/2712.html' title='Multiple referred from 4 places.'>DUK__IDX_DBYTES</a>   11
+<a id='L54' name='L54'></a><em class='sharp'>#define</em> <a href='../R/2729.html' title='Multiple referred from 4 places.'>DUK__IDX_TSTATE</a>   12
+<a id='L55' name='L55'></a><em class='sharp'>#define</em> <a href='../R/2732.html' title='Multiple referred from 20 places.'>DUK__IDX_VARIANT</a>  13
+<a id='L56' name='L56'></a>
+<a id='L57' name='L57'></a><a href='../D/766.html' title='Multiple defined in 30 places.'>DUK_EXTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4539.html' title='Multiple referred from 7 places.'>duk_inspect_value</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/5319.html' title='Multiple defined in 3 places.'>duk_idx_t</a> idx) <em class='brace'>{</em>
+<a id='L58' name='L58'></a>        <a href='../D/5865.html' title='Multiple defined in 8 places.'>duk_tval</a> *tv;
+<a id='L59' name='L59'></a>        <a href='../D/5216.html' title='Multiple defined in 8 places.'>duk_heaphdr</a> *h;
+<a id='L60' name='L60'></a>        <em class='comment'>/* The temporary values should be in an array rather than individual</em>
+<a id='L61' name='L61'></a><em class='comment'>         * variables which (in practice) ensures that the compiler won't map</em>
+<a id='L62' name='L62'></a><em class='comment'>         * them to registers and emit a lot of unnecessary shuffling code.</em>
+<a id='L63' name='L63'></a><em class='comment'>         */</em>
+<a id='L64' name='L64'></a>        <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> vals[14];
+<a id='L65' name='L65'></a>
+<a id='L66' name='L66'></a>        <a href='../D/176.html' title='Multiple defined in 4 places.'>DUK_ASSERT_API_ENTRY</a>(thr);
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a>        <em class='comment'>/* Assume two's complement and set everything to -1. */</em>
+<a id='L69' name='L69'></a>        <a href='../D/5465.html' title='Multiple defined in 8 places.'>duk_memset</a>((<strong class='reserved'>void</strong> *) &amp;vals, (<strong class='reserved'>int</strong>) 0xff, <strong class='reserved'>sizeof</strong>(vals));
+<a id='L70' name='L70'></a>        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(vals[<a href='../D/3471.html' title='Multiple defined in 6 places.'>DUK__IDX_TYPE</a>] == -1);  <em class='comment'>/* spot check one */</em>
+<a id='L71' name='L71'></a>
+<a id='L72' name='L72'></a>        tv = <a href='../D/5127.html' title='Multiple defined in 4 places.'>duk_get_tval_or_unused</a>(thr, idx);
+<a id='L73' name='L73'></a>        h = (<a href='../D/2849.html' title='Multiple defined in 12 places.'>DUK_TVAL_IS_HEAP_ALLOCATED</a>(tv) ? <a href='../D/2830.html' title='Multiple defined in 8 places.'>DUK_TVAL_GET_HEAPHDR</a>(tv) : NULL);
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a>        vals[<a href='../D/3471.html' title='Multiple defined in 6 places.'>DUK__IDX_TYPE</a>] = <a href='../D/5132.html' title='Multiple defined in 4 places.'>duk_get_type_tval</a>(tv);
+<a id='L76' name='L76'></a>        vals[<a href='../D/3460.html' title='Multiple defined in 6 places.'>DUK__IDX_ITAG</a>] = (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) <a href='../D/2838.html' title='Multiple defined in 8 places.'>DUK_TVAL_GET_TAG</a>(tv);
+<a id='L77' name='L77'></a>
+<a id='L78' name='L78'></a>        <a href='../D/5543.html' title='Multiple defined in 4 places.'>duk_push_bare_object</a>(thr);  <em class='comment'>/* Invalidates 'tv'. */</em>
+<a id='L79' name='L79'></a>        tv = NULL;
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a>        <strong class='reserved'>if</strong> (h == NULL) <em class='brace'>{</em>
+<a id='L82' name='L82'></a>                <strong class='reserved'>goto</strong> finish;
+<a id='L83' name='L83'></a>        <em class='brace'>}</em>
+<a id='L84' name='L84'></a>        <a href='../D/5603.html' title='Multiple defined in 4 places.'>duk_push_pointer</a>(thr, (<strong class='reserved'>void</strong> *) h);
+<a id='L85' name='L85'></a>        <a href='../D/5642.html' title='Multiple defined in 6 places.'>duk_put_prop_literal</a>(thr, -2, "hptr");
+<a id='L86' name='L86'></a>
+<a id='L87' name='L87'></a><em class='sharp'>#if</em> 0
+<a id='L88' name='L88'></a>        <em class='comment'>/* Covers a lot of information, e.g. buffer and string variants. */</em>
+<a id='L89' name='L89'></a>        <a href='../D/5628.html' title='Multiple defined in 4 places.'>duk_push_uint</a>(thr, (<a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a>) <a href='../D/1009.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_GET_FLAGS</a>(h));
+<a id='L90' name='L90'></a>        <a href='../D/5642.html' title='Multiple defined in 6 places.'>duk_put_prop_literal</a>(thr, -2, "hflags");
+<a id='L91' name='L91'></a><em class='sharp'>#endif</em>
+<a id='L92' name='L92'></a>
+<a id='L93' name='L93'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3201.html' title='Multiple defined in 3 places.'>DUK_USE_REFERENCE_COUNTING</a>)
+<a id='L94' name='L94'></a>        vals[<a href='../D/3465.html' title='Multiple defined in 6 places.'>DUK__IDX_REFC</a>] = (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) <a href='../D/1014.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_GET_REFCOUNT</a>(h);
+<a id='L95' name='L95'></a><em class='sharp'>#endif</em>
+<a id='L96' name='L96'></a>        vals[<a href='../D/3473.html' title='Multiple defined in 6 places.'>DUK__IDX_VARIANT</a>] = 0;
+<a id='L97' name='L97'></a>
+<a id='L98' name='L98'></a>        <em class='comment'>/* Heaphdr size and additional allocation size, followed by</em>
+<a id='L99' name='L99'></a><em class='comment'>         * type specific stuff (with varying value count).</em>
+<a id='L100' name='L100'></a><em class='comment'>         */</em>
+<a id='L101' name='L101'></a>        <strong class='reserved'>switch</strong> ((<a href='../D/5767.html' title='Multiple defined in 3 places.'>duk_small_int_t</a>) <a href='../D/1015.html' title='Multiple defined in 4 places.'>DUK_HEAPHDR_GET_TYPE</a>(h)) <em class='brace'>{</em>
+<a id='L102' name='L102'></a>        <strong class='reserved'>case</strong> <a href='../D/1776.html' title='Multiple defined in 4 places.'>DUK_HTYPE_STRING</a>: <em class='brace'>{</em>
+<a id='L103' name='L103'></a>                <a href='../D/5286.html' title='Multiple defined in 8 places.'>duk_hstring</a> *h_str = (<a href='../D/5286.html' title='Multiple defined in 8 places.'>duk_hstring</a> *) h;
+<a id='L104' name='L104'></a>                vals[<a href='../D/3458.html' title='Multiple defined in 6 places.'>DUK__IDX_HBYTES</a>] = (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) (<strong class='reserved'>sizeof</strong>(<a href='../D/5286.html' title='Multiple defined in 8 places.'>duk_hstring</a>) + <a href='../D/1552.html' title='Multiple defined in 8 places.'>DUK_HSTRING_GET_BYTELEN</a>(h_str) + 1);
+<a id='L105' name='L105'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3146.html' title='Multiple defined in 3 places.'>DUK_USE_HSTRING_EXTDATA</a>)
+<a id='L106' name='L106'></a>                <strong class='reserved'>if</strong> (<a href='../D/1561.html' title='Multiple defined in 4 places.'>DUK_HSTRING_HAS_EXTDATA</a>(h_str)) <em class='brace'>{</em>
+<a id='L107' name='L107'></a>                        vals[<a href='../D/3473.html' title='Multiple defined in 6 places.'>DUK__IDX_VARIANT</a>] = 1;
+<a id='L108' name='L108'></a>                <em class='brace'>}</em>
+<a id='L109' name='L109'></a><em class='sharp'>#endif</em>
+<a id='L110' name='L110'></a>                <strong class='reserved'>break</strong>;
+<a id='L111' name='L111'></a>        <em class='brace'>}</em>
+<a id='L112' name='L112'></a>        <strong class='reserved'>case</strong> <a href='../D/1775.html' title='Multiple defined in 4 places.'>DUK_HTYPE_OBJECT</a>: <em class='brace'>{</em>
+<a id='L113' name='L113'></a>                <a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a> *h_obj = (<a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a> *) h;
+<a id='L114' name='L114'></a>
+<a id='L115' name='L115'></a>                <em class='comment'>/* XXX: variants here are maybe pointless; class is enough? */</em>
+<a id='L116' name='L116'></a>                <strong class='reserved'>if</strong> (<a href='../D/1471.html' title='Multiple defined in 4 places.'>DUK_HOBJECT_IS_ARRAY</a>(h_obj)) <em class='brace'>{</em>
+<a id='L117' name='L117'></a>                        vals[<a href='../D/3458.html' title='Multiple defined in 6 places.'>DUK__IDX_HBYTES</a>] = <strong class='reserved'>sizeof</strong>(<a href='../D/5139.html' title='Multiple defined in 8 places.'>duk_harray</a>);
+<a id='L118' name='L118'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../D/1475.html' title='Multiple defined in 4 places.'>DUK_HOBJECT_IS_COMPFUNC</a>(h_obj)) <em class='brace'>{</em>
+<a id='L119' name='L119'></a>                        vals[<a href='../D/3458.html' title='Multiple defined in 6 places.'>DUK__IDX_HBYTES</a>] = <strong class='reserved'>sizeof</strong>(<a href='../D/5175.html' title='Multiple defined in 8 places.'>duk_hcompfunc</a>);
+<a id='L120' name='L120'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../D/1479.html' title='Multiple defined in 4 places.'>DUK_HOBJECT_IS_NATFUNC</a>(h_obj)) <em class='brace'>{</em>
+<a id='L121' name='L121'></a>                        vals[<a href='../D/3458.html' title='Multiple defined in 6 places.'>DUK__IDX_HBYTES</a>] = <strong class='reserved'>sizeof</strong>(<a href='../D/5229.html' title='Multiple defined in 8 places.'>duk_hnatfunc</a>);
+<a id='L122' name='L122'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../D/1483.html' title='Multiple defined in 4 places.'>DUK_HOBJECT_IS_THREAD</a>(h_obj)) <em class='brace'>{</em>
+<a id='L123' name='L123'></a>                        vals[<a href='../D/3458.html' title='Multiple defined in 6 places.'>DUK__IDX_HBYTES</a>] = <strong class='reserved'>sizeof</strong>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a>);
+<a id='L124' name='L124'></a>                        vals[<a href='../D/3470.html' title='Multiple defined in 6 places.'>DUK__IDX_TSTATE</a>] = ((<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *) h_obj)-&gt;state;
+<a id='L125' name='L125'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3027.html' title='Multiple defined in 3 places.'>DUK_USE_BUFFEROBJECT_SUPPORT</a>)
+<a id='L126' name='L126'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../D/1473.html' title='Multiple defined in 8 places.'>DUK_HOBJECT_IS_BUFOBJ</a>(h_obj)) <em class='brace'>{</em>
+<a id='L127' name='L127'></a>                        vals[<a href='../D/3458.html' title='Multiple defined in 6 places.'>DUK__IDX_HBYTES</a>] = <strong class='reserved'>sizeof</strong>(<a href='../D/5167.html' title='Multiple defined in 8 places.'>duk_hbufobj</a>);
+<a id='L128' name='L128'></a>                        <em class='comment'>/* XXX: some size information */</em>
+<a id='L129' name='L129'></a><em class='sharp'>#endif</em>
+<a id='L130' name='L130'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L131' name='L131'></a>                        vals[<a href='../D/3458.html' title='Multiple defined in 6 places.'>DUK__IDX_HBYTES</a>] = (<a href='../D/5769.html' title='Multiple defined in 3 places.'>duk_small_uint_t</a>) <strong class='reserved'>sizeof</strong>(<a href='../D/5232.html' title='Multiple defined in 8 places.'>duk_hobject</a>);
+<a id='L132' name='L132'></a>                <em class='brace'>}</em>
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a>                vals[<a href='../D/3451.html' title='Multiple defined in 6 places.'>DUK__IDX_CLASS</a>] = (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) <a href='../D/1430.html' title='Multiple defined in 4 places.'>DUK_HOBJECT_GET_CLASS_NUMBER</a>(h_obj);
+<a id='L135' name='L135'></a>                vals[<a href='../D/3464.html' title='Multiple defined in 6 places.'>DUK__IDX_PBYTES</a>] = (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) <a href='../D/1488.html' title='Multiple defined in 4 places.'>DUK_HOBJECT_P_ALLOC_SIZE</a>(h_obj);
+<a id='L136' name='L136'></a>                vals[<a href='../D/3455.html' title='Multiple defined in 6 places.'>DUK__IDX_ESIZE</a>] = (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) <a href='../D/1433.html' title='Multiple defined in 8 places.'>DUK_HOBJECT_GET_ESIZE</a>(h_obj);
+<a id='L137' name='L137'></a>                vals[<a href='../D/3454.html' title='Multiple defined in 6 places.'>DUK__IDX_ENEXT</a>] = (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) <a href='../D/1432.html' title='Multiple defined in 8 places.'>DUK_HOBJECT_GET_ENEXT</a>(h_obj);
+<a id='L138' name='L138'></a>                vals[<a href='../D/3449.html' title='Multiple defined in 6 places.'>DUK__IDX_ASIZE</a>] = (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) <a href='../D/1428.html' title='Multiple defined in 8 places.'>DUK_HOBJECT_GET_ASIZE</a>(h_obj);
+<a id='L139' name='L139'></a>                vals[<a href='../D/3459.html' title='Multiple defined in 6 places.'>DUK__IDX_HSIZE</a>] = (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) <a href='../D/1434.html' title='Multiple defined in 16 places.'>DUK_HOBJECT_GET_HSIZE</a>(h_obj);
+<a id='L140' name='L140'></a>
+<a id='L141' name='L141'></a>                <em class='comment'>/* Note: e_next indicates the number of gc-reachable entries</em>
+<a id='L142' name='L142'></a><em class='comment'>                 * in the entry part, and also indicates the index where the</em>
+<a id='L143' name='L143'></a><em class='comment'>                 * next new property would be inserted.  It does *not* indicate</em>
+<a id='L144' name='L144'></a><em class='comment'>                 * the number of non-NULL keys present in the object.  That</em>
+<a id='L145' name='L145'></a><em class='comment'>                 * value could be counted separately but requires a pass through</em>
+<a id='L146' name='L146'></a><em class='comment'>                 * the key list.</em>
+<a id='L147' name='L147'></a><em class='comment'>                 */</em>
+<a id='L148' name='L148'></a>
+<a id='L149' name='L149'></a>                <strong class='reserved'>if</strong> (<a href='../D/1475.html' title='Multiple defined in 4 places.'>DUK_HOBJECT_IS_COMPFUNC</a>(h_obj)) <em class='brace'>{</em>
+<a id='L150' name='L150'></a>                        <a href='../D/5155.html' title='Multiple defined in 8 places.'>duk_hbuffer</a> *h_data = (<a href='../D/5155.html' title='Multiple defined in 8 places.'>duk_hbuffer</a> *) <a href='../D/966.html' title='Multiple defined in 8 places.'>DUK_HCOMPFUNC_GET_DATA</a>(thr-&gt;heap, (<a href='../D/5175.html' title='Multiple defined in 8 places.'>duk_hcompfunc</a> *) h_obj);
+<a id='L151' name='L151'></a>                        vals[<a href='../D/3450.html' title='Multiple defined in 6 places.'>DUK__IDX_BCBYTES</a>] = (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) (h_data ? <a href='../D/917.html' title='Multiple defined in 8 places.'>DUK_HBUFFER_GET_SIZE</a>(h_data) : 0);
+<a id='L152' name='L152'></a>                <em class='brace'>}</em>
+<a id='L153' name='L153'></a>                <strong class='reserved'>break</strong>;
+<a id='L154' name='L154'></a>        <em class='brace'>}</em>
+<a id='L155' name='L155'></a>        <strong class='reserved'>case</strong> <a href='../D/1772.html' title='Multiple defined in 4 places.'>DUK_HTYPE_BUFFER</a>: <em class='brace'>{</em>
+<a id='L156' name='L156'></a>                <a href='../D/5155.html' title='Multiple defined in 8 places.'>duk_hbuffer</a> *h_buf = (<a href='../D/5155.html' title='Multiple defined in 8 places.'>duk_hbuffer</a> *) h;
+<a id='L157' name='L157'></a>
+<a id='L158' name='L158'></a>                <strong class='reserved'>if</strong> (<a href='../D/918.html' title='Multiple defined in 4 places.'>DUK_HBUFFER_HAS_DYNAMIC</a>(h_buf)) <em class='brace'>{</em>
+<a id='L159' name='L159'></a>                        <strong class='reserved'>if</strong> (<a href='../D/919.html' title='Multiple defined in 4 places.'>DUK_HBUFFER_HAS_EXTERNAL</a>(h_buf)) <em class='brace'>{</em>
+<a id='L160' name='L160'></a>                                vals[<a href='../D/3473.html' title='Multiple defined in 6 places.'>DUK__IDX_VARIANT</a>] = 2;  <em class='comment'>/* buffer variant 2: external */</em>
+<a id='L161' name='L161'></a>                                vals[<a href='../D/3458.html' title='Multiple defined in 6 places.'>DUK__IDX_HBYTES</a>] = (<a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a>) (<strong class='reserved'>sizeof</strong>(<a href='../D/5161.html' title='Multiple defined in 8 places.'>duk_hbuffer_external</a>));
+<a id='L162' name='L162'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L163' name='L163'></a>                                <em class='comment'>/* When alloc_size == 0 the second allocation may not</em>
+<a id='L164' name='L164'></a><em class='comment'>                                 * actually exist.</em>
+<a id='L165' name='L165'></a><em class='comment'>                                 */</em>
+<a id='L166' name='L166'></a>                                vals[<a href='../D/3473.html' title='Multiple defined in 6 places.'>DUK__IDX_VARIANT</a>] = 1;  <em class='comment'>/* buffer variant 1: dynamic */</em>
+<a id='L167' name='L167'></a>                                vals[<a href='../D/3458.html' title='Multiple defined in 6 places.'>DUK__IDX_HBYTES</a>] = (<a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a>) (<strong class='reserved'>sizeof</strong>(<a href='../D/5160.html' title='Multiple defined in 8 places.'>duk_hbuffer_dynamic</a>));
+<a id='L168' name='L168'></a>                        <em class='brace'>}</em>
+<a id='L169' name='L169'></a>                        vals[<a href='../D/3452.html' title='Multiple defined in 6 places.'>DUK__IDX_DBYTES</a>] = (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) (<a href='../D/917.html' title='Multiple defined in 8 places.'>DUK_HBUFFER_GET_SIZE</a>(h_buf));
+<a id='L170' name='L170'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L171' name='L171'></a>                        <a href='../D/175.html' title='Multiple defined in 8 places.'>DUK_ASSERT</a>(vals[<a href='../D/3473.html' title='Multiple defined in 6 places.'>DUK__IDX_VARIANT</a>] == 0);  <em class='comment'>/* buffer variant 0: fixed */</em>
+<a id='L172' name='L172'></a>                        vals[<a href='../D/3458.html' title='Multiple defined in 6 places.'>DUK__IDX_HBYTES</a>] = (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a>) (<strong class='reserved'>sizeof</strong>(<a href='../D/5162.html' title='Multiple defined in 8 places.'>duk_hbuffer_fixed</a>) + <a href='../D/917.html' title='Multiple defined in 8 places.'>DUK_HBUFFER_GET_SIZE</a>(h_buf));
+<a id='L173' name='L173'></a>                <em class='brace'>}</em>
+<a id='L174' name='L174'></a>                <strong class='reserved'>break</strong>;
+<a id='L175' name='L175'></a>        <em class='brace'>}</em>
+<a id='L176' name='L176'></a>        <em class='brace'>}</em>
+<a id='L177' name='L177'></a>
+<a id='L178' name='L178'></a> finish:
+<a id='L179' name='L179'></a>        <a href='../D/4221.html' title='Multiple defined in 4 places.'>duk__inspect_multiple_uint</a>(thr,
+<a id='L180' name='L180'></a>            "type" "\x00" "itag" "\x00" "refc" "\x00" "hbytes" "\x00" "class" "\x00"
+<a id='L181' name='L181'></a>            "pbytes" "\x00" "esize" "\x00" "enext" "\x00" "asize" "\x00" "hsize" "\x00"
+<a id='L182' name='L182'></a>            "bcbytes" "\x00" "dbytes" "\x00" "tstate" "\x00" "variant" "\x00" "\x00",
+<a id='L183' name='L183'></a>            (<a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> *) &amp;vals);
+<a id='L184' name='L184'></a><em class='brace'>}</em>
+<a id='L185' name='L185'></a>
+<a id='L186' name='L186'></a><a href='../D/766.html' title='Multiple defined in 30 places.'>DUK_EXTERNAL</a> <strong class='reserved'>void</strong> <a href='../R/4538.html' title='Multiple referred from 8 places.'>duk_inspect_callstack_entry</a>(<a href='../D/5296.html' title='Multiple defined in 8 places.'>duk_hthread</a> *thr, <a href='../D/5340.html' title='Multiple defined in 6 places.'>duk_int_t</a> level) <em class='brace'>{</em>
+<a id='L187' name='L187'></a>        <a href='../D/4559.html' title='Multiple defined in 8 places.'>duk_activation</a> *act;
+<a id='L188' name='L188'></a>        <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> pc;
+<a id='L189' name='L189'></a>        <a href='../D/5888.html' title='Multiple defined in 6 places.'>duk_uint_fast32_t</a> line;
+<a id='L190' name='L190'></a>
+<a id='L191' name='L191'></a>        <a href='../D/176.html' title='Multiple defined in 4 places.'>DUK_ASSERT_API_ENTRY</a>(thr);
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a>        <em class='comment'>/* -1   = top callstack entry</em>
+<a id='L194' name='L194'></a><em class='comment'>         * -2   = caller of level -1</em>
+<a id='L195' name='L195'></a><em class='comment'>         * etc</em>
+<a id='L196' name='L196'></a><em class='comment'>         */</em>
+<a id='L197' name='L197'></a>        act = <a href='../D/5312.html' title='Multiple defined in 4 places.'>duk_hthread_get_activation_for_level</a>(thr, level);
+<a id='L198' name='L198'></a>        <strong class='reserved'>if</strong> (act == NULL) <em class='brace'>{</em>
+<a id='L199' name='L199'></a>                <a href='../D/5630.html' title='Multiple defined in 4 places.'>duk_push_undefined</a>(thr);
+<a id='L200' name='L200'></a>                <strong class='reserved'>return</strong>;
+<a id='L201' name='L201'></a>        <em class='brace'>}</em>
+<a id='L202' name='L202'></a>        <a href='../D/5543.html' title='Multiple defined in 4 places.'>duk_push_bare_object</a>(thr);
+<a id='L203' name='L203'></a>
+<a id='L204' name='L204'></a>        <em class='comment'>/* Relevant PC is just before current one because PC is</em>
+<a id='L205' name='L205'></a><em class='comment'>         * post-incremented.  This should match what error augment</em>
+<a id='L206' name='L206'></a><em class='comment'>         * code does.</em>
+<a id='L207' name='L207'></a><em class='comment'>         */</em>
+<a id='L208' name='L208'></a>        pc = <a href='../D/5311.html' title='Multiple defined in 4 places.'>duk_hthread_get_act_prev_pc</a>(thr, act);
+<a id='L209' name='L209'></a>
+<a id='L210' name='L210'></a>        <a href='../D/5624.html' title='Multiple defined in 4 places.'>duk_push_tval</a>(thr, &amp;act-&gt;tv_func);
+<a id='L211' name='L211'></a>
+<a id='L212' name='L212'></a>        <a href='../D/5628.html' title='Multiple defined in 4 places.'>duk_push_uint</a>(thr, (<a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a>) pc);
+<a id='L213' name='L213'></a>        <a href='../D/5646.html' title='Multiple defined in 4 places.'>duk_put_prop_stridx_short</a>(thr, -3, <a href='../D/2494.html' title='Multiple defined in 3 places.'>DUK_STRIDX_PC</a>);
+<a id='L214' name='L214'></a>
+<a id='L215' name='L215'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(<a href='../D/3193.html' title='Multiple defined in 3 places.'>DUK_USE_PC2LINE</a>)
+<a id='L216' name='L216'></a>        line = <a href='../D/5268.html' title='Multiple defined in 4 places.'>duk_hobject_pc2line_query</a>(thr, -1, pc);
+<a id='L217' name='L217'></a><em class='sharp'>#else</em>
+<a id='L218' name='L218'></a>        line = 0;
+<a id='L219' name='L219'></a><em class='sharp'>#endif</em>
+<a id='L220' name='L220'></a>        <a href='../D/5628.html' title='Multiple defined in 4 places.'>duk_push_uint</a>(thr, (<a href='../D/5896.html' title='Multiple defined in 6 places.'>duk_uint_t</a>) line);
+<a id='L221' name='L221'></a>        <a href='../D/5646.html' title='Multiple defined in 4 places.'>duk_put_prop_stridx_short</a>(thr, -3, <a href='../D/2481.html' title='Multiple defined in 3 places.'>DUK_STRIDX_LINE_NUMBER</a>);
+<a id='L222' name='L222'></a>
+<a id='L223' name='L223'></a>        <a href='../D/5646.html' title='Multiple defined in 4 places.'>duk_put_prop_stridx_short</a>(thr, -2, <a href='../D/2471.html' title='Multiple defined in 3 places.'>DUK_STRIDX_LC_FUNCTION</a>);
+<a id='L224' name='L224'></a>        <em class='comment'>/* Providing access to e.g. act-&gt;lex_env would be dangerous: these</em>
+<a id='L225' name='L225'></a><em class='comment'>         * internal structures must never be accessible to the application.</em>
+<a id='L226' name='L226'></a><em class='comment'>         * Duktape relies on them having consistent data, and this consistency</em>
+<a id='L227' name='L227'></a><em class='comment'>         * is only asserted for, not checked for.</em>
+<a id='L228' name='L228'></a><em class='comment'>         */</em>
+<a id='L229' name='L229'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L10'>[^]</a><a href='#L186'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>
