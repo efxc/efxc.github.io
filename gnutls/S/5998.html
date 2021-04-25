@@ -1,0 +1,355 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/pkcs11_int.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/pkcs11_int.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L40'>[^]</a><a href='#L301'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L40' title='Defined at 40.'>pkcs11_get_slot_list</a></li>
+<li><a href='#L48' title='Defined at 48.'>pkcs11_get_module_info</a></li>
+<li><a href='#L55' title='Defined at 55.'>pkcs11_get_slot_info</a></li>
+<li><a href='#L62' title='Defined at 62.'>pkcs11_get_token_info</a></li>
+<li><a href='#L69' title='Defined at 69.'>pkcs11_find_objects_init</a></li>
+<li><a href='#L77' title='Defined at 77.'>pkcs11_find_objects</a></li>
+<li><a href='#L87' title='Defined at 87.'>pkcs11_find_objects_final</a></li>
+<li><a href='#L92' title='Defined at 92.'>pkcs11_close_session</a></li>
+<li><a href='#L99' title='Defined at 99.'>pkcs11_set_attribute_value</a></li>
+<li><a href='#L109' title='Defined at 109.'>pkcs11_get_attribute_value</a></li>
+<li><a href='#L122' title='Defined at 122.'>pkcs11_get_attribute_avalue</a></li>
+<li><a href='#L166' title='Defined at 166.'>pkcs11_get_mechanism_list</a></li>
+<li><a href='#L176' title='Defined at 176.'>pkcs11_get_mechanism_info</a></li>
+<li><a href='#L186' title='Defined at 186.'>pkcs11_sign_init</a></li>
+<li><a href='#L194' title='Defined at 194.'>pkcs11_sign</a></li>
+<li><a href='#L205' title='Defined at 205.'>pkcs11_generate_key</a></li>
+<li><a href='#L216' title='Defined at 216.'>pkcs11_generate_key_pair</a></li>
+<li><a href='#L232' title='Defined at 232.'>pkcs11_decrypt_init</a></li>
+<li><a href='#L241' title='Defined at 241.'>pkcs11_decrypt</a></li>
+<li><a href='#L252' title='Defined at 252.'>pkcs11_create_object</a></li>
+<li><a href='#L261' title='Defined at 261.'>pkcs11_destroy_object</a></li>
+<li><a href='#L268' title='Defined at 268.'>pkcs11_init_token</a></li>
+<li><a href='#L276' title='Defined at 276.'>pkcs11_init_pin</a></li>
+<li><a href='#L284' title='Defined at 284.'>pkcs11_set_pin</a></li>
+<li><a href='#L295' title='Defined at 295.'>_gnutls_pkcs11_get_random</a></li>
+<li><a href='#L301' title='Defined at 301.'>pkcs11_strerror</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * GnuTLS PKCS#11 support</em>
+<a id='L3' name='L3'></a><em class='comment'> * Copyright (C) 2010-2012 Free Software Foundation, Inc.</em>
+<a id='L4' name='L4'></a><em class='comment'> * Copyright (C) 2008, Joe Orton &lt;joe@manyfish.co.uk&gt;</em>
+<a id='L5' name='L5'></a><em class='comment'> * </em>
+<a id='L6' name='L6'></a><em class='comment'> * Authors: Nikos Mavrogiannopoulos, Stef Walter</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * Inspired and some parts (pkcs11_login) based on neon PKCS #11 support </em>
+<a id='L9' name='L9'></a><em class='comment'> * by Joe Orton. More ideas came from the pkcs11-helper library by </em>
+<a id='L10' name='L10'></a><em class='comment'> * Alon Bar-Lev.</em>
+<a id='L11' name='L11'></a><em class='comment'> *</em>
+<a id='L12' name='L12'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L13' name='L13'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L14' name='L14'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L15' name='L15'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L16' name='L16'></a><em class='comment'> *</em>
+<a id='L17' name='L17'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L18' name='L18'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L19' name='L19'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L20' name='L20'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L21' name='L21'></a><em class='comment'> *</em>
+<a id='L22' name='L22'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L23' name='L23'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L24' name='L24'></a><em class='comment'> */</em>
+<a id='L25' name='L25'></a>
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;<a href='6018.html'>gnutls/pkcs11.h</a>&gt;
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;<a href='6034.html'>datum.h</a>&gt;
+<a id='L32' name='L32'></a>
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;<a href='5452.html'>pin.h</a>&gt;
+<a id='L34' name='L34'></a><em class='sharp'>#include</em> &lt;<a href='5801.html'>pkcs11_int.h</a>&gt;
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> &lt;p11-kit/p11-kit.h&gt;
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> &lt;<a href='6018.html'>p11-kit/pkcs11.h</a>&gt;
+<a id='L37' name='L37'></a><em class='sharp'>#include</em> &lt;<a href='5452.html'>p11-kit/pin.h</a>&gt;
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a>ck_rv_t
+<a id='L40' name='L40'></a><a href='../R/9689.html' title='Multiple referred from 2 places.'>pkcs11_get_slot_list</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L41' name='L41'></a>                     <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> token_present, ck_slot_id_t * slot_list,
+<a id='L42' name='L42'></a>                     <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> *count)
+<a id='L43' name='L43'></a><em class='brace'>{</em>
+<a id='L44' name='L44'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_GetSlotList(token_present, slot_list, count);
+<a id='L45' name='L45'></a><em class='brace'>}</em>
+<a id='L46' name='L46'></a>
+<a id='L47' name='L47'></a>ck_rv_t
+<a id='L48' name='L48'></a><a href='../R/9686.html' title='Multiple referred from 2 places.'>pkcs11_get_module_info</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L49' name='L49'></a>                       <strong class='reserved'>struct</strong> ck_info * info)
+<a id='L50' name='L50'></a><em class='brace'>{</em>
+<a id='L51' name='L51'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_GetInfo(info);
+<a id='L52' name='L52'></a><em class='brace'>}</em>
+<a id='L53' name='L53'></a>
+<a id='L54' name='L54'></a>ck_rv_t
+<a id='L55' name='L55'></a><a href='../R/9688.html' title='Multiple referred from 3 places.'>pkcs11_get_slot_info</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L56' name='L56'></a>                     ck_slot_id_t slot_id, <strong class='reserved'>struct</strong> ck_slot_info * info)
+<a id='L57' name='L57'></a><em class='brace'>{</em>
+<a id='L58' name='L58'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_GetSlotInfo(slot_id, info);
+<a id='L59' name='L59'></a><em class='brace'>}</em>
+<a id='L60' name='L60'></a>
+<a id='L61' name='L61'></a>ck_rv_t
+<a id='L62' name='L62'></a><a href='../R/9690.html' title='Multiple referred from 4 places.'>pkcs11_get_token_info</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L63' name='L63'></a>                      ck_slot_id_t slot_id, <strong class='reserved'>struct</strong> ck_token_info * info)
+<a id='L64' name='L64'></a><em class='brace'>{</em>
+<a id='L65' name='L65'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_GetTokenInfo(slot_id, info);
+<a id='L66' name='L66'></a><em class='brace'>}</em>
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a>ck_rv_t
+<a id='L69' name='L69'></a><a href='../R/9676.html' title='Multiple referred from 12 places.'>pkcs11_find_objects_init</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L70' name='L70'></a>                         ck_session_handle_t sess,
+<a id='L71' name='L71'></a>                         <strong class='reserved'>struct</strong> ck_attribute * templ, <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> count)
+<a id='L72' name='L72'></a><em class='brace'>{</em>
+<a id='L73' name='L73'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_FindObjectsInit(sess, templ, count);
+<a id='L74' name='L74'></a><em class='brace'>}</em>
+<a id='L75' name='L75'></a>
+<a id='L76' name='L76'></a>ck_rv_t
+<a id='L77' name='L77'></a><a href='../R/9674.html' title='Multiple referred from 13 places.'>pkcs11_find_objects</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L78' name='L78'></a>                    ck_session_handle_t sess,
+<a id='L79' name='L79'></a>                    ck_object_handle_t * objects,
+<a id='L80' name='L80'></a>                    <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> max_object_count,
+<a id='L81' name='L81'></a>                    <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> *object_count)
+<a id='L82' name='L82'></a><em class='brace'>{</em>
+<a id='L83' name='L83'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_FindObjects(sess, objects, max_object_count,
+<a id='L84' name='L84'></a>                                       object_count);
+<a id='L85' name='L85'></a><em class='brace'>}</em>
+<a id='L86' name='L86'></a>
+<a id='L87' name='L87'></a>ck_rv_t <a href='../R/9675.html' title='Multiple referred from 14 places.'>pkcs11_find_objects_final</a>(<strong class='reserved'>struct</strong> <a href='../S/5801.html#L44' title='Defined at 44 in lib/pkcs11_int.h.'>pkcs11_session_info</a> * sinfo)
+<a id='L88' name='L88'></a><em class='brace'>{</em>
+<a id='L89' name='L89'></a>        <strong class='reserved'>return</strong> (sinfo-&gt;module)-&gt;C_FindObjectsFinal(sinfo-&gt;pks);
+<a id='L90' name='L90'></a><em class='brace'>}</em>
+<a id='L91' name='L91'></a>
+<a id='L92' name='L92'></a>ck_rv_t <a href='../R/9664.html' title='Multiple referred from 17 places.'>pkcs11_close_session</a>(<strong class='reserved'>struct</strong> <a href='../S/5801.html#L44' title='Defined at 44 in lib/pkcs11_int.h.'>pkcs11_session_info</a> * sinfo)
+<a id='L93' name='L93'></a><em class='brace'>{</em>
+<a id='L94' name='L94'></a>        sinfo-&gt;<a href='../S/4268.html#L34' title='Defined at 34 in fuzz/fuzzer.h.'>init</a> = 0;
+<a id='L95' name='L95'></a>        <strong class='reserved'>return</strong> (sinfo-&gt;module)-&gt;C_CloseSession(sinfo-&gt;pks);
+<a id='L96' name='L96'></a><em class='brace'>}</em>
+<a id='L97' name='L97'></a>
+<a id='L98' name='L98'></a>ck_rv_t
+<a id='L99' name='L99'></a><a href='../R/9708.html' title='Multiple referred from 3 places.'>pkcs11_set_attribute_value</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L100' name='L100'></a>                           ck_session_handle_t sess,
+<a id='L101' name='L101'></a>                           ck_object_handle_t object,
+<a id='L102' name='L102'></a>                           <strong class='reserved'>struct</strong> ck_attribute * templ,
+<a id='L103' name='L103'></a>                           <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> count)
+<a id='L104' name='L104'></a><em class='brace'>{</em>
+<a id='L105' name='L105'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_SetAttributeValue(sess, object, templ, count);
+<a id='L106' name='L106'></a><em class='brace'>}</em>
+<a id='L107' name='L107'></a>
+<a id='L108' name='L108'></a>ck_rv_t
+<a id='L109' name='L109'></a><a href='../R/9682.html' title='Multiple referred from 33 places.'>pkcs11_get_attribute_value</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L110' name='L110'></a>                           ck_session_handle_t sess,
+<a id='L111' name='L111'></a>                           ck_object_handle_t object,
+<a id='L112' name='L112'></a>                           <strong class='reserved'>struct</strong> ck_attribute * templ,
+<a id='L113' name='L113'></a>                           <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> count)
+<a id='L114' name='L114'></a><em class='brace'>{</em>
+<a id='L115' name='L115'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_GetAttributeValue(sess, object, templ, count);
+<a id='L116' name='L116'></a><em class='brace'>}</em>
+<a id='L117' name='L117'></a>
+<a id='L118' name='L118'></a><em class='comment'>/* Returns only a single attribute value, but allocates its data </em>
+<a id='L119' name='L119'></a><em class='comment'> * Only the type needs to be set.</em>
+<a id='L120' name='L120'></a><em class='comment'> */</em>
+<a id='L121' name='L121'></a>ck_rv_t
+<a id='L122' name='L122'></a><a href='../R/9681.html' title='Multiple referred from 7 places.'>pkcs11_get_attribute_avalue</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L123' name='L123'></a>                           ck_session_handle_t sess,
+<a id='L124' name='L124'></a>                           ck_object_handle_t object,
+<a id='L125' name='L125'></a>                           ck_attribute_type_t <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>,
+<a id='L126' name='L126'></a>                           gnutls_datum_t *res)
+<a id='L127' name='L127'></a><em class='brace'>{</em>
+<a id='L128' name='L128'></a>        ck_rv_t rv;
+<a id='L129' name='L129'></a>        <strong class='reserved'>struct</strong> ck_attribute templ;
+<a id='L130' name='L130'></a>        <strong class='reserved'>void</strong> *t;
+<a id='L131' name='L131'></a>
+<a id='L132' name='L132'></a>        res-&gt;data = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L133' name='L133'></a>        res-&gt;size = 0;
+<a id='L134' name='L134'></a>
+<a id='L135' name='L135'></a>        templ.<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>;
+<a id='L136' name='L136'></a>        templ.value = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L137' name='L137'></a>        templ.value_len = 0;
+<a id='L138' name='L138'></a>        rv = (module)-&gt;C_GetAttributeValue(sess, object, &amp;templ, 1);
+<a id='L139' name='L139'></a>        <strong class='reserved'>if</strong> (rv == CKR_OK) <em class='brace'>{</em>
+<a id='L140' name='L140'></a>                <em class='comment'>/* PKCS#11 v2.20 requires sensitive values to set a length</em>
+<a id='L141' name='L141'></a><em class='comment'>                 * of -1. In that case an error should have been returned,</em>
+<a id='L142' name='L142'></a><em class='comment'>                 * but some implementations return CKR_OK instead. */</em>
+<a id='L143' name='L143'></a>                <strong class='reserved'>if</strong> (templ.value_len == (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>)-1)
+<a id='L144' name='L144'></a>                        <strong class='reserved'>return</strong> CKR_ATTRIBUTE_SENSITIVE;
+<a id='L145' name='L145'></a>
+<a id='L146' name='L146'></a>                <strong class='reserved'>if</strong> (templ.value_len == 0)
+<a id='L147' name='L147'></a>                        <strong class='reserved'>return</strong> rv;
+<a id='L148' name='L148'></a>
+<a id='L149' name='L149'></a>                templ.<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>;
+<a id='L150' name='L150'></a>                t = <a href='../S/5460.html#L95' title='Defined at 95 in lib/mem.c.'>gnutls_malloc</a>(templ.value_len);
+<a id='L151' name='L151'></a>                <strong class='reserved'>if</strong> (t == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L152' name='L152'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(CKR_HOST_MEMORY);
+<a id='L153' name='L153'></a>                templ.value = t;
+<a id='L154' name='L154'></a>                rv = (module)-&gt;C_GetAttributeValue(sess, object, &amp;templ, 1);
+<a id='L155' name='L155'></a>                <strong class='reserved'>if</strong> (rv != CKR_OK) <em class='brace'>{</em>
+<a id='L156' name='L156'></a>                        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(t);
+<a id='L157' name='L157'></a>                        <strong class='reserved'>return</strong> rv;
+<a id='L158' name='L158'></a>                <em class='brace'>}</em>
+<a id='L159' name='L159'></a>                res-&gt;data = t;
+<a id='L160' name='L160'></a>                res-&gt;size = templ.value_len;
+<a id='L161' name='L161'></a>        <em class='brace'>}</em>
+<a id='L162' name='L162'></a>        <strong class='reserved'>return</strong> rv;
+<a id='L163' name='L163'></a><em class='brace'>}</em>
+<a id='L164' name='L164'></a>
+<a id='L165' name='L165'></a>ck_rv_t
+<a id='L166' name='L166'></a><a href='../R/9685.html' title='Multiple referred from 2 places.'>pkcs11_get_mechanism_list</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L167' name='L167'></a>                          ck_slot_id_t slot_id,
+<a id='L168' name='L168'></a>                          ck_mechanism_type_t * mechanism_list,
+<a id='L169' name='L169'></a>                          <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> *count)
+<a id='L170' name='L170'></a><em class='brace'>{</em>
+<a id='L171' name='L171'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_GetMechanismList(slot_id, mechanism_list,
+<a id='L172' name='L172'></a>                                            count);
+<a id='L173' name='L173'></a><em class='brace'>}</em>
+<a id='L174' name='L174'></a>
+<a id='L175' name='L175'></a>ck_rv_t
+<a id='L176' name='L176'></a><a href='../R/9684.html' title='Multiple referred from 2 places.'>pkcs11_get_mechanism_info</a>(<strong class='reserved'>struct</strong> ck_function_list *module,
+<a id='L177' name='L177'></a>                          ck_slot_id_t slot_id,
+<a id='L178' name='L178'></a>                          ck_mechanism_type_t mechanism,
+<a id='L179' name='L179'></a>                          <strong class='reserved'>struct</strong> ck_mechanism_info *<a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a>)
+<a id='L180' name='L180'></a><em class='brace'>{</em>
+<a id='L181' name='L181'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_GetMechanismInfo(slot_id, mechanism,
+<a id='L182' name='L182'></a>                                            <a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a>);
+<a id='L183' name='L183'></a><em class='brace'>}</em>
+<a id='L184' name='L184'></a>
+<a id='L185' name='L185'></a>ck_rv_t
+<a id='L186' name='L186'></a><a href='../R/9715.html' title='Multiple referred from 2 places.'>pkcs11_sign_init</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L187' name='L187'></a>                 ck_session_handle_t sess,
+<a id='L188' name='L188'></a>                 <strong class='reserved'>struct</strong> ck_mechanism * mechanism, ck_object_handle_t key)
+<a id='L189' name='L189'></a><em class='brace'>{</em>
+<a id='L190' name='L190'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_SignInit(sess, mechanism, key);
+<a id='L191' name='L191'></a><em class='brace'>}</em>
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a>ck_rv_t
+<a id='L194' name='L194'></a><a href='../R/9714.html' title='Multiple referred from 3 places.'>pkcs11_sign</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L195' name='L195'></a>            ck_session_handle_t sess,
+<a id='L196' name='L196'></a>            <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *data,
+<a id='L197' name='L197'></a>            <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> data_len,
+<a id='L198' name='L198'></a>            <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *signature, <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> *signature_len)
+<a id='L199' name='L199'></a><em class='brace'>{</em>
+<a id='L200' name='L200'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_Sign(sess, data, data_len, signature,
+<a id='L201' name='L201'></a>                                signature_len);
+<a id='L202' name='L202'></a><em class='brace'>}</em>
+<a id='L203' name='L203'></a>
+<a id='L204' name='L204'></a>ck_rv_t
+<a id='L205' name='L205'></a><a href='../R/9679.html' title='Multiple referred from 2 places.'>pkcs11_generate_key</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L206' name='L206'></a>                    ck_session_handle_t sess,
+<a id='L207' name='L207'></a>                    <strong class='reserved'>struct</strong> ck_mechanism * mechanism,
+<a id='L208' name='L208'></a>                    <strong class='reserved'>struct</strong> ck_attribute * templ,
+<a id='L209' name='L209'></a>                    <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> count,
+<a id='L210' name='L210'></a>                    ck_object_handle_t * key)
+<a id='L211' name='L211'></a><em class='brace'>{</em>
+<a id='L212' name='L212'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_GenerateKey(sess, mechanism, templ, count, key);
+<a id='L213' name='L213'></a><em class='brace'>}</em>
+<a id='L214' name='L214'></a>
+<a id='L215' name='L215'></a>ck_rv_t
+<a id='L216' name='L216'></a><a href='../R/9680.html' title='Multiple referred from 2 places.'>pkcs11_generate_key_pair</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L217' name='L217'></a>                         ck_session_handle_t sess,
+<a id='L218' name='L218'></a>                         <strong class='reserved'>struct</strong> ck_mechanism * mechanism,
+<a id='L219' name='L219'></a>                         <strong class='reserved'>struct</strong> ck_attribute * pub_templ,
+<a id='L220' name='L220'></a>                         <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> pub_templ_count,
+<a id='L221' name='L221'></a>                         <strong class='reserved'>struct</strong> ck_attribute * priv_templ,
+<a id='L222' name='L222'></a>                         <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> priv_templ_count,
+<a id='L223' name='L223'></a>                         ck_object_handle_t * pub_ctx,
+<a id='L224' name='L224'></a>                         ck_object_handle_t * priv_ctx)
+<a id='L225' name='L225'></a><em class='brace'>{</em>
+<a id='L226' name='L226'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_GenerateKeyPair(sess, mechanism, pub_templ,
+<a id='L227' name='L227'></a>                                           pub_templ_count, priv_templ,
+<a id='L228' name='L228'></a>                                           priv_templ_count, pub_ctx, priv_ctx);
+<a id='L229' name='L229'></a><em class='brace'>}</em>
+<a id='L230' name='L230'></a>
+<a id='L231' name='L231'></a>ck_rv_t
+<a id='L232' name='L232'></a><a href='../R/9668.html' title='Multiple referred from 3 places.'>pkcs11_decrypt_init</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L233' name='L233'></a>                    ck_session_handle_t sess,
+<a id='L234' name='L234'></a>                    <strong class='reserved'>struct</strong> ck_mechanism * mechanism,
+<a id='L235' name='L235'></a>                    ck_object_handle_t key_ctx)
+<a id='L236' name='L236'></a><em class='brace'>{</em>
+<a id='L237' name='L237'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_DecryptInit(sess, mechanism, key_ctx);
+<a id='L238' name='L238'></a><em class='brace'>}</em>
+<a id='L239' name='L239'></a>
+<a id='L240' name='L240'></a>ck_rv_t
+<a id='L241' name='L241'></a><a href='../R/9667.html' title='Multiple referred from 4 places.'>pkcs11_decrypt</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L242' name='L242'></a>               ck_session_handle_t sess,
+<a id='L243' name='L243'></a>               <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *encrypted_data,
+<a id='L244' name='L244'></a>               <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> encrypted_data_len,
+<a id='L245' name='L245'></a>               <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *data, <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> *data_len)
+<a id='L246' name='L246'></a><em class='brace'>{</em>
+<a id='L247' name='L247'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_Decrypt(sess, encrypted_data,
+<a id='L248' name='L248'></a>                                   encrypted_data_len, data, data_len);
+<a id='L249' name='L249'></a><em class='brace'>}</em>
+<a id='L250' name='L250'></a>
+<a id='L251' name='L251'></a>ck_rv_t
+<a id='L252' name='L252'></a><a href='../R/9666.html' title='Multiple referred from 6 places.'>pkcs11_create_object</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L253' name='L253'></a>                     ck_session_handle_t sess,
+<a id='L254' name='L254'></a>                     <strong class='reserved'>struct</strong> ck_attribute * templ,
+<a id='L255' name='L255'></a>                     <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> count, ck_object_handle_t * ctx)
+<a id='L256' name='L256'></a><em class='brace'>{</em>
+<a id='L257' name='L257'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_CreateObject(sess, templ, count, ctx);
+<a id='L258' name='L258'></a><em class='brace'>}</em>
+<a id='L259' name='L259'></a>
+<a id='L260' name='L260'></a>ck_rv_t
+<a id='L261' name='L261'></a><a href='../R/9670.html' title='Multiple referred from 2 places.'>pkcs11_destroy_object</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L262' name='L262'></a>                      ck_session_handle_t sess, ck_object_handle_t ctx)
+<a id='L263' name='L263'></a><em class='brace'>{</em>
+<a id='L264' name='L264'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_DestroyObject(sess, ctx);
+<a id='L265' name='L265'></a><em class='brace'>}</em>
+<a id='L266' name='L266'></a>
+<a id='L267' name='L267'></a>ck_rv_t
+<a id='L268' name='L268'></a><a href='../R/9695.html' title='Multiple referred from 2 places.'>pkcs11_init_token</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L269' name='L269'></a>                  ck_slot_id_t slot_id, <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *pin,
+<a id='L270' name='L270'></a>                  <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> pin_len, <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *label)
+<a id='L271' name='L271'></a><em class='brace'>{</em>
+<a id='L272' name='L272'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_InitToken(slot_id, pin, pin_len, label);
+<a id='L273' name='L273'></a><em class='brace'>}</em>
+<a id='L274' name='L274'></a>
+<a id='L275' name='L275'></a>ck_rv_t
+<a id='L276' name='L276'></a><a href='../R/9694.html' title='Multiple referred from 2 places.'>pkcs11_init_pin</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L277' name='L277'></a>                ck_session_handle_t sess,
+<a id='L278' name='L278'></a>                <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *pin, <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> pin_len)
+<a id='L279' name='L279'></a><em class='brace'>{</em>
+<a id='L280' name='L280'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_InitPIN(sess, pin, pin_len);
+<a id='L281' name='L281'></a><em class='brace'>}</em>
+<a id='L282' name='L282'></a>
+<a id='L283' name='L283'></a>ck_rv_t
+<a id='L284' name='L284'></a><a href='../R/9711.html' title='Multiple referred from 2 places.'>pkcs11_set_pin</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L285' name='L285'></a>               ck_session_handle_t sess,
+<a id='L286' name='L286'></a>               <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *old_pin,
+<a id='L287' name='L287'></a>               <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> old_len,
+<a id='L288' name='L288'></a>               <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *new_pin, <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> new_len)
+<a id='L289' name='L289'></a><em class='brace'>{</em>
+<a id='L290' name='L290'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_SetPIN(sess, (<a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *) old_pin, old_len,
+<a id='L291' name='L291'></a>                                  (<a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *) new_pin, new_len);
+<a id='L292' name='L292'></a><em class='brace'>}</em>
+<a id='L293' name='L293'></a>
+<a id='L294' name='L294'></a>ck_rv_t
+<a id='L295' name='L295'></a><a href='../R/5329.html' title='Multiple referred from 2 places.'>_gnutls_pkcs11_get_random</a>(<strong class='reserved'>struct</strong> ck_function_list * module,
+<a id='L296' name='L296'></a>                  ck_session_handle_t sess, <strong class='reserved'>void</strong> *data, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> len)
+<a id='L297' name='L297'></a><em class='brace'>{</em>
+<a id='L298' name='L298'></a>        <strong class='reserved'>return</strong> (module)-&gt;C_GenerateRandom(sess, data, len);
+<a id='L299' name='L299'></a><em class='brace'>}</em>
+<a id='L300' name='L300'></a>
+<a id='L301' name='L301'></a><strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../R/9716.html' title='Multiple referred from 15 places.'>pkcs11_strerror</a>(ck_rv_t rv)
+<a id='L302' name='L302'></a><em class='brace'>{</em>
+<a id='L303' name='L303'></a>        <strong class='reserved'>return</strong> p11_kit_strerror(rv);
+<a id='L304' name='L304'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L40'>[^]</a><a href='#L301'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

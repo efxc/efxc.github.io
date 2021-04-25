@@ -1,0 +1,235 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/nettle/int/dsa-compute-k.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6481.html'>nettle</a>/<a href='../files/6485.html'>int</a>/dsa-compute-k.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L47'>[^]</a>[v][top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L47' title='Defined at 47.'>_gnutls_dsa_compute_k</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2019 Red Hat, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Daiki Ueno</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GNUTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * The GNUTLS library is free software; you can redistribute it and/or</em>
+<a id='L9' name='L9'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L10' name='L10'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L11' name='L11'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#if</em> HAVE_CONFIG_H
+<a id='L24' name='L24'></a><em class='sharp'># include</em> "config.h"
+<a id='L25' name='L25'></a><em class='sharp'>#endif</em>
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> "<a href='5480.html'>dsa-compute-k.h</a>"
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> "<a href='../I/71.html'>mem.h</a>"
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> "<a href='5492.html'>mpn-base256.h</a>"
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L33' name='L33'></a>
+<a id='L34' name='L34'></a><em class='sharp'>#define</em> <a href='../R/254.html' title='Multiple referred from 3 places.'>BITS_TO_LIMBS</a>(bits) (((bits) + GMP_NUMB_BITS - 1) / GMP_NUMB_BITS)
+<a id='L35' name='L35'></a>
+<a id='L36' name='L36'></a><em class='comment'>/* The maximum size of q, choosen from the fact that we support</em>
+<a id='L37' name='L37'></a><em class='comment'> * 521-bit elliptic curve generator and 512-bit DSA subgroup at</em>
+<a id='L38' name='L38'></a><em class='comment'> * maximum. */</em>
+<a id='L39' name='L39'></a><em class='sharp'>#define</em> <a href='../R/2419.html' title='Multiple referred from 3 places.'>MAX_Q_BITS</a> 521
+<a id='L40' name='L40'></a><em class='sharp'>#define</em> <a href='../R/2421.html' title='Multiple referred from 2 places.'>MAX_Q_SIZE</a> ((<a href='../S/5484.html#L39' title='Defined at 39 in lib/nettle/int/dsa-compute-k.c.'>MAX_Q_BITS</a> + 7) / 8)
+<a id='L41' name='L41'></a><em class='sharp'>#define</em> <a href='../S/5484.html#L58' title='Referred from 58 in lib/nettle/int/dsa-compute-k.c.'>MAX_Q_LIMBS</a> <a href='../S/5484.html#L34' title='Defined at 34 in lib/nettle/int/dsa-compute-k.c.'>BITS_TO_LIMBS</a>(<a href='../S/5484.html#L39' title='Defined at 39 in lib/nettle/int/dsa-compute-k.c.'>MAX_Q_BITS</a>)
+<a id='L42' name='L42'></a>
+<a id='L43' name='L43'></a><em class='sharp'>#define</em> <a href='../S/5484.html#L44' title='Referred from 44 in lib/nettle/int/dsa-compute-k.c.'>MAX_HASH_BITS</a> (<a href='../D/2741.html' title='Multiple defined in 2 places.'>MAX_HASH_SIZE</a> * 8)
+<a id='L44' name='L44'></a><em class='sharp'>#define</em> <a href='../S/5484.html#L58' title='Referred from 58 in lib/nettle/int/dsa-compute-k.c.'>MAX_HASH_LIMBS</a> <a href='../S/5484.html#L34' title='Defined at 34 in lib/nettle/int/dsa-compute-k.c.'>BITS_TO_LIMBS</a>(<a href='../S/5484.html#L43' title='Defined at 43 in lib/nettle/int/dsa-compute-k.c.'>MAX_HASH_BITS</a>)
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a><strong class='reserved'>int</strong>
+<a id='L47' name='L47'></a><a href='../R/4982.html' title='Multiple referred from 3 places.'>_gnutls_dsa_compute_k</a>(mpz_t <a href='../D/10084.html' title='Multiple defined in 3 places.'>k</a>,
+<a id='L48' name='L48'></a>                      <strong class='reserved'>const</strong> mpz_t q,
+<a id='L49' name='L49'></a>                      <strong class='reserved'>const</strong> mpz_t <a href='../D/12391.html' title='Multiple defined in 2 places.'>x</a>,
+<a id='L50' name='L50'></a>                      gnutls_mac_algorithm_t mac,
+<a id='L51' name='L51'></a>                      <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *digest,
+<a id='L52' name='L52'></a>                      <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>)
+<a id='L53' name='L53'></a><em class='brace'>{</em>
+<a id='L54' name='L54'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> <a href='../D/4853.html' title='Multiple defined in 2 places.'>V</a>[<a href='../D/2741.html' title='Multiple defined in 2 places.'>MAX_HASH_SIZE</a>];
+<a id='L55' name='L55'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> K[<a href='../D/2741.html' title='Multiple defined in 2 places.'>MAX_HASH_SIZE</a>];
+<a id='L56' name='L56'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> <a href='../D/12434.html' title='Multiple defined in 4 places.'>xp</a>[<a href='../S/5484.html#L40' title='Defined at 40 in lib/nettle/int/dsa-compute-k.c.'>MAX_Q_SIZE</a>];
+<a id='L57' name='L57'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> <a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>[<a href='../S/5484.html#L40' title='Defined at 40 in lib/nettle/int/dsa-compute-k.c.'>MAX_Q_SIZE</a>];
+<a id='L58' name='L58'></a>        <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> <a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>[<a href='../D/2691.html' title='Multiple defined in 4 places.'>MAX</a>(<a href='../S/5484.html#L41' title='Defined at 41 in lib/nettle/int/dsa-compute-k.c.'>MAX_Q_LIMBS</a>, <a href='../S/5484.html#L44' title='Defined at 44 in lib/nettle/int/dsa-compute-k.c.'>MAX_HASH_LIMBS</a>)];
+<a id='L59' name='L59'></a>        mp_bitcnt_t q_bits = mpz_sizeinbase (q, 2);
+<a id='L60' name='L60'></a>        mp_size_t qn = mpz_size(q);
+<a id='L61' name='L61'></a>        mp_bitcnt_t h_bits = <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> * 8;
+<a id='L62' name='L62'></a>        mp_size_t hn = <a href='../S/5484.html#L34' title='Defined at 34 in lib/nettle/int/dsa-compute-k.c.'>BITS_TO_LIMBS</a>(h_bits);
+<a id='L63' name='L63'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> nbytes = (q_bits + 7) / 8;
+<a id='L64' name='L64'></a>        <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> c0 = 0x00;
+<a id='L65' name='L65'></a>        <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> c1 = 0x01;
+<a id='L66' name='L66'></a>        <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> cy;
+<a id='L67' name='L67'></a>        gnutls_hmac_hd_t hd;
+<a id='L68' name='L68'></a>        <strong class='reserved'>int</strong> ret = 0;
+<a id='L69' name='L69'></a>
+<a id='L70' name='L70'></a>        <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>(q_bits &gt; <a href='../S/5484.html#L39' title='Defined at 39 in lib/nettle/int/dsa-compute-k.c.'>MAX_Q_BITS</a>))
+<a id='L71' name='L71'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L72' name='L72'></a>        <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>(<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> &gt; <a href='../D/2741.html' title='Multiple defined in 2 places.'>MAX_HASH_SIZE</a>))
+<a id='L73' name='L73'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a>        <em class='comment'>/* int2octets(x) */</em>
+<a id='L76' name='L76'></a>        <a href='../D/10326.html' title='Multiple defined in 3 places.'>mpn_get_base256</a>(<a href='../D/12434.html' title='Multiple defined in 4 places.'>xp</a>, nbytes, mpz_limbs_read(<a href='../D/12391.html' title='Multiple defined in 2 places.'>x</a>), qn);
+<a id='L77' name='L77'></a>
+<a id='L78' name='L78'></a>        <em class='comment'>/* bits2octets(h) */</em>
+<a id='L79' name='L79'></a>        <a href='../D/10328.html' title='Multiple defined in 3 places.'>mpn_set_base256</a>(<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, hn, digest, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a>        <strong class='reserved'>if</strong> (hn &lt; qn)
+<a id='L82' name='L82'></a>                <em class='comment'>/* qlen &gt; blen: add zero bits to the left */</em>
+<a id='L83' name='L83'></a>                mpn_zero(&amp;<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>[hn], qn - hn);
+<a id='L84' name='L84'></a>        <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (h_bits &gt; q_bits) <em class='brace'>{</em>
+<a id='L85' name='L85'></a>                <em class='comment'>/* qlen &lt; blen: keep the leftmost qlen bits.  We do this in 2</em>
+<a id='L86' name='L86'></a><em class='comment'>                 * steps because mpn_rshift only accepts shift count in the</em>
+<a id='L87' name='L87'></a><em class='comment'>                 * range 1 to mp_bits_per_limb-1.</em>
+<a id='L88' name='L88'></a><em class='comment'>                 */</em>
+<a id='L89' name='L89'></a>                mp_bitcnt_t shift = h_bits - q_bits;
+<a id='L90' name='L90'></a>
+<a id='L91' name='L91'></a>                <strong class='reserved'>if</strong> (shift / GMP_NUMB_BITS &gt; 0) <em class='brace'>{</em>
+<a id='L92' name='L92'></a>                        mpn_copyi(<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, &amp;<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>[shift / GMP_NUMB_BITS], qn);
+<a id='L93' name='L93'></a>                        hn -= shift / GMP_NUMB_BITS;
+<a id='L94' name='L94'></a>                <em class='brace'>}</em>
+<a id='L95' name='L95'></a>
+<a id='L96' name='L96'></a>                <strong class='reserved'>if</strong> (shift % GMP_NUMB_BITS &gt; 0)
+<a id='L97' name='L97'></a>                        mpn_rshift(<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, <a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, hn, shift % GMP_NUMB_BITS);
+<a id='L98' name='L98'></a>        <em class='brace'>}</em>
+<a id='L99' name='L99'></a>
+<a id='L100' name='L100'></a>        cy = mpn_sub_n(<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, <a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, mpz_limbs_read(q), qn);
+<a id='L101' name='L101'></a>        <em class='comment'>/* Fall back to addmul_1, if nettle is linked with mini-gmp. */</em>
+<a id='L102' name='L102'></a><em class='sharp'>#ifdef</em> mpn_cnd_add_n
+<a id='L103' name='L103'></a>        mpn_cnd_add_n(cy, <a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, <a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, mpz_limbs_read(q), qn);
+<a id='L104' name='L104'></a><em class='sharp'>#else</em>
+<a id='L105' name='L105'></a>        mpn_addmul_1(<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, mpz_limbs_read(q), qn, cy != 0);
+<a id='L106' name='L106'></a><em class='sharp'>#endif</em>
+<a id='L107' name='L107'></a>        <a href='../D/10326.html' title='Multiple defined in 3 places.'>mpn_get_base256</a>(<a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>, nbytes, <a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, qn);
+<a id='L108' name='L108'></a>
+<a id='L109' name='L109'></a>        <em class='comment'>/* Step b */</em>
+<a id='L110' name='L110'></a>        memset(<a href='../D/4853.html' title='Multiple defined in 2 places.'>V</a>, c1, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a>        <em class='comment'>/* Step c */</em>
+<a id='L113' name='L113'></a>        memset(K, c0, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L114' name='L114'></a>
+<a id='L115' name='L115'></a>        <em class='comment'>/* Step d */</em>
+<a id='L116' name='L116'></a>        ret = <a href='../S/5805.html#L368' title='Defined at 368 in lib/crypto-api.c.'>gnutls_hmac_init</a>(&amp;hd, mac, K, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L117' name='L117'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L118' name='L118'></a>                <strong class='reserved'>goto</strong> out;
+<a id='L119' name='L119'></a>        ret = <a href='../S/5805.html#L416' title='Defined at 416 in lib/crypto-api.c.'>gnutls_hmac</a>(hd, <a href='../D/4853.html' title='Multiple defined in 2 places.'>V</a>, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L120' name='L120'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L121' name='L121'></a>                <strong class='reserved'>goto</strong> out;
+<a id='L122' name='L122'></a>        ret = <a href='../S/5805.html#L416' title='Defined at 416 in lib/crypto-api.c.'>gnutls_hmac</a>(hd, &amp;c0, 1);
+<a id='L123' name='L123'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L124' name='L124'></a>                <strong class='reserved'>goto</strong> out;
+<a id='L125' name='L125'></a>        ret = <a href='../S/5805.html#L416' title='Defined at 416 in lib/crypto-api.c.'>gnutls_hmac</a>(hd, <a href='../D/12434.html' title='Multiple defined in 4 places.'>xp</a>, nbytes);
+<a id='L126' name='L126'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L127' name='L127'></a>                <strong class='reserved'>goto</strong> out;
+<a id='L128' name='L128'></a>        ret = <a href='../S/5805.html#L416' title='Defined at 416 in lib/crypto-api.c.'>gnutls_hmac</a>(hd, <a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>, nbytes);
+<a id='L129' name='L129'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L130' name='L130'></a>                <strong class='reserved'>goto</strong> out;
+<a id='L131' name='L131'></a>        <a href='../S/5805.html#L446' title='Defined at 446 in lib/crypto-api.c.'>gnutls_hmac_deinit</a>(hd, K);
+<a id='L132' name='L132'></a>
+<a id='L133' name='L133'></a>        <em class='comment'>/* Step e */</em>
+<a id='L134' name='L134'></a>        ret = <a href='../S/5805.html#L503' title='Defined at 503 in lib/crypto-api.c.'>gnutls_hmac_fast</a>(mac, K, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <a href='../D/4853.html' title='Multiple defined in 2 places.'>V</a>, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <a href='../D/4853.html' title='Multiple defined in 2 places.'>V</a>);
+<a id='L135' name='L135'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L136' name='L136'></a>                <strong class='reserved'>goto</strong> out;
+<a id='L137' name='L137'></a>
+<a id='L138' name='L138'></a>        <em class='comment'>/* Step f */</em>
+<a id='L139' name='L139'></a>        ret = <a href='../S/5805.html#L368' title='Defined at 368 in lib/crypto-api.c.'>gnutls_hmac_init</a>(&amp;hd, mac, K, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L140' name='L140'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L141' name='L141'></a>                <strong class='reserved'>goto</strong> out;
+<a id='L142' name='L142'></a>        ret = <a href='../S/5805.html#L416' title='Defined at 416 in lib/crypto-api.c.'>gnutls_hmac</a>(hd, <a href='../D/4853.html' title='Multiple defined in 2 places.'>V</a>, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L143' name='L143'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L144' name='L144'></a>                <strong class='reserved'>goto</strong> out;
+<a id='L145' name='L145'></a>        ret = <a href='../S/5805.html#L416' title='Defined at 416 in lib/crypto-api.c.'>gnutls_hmac</a>(hd, &amp;c1, 1);
+<a id='L146' name='L146'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L147' name='L147'></a>                <strong class='reserved'>goto</strong> out;
+<a id='L148' name='L148'></a>        ret = <a href='../S/5805.html#L416' title='Defined at 416 in lib/crypto-api.c.'>gnutls_hmac</a>(hd, <a href='../D/12434.html' title='Multiple defined in 4 places.'>xp</a>, nbytes);
+<a id='L149' name='L149'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L150' name='L150'></a>                <strong class='reserved'>goto</strong> out;
+<a id='L151' name='L151'></a>        ret = <a href='../S/5805.html#L416' title='Defined at 416 in lib/crypto-api.c.'>gnutls_hmac</a>(hd, <a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>, nbytes);
+<a id='L152' name='L152'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L153' name='L153'></a>                <strong class='reserved'>goto</strong> out;
+<a id='L154' name='L154'></a>        <a href='../S/5805.html#L446' title='Defined at 446 in lib/crypto-api.c.'>gnutls_hmac_deinit</a>(hd, K);
+<a id='L155' name='L155'></a>
+<a id='L156' name='L156'></a>        <em class='comment'>/* Step g */</em>
+<a id='L157' name='L157'></a>        ret = <a href='../S/5805.html#L503' title='Defined at 503 in lib/crypto-api.c.'>gnutls_hmac_fast</a>(mac, K, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <a href='../D/4853.html' title='Multiple defined in 2 places.'>V</a>, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <a href='../D/4853.html' title='Multiple defined in 2 places.'>V</a>);
+<a id='L158' name='L158'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L159' name='L159'></a>                <strong class='reserved'>goto</strong> out;
+<a id='L160' name='L160'></a>
+<a id='L161' name='L161'></a>        <em class='comment'>/* Step h */</em>
+<a id='L162' name='L162'></a>        <strong class='reserved'>for</strong> (;;) <em class='brace'>{</em>
+<a id='L163' name='L163'></a>                <em class='comment'>/* Step 1 */</em>
+<a id='L164' name='L164'></a>                <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> tlen = 0;
+<a id='L165' name='L165'></a>
+<a id='L166' name='L166'></a>                <em class='comment'>/* Step 2 */</em>
+<a id='L167' name='L167'></a>                <strong class='reserved'>while</strong> (tlen &lt; nbytes) <em class='brace'>{</em>
+<a id='L168' name='L168'></a>                        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> remaining = <a href='../D/2832.html' title='Multiple defined in 10 places.'>MIN</a>(nbytes - tlen, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L169' name='L169'></a>                        ret = <a href='../S/5805.html#L503' title='Defined at 503 in lib/crypto-api.c.'>gnutls_hmac_fast</a>(mac, K, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <a href='../D/4853.html' title='Multiple defined in 2 places.'>V</a>, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <a href='../D/4853.html' title='Multiple defined in 2 places.'>V</a>);
+<a id='L170' name='L170'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L171' name='L171'></a>                                <strong class='reserved'>goto</strong> out;
+<a id='L172' name='L172'></a>                        memcpy (&amp;<a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>[tlen], <a href='../D/4853.html' title='Multiple defined in 2 places.'>V</a>, remaining);
+<a id='L173' name='L173'></a>                        tlen += remaining;
+<a id='L174' name='L174'></a>                <em class='brace'>}</em>
+<a id='L175' name='L175'></a>
+<a id='L176' name='L176'></a>                <em class='comment'>/* Step 3 */</em>
+<a id='L177' name='L177'></a>                <a href='../D/10328.html' title='Multiple defined in 3 places.'>mpn_set_base256</a> (<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, qn, <a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>, tlen);
+<a id='L178' name='L178'></a>                <strong class='reserved'>if</strong> (tlen * 8 &gt; q_bits)
+<a id='L179' name='L179'></a>                        mpn_rshift (<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, <a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, qn, tlen * 8 - q_bits);
+<a id='L180' name='L180'></a>                <em class='comment'>/* Check if k is in [1,q-1] */</em>
+<a id='L181' name='L181'></a>                <strong class='reserved'>if</strong> (!mpn_zero_p (<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, qn) &amp;&amp;
+<a id='L182' name='L182'></a>                    mpn_cmp (<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, mpz_limbs_read(q), qn) &lt; 0) <em class='brace'>{</em>
+<a id='L183' name='L183'></a>                        mpn_copyi(mpz_limbs_write(<a href='../D/10084.html' title='Multiple defined in 3 places.'>k</a>, qn), <a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, qn);
+<a id='L184' name='L184'></a>                        mpz_limbs_finish(<a href='../D/10084.html' title='Multiple defined in 3 places.'>k</a>, qn);
+<a id='L185' name='L185'></a>                        <strong class='reserved'>break</strong>;
+<a id='L186' name='L186'></a>                <em class='brace'>}</em>
+<a id='L187' name='L187'></a>
+<a id='L188' name='L188'></a>                ret = <a href='../S/5805.html#L368' title='Defined at 368 in lib/crypto-api.c.'>gnutls_hmac_init</a>(&amp;hd, mac, K, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L189' name='L189'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L190' name='L190'></a>                        <strong class='reserved'>goto</strong> out;
+<a id='L191' name='L191'></a>                ret = <a href='../S/5805.html#L416' title='Defined at 416 in lib/crypto-api.c.'>gnutls_hmac</a>(hd, <a href='../D/4853.html' title='Multiple defined in 2 places.'>V</a>, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L192' name='L192'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L193' name='L193'></a>                        <strong class='reserved'>goto</strong> out;
+<a id='L194' name='L194'></a>                ret = <a href='../S/5805.html#L416' title='Defined at 416 in lib/crypto-api.c.'>gnutls_hmac</a>(hd, &amp;c0, 1);
+<a id='L195' name='L195'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L196' name='L196'></a>                        <strong class='reserved'>goto</strong> out;
+<a id='L197' name='L197'></a>                <a href='../S/5805.html#L446' title='Defined at 446 in lib/crypto-api.c.'>gnutls_hmac_deinit</a>(hd, K);
+<a id='L198' name='L198'></a>
+<a id='L199' name='L199'></a>                ret = <a href='../S/5805.html#L503' title='Defined at 503 in lib/crypto-api.c.'>gnutls_hmac_fast</a>(mac, K, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <a href='../D/4853.html' title='Multiple defined in 2 places.'>V</a>, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <a href='../D/4853.html' title='Multiple defined in 2 places.'>V</a>);
+<a id='L200' name='L200'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L201' name='L201'></a>                        <strong class='reserved'>goto</strong> out;
+<a id='L202' name='L202'></a>        <em class='brace'>}</em>
+<a id='L203' name='L203'></a>
+<a id='L204' name='L204'></a> out:
+<a id='L205' name='L205'></a>        <a href='../S/5986.html#L43' title='Defined at 43 in lib/mem.h.'>zeroize_key</a>(<a href='../D/12434.html' title='Multiple defined in 4 places.'>xp</a>, <strong class='reserved'>sizeof</strong>(<a href='../D/12434.html' title='Multiple defined in 4 places.'>xp</a>));
+<a id='L206' name='L206'></a>        <a href='../S/5986.html#L43' title='Defined at 43 in lib/mem.h.'>zeroize_key</a>(<a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>, <strong class='reserved'>sizeof</strong>(<a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>));
+<a id='L207' name='L207'></a>
+<a id='L208' name='L208'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L209' name='L209'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;][^]<a href='#L47'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

@@ -1,0 +1,489 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/mbuffers.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/mbuffers.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L54'>[^]</a><a href='#L419'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L54' title='Defined at 54.'>_mbuffer_head_init</a></li>
+<li><a href='#L68' title='Defined at 68.'>_mbuffer_head_clear</a></li>
+<li><a href='#L84' title='Defined at 84.'>_mbuffer_enqueue</a></li>
+<li><a href='#L105' title='Defined at 105.'>_mbuffer_dequeue</a></li>
+<li><a href='#L133' title='Defined at 133.'>_mbuffer_head_push_first</a></li>
+<li><a href='#L155' title='Defined at 155.'>_mbuffer_head_pop_first</a></li>
+<li><a href='#L173' title='Defined at 173.'>_mbuffer_head_get_first</a></li>
+<li><a href='#L196' title='Defined at 196.'>_mbuffer_head_get_next</a></li>
+<li><a href='#L219' title='Defined at 219.'>remove_front</a></li>
+<li><a href='#L240' title='Defined at 240.'>_mbuffer_head_remove_bytes</a></li>
+<li><a href='#L276' title='Defined at 276.'>_mbuffer_alloc</a></li>
+<li><a href='#L309' title='Defined at 309.'>_mbuffer_append_data</a></li>
+<li><a href='#L340' title='Defined at 340.'>_mbuffer_alloc_align16</a></li>
+<li><a href='#L367' title='Defined at 367.'>is_aligned16</a></li>
+<li><a href='#L385' title='Defined at 385.'>_mbuffer_linearize_align16</a></li>
+<li><a href='#L419' title='Defined at 419.'>_mbuffer_linearize</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2009-2012 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Jonathan Bastien-Filiatrault</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GNUTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * The GNUTLS library is free software; you can redistribute it and/or</em>
+<a id='L9' name='L9'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L10' name='L10'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L11' name='L11'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> "<a href='5459.html'>mbuffers.h</a>"
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L25' name='L25'></a>
+<a id='L26' name='L26'></a><em class='comment'>/* Here be mbuffers */</em>
+<a id='L27' name='L27'></a>
+<a id='L28' name='L28'></a><em class='comment'>/* A note on terminology:</em>
+<a id='L29' name='L29'></a><em class='comment'> *</em>
+<a id='L30' name='L30'></a><em class='comment'> * Variables named bufel designate a single buffer segment (mbuffer_st</em>
+<a id='L31' name='L31'></a><em class='comment'> * type). This type is textually referred to as a "segment" or a</em>
+<a id='L32' name='L32'></a><em class='comment'> * "buffer element".</em>
+<a id='L33' name='L33'></a><em class='comment'> *</em>
+<a id='L34' name='L34'></a><em class='comment'> * Variables named buf desigate a chain of buffer segments</em>
+<a id='L35' name='L35'></a><em class='comment'> * (mbuffer_head_st type).  This type is textually referred to as a</em>
+<a id='L36' name='L36'></a><em class='comment'> * "buffer head" or simply as "buffer".</em>
+<a id='L37' name='L37'></a><em class='comment'> *</em>
+<a id='L38' name='L38'></a><em class='comment'> * Design objectives:</em>
+<a id='L39' name='L39'></a><em class='comment'> *</em>
+<a id='L40' name='L40'></a><em class='comment'> * - Make existing code easier to understand.</em>
+<a id='L41' name='L41'></a><em class='comment'> * - Make common operations more efficient by avoiding unnecessary</em>
+<a id='L42' name='L42'></a><em class='comment'> *    copying.</em>
+<a id='L43' name='L43'></a><em class='comment'> * - Provide a common datatype with a well-known interface to move</em>
+<a id='L44' name='L44'></a><em class='comment'> *    data around and through the multiple protocol layers.</em>
+<a id='L45' name='L45'></a><em class='comment'> * - Enable a future implementation of DTLS, which needs the concept</em>
+<a id='L46' name='L46'></a><em class='comment'> *    of record boundaries.</em>
+<a id='L47' name='L47'></a><em class='comment'> */</em>
+<a id='L48' name='L48'></a>
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a><em class='comment'>/* Initialize a buffer head.</em>
+<a id='L51' name='L51'></a><em class='comment'> *</em>
+<a id='L52' name='L52'></a><em class='comment'> * Cost: O(1)</em>
+<a id='L53' name='L53'></a><em class='comment'> */</em>
+<a id='L54' name='L54'></a><strong class='reserved'>void</strong> <a href='../R/5721.html' title='Multiple referred from 8 places.'>_mbuffer_head_init</a>(<a href='../D/10275.html' title='Multiple defined in 2 places.'>mbuffer_head_st</a> * buf)
+<a id='L55' name='L55'></a><em class='brace'>{</em>
+<a id='L56' name='L56'></a>        buf-&gt;head = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L57' name='L57'></a>        buf-&gt;tail = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L58' name='L58'></a>
+<a id='L59' name='L59'></a>        buf-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> = 0;
+<a id='L60' name='L60'></a>        buf-&gt;byte_length = 0;
+<a id='L61' name='L61'></a><em class='brace'>}</em>
+<a id='L62' name='L62'></a>
+<a id='L63' name='L63'></a><em class='comment'>/* Deallocate all buffer segments and reset the buffer head.</em>
+<a id='L64' name='L64'></a><em class='comment'> *</em>
+<a id='L65' name='L65'></a><em class='comment'> * Cost: O(n)</em>
+<a id='L66' name='L66'></a><em class='comment'> * n: Number of segments currently in the buffer.</em>
+<a id='L67' name='L67'></a><em class='comment'> */</em>
+<a id='L68' name='L68'></a><strong class='reserved'>void</strong> <a href='../R/5718.html' title='Multiple referred from 11 places.'>_mbuffer_head_clear</a>(<a href='../D/10275.html' title='Multiple defined in 2 places.'>mbuffer_head_st</a> * buf)
+<a id='L69' name='L69'></a><em class='brace'>{</em>
+<a id='L70' name='L70'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *bufel, *next;
+<a id='L71' name='L71'></a>
+<a id='L72' name='L72'></a>        <strong class='reserved'>for</strong> (bufel = buf-&gt;head; bufel != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>; bufel = next) <em class='brace'>{</em>
+<a id='L73' name='L73'></a>                next = bufel-&gt;next;
+<a id='L74' name='L74'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(bufel);
+<a id='L75' name='L75'></a>        <em class='brace'>}</em>
+<a id='L76' name='L76'></a>
+<a id='L77' name='L77'></a>        <a href='../S/5396.html#L54' title='Defined at 54 in lib/mbuffers.c.'>_mbuffer_head_init</a>(buf);
+<a id='L78' name='L78'></a><em class='brace'>}</em>
+<a id='L79' name='L79'></a>
+<a id='L80' name='L80'></a><em class='comment'>/* Append a segment to the end of this buffer.</em>
+<a id='L81' name='L81'></a><em class='comment'> *</em>
+<a id='L82' name='L82'></a><em class='comment'> * Cost: O(1)</em>
+<a id='L83' name='L83'></a><em class='comment'> */</em>
+<a id='L84' name='L84'></a><strong class='reserved'>void</strong> <a href='../R/5713.html' title='Multiple referred from 10 places.'>_mbuffer_enqueue</a>(<a href='../D/10275.html' title='Multiple defined in 2 places.'>mbuffer_head_st</a> * buf, <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> * bufel)
+<a id='L85' name='L85'></a><em class='brace'>{</em>
+<a id='L86' name='L86'></a>        bufel-&gt;next = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L87' name='L87'></a>        bufel-&gt;prev = buf-&gt;tail;
+<a id='L88' name='L88'></a>
+<a id='L89' name='L89'></a>        buf-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>++;
+<a id='L90' name='L90'></a>        buf-&gt;byte_length += bufel-&gt;msg.size - bufel-&gt;mark;
+<a id='L91' name='L91'></a>
+<a id='L92' name='L92'></a>        <strong class='reserved'>if</strong> (buf-&gt;tail != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L93' name='L93'></a>                buf-&gt;tail-&gt;next = bufel;
+<a id='L94' name='L94'></a>        <strong class='reserved'>else</strong>
+<a id='L95' name='L95'></a>                buf-&gt;head = bufel;
+<a id='L96' name='L96'></a>        buf-&gt;tail = bufel;
+<a id='L97' name='L97'></a><em class='brace'>}</em>
+<a id='L98' name='L98'></a>
+<a id='L99' name='L99'></a><em class='comment'>/* Remove a segment from the buffer.</em>
+<a id='L100' name='L100'></a><em class='comment'> *</em>
+<a id='L101' name='L101'></a><em class='comment'> * Cost: O(1)</em>
+<a id='L102' name='L102'></a><em class='comment'> *</em>
+<a id='L103' name='L103'></a><em class='comment'> * Returns the buffer following it.</em>
+<a id='L104' name='L104'></a><em class='comment'> */</em>
+<a id='L105' name='L105'></a><a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *<a href='../R/5712.html' title='Multiple referred from 4 places.'>_mbuffer_dequeue</a>(<a href='../D/10275.html' title='Multiple defined in 2 places.'>mbuffer_head_st</a> * buf, <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> * bufel)
+<a id='L106' name='L106'></a><em class='brace'>{</em>
+<a id='L107' name='L107'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *ret = bufel-&gt;next;
+<a id='L108' name='L108'></a>
+<a id='L109' name='L109'></a>        <strong class='reserved'>if</strong> (buf-&gt;tail == bufel) <em class='comment'>/* if last */</em>
+<a id='L110' name='L110'></a>                buf-&gt;tail = bufel-&gt;prev;
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a>        <strong class='reserved'>if</strong> (buf-&gt;head == bufel) <em class='comment'>/* if first */</em>
+<a id='L113' name='L113'></a>                buf-&gt;head = bufel-&gt;next;
+<a id='L114' name='L114'></a>
+<a id='L115' name='L115'></a>        <strong class='reserved'>if</strong> (bufel-&gt;prev)
+<a id='L116' name='L116'></a>                bufel-&gt;prev-&gt;next = bufel-&gt;next;
+<a id='L117' name='L117'></a>
+<a id='L118' name='L118'></a>        <strong class='reserved'>if</strong> (bufel-&gt;next)
+<a id='L119' name='L119'></a>                bufel-&gt;next-&gt;prev = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L120' name='L120'></a>
+<a id='L121' name='L121'></a>        buf-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>--;
+<a id='L122' name='L122'></a>        buf-&gt;byte_length -= bufel-&gt;msg.size - bufel-&gt;mark;
+<a id='L123' name='L123'></a>
+<a id='L124' name='L124'></a>        bufel-&gt;next = bufel-&gt;prev = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L125' name='L125'></a>
+<a id='L126' name='L126'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L127' name='L127'></a><em class='brace'>}</em>
+<a id='L128' name='L128'></a>
+<a id='L129' name='L129'></a><em class='comment'>/* Append a segment to the beginning of this buffer.</em>
+<a id='L130' name='L130'></a><em class='comment'> *</em>
+<a id='L131' name='L131'></a><em class='comment'> * Cost: O(1)</em>
+<a id='L132' name='L132'></a><em class='comment'> */</em>
+<a id='L133' name='L133'></a><strong class='reserved'>void</strong> <a href='../R/5723.html' title='Multiple referred from 2 places.'>_mbuffer_head_push_first</a>(<a href='../D/10275.html' title='Multiple defined in 2 places.'>mbuffer_head_st</a> * buf, <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> * bufel)
+<a id='L134' name='L134'></a><em class='brace'>{</em>
+<a id='L135' name='L135'></a>        bufel-&gt;prev = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L136' name='L136'></a>        bufel-&gt;next = buf-&gt;head;
+<a id='L137' name='L137'></a>
+<a id='L138' name='L138'></a>        buf-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>++;
+<a id='L139' name='L139'></a>        buf-&gt;byte_length += bufel-&gt;msg.size - bufel-&gt;mark;
+<a id='L140' name='L140'></a>
+<a id='L141' name='L141'></a>        <strong class='reserved'>if</strong> (buf-&gt;head != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L142' name='L142'></a>                buf-&gt;head-&gt;prev = bufel;
+<a id='L143' name='L143'></a>        <strong class='reserved'>else</strong>
+<a id='L144' name='L144'></a>                buf-&gt;tail = bufel;
+<a id='L145' name='L145'></a>        buf-&gt;head = bufel;
+<a id='L146' name='L146'></a><em class='brace'>}</em>
+<a id='L147' name='L147'></a>
+<a id='L148' name='L148'></a><em class='comment'>/* Get a reference to the first segment of the buffer and</em>
+<a id='L149' name='L149'></a><em class='comment'> * remove it from the list.</em>
+<a id='L150' name='L150'></a><em class='comment'> *</em>
+<a id='L151' name='L151'></a><em class='comment'> * Used to start iteration.</em>
+<a id='L152' name='L152'></a><em class='comment'> *</em>
+<a id='L153' name='L153'></a><em class='comment'> * Cost: O(1)</em>
+<a id='L154' name='L154'></a><em class='comment'> */</em>
+<a id='L155' name='L155'></a><a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *<a href='../R/5722.html' title='Multiple referred from 7 places.'>_mbuffer_head_pop_first</a>(<a href='../D/10275.html' title='Multiple defined in 2 places.'>mbuffer_head_st</a> * buf)
+<a id='L156' name='L156'></a><em class='brace'>{</em>
+<a id='L157' name='L157'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *bufel = buf-&gt;head;
+<a id='L158' name='L158'></a>
+<a id='L159' name='L159'></a>        <strong class='reserved'>if</strong> (buf-&gt;head == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L160' name='L160'></a>                <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L161' name='L161'></a>
+<a id='L162' name='L162'></a>        <a href='../S/5396.html#L105' title='Defined at 105 in lib/mbuffers.c.'>_mbuffer_dequeue</a>(buf, bufel);
+<a id='L163' name='L163'></a>
+<a id='L164' name='L164'></a>        <strong class='reserved'>return</strong> bufel;
+<a id='L165' name='L165'></a><em class='brace'>}</em>
+<a id='L166' name='L166'></a>
+<a id='L167' name='L167'></a><em class='comment'>/* Get a reference to the first segment of the buffer and its data.</em>
+<a id='L168' name='L168'></a><em class='comment'> *</em>
+<a id='L169' name='L169'></a><em class='comment'> * Used to start iteration or to peek at the data.</em>
+<a id='L170' name='L170'></a><em class='comment'> *</em>
+<a id='L171' name='L171'></a><em class='comment'> * Cost: O(1)</em>
+<a id='L172' name='L172'></a><em class='comment'> */</em>
+<a id='L173' name='L173'></a><a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *<a href='../R/5719.html' title='Multiple referred from 14 places.'>_mbuffer_head_get_first</a>(<a href='../D/10275.html' title='Multiple defined in 2 places.'>mbuffer_head_st</a> * buf,
+<a id='L174' name='L174'></a>                                    gnutls_datum_t * msg)
+<a id='L175' name='L175'></a><em class='brace'>{</em>
+<a id='L176' name='L176'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *bufel = buf-&gt;head;
+<a id='L177' name='L177'></a>
+<a id='L178' name='L178'></a>        <strong class='reserved'>if</strong> (msg) <em class='brace'>{</em>
+<a id='L179' name='L179'></a>                <strong class='reserved'>if</strong> (bufel) <em class='brace'>{</em>
+<a id='L180' name='L180'></a>                        msg-&gt;data = bufel-&gt;msg.data + bufel-&gt;mark;
+<a id='L181' name='L181'></a>                        msg-&gt;size = bufel-&gt;msg.size - bufel-&gt;mark;
+<a id='L182' name='L182'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L183' name='L183'></a>                        msg-&gt;data = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L184' name='L184'></a>                        msg-&gt;size = 0;
+<a id='L185' name='L185'></a>                <em class='brace'>}</em>
+<a id='L186' name='L186'></a>        <em class='brace'>}</em>
+<a id='L187' name='L187'></a>        <strong class='reserved'>return</strong> bufel;
+<a id='L188' name='L188'></a><em class='brace'>}</em>
+<a id='L189' name='L189'></a>
+<a id='L190' name='L190'></a><em class='comment'>/* Get a reference to the next segment of the buffer and its data.</em>
+<a id='L191' name='L191'></a><em class='comment'> *</em>
+<a id='L192' name='L192'></a><em class='comment'> * Used to iterate over the buffer segments.</em>
+<a id='L193' name='L193'></a><em class='comment'> *</em>
+<a id='L194' name='L194'></a><em class='comment'> * Cost: O(1)</em>
+<a id='L195' name='L195'></a><em class='comment'> */</em>
+<a id='L196' name='L196'></a><a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *<a href='../R/5720.html' title='Multiple referred from 5 places.'>_mbuffer_head_get_next</a>(<a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> * cur, gnutls_datum_t * msg)
+<a id='L197' name='L197'></a><em class='brace'>{</em>
+<a id='L198' name='L198'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *bufel = cur-&gt;next;
+<a id='L199' name='L199'></a>
+<a id='L200' name='L200'></a>        <strong class='reserved'>if</strong> (msg) <em class='brace'>{</em>
+<a id='L201' name='L201'></a>                <strong class='reserved'>if</strong> (bufel) <em class='brace'>{</em>
+<a id='L202' name='L202'></a>                        msg-&gt;data = bufel-&gt;msg.data + bufel-&gt;mark;
+<a id='L203' name='L203'></a>                        msg-&gt;size = bufel-&gt;msg.size - bufel-&gt;mark;
+<a id='L204' name='L204'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L205' name='L205'></a>                        msg-&gt;data = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L206' name='L206'></a>                        msg-&gt;size = 0;
+<a id='L207' name='L207'></a>                <em class='brace'>}</em>
+<a id='L208' name='L208'></a>        <em class='brace'>}</em>
+<a id='L209' name='L209'></a>        <strong class='reserved'>return</strong> bufel;
+<a id='L210' name='L210'></a><em class='brace'>}</em>
+<a id='L211' name='L211'></a>
+<a id='L212' name='L212'></a><em class='comment'>/* Remove the first segment from the buffer.</em>
+<a id='L213' name='L213'></a><em class='comment'> *</em>
+<a id='L214' name='L214'></a><em class='comment'> * Used to dequeue data from the buffer. Not yet exposed in the</em>
+<a id='L215' name='L215'></a><em class='comment'> * internal interface since it is not yet needed outside of this unit.</em>
+<a id='L216' name='L216'></a><em class='comment'> *</em>
+<a id='L217' name='L217'></a><em class='comment'> * Cost: O(1)</em>
+<a id='L218' name='L218'></a><em class='comment'> */</em>
+<a id='L219' name='L219'></a><strong class='reserved'>static</strong> <strong class='reserved'>inline</strong> <strong class='reserved'>void</strong> <a href='../S/5396.html#L256' title='Referred from 256 in lib/mbuffers.c.'>remove_front</a>(<a href='../D/10275.html' title='Multiple defined in 2 places.'>mbuffer_head_st</a> * buf)
+<a id='L220' name='L220'></a><em class='brace'>{</em>
+<a id='L221' name='L221'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *bufel = buf-&gt;head;
+<a id='L222' name='L222'></a>
+<a id='L223' name='L223'></a>        <strong class='reserved'>if</strong> (!bufel)
+<a id='L224' name='L224'></a>                <strong class='reserved'>return</strong>;
+<a id='L225' name='L225'></a>
+<a id='L226' name='L226'></a>        <a href='../S/5396.html#L105' title='Defined at 105 in lib/mbuffers.c.'>_mbuffer_dequeue</a>(buf, bufel);
+<a id='L227' name='L227'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(bufel);
+<a id='L228' name='L228'></a><em class='brace'>}</em>
+<a id='L229' name='L229'></a>
+<a id='L230' name='L230'></a><em class='comment'>/* Remove a specified number of bytes from the start of the buffer.</em>
+<a id='L231' name='L231'></a><em class='comment'> *</em>
+<a id='L232' name='L232'></a><em class='comment'> * Useful for uses that treat the buffer as a simple array of bytes.</em>
+<a id='L233' name='L233'></a><em class='comment'> *</em>
+<a id='L234' name='L234'></a><em class='comment'> * If more than one mbuffer_st have been removed it</em>
+<a id='L235' name='L235'></a><em class='comment'> * returns 1, 0 otherwise and an error code on error.</em>
+<a id='L236' name='L236'></a><em class='comment'> *</em>
+<a id='L237' name='L237'></a><em class='comment'> * Cost: O(n)</em>
+<a id='L238' name='L238'></a><em class='comment'> * n: Number of segments needed to remove the specified amount of data.</em>
+<a id='L239' name='L239'></a><em class='comment'> */</em>
+<a id='L240' name='L240'></a><strong class='reserved'>int</strong> <a href='../R/5724.html' title='Multiple referred from 11 places.'>_mbuffer_head_remove_bytes</a>(<a href='../D/10275.html' title='Multiple defined in 2 places.'>mbuffer_head_st</a> * buf, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> bytes)
+<a id='L241' name='L241'></a><em class='brace'>{</em>
+<a id='L242' name='L242'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> left = bytes;
+<a id='L243' name='L243'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *bufel, *next;
+<a id='L244' name='L244'></a>        <strong class='reserved'>int</strong> ret = 0;
+<a id='L245' name='L245'></a>
+<a id='L246' name='L246'></a>        <strong class='reserved'>if</strong> (bytes &gt; buf-&gt;byte_length) <em class='brace'>{</em>
+<a id='L247' name='L247'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L248' name='L248'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L249' name='L249'></a>        <em class='brace'>}</em>
+<a id='L250' name='L250'></a>
+<a id='L251' name='L251'></a>        <strong class='reserved'>for</strong> (bufel = buf-&gt;head; bufel != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> &amp;&amp; left &gt; 0; bufel = next) <em class='brace'>{</em>
+<a id='L252' name='L252'></a>                next = bufel-&gt;next;
+<a id='L253' name='L253'></a>
+<a id='L254' name='L254'></a>                <strong class='reserved'>if</strong> (left &gt;= (bufel-&gt;msg.size - bufel-&gt;mark)) <em class='brace'>{</em>
+<a id='L255' name='L255'></a>                        left -= (bufel-&gt;msg.size - bufel-&gt;mark);
+<a id='L256' name='L256'></a>                        <a href='../S/5396.html#L219' title='Defined at 219 in lib/mbuffers.c.'>remove_front</a>(buf);
+<a id='L257' name='L257'></a>                        ret = 1;
+<a id='L258' name='L258'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L259' name='L259'></a>                        bufel-&gt;mark += left;
+<a id='L260' name='L260'></a>                        buf-&gt;byte_length -= left;
+<a id='L261' name='L261'></a>                        left = 0;
+<a id='L262' name='L262'></a>                <em class='brace'>}</em>
+<a id='L263' name='L263'></a>        <em class='brace'>}</em>
+<a id='L264' name='L264'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L265' name='L265'></a><em class='brace'>}</em>
+<a id='L266' name='L266'></a>
+<a id='L267' name='L267'></a><em class='comment'>/* Allocate a buffer segment. The segment is not initially "owned" by</em>
+<a id='L268' name='L268'></a><em class='comment'> * any buffer.</em>
+<a id='L269' name='L269'></a><em class='comment'> *</em>
+<a id='L270' name='L270'></a><em class='comment'> * maximum_size: Amount of data that this segment can contain.</em>
+<a id='L271' name='L271'></a><em class='comment'> *</em>
+<a id='L272' name='L272'></a><em class='comment'> * Returns the segment or NULL on error.</em>
+<a id='L273' name='L273'></a><em class='comment'> *</em>
+<a id='L274' name='L274'></a><em class='comment'> * Cost: O(1)</em>
+<a id='L275' name='L275'></a><em class='comment'> */</em>
+<a id='L276' name='L276'></a><a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *<a href='../R/5708.html' title='Multiple referred from 4 places.'>_mbuffer_alloc</a>(<a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> maximum_size)
+<a id='L277' name='L277'></a><em class='brace'>{</em>
+<a id='L278' name='L278'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *st;
+<a id='L279' name='L279'></a>
+<a id='L280' name='L280'></a>        st = <a href='../S/5460.html#L95' title='Defined at 95 in lib/mem.c.'>gnutls_malloc</a>(maximum_size + <strong class='reserved'>sizeof</strong>(<a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a>));
+<a id='L281' name='L281'></a>        <strong class='reserved'>if</strong> (st == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L282' name='L282'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L283' name='L283'></a>                <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L284' name='L284'></a>        <em class='brace'>}</em>
+<a id='L285' name='L285'></a>
+<a id='L286' name='L286'></a>        <em class='comment'>/* set the structure to zero */</em>
+<a id='L287' name='L287'></a>        memset(st, 0, <strong class='reserved'>sizeof</strong>(*st));
+<a id='L288' name='L288'></a>
+<a id='L289' name='L289'></a>        <em class='comment'>/* payload points after the mbuffer_st structure */</em>
+<a id='L290' name='L290'></a>        st-&gt;msg.data = (<a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *) st + <strong class='reserved'>sizeof</strong>(<a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a>);
+<a id='L291' name='L291'></a>        st-&gt;msg.size = 0;
+<a id='L292' name='L292'></a>        st-&gt;maximum_size = maximum_size;
+<a id='L293' name='L293'></a>
+<a id='L294' name='L294'></a>        <strong class='reserved'>return</strong> st;
+<a id='L295' name='L295'></a><em class='brace'>}</em>
+<a id='L296' name='L296'></a>
+<a id='L297' name='L297'></a>
+<a id='L298' name='L298'></a><em class='comment'>/* Copy data into a segment. The segment must not be part of a buffer</em>
+<a id='L299' name='L299'></a><em class='comment'> * head when using this function.</em>
+<a id='L300' name='L300'></a><em class='comment'> *</em>
+<a id='L301' name='L301'></a><em class='comment'> * Bounds checking is performed by this function.</em>
+<a id='L302' name='L302'></a><em class='comment'> *</em>
+<a id='L303' name='L303'></a><em class='comment'> * Returns 0 on success or an error code otherwise.</em>
+<a id='L304' name='L304'></a><em class='comment'> *</em>
+<a id='L305' name='L305'></a><em class='comment'> * Cost: O(n)</em>
+<a id='L306' name='L306'></a><em class='comment'> * n: number of bytes to copy</em>
+<a id='L307' name='L307'></a><em class='comment'> */</em>
+<a id='L308' name='L308'></a><strong class='reserved'>int</strong>
+<a id='L309' name='L309'></a><a href='../R/5710.html' title='Multiple referred from 3 places.'>_mbuffer_append_data</a>(<a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> * bufel, <strong class='reserved'>void</strong> *newdata,
+<a id='L310' name='L310'></a>                     <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> newdata_size)
+<a id='L311' name='L311'></a><em class='brace'>{</em>
+<a id='L312' name='L312'></a>        <strong class='reserved'>if</strong> (bufel-&gt;msg.size + newdata_size &lt;= bufel-&gt;maximum_size) <em class='brace'>{</em>
+<a id='L313' name='L313'></a>                memcpy(&amp;bufel-&gt;msg.data[bufel-&gt;msg.size], newdata,
+<a id='L314' name='L314'></a>                       newdata_size);
+<a id='L315' name='L315'></a>                bufel-&gt;msg.size += newdata_size;
+<a id='L316' name='L316'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L317' name='L317'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L318' name='L318'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L319' name='L319'></a>        <em class='brace'>}</em>
+<a id='L320' name='L320'></a>
+<a id='L321' name='L321'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L322' name='L322'></a><em class='brace'>}</em>
+<a id='L323' name='L323'></a>
+<a id='L324' name='L324'></a><em class='sharp'>#ifdef</em> <a href='../S/5822.html#L60' title='Defined at 60 in lib/gnutls_int.h.'>ENABLE_ALIGN16</a>
+<a id='L325' name='L325'></a><em class='sharp'># define</em> <a href='../R/58.html' title='Multiple referred from 8 places.'>ALIGN_SIZE</a> 16
+<a id='L326' name='L326'></a>
+<a id='L327' name='L327'></a><em class='comment'>/* Allocate a 16-byte aligned buffer segment. The segment is not initially "owned" by</em>
+<a id='L328' name='L328'></a><em class='comment'> * any buffer.</em>
+<a id='L329' name='L329'></a><em class='comment'> *</em>
+<a id='L330' name='L330'></a><em class='comment'> * maximum_size: Amount of data that this segment can contain.</em>
+<a id='L331' name='L331'></a><em class='comment'> * align_pos: identifies the position of the buffer that will be aligned at 16-bytes</em>
+<a id='L332' name='L332'></a><em class='comment'> *</em>
+<a id='L333' name='L333'></a><em class='comment'> * This function should be used to ensure that encrypted data or data to</em>
+<a id='L334' name='L334'></a><em class='comment'> * be encrypted are properly aligned.</em>
+<a id='L335' name='L335'></a><em class='comment'> *</em>
+<a id='L336' name='L336'></a><em class='comment'> * Returns the segment or NULL on error.</em>
+<a id='L337' name='L337'></a><em class='comment'> *</em>
+<a id='L338' name='L338'></a><em class='comment'> * Cost: O(1)</em>
+<a id='L339' name='L339'></a><em class='comment'> */</em>
+<a id='L340' name='L340'></a><a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *<a href='../R/5709.html' title='Multiple referred from 6 places.'>_mbuffer_alloc_align16</a>(<a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> maximum_size, <strong class='reserved'>unsigned</strong> align_pos)
+<a id='L341' name='L341'></a><em class='brace'>{</em>
+<a id='L342' name='L342'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *st;
+<a id='L343' name='L343'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> cur_alignment;
+<a id='L344' name='L344'></a>
+<a id='L345' name='L345'></a>        st = <a href='../S/5460.html#L95' title='Defined at 95 in lib/mem.c.'>gnutls_malloc</a>(maximum_size + <strong class='reserved'>sizeof</strong>(<a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a>) + <a href='../D/66.html' title='Multiple defined in 3 places.'>ALIGN_SIZE</a>);
+<a id='L346' name='L346'></a>        <strong class='reserved'>if</strong> (st == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L347' name='L347'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L348' name='L348'></a>                <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L349' name='L349'></a>        <em class='brace'>}</em>
+<a id='L350' name='L350'></a>
+<a id='L351' name='L351'></a>        <em class='comment'>/* set the structure to zero */</em>
+<a id='L352' name='L352'></a>        memset(st, 0, <strong class='reserved'>sizeof</strong>(*st));
+<a id='L353' name='L353'></a>
+<a id='L354' name='L354'></a>        <em class='comment'>/* payload points after the mbuffer_st structure */</em>
+<a id='L355' name='L355'></a>        st-&gt;msg.data = (<a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *) st + <strong class='reserved'>sizeof</strong>(<a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a>);
+<a id='L356' name='L356'></a>        
+<a id='L357' name='L357'></a>        cur_alignment = ((<a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a>)(st-&gt;msg.data+align_pos)) % <a href='../D/66.html' title='Multiple defined in 3 places.'>ALIGN_SIZE</a>;
+<a id='L358' name='L358'></a>        <strong class='reserved'>if</strong> (cur_alignment &gt; 0)
+<a id='L359' name='L359'></a>                st-&gt;msg.data += <a href='../D/66.html' title='Multiple defined in 3 places.'>ALIGN_SIZE</a> - cur_alignment;
+<a id='L360' name='L360'></a>
+<a id='L361' name='L361'></a>        st-&gt;msg.size = 0;
+<a id='L362' name='L362'></a>        st-&gt;maximum_size = maximum_size;
+<a id='L363' name='L363'></a>
+<a id='L364' name='L364'></a>        <strong class='reserved'>return</strong> st;
+<a id='L365' name='L365'></a><em class='brace'>}</em>
+<a id='L366' name='L366'></a>
+<a id='L367' name='L367'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <a href='../S/5396.html#L397' title='Referred from 397 in lib/mbuffers.c.'>is_aligned16</a>(<a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> * bufel, <strong class='reserved'>unsigned</strong> align_pos)
+<a id='L368' name='L368'></a><em class='brace'>{</em>
+<a id='L369' name='L369'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * <a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a> = <a href='../S/5459.html#L61' title='Defined at 61 in lib/mbuffers.h.'>_mbuffer_get_udata_ptr</a>(bufel);
+<a id='L370' name='L370'></a>
+<a id='L371' name='L371'></a>        <strong class='reserved'>if</strong> (((<a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a>)(<a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a>+align_pos)) % <a href='../D/66.html' title='Multiple defined in 3 places.'>ALIGN_SIZE</a> == 0)
+<a id='L372' name='L372'></a>                <strong class='reserved'>return</strong> 1;
+<a id='L373' name='L373'></a>        <strong class='reserved'>else</strong>
+<a id='L374' name='L374'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L375' name='L375'></a><em class='brace'>}</em>
+<a id='L376' name='L376'></a>
+<a id='L377' name='L377'></a><em class='comment'>/* Takes a buffer in multiple chunks and puts all the data in a single</em>
+<a id='L378' name='L378'></a><em class='comment'> * contiguous segment, ensuring that the @align_pos is 16-byte aligned.</em>
+<a id='L379' name='L379'></a><em class='comment'> *</em>
+<a id='L380' name='L380'></a><em class='comment'> * Returns 0 on success or an error code otherwise.</em>
+<a id='L381' name='L381'></a><em class='comment'> *</em>
+<a id='L382' name='L382'></a><em class='comment'> * Cost: O(n)</em>
+<a id='L383' name='L383'></a><em class='comment'> * n: number of segments initially in the buffer</em>
+<a id='L384' name='L384'></a><em class='comment'> */</em>
+<a id='L385' name='L385'></a><strong class='reserved'>int</strong> <a href='../R/5727.html' title='Multiple referred from 4 places.'>_mbuffer_linearize_align16</a>(<a href='../D/10275.html' title='Multiple defined in 2 places.'>mbuffer_head_st</a> * buf, <strong class='reserved'>unsigned</strong> align_pos)
+<a id='L386' name='L386'></a><em class='brace'>{</em>
+<a id='L387' name='L387'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *bufel, *cur;
+<a id='L388' name='L388'></a>        gnutls_datum_t msg;
+<a id='L389' name='L389'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> pos = 0;
+<a id='L390' name='L390'></a>
+<a id='L391' name='L391'></a>        <strong class='reserved'>if</strong> (buf-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> == 0) <em class='brace'>{</em>
+<a id='L392' name='L392'></a>                <em class='comment'>/* Nothing to do */</em>
+<a id='L393' name='L393'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L394' name='L394'></a>        <em class='brace'>}</em>
+<a id='L395' name='L395'></a>        
+<a id='L396' name='L396'></a>        bufel = <a href='../S/5396.html#L173' title='Defined at 173 in lib/mbuffers.c.'>_mbuffer_head_get_first</a>(buf, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L397' name='L397'></a>        <strong class='reserved'>if</strong> (buf-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> == 1 &amp;&amp; <a href='../S/5396.html#L367' title='Defined at 367 in lib/mbuffers.c.'>is_aligned16</a>(bufel, align_pos))
+<a id='L398' name='L398'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L399' name='L399'></a>
+<a id='L400' name='L400'></a>        bufel = <a href='../D/6508.html' title='Multiple defined in 2 places.'>_mbuffer_alloc_align16</a>(buf-&gt;byte_length, align_pos);
+<a id='L401' name='L401'></a>        <strong class='reserved'>if</strong> (!bufel) <em class='brace'>{</em>
+<a id='L402' name='L402'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L403' name='L403'></a>                <strong class='reserved'>return</strong> GNUTLS_E_MEMORY_ERROR;
+<a id='L404' name='L404'></a>        <em class='brace'>}</em>
+<a id='L405' name='L405'></a>
+<a id='L406' name='L406'></a>        <strong class='reserved'>for</strong> (cur = <a href='../S/5396.html#L173' title='Defined at 173 in lib/mbuffers.c.'>_mbuffer_head_get_first</a>(buf, &amp;msg);
+<a id='L407' name='L407'></a>             msg.data != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>; cur = <a href='../S/5396.html#L196' title='Defined at 196 in lib/mbuffers.c.'>_mbuffer_head_get_next</a>(cur, &amp;msg)) <em class='brace'>{</em>
+<a id='L408' name='L408'></a>                memcpy(&amp;bufel-&gt;msg.data[pos], msg.data, msg.size);
+<a id='L409' name='L409'></a>                bufel-&gt;msg.size += msg.size;
+<a id='L410' name='L410'></a>                pos += msg.size;
+<a id='L411' name='L411'></a>        <em class='brace'>}</em>
+<a id='L412' name='L412'></a>
+<a id='L413' name='L413'></a>        <a href='../S/5396.html#L68' title='Defined at 68 in lib/mbuffers.c.'>_mbuffer_head_clear</a>(buf);
+<a id='L414' name='L414'></a>        <a href='../S/5396.html#L84' title='Defined at 84 in lib/mbuffers.c.'>_mbuffer_enqueue</a>(buf, bufel);
+<a id='L415' name='L415'></a>
+<a id='L416' name='L416'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L417' name='L417'></a><em class='brace'>}</em>
+<a id='L418' name='L418'></a><em class='sharp'>#else</em>
+<a id='L419' name='L419'></a><strong class='reserved'>int</strong> <a href='../R/5726.html' title='Multiple referred from 2 places.'>_mbuffer_linearize</a>(<a href='../D/10275.html' title='Multiple defined in 2 places.'>mbuffer_head_st</a> * buf)
+<a id='L420' name='L420'></a><em class='brace'>{</em>
+<a id='L421' name='L421'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *bufel, *cur;
+<a id='L422' name='L422'></a>        gnutls_datum_t msg;
+<a id='L423' name='L423'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> pos = 0;
+<a id='L424' name='L424'></a>
+<a id='L425' name='L425'></a>        <strong class='reserved'>if</strong> (buf-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> &lt;= 1) <em class='brace'>{</em>
+<a id='L426' name='L426'></a>                <em class='comment'>/* Nothing to do */</em>
+<a id='L427' name='L427'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L428' name='L428'></a>        <em class='brace'>}</em>
+<a id='L429' name='L429'></a>        
+<a id='L430' name='L430'></a>        bufel = <a href='../S/5396.html#L276' title='Defined at 276 in lib/mbuffers.c.'>_mbuffer_alloc</a>(buf-&gt;byte_length);
+<a id='L431' name='L431'></a>        <strong class='reserved'>if</strong> (!bufel) <em class='brace'>{</em>
+<a id='L432' name='L432'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L433' name='L433'></a>                <strong class='reserved'>return</strong> GNUTLS_E_MEMORY_ERROR;
+<a id='L434' name='L434'></a>        <em class='brace'>}</em>
+<a id='L435' name='L435'></a>
+<a id='L436' name='L436'></a>        <strong class='reserved'>for</strong> (cur = <a href='../S/5396.html#L173' title='Defined at 173 in lib/mbuffers.c.'>_mbuffer_head_get_first</a>(buf, &amp;msg);
+<a id='L437' name='L437'></a>             msg.data != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>; cur = <a href='../S/5396.html#L196' title='Defined at 196 in lib/mbuffers.c.'>_mbuffer_head_get_next</a>(cur, &amp;msg)) <em class='brace'>{</em>
+<a id='L438' name='L438'></a>                memcpy(&amp;bufel-&gt;msg.data[pos], msg.data, msg.size);
+<a id='L439' name='L439'></a>                bufel-&gt;msg.size += msg.size;
+<a id='L440' name='L440'></a>                pos += msg.size;
+<a id='L441' name='L441'></a>        <em class='brace'>}</em>
+<a id='L442' name='L442'></a>
+<a id='L443' name='L443'></a>        <a href='../S/5396.html#L68' title='Defined at 68 in lib/mbuffers.c.'>_mbuffer_head_clear</a>(buf);
+<a id='L444' name='L444'></a>        <a href='../S/5396.html#L84' title='Defined at 84 in lib/mbuffers.c.'>_mbuffer_enqueue</a>(buf, bufel);
+<a id='L445' name='L445'></a>
+<a id='L446' name='L446'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L447' name='L447'></a><em class='brace'>}</em>
+<a id='L448' name='L448'></a><em class='sharp'>#endif</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L54'>[^]</a><a href='#L419'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

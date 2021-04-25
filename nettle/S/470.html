@@ -1,0 +1,217 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>fat-setup.h</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/fat-setup.h</h2>
+<em class='comment'>/* [&lt;][&gt;][^][v][top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'><a href='../J/230.html' title='Multiple included from 3 places.'>INCLUDED FROM</a></h2>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* fat-setup.h</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Copyright (C) 2015 Niels Möller</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   This file is part of GNU Nettle.</em>
+<a id='L6' name='L6'></a><em class='comment'></em>
+<a id='L7' name='L7'></a><em class='comment'>   GNU Nettle is free software: you can redistribute it and/or</em>
+<a id='L8' name='L8'></a><em class='comment'>   modify it under the terms of either:</em>
+<a id='L9' name='L9'></a><em class='comment'></em>
+<a id='L10' name='L10'></a><em class='comment'>     * the GNU Lesser General Public License as published by the Free</em>
+<a id='L11' name='L11'></a><em class='comment'>       Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L12' name='L12'></a><em class='comment'>       option) any later version.</em>
+<a id='L13' name='L13'></a><em class='comment'></em>
+<a id='L14' name='L14'></a><em class='comment'>   or</em>
+<a id='L15' name='L15'></a><em class='comment'></em>
+<a id='L16' name='L16'></a><em class='comment'>     * the GNU General Public License as published by the Free</em>
+<a id='L17' name='L17'></a><em class='comment'>       Software Foundation; either version 2 of the License, or (at your</em>
+<a id='L18' name='L18'></a><em class='comment'>       option) any later version.</em>
+<a id='L19' name='L19'></a><em class='comment'></em>
+<a id='L20' name='L20'></a><em class='comment'>   or both in parallel, as here.</em>
+<a id='L21' name='L21'></a><em class='comment'></em>
+<a id='L22' name='L22'></a><em class='comment'>   GNU Nettle is distributed in the hope that it will be useful,</em>
+<a id='L23' name='L23'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L24' name='L24'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L25' name='L25'></a><em class='comment'>   General Public License for more details.</em>
+<a id='L26' name='L26'></a><em class='comment'></em>
+<a id='L27' name='L27'></a><em class='comment'>   You should have received copies of the GNU General Public License and</em>
+<a id='L28' name='L28'></a><em class='comment'>   the GNU Lesser General Public License along with this program.  If</em>
+<a id='L29' name='L29'></a><em class='comment'>   not, see http://www.gnu.org/licenses/.</em>
+<a id='L30' name='L30'></a><em class='comment'>*/</em>
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a><em class='comment'>/* Fat library initialization works as follows. The main function is</em>
+<a id='L33' name='L33'></a><em class='comment'>   fat_init. We try to do initialization only once, but since it is</em>
+<a id='L34' name='L34'></a><em class='comment'>   idempotent, there's no harm if it is in some cases called multiple</em>
+<a id='L35' name='L35'></a><em class='comment'>   times from several threads. For correctness, we rely on atomic</em>
+<a id='L36' name='L36'></a><em class='comment'>   writes, but not on memory barriers or any other synchronization</em>
+<a id='L37' name='L37'></a><em class='comment'>   mechanism.</em>
+<a id='L38' name='L38'></a><em class='comment'></em>
+<a id='L39' name='L39'></a><em class='comment'>   The fat_init function checks the cpuid flags, and sets function</em>
+<a id='L40' name='L40'></a><em class='comment'>   pointers, e.g, _nettle_aes_encrypt_vec, to point to the appropriate</em>
+<a id='L41' name='L41'></a><em class='comment'>   implementation.</em>
+<a id='L42' name='L42'></a><em class='comment'></em>
+<a id='L43' name='L43'></a><em class='comment'>   To get everything hooked in, we use a belt-and-suspenders approach.</em>
+<a id='L44' name='L44'></a><em class='comment'></em>
+<a id='L45' name='L45'></a><em class='comment'>   We try to register fat_init as a constructor function to be called</em>
+<a id='L46' name='L46'></a><em class='comment'>   at load time. If this is unavailable or non-working, we instead</em>
+<a id='L47' name='L47'></a><em class='comment'>   arrange fat_init to be called lazily.</em>
+<a id='L48' name='L48'></a><em class='comment'></em>
+<a id='L49' name='L49'></a><em class='comment'>   For the actual indirection, there are two cases. </em>
+<a id='L50' name='L50'></a><em class='comment'></em>
+<a id='L51' name='L51'></a><em class='comment'>   * If ifunc support is available, function pointers are statically</em>
+<a id='L52' name='L52'></a><em class='comment'>     initialized to NULL, and we register resolver functions, e.g.,</em>
+<a id='L53' name='L53'></a><em class='comment'>     _nettle_aes_encrypt_resolve, which call fat_init, and then return</em>
+<a id='L54' name='L54'></a><em class='comment'>     the function pointer, e.g., the value of _nettle_aes_encrypt_vec.</em>
+<a id='L55' name='L55'></a><em class='comment'></em>
+<a id='L56' name='L56'></a><em class='comment'>   * If ifunc is not available, we have to define a wrapper function</em>
+<a id='L57' name='L57'></a><em class='comment'>     to jump via the function pointer. (FIXME: For internal calls, we</em>
+<a id='L58' name='L58'></a><em class='comment'>     could do this as a macro).</em>
+<a id='L59' name='L59'></a><em class='comment'></em>
+<a id='L60' name='L60'></a><em class='comment'>     We statically initialize each function pointer to point to a</em>
+<a id='L61' name='L61'></a><em class='comment'>     special initialization function, e.g., _nettle_aes_encrypt_init,</em>
+<a id='L62' name='L62'></a><em class='comment'>     which calls fat_init, and then invokes the right function. This</em>
+<a id='L63' name='L63'></a><em class='comment'>     way, all pointers are setup correctly at the first call to any</em>
+<a id='L64' name='L64'></a><em class='comment'>     fat function.</em>
+<a id='L65' name='L65'></a><em class='comment'></em>
+<a id='L66' name='L66'></a><em class='comment'>     And atomic writes are required for correctness in the case that</em>
+<a id='L67' name='L67'></a><em class='comment'>     several threads do "first call to any fat function" at the same</em>
+<a id='L68' name='L68'></a><em class='comment'>     time.</em>
+<a id='L69' name='L69'></a><em class='comment'>*/</em>
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a><em class='sharp'>#if</em> HAVE_GCC_ATTRIBUTE
+<a id='L72' name='L72'></a><em class='sharp'># define</em> <a href='../R/145.html' title='Multiple referred from 3 places.'>CONSTRUCTOR</a> <strong class='reserved'>__attribute__</strong> ((constructor))
+<a id='L73' name='L73'></a><em class='sharp'>#else</em>
+<a id='L74' name='L74'></a><em class='sharp'># define</em> <a href='../R/145.html' title='Multiple referred from 3 places.'>CONSTRUCTOR</a>
+<a id='L75' name='L75'></a><em class='sharp'># if</em> <strong class='reserved'>defined</strong> (__sun)
+<a id='L76' name='L76'></a><em class='sharp'>#  pragma</em> init(fat_init)
+<a id='L77' name='L77'></a><em class='sharp'># endif</em>
+<a id='L78' name='L78'></a><em class='sharp'>#endif</em>
+<a id='L79' name='L79'></a>
+<a id='L80' name='L80'></a><em class='comment'>/* Disable use of ifunc for now. Problem is, there's no guarantee that</em>
+<a id='L81' name='L81'></a><em class='comment'>   one can call any libc functions from the ifunc resolver. On x86 and</em>
+<a id='L82' name='L82'></a><em class='comment'>   x86_64, the corresponding IRELATIVE relocs are supposed to be</em>
+<a id='L83' name='L83'></a><em class='comment'>   processed last, but that doesn't seem to happen, and its a</em>
+<a id='L84' name='L84'></a><em class='comment'>   platform-specific feature. To trigger problems, simply try dlopen</em>
+<a id='L85' name='L85'></a><em class='comment'>   ("libnettle.so", RTLD_NOW), which crashes in an uninitialized plt</em>
+<a id='L86' name='L86'></a><em class='comment'>   entry. */</em>
+<a id='L87' name='L87'></a><em class='sharp'>#undef</em> <a href='../S/470.html#L118' title='Referred from 118 in fat-setup.h.'>HAVE_LINK_IFUNC</a>
+<a id='L88' name='L88'></a>
+<a id='L89' name='L89'></a><em class='sharp'>#if</em> !HAVE_SECURE_GETENV
+<a id='L90' name='L90'></a><em class='sharp'>#define</em> <a href='../R/2211.html' title='Multiple referred from 3 places.'>secure_getenv</a>(s) <a href='../S/765.html#L58' title='Defined at 58 in getopt1.c.'>NULL</a>
+<a id='L91' name='L91'></a><em class='sharp'>#endif</em>
+<a id='L92' name='L92'></a>
+<a id='L93' name='L93'></a><em class='sharp'>#define</em> <a href='../R/239.html' title='Multiple referred from 5 places.'>ENV_VERBOSE</a> "NETTLE_FAT_VERBOSE"
+<a id='L94' name='L94'></a><em class='sharp'>#define</em> <a href='../R/238.html' title='Multiple referred from 3 places.'>ENV_OVERRIDE</a> "NETTLE_FAT_OVERRIDE"
+<a id='L95' name='L95'></a>
+<a id='L96' name='L96'></a><strong class='reserved'>struct</strong> <a href='../S/689.html#L64' title='Defined at 64 in chacha.h.'>chacha_ctx</a>;
+<a id='L97' name='L97'></a><strong class='reserved'>struct</strong> <a href='../S/605.html#L70' title='Defined at 70 in salsa20.h.'>salsa20_ctx</a>;
+<a id='L98' name='L98'></a>
+<a id='L99' name='L99'></a><em class='comment'>/* DECLARE_FAT_FUNC(name, ftype)</em>
+<a id='L100' name='L100'></a><em class='comment'> *</em>
+<a id='L101' name='L101'></a><em class='comment'> *   name is the public function, e.g., _nettle_aes_encrypt.</em>
+<a id='L102' name='L102'></a><em class='comment'> *   ftype is its type, e.g., aes_crypt_internal_func.</em>
+<a id='L103' name='L103'></a><em class='comment'> *</em>
+<a id='L104' name='L104'></a><em class='comment'> * DECLARE_FAT_VAR(name, type, var)</em>
+<a id='L105' name='L105'></a><em class='comment'> *</em>
+<a id='L106' name='L106'></a><em class='comment'> *   name is name without _nettle prefix.</em>
+<a id='L107' name='L107'></a><em class='comment'> *   type is its type.</em>
+<a id='L108' name='L108'></a><em class='comment'> *   var is the variant, used as a suffix on the symbol name.</em>
+<a id='L109' name='L109'></a><em class='comment'> *</em>
+<a id='L110' name='L110'></a><em class='comment'> * DEFINE_FAT_FUNC(name, rtype, prototype, args)</em>
+<a id='L111' name='L111'></a><em class='comment'> *</em>
+<a id='L112' name='L112'></a><em class='comment'> *   name is the public function.</em>
+<a id='L113' name='L113'></a><em class='comment'> *   rtype its return type.</em>
+<a id='L114' name='L114'></a><em class='comment'> *   prototype is the list of formal arguments, with types.</em>
+<a id='L115' name='L115'></a><em class='comment'> *   args contain the argument list without any types.</em>
+<a id='L116' name='L116'></a><em class='comment'> */</em>
+<a id='L117' name='L117'></a>
+<a id='L118' name='L118'></a><em class='sharp'>#if</em> <a href='../S/470.html#L87' title='Defined at 87 in fat-setup.h.'>HAVE_LINK_IFUNC</a>
+<a id='L119' name='L119'></a><em class='sharp'>#define</em> <a href='../S/470.html#L121' title='Referred from 121 in fat-setup.h.'>IFUNC</a>(resolve) <strong class='reserved'>__attribute__</strong> ((ifunc (resolve)))
+<a id='L120' name='L120'></a><em class='sharp'>#define</em> <a href='../R/158.html' title='Multiple referred from 20 places.'>DECLARE_FAT_FUNC</a>(name, ftype)   \
+<a id='L121' name='L121'></a>  ftype name <a href='../S/470.html#L119' title='Defined at 119 in fat-setup.h.'>IFUNC</a>(#name"_resolve");    \
+<a id='L122' name='L122'></a>  <strong class='reserved'>static</strong> ftype *name##_vec = <a href='../S/765.html#L58' title='Defined at 58 in getopt1.c.'>NULL</a>;
+<a id='L123' name='L123'></a>
+<a id='L124' name='L124'></a><em class='sharp'>#define</em> <a href='../R/166.html' title='Multiple referred from 23 places.'>DEFINE_FAT_FUNC</a>(name, rtype, prototype, args)             \
+<a id='L125' name='L125'></a>  <strong class='reserved'>static</strong> <a href='../S/470.html#L158' title='Defined at 158 in fat-setup.h.'>void_func</a> * name##_resolve(<strong class='reserved'>void</strong>)                         \
+<a id='L126' name='L126'></a>  <em class='brace'>{</em>                                                               \
+<a id='L127' name='L127'></a>    <strong class='reserved'>if</strong> (getenv (<a href='../S/470.html#L93' title='Defined at 93 in fat-setup.h.'>ENV_VERBOSE</a>))                                     \
+<a id='L128' name='L128'></a>      fprintf (stderr, "libnettle: "#name"_resolve\n");           \
+<a id='L129' name='L129'></a>    <strong class='reserved'>if</strong> (!name##_vec)                                              \
+<a id='L130' name='L130'></a>      fat_init();                                                 \
+<a id='L131' name='L131'></a>    <strong class='reserved'>return</strong> (<a href='../S/470.html#L158' title='Defined at 158 in fat-setup.h.'>void_func</a> *) name##_vec;                              \
+<a id='L132' name='L132'></a>  <em class='brace'>}</em>
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a><em class='sharp'>#else</em> <em class='comment'>/* !HAVE_LINK_IFUNC */</em>
+<a id='L135' name='L135'></a><em class='sharp'>#define</em> <a href='../R/158.html' title='Multiple referred from 20 places.'>DECLARE_FAT_FUNC</a>(name, ftype)           \
+<a id='L136' name='L136'></a>  ftype name;                                   \
+<a id='L137' name='L137'></a>  <strong class='reserved'>static</strong> ftype name##_init;                     \
+<a id='L138' name='L138'></a>  <strong class='reserved'>static</strong> ftype *name##_vec = name##_init;                               
+<a id='L139' name='L139'></a>
+<a id='L140' name='L140'></a><em class='sharp'>#define</em> <a href='../R/166.html' title='Multiple referred from 23 places.'>DEFINE_FAT_FUNC</a>(name, rtype, prototype, args)           \
+<a id='L141' name='L141'></a>  rtype name prototype                                          \
+<a id='L142' name='L142'></a>  <em class='brace'>{</em>                                                             \
+<a id='L143' name='L143'></a>    <strong class='reserved'>return</strong> name##_vec args;                                     \
+<a id='L144' name='L144'></a>  <em class='brace'>}</em>                                                             \
+<a id='L145' name='L145'></a>  <strong class='reserved'>static</strong> rtype name##_init prototype <em class='brace'>{</em>                          \
+<a id='L146' name='L146'></a>    <strong class='reserved'>if</strong> (getenv (<a href='../S/470.html#L93' title='Defined at 93 in fat-setup.h.'>ENV_VERBOSE</a>))                                   \
+<a id='L147' name='L147'></a>      fprintf (stderr, "libnettle: "#name"_init\n");            \
+<a id='L148' name='L148'></a>    <strong class='reserved'>if</strong> (name##_vec == name##_init)                              \
+<a id='L149' name='L149'></a>      fat_init();                                               \
+<a id='L150' name='L150'></a>    assert (name##_vec != name##_init);                         \
+<a id='L151' name='L151'></a>    <strong class='reserved'>return</strong> name##_vec args;                                     \
+<a id='L152' name='L152'></a>  <em class='brace'>}</em>
+<a id='L153' name='L153'></a><em class='sharp'>#endif</em> <em class='comment'>/* !HAVE_LINK_IFUNC */</em>
+<a id='L154' name='L154'></a>
+<a id='L155' name='L155'></a><em class='sharp'>#define</em> <a href='../R/159.html' title='Multiple referred from 46 places.'>DECLARE_FAT_FUNC_VAR</a>(name, type, var)   \
+<a id='L156' name='L156'></a>       type _nettle_##name##<a href='../S/126.html#L73' title='Defined at 73 in getopt.c.'>_</a>##var;
+<a id='L157' name='L157'></a>
+<a id='L158' name='L158'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> <a href='../R/2531.html' title='Multiple referred from 2 places.'>void_func</a> (<strong class='reserved'>void</strong>);
+<a id='L159' name='L159'></a>
+<a id='L160' name='L160'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> <a href='../R/944.html' title='Multiple referred from 18 places.'>aes_crypt_internal_func</a> (<strong class='reserved'>unsigned</strong> rounds, <strong class='reserved'>const</strong> uint32_t *keys,
+<a id='L161' name='L161'></a>                                      <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/25.html#L50' title='Defined at 50 in aes-internal.h.'>aes_table</a> *<a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>,
+<a id='L162' name='L162'></a>                                      size_t length, uint8_t *dst,
+<a id='L163' name='L163'></a>                                      <strong class='reserved'>const</strong> uint8_t *src);
+<a id='L164' name='L164'></a>
+<a id='L165' name='L165'></a><strong class='reserved'>struct</strong> <a href='../S/328.html#L104' title='Defined at 104 in gcm.h.'>gcm_key</a>;
+<a id='L166' name='L166'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> <a href='../R/1514.html' title='Multiple referred from 3 places.'>gcm_init_key_func</a> (<strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *<a href='../D/2581.html' title='Multiple defined in 4 places.'>table</a>);
+<a id='L167' name='L167'></a>
+<a id='L168' name='L168'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> <a href='../R/1512.html' title='Multiple referred from 3 places.'>gcm_hash_func</a> (<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/328.html#L104' title='Defined at 104 in gcm.h.'>gcm_key</a> *key, <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>,
+<a id='L169' name='L169'></a>                            size_t length, <strong class='reserved'>const</strong> uint8_t *data);
+<a id='L170' name='L170'></a>
+<a id='L171' name='L171'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> *(memxor_func)(<strong class='reserved'>void</strong> *dst, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *src, size_t n);
+<a id='L172' name='L172'></a>
+<a id='L173' name='L173'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> salsa20_core_func (uint32_t *dst, <strong class='reserved'>const</strong> uint32_t *src, <strong class='reserved'>unsigned</strong> rounds);
+<a id='L174' name='L174'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> <a href='../R/2193.html' title='Multiple referred from 3 places.'>salsa20_crypt_func</a> (<strong class='reserved'>struct</strong> <a href='../S/605.html#L70' title='Defined at 70 in salsa20.h.'>salsa20_ctx</a> *ctx, <strong class='reserved'>unsigned</strong> rounds,
+<a id='L175' name='L175'></a>                                 size_t length, uint8_t *dst,
+<a id='L176' name='L176'></a>                                 <strong class='reserved'>const</strong> uint8_t *src);
+<a id='L177' name='L177'></a>
+<a id='L178' name='L178'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> <a href='../R/2283.html' title='Multiple referred from 6 places.'>sha1_compress_func</a>(uint32_t *state, <strong class='reserved'>const</strong> uint8_t *input);
+<a id='L179' name='L179'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> <a href='../R/2290.html' title='Multiple referred from 6 places.'>sha256_compress_func</a>(uint32_t *state, <strong class='reserved'>const</strong> uint8_t *input, <strong class='reserved'>const</strong> uint32_t *<a href='../D/1843.html' title='Multiple defined in 4 places.'>k</a>);
+<a id='L180' name='L180'></a>
+<a id='L181' name='L181'></a><strong class='reserved'>struct</strong> <a href='../S/512.html#L69' title='Defined at 69 in sha3.h.'>sha3_state</a>;
+<a id='L182' name='L182'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> <a href='../R/2318.html' title='Multiple referred from 3 places.'>sha3_permute_func</a> (<strong class='reserved'>struct</strong> <a href='../S/512.html#L69' title='Defined at 69 in sha3.h.'>sha3_state</a> *state);
+<a id='L183' name='L183'></a>
+<a id='L184' name='L184'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> <a href='../R/2328.html' title='Multiple referred from 3 places.'>sha512_compress_func</a> (uint64_t *state, <strong class='reserved'>const</strong> uint8_t *input, <strong class='reserved'>const</strong> uint64_t *<a href='../D/1843.html' title='Multiple defined in 4 places.'>k</a>);
+<a id='L185' name='L185'></a>
+<a id='L186' name='L186'></a><strong class='reserved'>typedef</strong> uint64_t <a href='../R/2516.html' title='Multiple referred from 3 places.'>umac_nh_func</a> (<strong class='reserved'>const</strong> uint32_t *key, <strong class='reserved'>unsigned</strong> length, <strong class='reserved'>const</strong> uint8_t *msg);
+<a id='L187' name='L187'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> <a href='../R/2517.html' title='Multiple referred from 3 places.'>umac_nh_n_func</a> (uint64_t *out, <strong class='reserved'>unsigned</strong> n, <strong class='reserved'>const</strong> uint32_t *key,
+<a id='L188' name='L188'></a>                             <strong class='reserved'>unsigned</strong> length, <strong class='reserved'>const</strong> uint8_t *msg);
+<a id='L189' name='L189'></a>
+<a id='L190' name='L190'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> <a href='../R/1168.html' title='Multiple referred from 3 places.'>chacha_core_func</a>(uint32_t *dst, <strong class='reserved'>const</strong> uint32_t *src, <strong class='reserved'>unsigned</strong> rounds);
+<a id='L191' name='L191'></a>
+<a id='L192' name='L192'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> <a href='../R/1171.html' title='Multiple referred from 12 places.'>chacha_crypt_func</a>(<strong class='reserved'>struct</strong> <a href='../S/689.html#L64' title='Defined at 64 in chacha.h.'>chacha_ctx</a> *ctx,
+<a id='L193' name='L193'></a>                               size_t length,
+<a id='L194' name='L194'></a>                               uint8_t *dst,
+<a id='L195' name='L195'></a>                               <strong class='reserved'>const</strong> uint8_t *src);
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;][^][v]<a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

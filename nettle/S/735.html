@@ -1,0 +1,349 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>tools/output.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/768.html'>tools</a>/output.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L48'>[^]</a><a href='#L299'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L48' title='Defined at 48.'>sexp_output_init</a></li>
+<li><a href='#L63' title='Defined at 63.'>sexp_output_hash_init</a></li>
+<li><a href='#L72' title='Defined at 72.'>sexp_put_raw_char</a></li>
+<li><a href='#L82' title='Defined at 82.'>sexp_put_newline</a></li>
+<li><a href='#L104' title='Defined at 104.'>sexp_put_soft_newline</a></li>
+<li><a href='#L112' title='Defined at 112.'>sexp_put_char</a></li>
+<li><a href='#L143' title='Defined at 143.'>sexp_put_data</a></li>
+<li><a href='#L153' title='Defined at 153.'>sexp_put_length</a></li>
+<li><a href='#L171' title='Defined at 171.'>sexp_put_code_start</a></li>
+<li><a href='#L183' title='Defined at 183.'>sexp_put_code_end</a></li>
+<li><a href='#L201' title='Defined at 201.'>sexp_put_string</a></li>
+<li><a href='#L299' title='Defined at 299.'>sexp_put_digest</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* output.c</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Copyright (C) 2002, 2003, 2009 Niels Möller</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   This file is part of GNU Nettle.</em>
+<a id='L6' name='L6'></a><em class='comment'></em>
+<a id='L7' name='L7'></a><em class='comment'>   GNU Nettle is free software: you can redistribute it and/or</em>
+<a id='L8' name='L8'></a><em class='comment'>   modify it under the terms of either:</em>
+<a id='L9' name='L9'></a><em class='comment'></em>
+<a id='L10' name='L10'></a><em class='comment'>     * the GNU Lesser General Public License as published by the Free</em>
+<a id='L11' name='L11'></a><em class='comment'>       Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L12' name='L12'></a><em class='comment'>       option) any later version.</em>
+<a id='L13' name='L13'></a><em class='comment'></em>
+<a id='L14' name='L14'></a><em class='comment'>   or</em>
+<a id='L15' name='L15'></a><em class='comment'></em>
+<a id='L16' name='L16'></a><em class='comment'>     * the GNU General Public License as published by the Free</em>
+<a id='L17' name='L17'></a><em class='comment'>       Software Foundation; either version 2 of the License, or (at your</em>
+<a id='L18' name='L18'></a><em class='comment'>       option) any later version.</em>
+<a id='L19' name='L19'></a><em class='comment'></em>
+<a id='L20' name='L20'></a><em class='comment'>   or both in parallel, as here.</em>
+<a id='L21' name='L21'></a><em class='comment'></em>
+<a id='L22' name='L22'></a><em class='comment'>   GNU Nettle is distributed in the hope that it will be useful,</em>
+<a id='L23' name='L23'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L24' name='L24'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L25' name='L25'></a><em class='comment'>   General Public License for more details.</em>
+<a id='L26' name='L26'></a><em class='comment'></em>
+<a id='L27' name='L27'></a><em class='comment'>   You should have received copies of the GNU General Public License and</em>
+<a id='L28' name='L28'></a><em class='comment'>   the GNU Lesser General Public License along with this program.  If</em>
+<a id='L29' name='L29'></a><em class='comment'>   not, see http://www.gnu.org/licenses/.</em>
+<a id='L30' name='L30'></a><em class='comment'>*/</em>
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a><em class='sharp'>#if</em> HAVE_CONFIG_H
+<a id='L33' name='L33'></a><em class='sharp'># include</em> "config.h"
+<a id='L34' name='L34'></a><em class='sharp'>#endif</em>
+<a id='L35' name='L35'></a>
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> &lt;assert.h&gt;
+<a id='L37' name='L37'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L40' name='L40'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a><em class='sharp'>#include</em> "<a href='730.html'>output.h</a>"
+<a id='L43' name='L43'></a>
+<a id='L44' name='L44'></a><em class='comment'>/* For TMP_ALLOC */</em> 
+<a id='L45' name='L45'></a><em class='sharp'>#include</em> "<a href='88.html'>nettle-internal.h</a>"
+<a id='L46' name='L46'></a>
+<a id='L47' name='L47'></a><strong class='reserved'>void</strong>
+<a id='L48' name='L48'></a><a href='../R/2261.html' title='Multiple referred from 2 places.'>sexp_output_init</a>(<strong class='reserved'>struct</strong> <a href='../S/730.html#L43' title='Defined at 43 in tools/output.h.'>sexp_output</a> *output, FILE *f,
+<a id='L49' name='L49'></a>                 <strong class='reserved'>unsigned</strong> width, <strong class='reserved'>int</strong> prefer_hex)
+<a id='L50' name='L50'></a><em class='brace'>{</em>
+<a id='L51' name='L51'></a>  output-&gt;f = f;
+<a id='L52' name='L52'></a>  output-&gt;line_width = width;
+<a id='L53' name='L53'></a>  output-&gt;coding = <a href='../S/765.html#L58' title='Defined at 58 in getopt1.c.'>NULL</a>;
+<a id='L54' name='L54'></a>  output-&gt;prefer_hex = prefer_hex;
+<a id='L55' name='L55'></a>  output-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a> = <a href='../S/765.html#L58' title='Defined at 58 in getopt1.c.'>NULL</a>;
+<a id='L56' name='L56'></a>  output-&gt;ctx = <a href='../S/765.html#L58' title='Defined at 58 in getopt1.c.'>NULL</a>;
+<a id='L57' name='L57'></a>  
+<a id='L58' name='L58'></a>  output-&gt;pos = 0;
+<a id='L59' name='L59'></a>  output-&gt;soft_newline = 0;
+<a id='L60' name='L60'></a><em class='brace'>}</em>
+<a id='L61' name='L61'></a>
+<a id='L62' name='L62'></a><strong class='reserved'>void</strong>
+<a id='L63' name='L63'></a><a href='../R/2260.html' title='Multiple referred from 2 places.'>sexp_output_hash_init</a>(<strong class='reserved'>struct</strong> <a href='../S/730.html#L43' title='Defined at 43 in tools/output.h.'>sexp_output</a> *output,
+<a id='L64' name='L64'></a>                      <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/55.html#L92' title='Defined at 92 in nettle-meta.h.'>nettle_hash</a> *<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>, <strong class='reserved'>void</strong> *ctx)
+<a id='L65' name='L65'></a><em class='brace'>{</em>
+<a id='L66' name='L66'></a>  output-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a> = <a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>;
+<a id='L67' name='L67'></a>  output-&gt;ctx = ctx;
+<a id='L68' name='L68'></a>  <a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>-&gt;init(ctx);
+<a id='L69' name='L69'></a><em class='brace'>}</em>
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L72' name='L72'></a><a href='../R/2273.html' title='Multiple referred from 4 places.'>sexp_put_raw_char</a>(<strong class='reserved'>struct</strong> <a href='../S/730.html#L43' title='Defined at 43 in tools/output.h.'>sexp_output</a> *output, uint8_t c)
+<a id='L73' name='L73'></a><em class='brace'>{</em>
+<a id='L74' name='L74'></a>  <strong class='reserved'>if</strong> (putc(c, output-&gt;f) &lt; 0)
+<a id='L75' name='L75'></a>    <a href='../D/1443.html' title='Multiple defined in 4 places.'>die</a>("Write failed: %s\n", strerror(errno));
+<a id='L76' name='L76'></a>
+<a id='L77' name='L77'></a>  output-&gt;pos++;
+<a id='L78' name='L78'></a>  output-&gt;soft_newline = 0;
+<a id='L79' name='L79'></a><em class='brace'>}</em>
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a><strong class='reserved'>void</strong>
+<a id='L82' name='L82'></a><a href='../R/2272.html' title='Multiple referred from 6 places.'>sexp_put_newline</a>(<strong class='reserved'>struct</strong> <a href='../S/730.html#L43' title='Defined at 43 in tools/output.h.'>sexp_output</a> *output,
+<a id='L83' name='L83'></a>                 <strong class='reserved'>unsigned</strong> indent)
+<a id='L84' name='L84'></a><em class='brace'>{</em>
+<a id='L85' name='L85'></a>  <strong class='reserved'>if</strong> (output-&gt;soft_newline)
+<a id='L86' name='L86'></a>    output-&gt;soft_newline = 0;
+<a id='L87' name='L87'></a>  <strong class='reserved'>else</strong>
+<a id='L88' name='L88'></a>    <em class='brace'>{</em>
+<a id='L89' name='L89'></a>      <strong class='reserved'>unsigned</strong> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L90' name='L90'></a>
+<a id='L91' name='L91'></a>      <a href='../S/735.html#L72' title='Defined at 72 in tools/output.c.'>sexp_put_raw_char</a>(output, '\n');
+<a id='L92' name='L92'></a>      output-&gt;pos = 0;
+<a id='L93' name='L93'></a>  
+<a id='L94' name='L94'></a>      <strong class='reserved'>for</strong>(<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 0; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &lt; indent; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++)
+<a id='L95' name='L95'></a>        <a href='../S/735.html#L72' title='Defined at 72 in tools/output.c.'>sexp_put_raw_char</a>(output, ' ');
+<a id='L96' name='L96'></a>  
+<a id='L97' name='L97'></a>      output-&gt;pos = indent;
+<a id='L98' name='L98'></a>    <em class='brace'>}</em>
+<a id='L99' name='L99'></a><em class='brace'>}</em>
+<a id='L100' name='L100'></a>
+<a id='L101' name='L101'></a><em class='comment'>/* Put a newline, but only if it is followed by another newline,</em>
+<a id='L102' name='L102'></a><em class='comment'>   collaps to one newline only. */</em>
+<a id='L103' name='L103'></a><strong class='reserved'>void</strong>
+<a id='L104' name='L104'></a><a href='../R/2274.html' title='Multiple referred from 2 places.'>sexp_put_soft_newline</a>(<strong class='reserved'>struct</strong> <a href='../S/730.html#L43' title='Defined at 43 in tools/output.h.'>sexp_output</a> *output,
+<a id='L105' name='L105'></a>                      <strong class='reserved'>unsigned</strong> indent)
+<a id='L106' name='L106'></a><em class='brace'>{</em>
+<a id='L107' name='L107'></a>  <a href='../S/735.html#L82' title='Defined at 82 in tools/output.c.'>sexp_put_newline</a>(output, indent);
+<a id='L108' name='L108'></a>  output-&gt;soft_newline = 1;
+<a id='L109' name='L109'></a><em class='brace'>}</em>
+<a id='L110' name='L110'></a>
+<a id='L111' name='L111'></a><strong class='reserved'>void</strong>
+<a id='L112' name='L112'></a><a href='../R/2266.html' title='Multiple referred from 17 places.'>sexp_put_char</a>(<strong class='reserved'>struct</strong> <a href='../S/730.html#L43' title='Defined at 43 in tools/output.h.'>sexp_output</a> *output, uint8_t c)
+<a id='L113' name='L113'></a><em class='brace'>{</em>
+<a id='L114' name='L114'></a>  <strong class='reserved'>if</strong> (output-&gt;coding)
+<a id='L115' name='L115'></a>    <em class='brace'>{</em>
+<a id='L116' name='L116'></a>      <em class='comment'>/* Two is enough for both base16 and base64. */</em>
+<a id='L117' name='L117'></a>      <strong class='reserved'>char</strong> encoded[2];
+<a id='L118' name='L118'></a>      <strong class='reserved'>unsigned</strong> done;
+<a id='L119' name='L119'></a>
+<a id='L120' name='L120'></a>      <strong class='reserved'>unsigned</strong> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L121' name='L121'></a>
+<a id='L122' name='L122'></a>      done = output-&gt;coding-&gt;encode_update(&amp;output-&gt;base64, encoded,
+<a id='L123' name='L123'></a>                                           1, &amp;c);
+<a id='L124' name='L124'></a>      assert(done &lt;= <strong class='reserved'>sizeof</strong>(encoded));
+<a id='L125' name='L125'></a>      
+<a id='L126' name='L126'></a>      <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 0; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>&lt;done; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++)
+<a id='L127' name='L127'></a>        <em class='brace'>{</em>
+<a id='L128' name='L128'></a>          <strong class='reserved'>if</strong> (output-&gt;line_width
+<a id='L129' name='L129'></a>              &amp;&amp; output-&gt;pos &gt;= output-&gt;line_width
+<a id='L130' name='L130'></a>              &amp;&amp; output-&gt;pos &gt;= (output-&gt;coding_indent + 10))
+<a id='L131' name='L131'></a>            <a href='../S/735.html#L82' title='Defined at 82 in tools/output.c.'>sexp_put_newline</a>(output, output-&gt;coding_indent);
+<a id='L132' name='L132'></a>          
+<a id='L133' name='L133'></a>          <a href='../S/735.html#L72' title='Defined at 72 in tools/output.c.'>sexp_put_raw_char</a>(output, encoded[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>]);
+<a id='L134' name='L134'></a>        <em class='brace'>}</em>
+<a id='L135' name='L135'></a>    <em class='brace'>}</em>
+<a id='L136' name='L136'></a>  <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (output-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>)
+<a id='L137' name='L137'></a>    output-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>-&gt;<a href='../D/2742.html' title='Multiple defined in 2 places.'>update</a>(output-&gt;ctx, 1, &amp;c);
+<a id='L138' name='L138'></a>  <strong class='reserved'>else</strong>
+<a id='L139' name='L139'></a>    <a href='../S/735.html#L72' title='Defined at 72 in tools/output.c.'>sexp_put_raw_char</a>(output, c);
+<a id='L140' name='L140'></a><em class='brace'>}</em>
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a><strong class='reserved'>void</strong>
+<a id='L143' name='L143'></a><a href='../R/2269.html' title='Multiple referred from 8 places.'>sexp_put_data</a>(<strong class='reserved'>struct</strong> <a href='../S/730.html#L43' title='Defined at 43 in tools/output.h.'>sexp_output</a> *output,
+<a id='L144' name='L144'></a>              <strong class='reserved'>unsigned</strong> length, <strong class='reserved'>const</strong> uint8_t *data)
+<a id='L145' name='L145'></a><em class='brace'>{</em>
+<a id='L146' name='L146'></a>  <strong class='reserved'>unsigned</strong> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L147' name='L147'></a>
+<a id='L148' name='L148'></a>  <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 0; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>&lt;length; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++)
+<a id='L149' name='L149'></a>    <a href='../S/735.html#L112' title='Defined at 112 in tools/output.c.'>sexp_put_char</a>(output, data[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>]);
+<a id='L150' name='L150'></a><em class='brace'>}</em>
+<a id='L151' name='L151'></a>
+<a id='L152' name='L152'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L153' name='L153'></a><a href='../S/735.html#L292' title='Referred from 292 in tools/output.c.'>sexp_put_length</a>(<strong class='reserved'>struct</strong> <a href='../S/730.html#L43' title='Defined at 43 in tools/output.h.'>sexp_output</a> *output, 
+<a id='L154' name='L154'></a>                <strong class='reserved'>unsigned</strong> length)
+<a id='L155' name='L155'></a><em class='brace'>{</em>
+<a id='L156' name='L156'></a>  <strong class='reserved'>unsigned</strong> digit = 1;
+<a id='L157' name='L157'></a>
+<a id='L158' name='L158'></a>  <strong class='reserved'>for</strong> (;;)
+<a id='L159' name='L159'></a>    <em class='brace'>{</em>
+<a id='L160' name='L160'></a>      <strong class='reserved'>unsigned</strong> next = digit * 10;
+<a id='L161' name='L161'></a>      <strong class='reserved'>if</strong> (next &gt; length)
+<a id='L162' name='L162'></a>        <strong class='reserved'>break</strong>;
+<a id='L163' name='L163'></a>      digit = next;
+<a id='L164' name='L164'></a>    <em class='brace'>}</em>
+<a id='L165' name='L165'></a>
+<a id='L166' name='L166'></a>  <strong class='reserved'>for</strong> (; digit; length %= digit, digit /= 10)
+<a id='L167' name='L167'></a>    <a href='../S/735.html#L112' title='Defined at 112 in tools/output.c.'>sexp_put_char</a>(output, '0' + length / digit);
+<a id='L168' name='L168'></a><em class='brace'>}</em>
+<a id='L169' name='L169'></a>
+<a id='L170' name='L170'></a><strong class='reserved'>void</strong>
+<a id='L171' name='L171'></a><a href='../R/2268.html' title='Multiple referred from 4 places.'>sexp_put_code_start</a>(<strong class='reserved'>struct</strong> <a href='../S/730.html#L43' title='Defined at 43 in tools/output.h.'>sexp_output</a> *output,
+<a id='L172' name='L172'></a>                    <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/55.html#L203' title='Defined at 203 in nettle-meta.h.'>nettle_armor</a> *coding)
+<a id='L173' name='L173'></a><em class='brace'>{</em>
+<a id='L174' name='L174'></a>  assert(!output-&gt;coding);
+<a id='L175' name='L175'></a>  
+<a id='L176' name='L176'></a>  output-&gt;coding_indent = output-&gt;pos;
+<a id='L177' name='L177'></a>  
+<a id='L178' name='L178'></a>  output-&gt;coding = coding;
+<a id='L179' name='L179'></a>  output-&gt;coding-&gt;encode_init(&amp;output-&gt;base64);
+<a id='L180' name='L180'></a><em class='brace'>}</em>
+<a id='L181' name='L181'></a>
+<a id='L182' name='L182'></a><strong class='reserved'>void</strong>
+<a id='L183' name='L183'></a><a href='../R/2267.html' title='Multiple referred from 4 places.'>sexp_put_code_end</a>(<strong class='reserved'>struct</strong> <a href='../S/730.html#L43' title='Defined at 43 in tools/output.h.'>sexp_output</a> *output)
+<a id='L184' name='L184'></a><em class='brace'>{</em>
+<a id='L185' name='L185'></a>  <em class='comment'>/* Enough for both hex and base64 */</em>
+<a id='L186' name='L186'></a>  <strong class='reserved'>char</strong> encoded[<a href='../S/103.html#L68' title='Defined at 68 in base64.h.'>BASE64_ENCODE_FINAL_LENGTH</a>];
+<a id='L187' name='L187'></a>  <strong class='reserved'>unsigned</strong> done;
+<a id='L188' name='L188'></a>
+<a id='L189' name='L189'></a>  assert(output-&gt;coding);
+<a id='L190' name='L190'></a>
+<a id='L191' name='L191'></a>  done = output-&gt;coding-&gt;encode_final(&amp;output-&gt;base64, encoded);
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a>  assert(done &lt;= <strong class='reserved'>sizeof</strong>(encoded));
+<a id='L194' name='L194'></a>  
+<a id='L195' name='L195'></a>  output-&gt;coding = <a href='../S/765.html#L58' title='Defined at 58 in getopt1.c.'>NULL</a>;
+<a id='L196' name='L196'></a>
+<a id='L197' name='L197'></a>  <a href='../S/735.html#L143' title='Defined at 143 in tools/output.c.'>sexp_put_data</a>(output, done, (<strong class='reserved'>const</strong> uint8_t*) encoded);
+<a id='L198' name='L198'></a><em class='brace'>}</em>
+<a id='L199' name='L199'></a>
+<a id='L200' name='L200'></a><strong class='reserved'>void</strong>
+<a id='L201' name='L201'></a><a href='../R/2275.html' title='Multiple referred from 4 places.'>sexp_put_string</a>(<strong class='reserved'>struct</strong> <a href='../S/730.html#L43' title='Defined at 43 in tools/output.h.'>sexp_output</a> *output, <strong class='reserved'>enum</strong> sexp_mode mode,
+<a id='L202' name='L202'></a>                <strong class='reserved'>struct</strong> <a href='../S/337.html#L43' title='Defined at 43 in buffer.h.'>nettle_buffer</a> *string)
+<a id='L203' name='L203'></a><em class='brace'>{</em>
+<a id='L204' name='L204'></a>  <strong class='reserved'>if</strong> (!string-&gt;size)
+<a id='L205' name='L205'></a>    <a href='../S/735.html#L143' title='Defined at 143 in tools/output.c.'>sexp_put_data</a>(output, 2,
+<a id='L206' name='L206'></a>                  (<strong class='reserved'>const</strong> uint8_t *) ((mode == SEXP_ADVANCED) ? "\"\"": "0:"));
+<a id='L207' name='L207'></a>
+<a id='L208' name='L208'></a>  <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (mode == SEXP_ADVANCED)
+<a id='L209' name='L209'></a>    <em class='brace'>{</em>
+<a id='L210' name='L210'></a>      <strong class='reserved'>unsigned</strong> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L211' name='L211'></a>      <strong class='reserved'>int</strong> token = (string-&gt;contents[0] &lt; '0' || string-&gt;contents[0] &gt; '9');
+<a id='L212' name='L212'></a>      <strong class='reserved'>int</strong> quote_friendly = 1;
+<a id='L213' name='L213'></a><em class='sharp'>#define</em> <a href='../R/146.html' title='Multiple referred from 3 places.'>CONTROL_SIZE</a> 0x20
+<a id='L214' name='L214'></a>      <strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> escape_names[<a href='../D/177.html' title='Multiple defined in 2 places.'>CONTROL_SIZE</a>] =
+<a id='L215' name='L215'></a>        <em class='brace'>{</em>
+<a id='L216' name='L216'></a>          0,0,0,0,0,0,0,0, 'b','t','n',0,'f','r',0,0,
+<a id='L217' name='L217'></a>          0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0
+<a id='L218' name='L218'></a>        <em class='brace'>}</em>;
+<a id='L219' name='L219'></a>
+<a id='L220' name='L220'></a>      <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 0; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>&lt;string-&gt;size; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++)
+<a id='L221' name='L221'></a>        <em class='brace'>{</em>
+<a id='L222' name='L222'></a>          uint8_t c = string-&gt;contents[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>];
+<a id='L223' name='L223'></a>          
+<a id='L224' name='L224'></a>          <strong class='reserved'>if</strong> (token &amp; !<a href='../S/724.html#L76' title='Defined at 76 in tools/misc.h.'>TOKEN_CHAR</a>(c))
+<a id='L225' name='L225'></a>            token = 0;
+<a id='L226' name='L226'></a>          
+<a id='L227' name='L227'></a>          <strong class='reserved'>if</strong> (quote_friendly)
+<a id='L228' name='L228'></a>            <em class='brace'>{</em>
+<a id='L229' name='L229'></a>              <strong class='reserved'>if</strong> (c &gt;= 0x7f)
+<a id='L230' name='L230'></a>                quote_friendly = 0;
+<a id='L231' name='L231'></a>              <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (c &lt; <a href='../D/177.html' title='Multiple defined in 2 places.'>CONTROL_SIZE</a> &amp;&amp; !escape_names[c])
+<a id='L232' name='L232'></a>                quote_friendly = 0;
+<a id='L233' name='L233'></a>            <em class='brace'>}</em>
+<a id='L234' name='L234'></a>        <em class='brace'>}</em>
+<a id='L235' name='L235'></a>      
+<a id='L236' name='L236'></a>      <strong class='reserved'>if</strong> (token)
+<a id='L237' name='L237'></a>        <a href='../S/735.html#L143' title='Defined at 143 in tools/output.c.'>sexp_put_data</a>(output, string-&gt;size, string-&gt;contents);
+<a id='L238' name='L238'></a>
+<a id='L239' name='L239'></a>      <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (quote_friendly)
+<a id='L240' name='L240'></a>        <em class='brace'>{</em>
+<a id='L241' name='L241'></a>          <a href='../S/735.html#L112' title='Defined at 112 in tools/output.c.'>sexp_put_char</a>(output, '"');
+<a id='L242' name='L242'></a>
+<a id='L243' name='L243'></a>          <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 0; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>&lt;string-&gt;size; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++)
+<a id='L244' name='L244'></a>            <em class='brace'>{</em>
+<a id='L245' name='L245'></a>              <strong class='reserved'>int</strong> escape = 0;
+<a id='L246' name='L246'></a>              uint8_t c = string-&gt;contents[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>];
+<a id='L247' name='L247'></a>
+<a id='L248' name='L248'></a>              assert(c &lt; 0x7f);
+<a id='L249' name='L249'></a>              
+<a id='L250' name='L250'></a>              <strong class='reserved'>if</strong> (c == '\\' || c == '"')
+<a id='L251' name='L251'></a>                escape = 1;
+<a id='L252' name='L252'></a>              <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (c &lt; <a href='../D/177.html' title='Multiple defined in 2 places.'>CONTROL_SIZE</a>)
+<a id='L253' name='L253'></a>                <em class='brace'>{</em>
+<a id='L254' name='L254'></a>                  escape = 1;
+<a id='L255' name='L255'></a>                  c = escape_names[c];
+<a id='L256' name='L256'></a>                  assert(c);
+<a id='L257' name='L257'></a>                <em class='brace'>}</em>
+<a id='L258' name='L258'></a>              <strong class='reserved'>if</strong> (escape)
+<a id='L259' name='L259'></a>                <a href='../S/735.html#L112' title='Defined at 112 in tools/output.c.'>sexp_put_char</a>(output, '\\');
+<a id='L260' name='L260'></a>
+<a id='L261' name='L261'></a>              <a href='../S/735.html#L112' title='Defined at 112 in tools/output.c.'>sexp_put_char</a>(output, c);
+<a id='L262' name='L262'></a>            <em class='brace'>}</em>
+<a id='L263' name='L263'></a>          
+<a id='L264' name='L264'></a>          <a href='../S/735.html#L112' title='Defined at 112 in tools/output.c.'>sexp_put_char</a>(output, '"');
+<a id='L265' name='L265'></a>        <em class='brace'>}</em>
+<a id='L266' name='L266'></a>      <strong class='reserved'>else</strong> 
+<a id='L267' name='L267'></a>        <em class='brace'>{</em>
+<a id='L268' name='L268'></a>          uint8_t delimiter;
+<a id='L269' name='L269'></a>          <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/55.html#L203' title='Defined at 203 in nettle-meta.h.'>nettle_armor</a> *coding;
+<a id='L270' name='L270'></a>          
+<a id='L271' name='L271'></a>          <strong class='reserved'>if</strong> (output-&gt;prefer_hex)
+<a id='L272' name='L272'></a>            <em class='brace'>{</em>
+<a id='L273' name='L273'></a>              delimiter = '#';
+<a id='L274' name='L274'></a>              coding = &amp;nettle_base16;
+<a id='L275' name='L275'></a>            <em class='brace'>}</em>
+<a id='L276' name='L276'></a>          <strong class='reserved'>else</strong>
+<a id='L277' name='L277'></a>            <em class='brace'>{</em>
+<a id='L278' name='L278'></a>              delimiter = '|';
+<a id='L279' name='L279'></a>              coding = &amp;nettle_base64;
+<a id='L280' name='L280'></a>            <em class='brace'>}</em>
+<a id='L281' name='L281'></a>          
+<a id='L282' name='L282'></a>          <a href='../S/735.html#L112' title='Defined at 112 in tools/output.c.'>sexp_put_char</a>(output, delimiter);
+<a id='L283' name='L283'></a>          <a href='../S/735.html#L171' title='Defined at 171 in tools/output.c.'>sexp_put_code_start</a>(output, coding);
+<a id='L284' name='L284'></a>          <a href='../S/735.html#L143' title='Defined at 143 in tools/output.c.'>sexp_put_data</a>(output, string-&gt;size, string-&gt;contents);
+<a id='L285' name='L285'></a>          <a href='../S/735.html#L183' title='Defined at 183 in tools/output.c.'>sexp_put_code_end</a>(output);
+<a id='L286' name='L286'></a>          <a href='../S/735.html#L112' title='Defined at 112 in tools/output.c.'>sexp_put_char</a>(output, delimiter);
+<a id='L287' name='L287'></a>        <em class='brace'>}</em>
+<a id='L288' name='L288'></a><em class='sharp'>#undef</em> <a href='../R/146.html' title='Multiple referred from 3 places.'>CONTROL_SIZE</a>
+<a id='L289' name='L289'></a>    <em class='brace'>}</em>
+<a id='L290' name='L290'></a>  <strong class='reserved'>else</strong>
+<a id='L291' name='L291'></a>    <em class='brace'>{</em>
+<a id='L292' name='L292'></a>      <a href='../S/735.html#L153' title='Defined at 153 in tools/output.c.'>sexp_put_length</a>(output, string-&gt;size);
+<a id='L293' name='L293'></a>      <a href='../S/735.html#L112' title='Defined at 112 in tools/output.c.'>sexp_put_char</a>(output, ':');
+<a id='L294' name='L294'></a>      <a href='../S/735.html#L143' title='Defined at 143 in tools/output.c.'>sexp_put_data</a>(output, string-&gt;size, string-&gt;contents);
+<a id='L295' name='L295'></a>    <em class='brace'>}</em>
+<a id='L296' name='L296'></a><em class='brace'>}</em>
+<a id='L297' name='L297'></a>
+<a id='L298' name='L298'></a><strong class='reserved'>void</strong>
+<a id='L299' name='L299'></a><a href='../R/2270.html' title='Multiple referred from 2 places.'>sexp_put_digest</a>(<strong class='reserved'>struct</strong> <a href='../S/730.html#L43' title='Defined at 43 in tools/output.h.'>sexp_output</a> *output)
+<a id='L300' name='L300'></a><em class='brace'>{</em>
+<a id='L301' name='L301'></a>  <a href='../D/901.html' title='Multiple defined in 2 places.'>TMP_DECL</a>(digest, uint8_t, <a href='../S/88.html#L77' title='Defined at 77 in nettle-internal.h.'>NETTLE_MAX_HASH_DIGEST_SIZE</a>);
+<a id='L302' name='L302'></a>  <a href='../D/899.html' title='Multiple defined in 2 places.'>TMP_ALLOC</a>(digest, output-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>-&gt;digest_size);
+<a id='L303' name='L303'></a>  
+<a id='L304' name='L304'></a>  assert(output-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>);
+<a id='L305' name='L305'></a>
+<a id='L306' name='L306'></a>  output-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>-&gt;digest(output-&gt;ctx, output-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>-&gt;digest_size, digest);
+<a id='L307' name='L307'></a>
+<a id='L308' name='L308'></a>  <a href='../S/735.html#L171' title='Defined at 171 in tools/output.c.'>sexp_put_code_start</a>(output, &amp;nettle_base16);
+<a id='L309' name='L309'></a>  <a href='../S/735.html#L143' title='Defined at 143 in tools/output.c.'>sexp_put_data</a>(output, output-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>-&gt;digest_size, digest);
+<a id='L310' name='L310'></a>  <a href='../S/735.html#L183' title='Defined at 183 in tools/output.c.'>sexp_put_code_end</a>(output);
+<a id='L311' name='L311'></a><em class='brace'>}</em>
+<a id='L312' name='L312'></a>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L48'>[^]</a><a href='#L299'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

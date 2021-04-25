@@ -1,0 +1,167 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/dtls-sw.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/dtls-sw.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L43'>[^]</a><a href='#L52'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L43' title='Defined at 43.'>_dtls_reset_window</a></li>
+<li><a href='#L52' title='Defined at 52.'>_dtls_record_check</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2016 Red Hat, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Authors: Fridolin Pokorny</em>
+<a id='L5' name='L5'></a><em class='comment'> *        Nikos Mavrogiannopoulos</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> * This file is part of GNUTLS.</em>
+<a id='L8' name='L8'></a><em class='comment'> *</em>
+<a id='L9' name='L9'></a><em class='comment'> * The GNUTLS library is free software; you can redistribute it and/or</em>
+<a id='L10' name='L10'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L11' name='L11'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L12' name='L12'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L13' name='L13'></a><em class='comment'> *</em>
+<a id='L14' name='L14'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L15' name='L15'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L16' name='L16'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L17' name='L17'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L18' name='L18'></a><em class='comment'> *</em>
+<a id='L19' name='L19'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L20' name='L20'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L21' name='L21'></a><em class='comment'> *</em>
+<a id='L22' name='L22'></a><em class='comment'> */</em>
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><em class='comment'>/* Functions that relate to DTLS sliding window handling.</em>
+<a id='L25' name='L25'></a><em class='comment'> */</em>
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a><em class='sharp'>#ifndef</em> <a href='../S/5238.html#L49' title='Defined at 49 in tests/dtls-sliding-window.c.'>DTLS_SW_NO_INCLUDES</a>
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> "<a href='5626.html'>debug.h</a>"
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> "<a href='../I/592.html'>dtls.h</a>"
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> "<a href='5295.html'>record.h</a>"
+<a id='L33' name='L33'></a><em class='sharp'>#endif</em>
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='comment'>/*</em>
+<a id='L36' name='L36'></a><em class='comment'> * DTLS sliding window handling</em>
+<a id='L37' name='L37'></a><em class='comment'> */</em>
+<a id='L38' name='L38'></a><em class='sharp'>#define</em> <a href='../S/5464.html#L54' title='Referred from 54 in lib/dtls-sw.c.'>DTLS_EPOCH_SHIFT</a>                (6*CHAR_BIT)
+<a id='L39' name='L39'></a><em class='sharp'>#define</em> <a href='../R/626.html' title='Multiple referred from 2 places.'>DTLS_SEQ_NUM_MASK</a>               0x0000FFFFFFFFFFFF
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a><em class='sharp'>#define</em> <a href='../R/620.html' title='Multiple referred from 3 places.'>DTLS_EMPTY_BITMAP</a>               (0xFFFFFFFFFFFFFFFFULL)
+<a id='L42' name='L42'></a>
+<a id='L43' name='L43'></a><strong class='reserved'>void</strong> <a href='../R/4754.html' title='Multiple referred from 4 places.'>_dtls_reset_window</a>(<strong class='reserved'>struct</strong> <a href='../D/11077.html' title='Multiple defined in 3 places.'>record_parameters_st</a> *<a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>)
+<a id='L44' name='L44'></a><em class='brace'>{</em>
+<a id='L45' name='L45'></a>        <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_have_recv = 0;
+<a id='L46' name='L46'></a><em class='brace'>}</em>
+<a id='L47' name='L47'></a>
+<a id='L48' name='L48'></a><em class='comment'>/* Checks if a sequence number is not replayed. If a replayed</em>
+<a id='L49' name='L49'></a><em class='comment'> * packet is detected it returns a negative value (but no sensible error code).</em>
+<a id='L50' name='L50'></a><em class='comment'> * Otherwise zero.</em>
+<a id='L51' name='L51'></a><em class='comment'> */</em>
+<a id='L52' name='L52'></a><strong class='reserved'>int</strong> <a href='../R/4752.html' title='Multiple referred from 51 places.'>_dtls_record_check</a>(<strong class='reserved'>struct</strong> <a href='../D/11077.html' title='Multiple defined in 3 places.'>record_parameters_st</a> *<a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>, <a href='../D/12097.html' title='Multiple defined in 19 places.'>uint64_t</a> seq_num)
+<a id='L53' name='L53'></a><em class='brace'>{</em>
+<a id='L54' name='L54'></a>        <strong class='reserved'>if</strong> ((seq_num &gt;&gt; <a href='../S/5464.html#L38' title='Defined at 38 in lib/dtls-sw.c.'>DTLS_EPOCH_SHIFT</a>) != <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;epoch) <em class='brace'>{</em>
+<a id='L55' name='L55'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(-1);
+<a id='L56' name='L56'></a>        <em class='brace'>}</em>
+<a id='L57' name='L57'></a>
+<a id='L58' name='L58'></a>        seq_num &amp;= <a href='../S/5464.html#L39' title='Defined at 39 in lib/dtls-sw.c.'>DTLS_SEQ_NUM_MASK</a>;
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a>        <em class='comment'>/*</em>
+<a id='L61' name='L61'></a><em class='comment'>         * rp-&gt;dtls_sw_next is the next *expected* packet (N), being</em>
+<a id='L62' name='L62'></a><em class='comment'>         * the sequence number *after* the latest we have received.</em>
+<a id='L63' name='L63'></a><em class='comment'>         *</em>
+<a id='L64' name='L64'></a><em class='comment'>         * By definition, therefore, packet N-1 *has* been received.</em>
+<a id='L65' name='L65'></a><em class='comment'>         * And thus there's no point wasting a bit in the bitmap for it.</em>
+<a id='L66' name='L66'></a><em class='comment'>         *</em>
+<a id='L67' name='L67'></a><em class='comment'>         * So the backlog bitmap covers the 64 packets prior to that,</em>
+<a id='L68' name='L68'></a><em class='comment'>         * with the LSB representing packet (N - 2), and the MSB</em>
+<a id='L69' name='L69'></a><em class='comment'>         * representing (N - 65). A received packet is represented</em>
+<a id='L70' name='L70'></a><em class='comment'>         * by a zero bit, and a missing packet is represented by a one.</em>
+<a id='L71' name='L71'></a><em class='comment'>         *</em>
+<a id='L72' name='L72'></a><em class='comment'>         * Thus we can allow out-of-order reception of packets that are</em>
+<a id='L73' name='L73'></a><em class='comment'>         * within a reasonable interval of the latest packet received.</em>
+<a id='L74' name='L74'></a><em class='comment'>         */</em>
+<a id='L75' name='L75'></a>        <strong class='reserved'>if</strong> (!<a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_have_recv) <em class='brace'>{</em>
+<a id='L76' name='L76'></a>                <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_next = seq_num + 1;
+<a id='L77' name='L77'></a>                <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_bits = <a href='../S/5464.html#L41' title='Defined at 41 in lib/dtls-sw.c.'>DTLS_EMPTY_BITMAP</a>;
+<a id='L78' name='L78'></a>                <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_have_recv = 1;
+<a id='L79' name='L79'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L80' name='L80'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (seq_num == <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_next) <em class='brace'>{</em>
+<a id='L81' name='L81'></a>                <em class='comment'>/* The common case. This is the packet we expected next. */</em>
+<a id='L82' name='L82'></a>
+<a id='L83' name='L83'></a>                <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_bits &lt;&lt;= 1;
+<a id='L84' name='L84'></a>
+<a id='L85' name='L85'></a>                <em class='comment'>/* This might reach a value higher than 48-bit DTLS sequence</em>
+<a id='L86' name='L86'></a><em class='comment'>                 * numbers can actually reach. Which is fine. When that</em>
+<a id='L87' name='L87'></a><em class='comment'>                 * happens, we'll do the right thing and just not accept</em>
+<a id='L88' name='L88'></a><em class='comment'>                 * any newer packets. Someone needs to start a new epoch. */</em>
+<a id='L89' name='L89'></a>                <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_next++;
+<a id='L90' name='L90'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L91' name='L91'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (seq_num &gt; <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_next) <em class='brace'>{</em>
+<a id='L92' name='L92'></a>                <em class='comment'>/* The packet we were expecting has gone missing; this one is newer.</em>
+<a id='L93' name='L93'></a><em class='comment'>                 * We always advance the window to accommodate it. */</em>
+<a id='L94' name='L94'></a>                <a href='../D/12097.html' title='Multiple defined in 19 places.'>uint64_t</a> <a href='../S/5546.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-jj.c.'>delta</a> = seq_num - <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_next;
+<a id='L95' name='L95'></a>
+<a id='L96' name='L96'></a>                <strong class='reserved'>if</strong> (<a href='../S/5546.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-jj.c.'>delta</a> &gt;= 64) <em class='brace'>{</em>
+<a id='L97' name='L97'></a>                        <em class='comment'>/* We jumped a long way into the future. We have not seen</em>
+<a id='L98' name='L98'></a><em class='comment'>                         * any of the previous 32 packets so set the backlog bitmap</em>
+<a id='L99' name='L99'></a><em class='comment'>                         * to all ones. */</em>
+<a id='L100' name='L100'></a>                        <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_bits = <a href='../S/5464.html#L41' title='Defined at 41 in lib/dtls-sw.c.'>DTLS_EMPTY_BITMAP</a>;
+<a id='L101' name='L101'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/5546.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-jj.c.'>delta</a> == 63) <em class='brace'>{</em>
+<a id='L102' name='L102'></a>                        <em class='comment'>/* Avoid undefined behaviour that shifting by 64 would incur.</em>
+<a id='L103' name='L103'></a><em class='comment'>                         * The (clear) top bit represents the packet which is currently</em>
+<a id='L104' name='L104'></a><em class='comment'>                         * rp-&gt;dtls_sw_next, which we know was already received. */</em>
+<a id='L105' name='L105'></a>                        <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_bits = <a href='../S/5464.html#L41' title='Defined at 41 in lib/dtls-sw.c.'>DTLS_EMPTY_BITMAP</a> &gt;&gt; 1;
+<a id='L106' name='L106'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L107' name='L107'></a>                        <em class='comment'>/* We have missed (delta) packets. Shift the backlog by that</em>
+<a id='L108' name='L108'></a><em class='comment'>                         * amount *plus* the one we would have shifted it anyway if</em>
+<a id='L109' name='L109'></a><em class='comment'>                         * we'd received the packet we were expecting. The zero bit</em>
+<a id='L110' name='L110'></a><em class='comment'>                         * representing the packet which is currently rp-&gt;dtls_sw_next-1,</em>
+<a id='L111' name='L111'></a><em class='comment'>                         * which we know has been received, ends up at bit position</em>
+<a id='L112' name='L112'></a><em class='comment'>                         * (1&lt;&lt;delta). Then we set all the bits lower than that, which</em>
+<a id='L113' name='L113'></a><em class='comment'>                         * represent the missing packets. */</em>
+<a id='L114' name='L114'></a>                        <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_bits &lt;&lt;= <a href='../S/5546.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-jj.c.'>delta</a> + 1;
+<a id='L115' name='L115'></a>                        <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_bits |= (1ULL &lt;&lt; <a href='../S/5546.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-jj.c.'>delta</a>) - 1;
+<a id='L116' name='L116'></a>                <em class='brace'>}</em>
+<a id='L117' name='L117'></a>                <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_next = seq_num + 1;
+<a id='L118' name='L118'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L119' name='L119'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L120' name='L120'></a>                <em class='comment'>/* This packet is older than the one we were expecting. By how much...? */</em>
+<a id='L121' name='L121'></a>                <a href='../D/12097.html' title='Multiple defined in 19 places.'>uint64_t</a> <a href='../S/5546.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-jj.c.'>delta</a> = <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_next - seq_num;
+<a id='L122' name='L122'></a>
+<a id='L123' name='L123'></a>                <strong class='reserved'>if</strong> (<a href='../S/5546.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-jj.c.'>delta</a> &gt; 65) <em class='brace'>{</em>
+<a id='L124' name='L124'></a>                        <em class='comment'>/* Too old. We can't know if it's a replay */</em>
+<a id='L125' name='L125'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(-2);
+<a id='L126' name='L126'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/5546.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-jj.c.'>delta</a> == 1) <em class='brace'>{</em>
+<a id='L127' name='L127'></a>                        <em class='comment'>/* Not in the bitmask since it is by definition already received. */</em>
+<a id='L128' name='L128'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(-3);
+<a id='L129' name='L129'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L130' name='L130'></a>                        <em class='comment'>/* Within the sliding window, so we remember whether we've seen it or not */</em>
+<a id='L131' name='L131'></a>                        <a href='../D/12097.html' title='Multiple defined in 19 places.'>uint64_t</a> mask = 1ULL &lt;&lt; (<a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_next - seq_num - 2);
+<a id='L132' name='L132'></a>
+<a id='L133' name='L133'></a>                        <strong class='reserved'>if</strong> (!(<a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_bits &amp; mask))
+<a id='L134' name='L134'></a>                                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(-3);
+<a id='L135' name='L135'></a>
+<a id='L136' name='L136'></a>                        <a href='../D/11164.html' title='Multiple defined in 4 places.'>rp</a>-&gt;dtls_sw_bits &amp;= ~mask;
+<a id='L137' name='L137'></a>                        <strong class='reserved'>return</strong> 0;
+<a id='L138' name='L138'></a>                <em class='brace'>}</em>
+<a id='L139' name='L139'></a>        <em class='brace'>}</em>
+<a id='L140' name='L140'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L43'>[^]</a><a href='#L52'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

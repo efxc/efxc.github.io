@@ -1,0 +1,285 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>tests/slow/cipher-override.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6501.html'>tests</a>/<a href='../files/6505.html'>slow</a>/cipher-override.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L12'>[^]</a><a href='#L196'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L12' title='Defined at 12.'>main</a></li>
+<li><a href='#L27' title='Defined at 27.'>tls_log_func</a></li>
+<li><a href='#L39' title='Defined at 39.'>myaes_init</a></li>
+<li><a href='#L56' title='Defined at 56.'>myaes_setkey</a></li>
+<li><a href='#L70' title='Defined at 70.'>myaes_setiv</a></li>
+<li><a href='#L79' title='Defined at 79.'>myaes_encrypt</a></li>
+<li><a href='#L90' title='Defined at 90.'>myaes_decrypt</a></li>
+<li><a href='#L101' title='Defined at 101.'>myaes_deinit</a></li>
+<li><a href='#L112' title='Defined at 112.'>myaes_gcm_init</a></li>
+<li><a href='#L128' title='Defined at 128.'>myaes_gcm_setkey</a></li>
+<li><a href='#L137' title='Defined at 137.'>myaes_gcm_deinit</a></li>
+<li><a href='#L143' title='Defined at 143.'>myaes_gcm_encrypt</a></li>
+<li><a href='#L166' title='Defined at 166.'>myaes_gcm_decrypt</a></li>
+<li><a href='#L196' title='Defined at 196.'>main</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L2' name='L2'></a><em class='sharp'>#include</em> &lt;stdint.h&gt;
+<a id='L3' name='L3'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L4' name='L4'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L5' name='L5'></a><em class='sharp'>#include</em> &lt;<a href='../I/424.html'>utils.h</a>&gt;
+<a id='L6' name='L6'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L7' name='L7'></a><em class='sharp'>#include</em> &lt;gnutls/gnutls.h&gt;
+<a id='L8' name='L8'></a><em class='sharp'>#include</em> &lt;<a href='../I/579.html'>gnutls/crypto.h</a>&gt;
+<a id='L9' name='L9'></a><em class='sharp'>#include</em> &lt;<a href='6005.html'>gnutls/self-test.h</a>&gt;
+<a id='L10' name='L10'></a>
+<a id='L11' name='L11'></a><em class='sharp'>#ifndef</em> HAVE_LIBNETTLE
+<a id='L12' name='L12'></a><strong class='reserved'>int</strong> main(<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv)
+<a id='L13' name='L13'></a><em class='brace'>{</em>
+<a id='L14' name='L14'></a>        exit(77);
+<a id='L15' name='L15'></a><em class='brace'>}</em>
+<a id='L16' name='L16'></a><em class='sharp'>#else</em>
+<a id='L17' name='L17'></a>
+<a id='L18' name='L18'></a><em class='sharp'># include</em> &lt;nettle/aes.h&gt;
+<a id='L19' name='L19'></a><em class='sharp'># include</em> &lt;nettle/cbc.h&gt;
+<a id='L20' name='L20'></a><em class='sharp'># include</em> &lt;nettle/gcm.h&gt;
+<a id='L21' name='L21'></a><em class='sharp'># include</em> &lt;assert.h&gt;
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='comment'>/* this tests whether the API to override ciphers works sanely.</em>
+<a id='L24' name='L24'></a><em class='comment'> */</em>
+<a id='L25' name='L25'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> used = 0;
+<a id='L26' name='L26'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> aead_used = 0;
+<a id='L27' name='L27'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/10917.html' title='Multiple referred from 309 places.'>tls_log_func</a>(<strong class='reserved'>int</strong> level, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str)
+<a id='L28' name='L28'></a><em class='brace'>{</em>
+<a id='L29' name='L29'></a>        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "&lt;%d&gt;| %s", level, str);
+<a id='L30' name='L30'></a><em class='brace'>}</em>
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a><strong class='reserved'>struct</strong> <a href='../R/9367.html' title='Multiple referred from 12 places.'>myaes_ctx</a> <em class='brace'>{</em>
+<a id='L33' name='L33'></a>        <strong class='reserved'>struct</strong> aes128_ctx aes;
+<a id='L34' name='L34'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> iv[16];
+<a id='L35' name='L35'></a>        <strong class='reserved'>int</strong> enc;
+<a id='L36' name='L36'></a><em class='brace'>}</em>;
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L39' name='L39'></a><a href='../R/9377.html' title='Multiple referred from 3 places.'>myaes_init</a>(gnutls_cipher_algorithm_t algorithm, <strong class='reserved'>void</strong> **_ctx, <strong class='reserved'>int</strong> enc)
+<a id='L40' name='L40'></a><em class='brace'>{</em>
+<a id='L41' name='L41'></a>        <em class='comment'>/* we use key size to distinguish */</em>
+<a id='L42' name='L42'></a>        <strong class='reserved'>if</strong> (algorithm != GNUTLS_CIPHER_AES_128_CBC)
+<a id='L43' name='L43'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L44' name='L44'></a>
+<a id='L45' name='L45'></a>        *_ctx = <a href='../D/7002.html' title='Multiple defined in 6 places.'>calloc</a>(1, <strong class='reserved'>sizeof</strong>(<strong class='reserved'>struct</strong> <a href='../D/10352.html' title='Multiple defined in 3 places.'>myaes_ctx</a>));
+<a id='L46' name='L46'></a>        <strong class='reserved'>if</strong> (*_ctx == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L47' name='L47'></a>                <strong class='reserved'>return</strong> GNUTLS_E_MEMORY_ERROR;
+<a id='L48' name='L48'></a>        <em class='brace'>}</em>
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a>        ((<strong class='reserved'>struct</strong> <a href='../D/10352.html' title='Multiple defined in 3 places.'>myaes_ctx</a> *) (*_ctx))-&gt;enc = enc;
+<a id='L51' name='L51'></a>
+<a id='L52' name='L52'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L53' name='L53'></a><em class='brace'>}</em>
+<a id='L54' name='L54'></a>
+<a id='L55' name='L55'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L56' name='L56'></a><a href='../R/9379.html' title='Multiple referred from 3 places.'>myaes_setkey</a>(<strong class='reserved'>void</strong> *_ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *userkey, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> keysize)
+<a id='L57' name='L57'></a><em class='brace'>{</em>
+<a id='L58' name='L58'></a>        <strong class='reserved'>struct</strong> <a href='../D/10352.html' title='Multiple defined in 3 places.'>myaes_ctx</a> *ctx = _ctx;
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a>        assert(keysize == 16);
+<a id='L61' name='L61'></a>
+<a id='L62' name='L62'></a>        <strong class='reserved'>if</strong> (ctx-&gt;enc)
+<a id='L63' name='L63'></a>                aes128_set_encrypt_key(&amp;ctx-&gt;aes, userkey);
+<a id='L64' name='L64'></a>        <strong class='reserved'>else</strong>
+<a id='L65' name='L65'></a>                aes128_set_decrypt_key(&amp;ctx-&gt;aes, userkey);
+<a id='L66' name='L66'></a>
+<a id='L67' name='L67'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L68' name='L68'></a><em class='brace'>}</em>
+<a id='L69' name='L69'></a>
+<a id='L70' name='L70'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../R/9378.html' title='Multiple referred from 3 places.'>myaes_setiv</a>(<strong class='reserved'>void</strong> *_ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *iv, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> iv_size)
+<a id='L71' name='L71'></a><em class='brace'>{</em>
+<a id='L72' name='L72'></a>        <strong class='reserved'>struct</strong> <a href='../D/10352.html' title='Multiple defined in 3 places.'>myaes_ctx</a> *ctx = _ctx;
+<a id='L73' name='L73'></a>
+<a id='L74' name='L74'></a>        memcpy(ctx-&gt;iv, iv, 16);
+<a id='L75' name='L75'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L76' name='L76'></a><em class='brace'>}</em>
+<a id='L77' name='L77'></a>
+<a id='L78' name='L78'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L79' name='L79'></a><a href='../R/9370.html' title='Multiple referred from 3 places.'>myaes_encrypt</a>(<strong class='reserved'>void</strong> *_ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *src, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> src_size,
+<a id='L80' name='L80'></a>            <strong class='reserved'>void</strong> *dst, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> dst_size)
+<a id='L81' name='L81'></a><em class='brace'>{</em>
+<a id='L82' name='L82'></a>        <strong class='reserved'>struct</strong> <a href='../D/10352.html' title='Multiple defined in 3 places.'>myaes_ctx</a> *ctx = _ctx;
+<a id='L83' name='L83'></a>
+<a id='L84' name='L84'></a>        used++;
+<a id='L85' name='L85'></a>        cbc_encrypt(&amp;ctx-&gt;aes, (nettle_cipher_func*)aes128_encrypt, 16, ctx-&gt;iv, src_size, dst, src);
+<a id='L86' name='L86'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L87' name='L87'></a><em class='brace'>}</em>
+<a id='L88' name='L88'></a>
+<a id='L89' name='L89'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L90' name='L90'></a><a href='../R/9368.html' title='Multiple referred from 3 places.'>myaes_decrypt</a>(<strong class='reserved'>void</strong> *_ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *src, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> src_size,
+<a id='L91' name='L91'></a>            <strong class='reserved'>void</strong> *dst, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> dst_size)
+<a id='L92' name='L92'></a><em class='brace'>{</em>
+<a id='L93' name='L93'></a>        <strong class='reserved'>struct</strong> <a href='../D/10352.html' title='Multiple defined in 3 places.'>myaes_ctx</a> *ctx = _ctx;
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a>        used++;
+<a id='L96' name='L96'></a>        cbc_decrypt(&amp;ctx-&gt;aes, (nettle_cipher_func*)aes128_decrypt, 16, ctx-&gt;iv, src_size, dst, src);
+<a id='L97' name='L97'></a>
+<a id='L98' name='L98'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L99' name='L99'></a><em class='brace'>}</em>
+<a id='L100' name='L100'></a>
+<a id='L101' name='L101'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/9369.html' title='Multiple referred from 3 places.'>myaes_deinit</a>(<strong class='reserved'>void</strong> *_ctx)
+<a id='L102' name='L102'></a><em class='brace'>{</em>
+<a id='L103' name='L103'></a>        <a href='../D/7914.html' title='Multiple defined in 4 places.'>free</a>(_ctx);
+<a id='L104' name='L104'></a><em class='brace'>}</em>
+<a id='L105' name='L105'></a>
+<a id='L106' name='L106'></a><em class='comment'>/* AES-GCM */</em>
+<a id='L107' name='L107'></a><strong class='reserved'>struct</strong> <a href='../R/9371.html' title='Multiple referred from 4 places.'>myaes_gcm_ctx</a> <em class='brace'>{</em>
+<a id='L108' name='L108'></a>        <strong class='reserved'>struct</strong> gcm_aes128_ctx aes;
+<a id='L109' name='L109'></a><em class='brace'>}</em>;
+<a id='L110' name='L110'></a>
+<a id='L111' name='L111'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L112' name='L112'></a><a href='../R/9375.html' title='Multiple referred from 2 places.'>myaes_gcm_init</a>(gnutls_cipher_algorithm_t algorithm, <strong class='reserved'>void</strong> **_ctx, <strong class='reserved'>int</strong> enc)
+<a id='L113' name='L113'></a><em class='brace'>{</em>
+<a id='L114' name='L114'></a>        <em class='comment'>/* we use key size to distinguish */</em>
+<a id='L115' name='L115'></a>        <strong class='reserved'>if</strong> (algorithm != GNUTLS_CIPHER_AES_128_GCM
+<a id='L116' name='L116'></a>            &amp;&amp; algorithm != GNUTLS_CIPHER_AES_256_GCM)
+<a id='L117' name='L117'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a>        *_ctx = <a href='../D/7002.html' title='Multiple defined in 6 places.'>calloc</a>(1, <strong class='reserved'>sizeof</strong>(<strong class='reserved'>struct</strong> <a href='../D/10356.html' title='Multiple defined in 2 places.'>myaes_gcm_ctx</a>));
+<a id='L120' name='L120'></a>        <strong class='reserved'>if</strong> (*_ctx == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L121' name='L121'></a>                <strong class='reserved'>return</strong> GNUTLS_E_MEMORY_ERROR;
+<a id='L122' name='L122'></a>        <em class='brace'>}</em>
+<a id='L123' name='L123'></a>
+<a id='L124' name='L124'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L125' name='L125'></a><em class='brace'>}</em>
+<a id='L126' name='L126'></a>
+<a id='L127' name='L127'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L128' name='L128'></a><a href='../R/9376.html' title='Multiple referred from 2 places.'>myaes_gcm_setkey</a>(<strong class='reserved'>void</strong> *_ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *userkey, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> keysize)
+<a id='L129' name='L129'></a><em class='brace'>{</em>
+<a id='L130' name='L130'></a>        <strong class='reserved'>struct</strong> <a href='../D/10356.html' title='Multiple defined in 2 places.'>myaes_gcm_ctx</a> *ctx = _ctx;
+<a id='L131' name='L131'></a>
+<a id='L132' name='L132'></a>        gcm_aes128_set_key(&amp;ctx-&gt;aes, userkey);
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L135' name='L135'></a><em class='brace'>}</em>
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/9373.html' title='Multiple referred from 2 places.'>myaes_gcm_deinit</a>(<strong class='reserved'>void</strong> *_ctx)
+<a id='L138' name='L138'></a><em class='brace'>{</em>
+<a id='L139' name='L139'></a>        <a href='../D/7914.html' title='Multiple defined in 4 places.'>free</a>(_ctx);
+<a id='L140' name='L140'></a><em class='brace'>}</em>
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L143' name='L143'></a><a href='../R/9374.html' title='Multiple referred from 2 places.'>myaes_gcm_encrypt</a>(<strong class='reserved'>void</strong> *_ctx,
+<a id='L144' name='L144'></a>                  <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *nonce, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> nonce_size,
+<a id='L145' name='L145'></a>                  <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *auth, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> auth_size,
+<a id='L146' name='L146'></a>                  <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> tag_size,
+<a id='L147' name='L147'></a>                  <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *plain, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> plain_size,
+<a id='L148' name='L148'></a>                  <strong class='reserved'>void</strong> *encr, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> encr_size)
+<a id='L149' name='L149'></a><em class='brace'>{</em>
+<a id='L150' name='L150'></a>        <em class='comment'>/* proper AEAD cipher */</em>
+<a id='L151' name='L151'></a>        <strong class='reserved'>struct</strong> <a href='../D/10356.html' title='Multiple defined in 2 places.'>myaes_gcm_ctx</a> *ctx = _ctx;
+<a id='L152' name='L152'></a>        <strong class='reserved'>if</strong> (encr_size &lt; plain_size + tag_size)
+<a id='L153' name='L153'></a>                <strong class='reserved'>return</strong> GNUTLS_E_SHORT_MEMORY_BUFFER;
+<a id='L154' name='L154'></a>
+<a id='L155' name='L155'></a>        aead_used++;
+<a id='L156' name='L156'></a>        gcm_aes128_set_iv(&amp;ctx-&gt;aes, nonce_size, nonce);
+<a id='L157' name='L157'></a>        gcm_aes128_update(&amp;ctx-&gt;aes, auth_size, auth);
+<a id='L158' name='L158'></a>
+<a id='L159' name='L159'></a>        gcm_aes128_encrypt(&amp;ctx-&gt;aes, plain_size, encr, plain);
+<a id='L160' name='L160'></a>
+<a id='L161' name='L161'></a>        gcm_aes128_digest(&amp;ctx-&gt;aes, tag_size, ((<a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a>*)encr) + plain_size);
+<a id='L162' name='L162'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L163' name='L163'></a><em class='brace'>}</em>
+<a id='L164' name='L164'></a>
+<a id='L165' name='L165'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L166' name='L166'></a><a href='../R/9372.html' title='Multiple referred from 2 places.'>myaes_gcm_decrypt</a>(<strong class='reserved'>void</strong> *_ctx,
+<a id='L167' name='L167'></a>                  <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *nonce, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> nonce_size,
+<a id='L168' name='L168'></a>                  <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *auth, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> auth_size,
+<a id='L169' name='L169'></a>                  <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> tag_size,
+<a id='L170' name='L170'></a>                  <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *encr, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> encr_size,
+<a id='L171' name='L171'></a>                  <strong class='reserved'>void</strong> *plain, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> plain_size)
+<a id='L172' name='L172'></a><em class='brace'>{</em>
+<a id='L173' name='L173'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> tag[16];
+<a id='L174' name='L174'></a>        <strong class='reserved'>struct</strong> <a href='../D/10356.html' title='Multiple defined in 2 places.'>myaes_gcm_ctx</a> *ctx = _ctx;
+<a id='L175' name='L175'></a>
+<a id='L176' name='L176'></a>        <strong class='reserved'>if</strong> (encr_size &lt; tag_size)
+<a id='L177' name='L177'></a>                <strong class='reserved'>return</strong> GNUTLS_E_DECRYPTION_FAILED;
+<a id='L178' name='L178'></a>
+<a id='L179' name='L179'></a>        aead_used++;
+<a id='L180' name='L180'></a>        gcm_aes128_set_iv(&amp;ctx-&gt;aes, nonce_size, nonce);
+<a id='L181' name='L181'></a>        gcm_aes128_update(&amp;ctx-&gt;aes, auth_size, auth);
+<a id='L182' name='L182'></a>
+<a id='L183' name='L183'></a>        encr_size -= tag_size;
+<a id='L184' name='L184'></a>        gcm_aes128_decrypt(&amp;ctx-&gt;aes, encr_size, plain, encr);
+<a id='L185' name='L185'></a>
+<a id='L186' name='L186'></a>        gcm_aes128_digest(&amp;ctx-&gt;aes, tag_size, tag);
+<a id='L187' name='L187'></a>
+<a id='L188' name='L188'></a>        <strong class='reserved'>if</strong> (<a href='../S/5985.html#L72' title='Defined at 72 in lib/safe-memfuncs.c.'>gnutls_memcmp</a>(((<a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a>*)encr)+encr_size, tag, tag_size) != 0)
+<a id='L189' name='L189'></a>                <strong class='reserved'>return</strong> GNUTLS_E_DECRYPTION_FAILED;
+<a id='L190' name='L190'></a>
+<a id='L191' name='L191'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L192' name='L192'></a><em class='brace'>}</em>
+<a id='L193' name='L193'></a>
+<a id='L194' name='L194'></a>
+<a id='L195' name='L195'></a>
+<a id='L196' name='L196'></a><strong class='reserved'>int</strong> main(<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv)
+<a id='L197' name='L197'></a><em class='brace'>{</em>
+<a id='L198' name='L198'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L199' name='L199'></a>
+<a id='L200' name='L200'></a>        <a href='../S/6039.html#L104' title='Defined at 104 in lib/global.c.'>gnutls_global_set_log_function</a>(<a href='../D/11934.html' title='Multiple defined in 223 places.'>tls_log_func</a>);
+<a id='L201' name='L201'></a>        <strong class='reserved'>if</strong> (argc &gt; 1)
+<a id='L202' name='L202'></a>                <a href='../S/6039.html#L155' title='Defined at 155 in lib/global.c.'>gnutls_global_set_log_level</a>(4711);
+<a id='L203' name='L203'></a>
+<a id='L204' name='L204'></a>        ret = <a href='../S/5244.html#L219' title='Defined at 219 in lib/crypto-backend.c.'>gnutls_crypto_register_cipher</a>(GNUTLS_CIPHER_AES_128_CBC, 1,
+<a id='L205' name='L205'></a>                <a href='../D/10362.html' title='Multiple defined in 3 places.'>myaes_init</a>,
+<a id='L206' name='L206'></a>                <a href='../D/10364.html' title='Multiple defined in 3 places.'>myaes_setkey</a>,
+<a id='L207' name='L207'></a>                <a href='../D/10363.html' title='Multiple defined in 3 places.'>myaes_setiv</a>,
+<a id='L208' name='L208'></a>                <a href='../D/10355.html' title='Multiple defined in 3 places.'>myaes_encrypt</a>,
+<a id='L209' name='L209'></a>                <a href='../D/10353.html' title='Multiple defined in 3 places.'>myaes_decrypt</a>,
+<a id='L210' name='L210'></a>                <a href='../D/10354.html' title='Multiple defined in 3 places.'>myaes_deinit</a>);
+<a id='L211' name='L211'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L212' name='L212'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "%d: cannot register cipher\n", __LINE__);
+<a id='L213' name='L213'></a>                exit(1);
+<a id='L214' name='L214'></a>        <em class='brace'>}</em>
+<a id='L215' name='L215'></a>
+<a id='L216' name='L216'></a>        ret = <a href='../S/5244.html#L269' title='Defined at 269 in lib/crypto-backend.c.'>gnutls_crypto_register_aead_cipher</a>(GNUTLS_CIPHER_AES_128_GCM, 1,
+<a id='L217' name='L217'></a>                <a href='../D/10360.html' title='Multiple defined in 2 places.'>myaes_gcm_init</a>,
+<a id='L218' name='L218'></a>                <a href='../D/10361.html' title='Multiple defined in 2 places.'>myaes_gcm_setkey</a>,
+<a id='L219' name='L219'></a>                <a href='../D/10359.html' title='Multiple defined in 2 places.'>myaes_gcm_encrypt</a>,
+<a id='L220' name='L220'></a>                <a href='../D/10357.html' title='Multiple defined in 2 places.'>myaes_gcm_decrypt</a>,
+<a id='L221' name='L221'></a>                <a href='../D/10358.html' title='Multiple defined in 2 places.'>myaes_gcm_deinit</a>);
+<a id='L222' name='L222'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L223' name='L223'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "%d: cannot register cipher\n", __LINE__);
+<a id='L224' name='L224'></a>                exit(1);
+<a id='L225' name='L225'></a>        <em class='brace'>}</em>
+<a id='L226' name='L226'></a>
+<a id='L227' name='L227'></a>        <a href='../S/4443.html#L55' title='Defined at 55 in tests/utils.h.'>global_init</a>();
+<a id='L228' name='L228'></a>
+<a id='L229' name='L229'></a>        <strong class='reserved'>if</strong> (<a href='../S/5823.html#L1975' title='Defined at 1975 in lib/crypto-selftests.c.'>gnutls_cipher_self_test</a>(<a href='../S/6005.html#L30' title='Defined at 30 in lib/includes/gnutls/self-test.h.'>GNUTLS_SELF_TEST_FLAG_ALL</a>|<a href='../S/6005.html#L31' title='Defined at 31 in lib/includes/gnutls/self-test.h.'>GNUTLS_SELF_TEST_FLAG_NO_COMPAT</a>, 0) &lt; 0)
+<a id='L230' name='L230'></a>                <strong class='reserved'>return</strong> 1;
+<a id='L231' name='L231'></a>
+<a id='L232' name='L232'></a>        <strong class='reserved'>if</strong> (used == 0) <em class='brace'>{</em>
+<a id='L233' name='L233'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "The CBC cipher was not used\n");
+<a id='L234' name='L234'></a>                exit(1);
+<a id='L235' name='L235'></a>        <em class='brace'>}</em>
+<a id='L236' name='L236'></a>
+<a id='L237' name='L237'></a>        <strong class='reserved'>if</strong> (aead_used == 0) <em class='brace'>{</em>
+<a id='L238' name='L238'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "The AEAD cipher was not used\n");
+<a id='L239' name='L239'></a>                exit(1);
+<a id='L240' name='L240'></a>        <em class='brace'>}</em>
+<a id='L241' name='L241'></a>
+<a id='L242' name='L242'></a>        <a href='../S/6039.html#L467' title='Defined at 467 in lib/global.c.'>gnutls_global_deinit</a>();
+<a id='L243' name='L243'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L244' name='L244'></a><em class='brace'>}</em>
+<a id='L245' name='L245'></a>
+<a id='L246' name='L246'></a><em class='sharp'>#endif</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L12'>[^]</a><a href='#L196'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

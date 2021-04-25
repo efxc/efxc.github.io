@@ -1,0 +1,298 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/tls13/anti_replay.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6487.html'>tls13</a>/anti_replay.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L53'>[^]</a><a href='#L262'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L53' title='Defined at 53.'>gnutls_anti_replay_init</a></li>
+<li><a href='#L83' title='Defined at 83.'>gnutls_anti_replay_set_window</a></li>
+<li><a href='#L99' title='Defined at 99.'>gnutls_anti_replay_deinit</a></li>
+<li><a href='#L114' title='Defined at 114.'>gnutls_anti_replay_enable</a></li>
+<li><a href='#L126' title='Defined at 126.'>_gnutls_anti_replay_check</a></li>
+<li><a href='#L234' title='Defined at 234.'>gnutls_anti_replay_set_ptr</a></li>
+<li><a href='#L262' title='Defined at 262.'>gnutls_anti_replay_set_add_function</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2018 Red Hat, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Daiki Ueno</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L9' name='L9'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L10' name='L10'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L11' name='L11'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> "<a href='5461.html'>db.h</a>"
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> "<a href='5450.html'>system.h</a>"
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> "<a href='5775.html'>tls13/anti_replay.h</a>"
+<a id='L27' name='L27'></a>
+<a id='L28' name='L28'></a><em class='comment'>/* The default time window in milliseconds; RFC8446 suggests the order</em>
+<a id='L29' name='L29'></a><em class='comment'> * of ten seconds is sufficient for the clients on the Internet. */</em>
+<a id='L30' name='L30'></a><em class='sharp'>#define</em> <a href='../S/5767.html#L59' title='Referred from 59 in lib/tls13/anti_replay.c.'>DEFAULT_WINDOW_MS</a> 10000
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a><strong class='reserved'>struct</strong> <a href='../S/5767.html#L55' title='Referred from 55 in lib/tls13/anti_replay.c.'>gnutls_anti_replay_st</a> <em class='brace'>{</em>
+<a id='L33' name='L33'></a>        <a href='../D/12096.html' title='Multiple defined in 11 places.'>uint32_t</a> window;
+<a id='L34' name='L34'></a>        <strong class='reserved'>struct</strong> <a href='../D/11905.html' title='Multiple defined in 6 places.'>timespec</a> start_time;
+<a id='L35' name='L35'></a>        gnutls_db_add_func db_add_func;
+<a id='L36' name='L36'></a>        <strong class='reserved'>void</strong> *db_ptr;
+<a id='L37' name='L37'></a><em class='brace'>}</em>;
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a><em class='comment'>/**</em>
+<a id='L40' name='L40'></a><em class='comment'> * gnutls_anti_replay_init:</em>
+<a id='L41' name='L41'></a><em class='comment'> * @anti_replay: is a pointer to #gnutls_anti_replay_t type</em>
+<a id='L42' name='L42'></a><em class='comment'> *</em>
+<a id='L43' name='L43'></a><em class='comment'> * This function will allocate and initialize the @anti_replay context</em>
+<a id='L44' name='L44'></a><em class='comment'> * to be usable for detect replay attacks. The context can then be</em>
+<a id='L45' name='L45'></a><em class='comment'> * attached to a @gnutls_session_t with</em>
+<a id='L46' name='L46'></a><em class='comment'> * gnutls_anti_replay_enable().</em>
+<a id='L47' name='L47'></a><em class='comment'> *</em>
+<a id='L48' name='L48'></a><em class='comment'> * Returns: Zero or a negative error code on error.</em>
+<a id='L49' name='L49'></a><em class='comment'> *</em>
+<a id='L50' name='L50'></a><em class='comment'> * Since: 3.6.5</em>
+<a id='L51' name='L51'></a><em class='comment'> **/</em>
+<a id='L52' name='L52'></a><strong class='reserved'>int</strong>
+<a id='L53' name='L53'></a><a href='../R/7511.html' title='Multiple referred from 6 places.'>gnutls_anti_replay_init</a>(gnutls_anti_replay_t *anti_replay)
+<a id='L54' name='L54'></a><em class='brace'>{</em>
+<a id='L55' name='L55'></a>        *anti_replay = gnutls_calloc(1, <strong class='reserved'>sizeof</strong>(<strong class='reserved'>struct</strong> <a href='../S/5767.html#L32' title='Defined at 32 in lib/tls13/anti_replay.c.'>gnutls_anti_replay_st</a>));
+<a id='L56' name='L56'></a>        <strong class='reserved'>if</strong> (!*anti_replay)
+<a id='L57' name='L57'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_MEMORY_ERROR);
+<a id='L58' name='L58'></a>
+<a id='L59' name='L59'></a>        (*anti_replay)-&gt;window = <a href='../S/5767.html#L30' title='Defined at 30 in lib/tls13/anti_replay.c.'>DEFAULT_WINDOW_MS</a>;
+<a id='L60' name='L60'></a>
+<a id='L61' name='L61'></a>        gnutls_gettime(&amp;(*anti_replay)-&gt;start_time);
+<a id='L62' name='L62'></a>
+<a id='L63' name='L63'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L64' name='L64'></a><em class='brace'>}</em>
+<a id='L65' name='L65'></a>
+<a id='L66' name='L66'></a><em class='comment'>/**</em>
+<a id='L67' name='L67'></a><em class='comment'> * gnutls_anti_replay_set_window:</em>
+<a id='L68' name='L68'></a><em class='comment'> * @anti_replay: is a #gnutls_anti_replay_t type.</em>
+<a id='L69' name='L69'></a><em class='comment'> * @window: is the time window recording ClientHello, in milliseconds</em>
+<a id='L70' name='L70'></a><em class='comment'> *</em>
+<a id='L71' name='L71'></a><em class='comment'> * Sets the time window used for ClientHello recording.  In order to</em>
+<a id='L72' name='L72'></a><em class='comment'> * protect against replay attacks, the server records ClientHello</em>
+<a id='L73' name='L73'></a><em class='comment'> * messages within this time period from the last update, and</em>
+<a id='L74' name='L74'></a><em class='comment'> * considers it a replay when a ClientHello outside of the period; if</em>
+<a id='L75' name='L75'></a><em class='comment'> * a ClientHello arrives within this period, the server checks the</em>
+<a id='L76' name='L76'></a><em class='comment'> * database and detects duplicates.</em>
+<a id='L77' name='L77'></a><em class='comment'> *</em>
+<a id='L78' name='L78'></a><em class='comment'> * For the details of the algorithm, see RFC 8446, section 8.2.</em>
+<a id='L79' name='L79'></a><em class='comment'> *</em>
+<a id='L80' name='L80'></a><em class='comment'> * Since: 3.6.5</em>
+<a id='L81' name='L81'></a><em class='comment'> */</em>
+<a id='L82' name='L82'></a><strong class='reserved'>void</strong>
+<a id='L83' name='L83'></a><a href='../R/7514.html' title='Multiple referred from 3 places.'>gnutls_anti_replay_set_window</a>(gnutls_anti_replay_t anti_replay,
+<a id='L84' name='L84'></a>                              <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> window)
+<a id='L85' name='L85'></a><em class='brace'>{</em>
+<a id='L86' name='L86'></a>        anti_replay-&gt;window = window;
+<a id='L87' name='L87'></a><em class='brace'>}</em>
+<a id='L88' name='L88'></a>
+<a id='L89' name='L89'></a><em class='comment'>/**</em>
+<a id='L90' name='L90'></a><em class='comment'> * gnutls_anti_replay_deinit:</em>
+<a id='L91' name='L91'></a><em class='comment'> * @anti_replay: is a #gnutls_anti_replay type</em>
+<a id='L92' name='L92'></a><em class='comment'> *</em>
+<a id='L93' name='L93'></a><em class='comment'> * This function will deinitialize all resources occupied by the given</em>
+<a id='L94' name='L94'></a><em class='comment'> * anti-replay context.</em>
+<a id='L95' name='L95'></a><em class='comment'> *</em>
+<a id='L96' name='L96'></a><em class='comment'> * Since: 3.6.5</em>
+<a id='L97' name='L97'></a><em class='comment'> **/</em>
+<a id='L98' name='L98'></a><strong class='reserved'>void</strong>
+<a id='L99' name='L99'></a><a href='../R/7509.html' title='Multiple referred from 6 places.'>gnutls_anti_replay_deinit</a>(gnutls_anti_replay_t anti_replay)
+<a id='L100' name='L100'></a><em class='brace'>{</em>
+<a id='L101' name='L101'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(anti_replay);
+<a id='L102' name='L102'></a><em class='brace'>}</em>
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a><em class='comment'>/**</em>
+<a id='L105' name='L105'></a><em class='comment'> * gnutls_anti_replay_enable:</em>
+<a id='L106' name='L106'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L107' name='L107'></a><em class='comment'> * @anti_replay: is a #gnutls_anti_replay_t type.</em>
+<a id='L108' name='L108'></a><em class='comment'> *</em>
+<a id='L109' name='L109'></a><em class='comment'> * Request that the server should use anti-replay mechanism.</em>
+<a id='L110' name='L110'></a><em class='comment'> *</em>
+<a id='L111' name='L111'></a><em class='comment'> * Since: 3.6.5</em>
+<a id='L112' name='L112'></a><em class='comment'> **/</em>
+<a id='L113' name='L113'></a><strong class='reserved'>void</strong>
+<a id='L114' name='L114'></a><a href='../R/7510.html' title='Multiple referred from 3 places.'>gnutls_anti_replay_enable</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L115' name='L115'></a>                          gnutls_anti_replay_t anti_replay)
+<a id='L116' name='L116'></a><em class='brace'>{</em>
+<a id='L117' name='L117'></a>        <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.entity != GNUTLS_SERVER)) <em class='brace'>{</em>
+<a id='L118' name='L118'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L119' name='L119'></a>                <strong class='reserved'>return</strong>;
+<a id='L120' name='L120'></a>        <em class='brace'>}</em>
+<a id='L121' name='L121'></a>
+<a id='L122' name='L122'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.anti_replay = anti_replay;
+<a id='L123' name='L123'></a><em class='brace'>}</em>
+<a id='L124' name='L124'></a>
+<a id='L125' name='L125'></a><strong class='reserved'>int</strong>
+<a id='L126' name='L126'></a><a href='../R/4839.html' title='Multiple referred from 6 places.'>_gnutls_anti_replay_check</a>(gnutls_anti_replay_t anti_replay,
+<a id='L127' name='L127'></a>                          <a href='../D/12096.html' title='Multiple defined in 11 places.'>uint32_t</a> client_ticket_age,
+<a id='L128' name='L128'></a>                          <strong class='reserved'>struct</strong> <a href='../D/11905.html' title='Multiple defined in 6 places.'>timespec</a> *ticket_creation_time,
+<a id='L129' name='L129'></a>                          gnutls_datum_t *id)
+<a id='L130' name='L130'></a><em class='brace'>{</em>
+<a id='L131' name='L131'></a>        <strong class='reserved'>struct</strong> <a href='../D/11905.html' title='Multiple defined in 6 places.'>timespec</a> now;
+<a id='L132' name='L132'></a>        time_t window;
+<a id='L133' name='L133'></a>        <a href='../D/12096.html' title='Multiple defined in 11 places.'>uint32_t</a> server_ticket_age, diff;
+<a id='L134' name='L134'></a>        gnutls_datum_t key = <em class='brace'>{</em> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0 <em class='brace'>}</em>;
+<a id='L135' name='L135'></a>        gnutls_datum_t entry = <em class='brace'>{</em> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0 <em class='brace'>}</em>;
+<a id='L136' name='L136'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> key_buffer[<a href='../D/2741.html' title='Multiple defined in 2 places.'>MAX_HASH_SIZE</a> + 12];
+<a id='L137' name='L137'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> entry_buffer[12]; <em class='comment'>/* magic + timestamp + expire_time */</em>
+<a id='L138' name='L138'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *p;
+<a id='L139' name='L139'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L140' name='L140'></a>
+<a id='L141' name='L141'></a>        <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>(id-&gt;size &gt; <a href='../D/2741.html' title='Multiple defined in 2 places.'>MAX_HASH_SIZE</a>))
+<a id='L142' name='L142'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L143' name='L143'></a>
+<a id='L144' name='L144'></a>        gnutls_gettime(&amp;now);
+<a id='L145' name='L145'></a>        server_ticket_age = <a href='../D/11909.html' title='Multiple defined in 3 places.'>timespec_sub_ms</a>(&amp;now, ticket_creation_time);
+<a id='L146' name='L146'></a>
+<a id='L147' name='L147'></a>        <em class='comment'>/* It shouldn't be possible that the server's view of ticket</em>
+<a id='L148' name='L148'></a><em class='comment'>         * age is smaller than the client's view.</em>
+<a id='L149' name='L149'></a><em class='comment'>         */</em>
+<a id='L150' name='L150'></a>        <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>(server_ticket_age &lt; client_ticket_age))
+<a id='L151' name='L151'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_ILLEGAL_PARAMETER);
+<a id='L152' name='L152'></a>
+<a id='L153' name='L153'></a>        <em class='comment'>/* If ticket is created before recording has started, discard</em>
+<a id='L154' name='L154'></a><em class='comment'>         * reject early data.</em>
+<a id='L155' name='L155'></a><em class='comment'>         */</em>
+<a id='L156' name='L156'></a>        <strong class='reserved'>if</strong> (<a href='../S/5822.html#L1546' title='Defined at 1546 in lib/gnutls_int.h.'>_gnutls_timespec_cmp</a>(ticket_creation_time,
+<a id='L157' name='L157'></a>                                 &amp;anti_replay-&gt;start_time) &lt; 0) <em class='brace'>{</em>
+<a id='L158' name='L158'></a>                <a href='../D/5914.html' title='Multiple defined in 2 places.'>_gnutls_handshake_log</a>("anti_replay: ticket is created before recording has started\n");
+<a id='L159' name='L159'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_EARLY_DATA_REJECTED);
+<a id='L160' name='L160'></a>        <em class='brace'>}</em>
+<a id='L161' name='L161'></a>
+<a id='L162' name='L162'></a>        <em class='comment'>/* If certain amount of time (window) has elapsed, rollover</em>
+<a id='L163' name='L163'></a><em class='comment'>         * the recording.</em>
+<a id='L164' name='L164'></a><em class='comment'>         */</em>
+<a id='L165' name='L165'></a>        diff = <a href='../D/11909.html' title='Multiple defined in 3 places.'>timespec_sub_ms</a>(&amp;now, &amp;anti_replay-&gt;start_time);
+<a id='L166' name='L166'></a>        <strong class='reserved'>if</strong> (diff &gt; anti_replay-&gt;window)
+<a id='L167' name='L167'></a>                gnutls_gettime(&amp;anti_replay-&gt;start_time);
+<a id='L168' name='L168'></a>
+<a id='L169' name='L169'></a>        <em class='comment'>/* If expected_arrival_time is out of window, reject early</em>
+<a id='L170' name='L170'></a><em class='comment'>         * data.</em>
+<a id='L171' name='L171'></a><em class='comment'>         */</em>
+<a id='L172' name='L172'></a>        <strong class='reserved'>if</strong> (server_ticket_age - client_ticket_age &gt; anti_replay-&gt;window) <em class='brace'>{</em>
+<a id='L173' name='L173'></a>                <a href='../D/5914.html' title='Multiple defined in 2 places.'>_gnutls_handshake_log</a>("anti_replay: server ticket age: %u, client ticket age: %u\n",
+<a id='L174' name='L174'></a>                                      server_ticket_age,
+<a id='L175' name='L175'></a>                                      client_ticket_age);
+<a id='L176' name='L176'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_EARLY_DATA_REJECTED);
+<a id='L177' name='L177'></a>        <em class='brace'>}</em>
+<a id='L178' name='L178'></a>
+<a id='L179' name='L179'></a>        <em class='comment'>/* Check if the ClientHello is stored in the database.</em>
+<a id='L180' name='L180'></a><em class='comment'>         */</em>
+<a id='L181' name='L181'></a>        <strong class='reserved'>if</strong> (!anti_replay-&gt;db_add_func)
+<a id='L182' name='L182'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_EARLY_DATA_REJECTED);
+<a id='L183' name='L183'></a>
+<a id='L184' name='L184'></a>        <em class='comment'>/* Create a key for database lookup, prefixing window start</em>
+<a id='L185' name='L185'></a><em class='comment'>         * time to ID.  Note that this shouldn't clash with session ID</em>
+<a id='L186' name='L186'></a><em class='comment'>         * used in TLS 1.2, because such IDs are 32 octets, while here</em>
+<a id='L187' name='L187'></a><em class='comment'>         * the key becomes 44+ octets.</em>
+<a id='L188' name='L188'></a><em class='comment'>         */</em>
+<a id='L189' name='L189'></a>        p = key_buffer;
+<a id='L190' name='L190'></a>        <a href='../S/5268.html#L74' title='Defined at 74 in lib/num.h.'>_gnutls_write_uint32</a>((<a href='../D/12097.html' title='Multiple defined in 19 places.'>uint64_t</a>) anti_replay-&gt;start_time.tv_sec &gt;&gt; 32, p);
+<a id='L191' name='L191'></a>        p += 4;
+<a id='L192' name='L192'></a>        <a href='../S/5268.html#L74' title='Defined at 74 in lib/num.h.'>_gnutls_write_uint32</a>(anti_replay-&gt;start_time.tv_sec &amp; 0xFFFFFFFF, p);
+<a id='L193' name='L193'></a>        p += 4;
+<a id='L194' name='L194'></a>        <a href='../S/5268.html#L74' title='Defined at 74 in lib/num.h.'>_gnutls_write_uint32</a>(anti_replay-&gt;start_time.tv_nsec, p);
+<a id='L195' name='L195'></a>        p += 4;
+<a id='L196' name='L196'></a>        memcpy(p, id-&gt;data, id-&gt;size);
+<a id='L197' name='L197'></a>        p += id-&gt;size;
+<a id='L198' name='L198'></a>        key.data = key_buffer;
+<a id='L199' name='L199'></a>        key.size = p - key_buffer;
+<a id='L200' name='L200'></a>
+<a id='L201' name='L201'></a>        <em class='comment'>/* Create an entry to be stored on database if the lookup</em>
+<a id='L202' name='L202'></a><em class='comment'>         * failed.  This is formatted so that</em>
+<a id='L203' name='L203'></a><em class='comment'>         * gnutls_db_check_entry_expire_time() work.</em>
+<a id='L204' name='L204'></a><em class='comment'>         */</em>
+<a id='L205' name='L205'></a>        p = entry_buffer;
+<a id='L206' name='L206'></a>        <a href='../S/5268.html#L74' title='Defined at 74 in lib/num.h.'>_gnutls_write_uint32</a>(<a href='../S/5461.html#L33' title='Defined at 33 in lib/db.h.'>PACKED_SESSION_MAGIC</a>, p);
+<a id='L207' name='L207'></a>        p += 4;
+<a id='L208' name='L208'></a>        <a href='../S/5268.html#L74' title='Defined at 74 in lib/num.h.'>_gnutls_write_uint32</a>(now.tv_sec, p);
+<a id='L209' name='L209'></a>        p += 4;
+<a id='L210' name='L210'></a>        window = anti_replay-&gt;window / 1000;
+<a id='L211' name='L211'></a>        <a href='../S/5268.html#L74' title='Defined at 74 in lib/num.h.'>_gnutls_write_uint32</a>(window, p);
+<a id='L212' name='L212'></a>        p += 4;
+<a id='L213' name='L213'></a>        entry.data = entry_buffer;
+<a id='L214' name='L214'></a>        entry.size = p - entry_buffer;
+<a id='L215' name='L215'></a>
+<a id='L216' name='L216'></a>        ret = anti_replay-&gt;db_add_func(anti_replay-&gt;db_ptr,
+<a id='L217' name='L217'></a>                                       (<a href='../D/12097.html' title='Multiple defined in 19 places.'>uint64_t</a>)now.tv_sec+(<a href='../D/12097.html' title='Multiple defined in 19 places.'>uint64_t</a>)window, &amp;key, &amp;entry);
+<a id='L218' name='L218'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L219' name='L219'></a>                <a href='../D/5914.html' title='Multiple defined in 2 places.'>_gnutls_handshake_log</a>("anti_replay: duplicate ClientHello found\n");
+<a id='L220' name='L220'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_EARLY_DATA_REJECTED);
+<a id='L221' name='L221'></a>        <em class='brace'>}</em>
+<a id='L222' name='L222'></a>
+<a id='L223' name='L223'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L224' name='L224'></a><em class='brace'>}</em>
+<a id='L225' name='L225'></a>
+<a id='L226' name='L226'></a><em class='comment'>/**</em>
+<a id='L227' name='L227'></a><em class='comment'> * gnutls_anti_replay_set_ptr:</em>
+<a id='L228' name='L228'></a><em class='comment'> * @anti_replay: is a #gnutls_anti_replay_t type.</em>
+<a id='L229' name='L229'></a><em class='comment'> * @ptr: is the pointer</em>
+<a id='L230' name='L230'></a><em class='comment'> *</em>
+<a id='L231' name='L231'></a><em class='comment'> * Sets the pointer that will be provided to db add function</em>
+<a id='L232' name='L232'></a><em class='comment'> * as the first argument.</em>
+<a id='L233' name='L233'></a><em class='comment'> **/</em>
+<a id='L234' name='L234'></a><strong class='reserved'>void</strong> <a href='../R/7513.html' title='Multiple referred from 6 places.'>gnutls_anti_replay_set_ptr</a>(gnutls_anti_replay_t anti_replay, <strong class='reserved'>void</strong> *<a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a>)
+<a id='L235' name='L235'></a><em class='brace'>{</em>
+<a id='L236' name='L236'></a>        anti_replay-&gt;db_ptr = <a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a>;
+<a id='L237' name='L237'></a><em class='brace'>}</em>
+<a id='L238' name='L238'></a>
+<a id='L239' name='L239'></a><em class='comment'>/**</em>
+<a id='L240' name='L240'></a><em class='comment'> * gnutls_anti_replay_set_add_function:</em>
+<a id='L241' name='L241'></a><em class='comment'> * @anti_replay: is a #gnutls_anti_replay_t type.</em>
+<a id='L242' name='L242'></a><em class='comment'> * @add_func: is the function.</em>
+<a id='L243' name='L243'></a><em class='comment'> *</em>
+<a id='L244' name='L244'></a><em class='comment'> * Sets the function that will be used to store an entry if it is not</em>
+<a id='L245' name='L245'></a><em class='comment'> * already present in the resumed sessions database.  This function returns 0</em>
+<a id='L246' name='L246'></a><em class='comment'> * if the entry is successfully stored, and a negative error code</em>
+<a id='L247' name='L247'></a><em class='comment'> * otherwise.  In particular, if the entry is found in the database,</em>
+<a id='L248' name='L248'></a><em class='comment'> * it returns %GNUTLS_E_DB_ENTRY_EXISTS.</em>
+<a id='L249' name='L249'></a><em class='comment'> *</em>
+<a id='L250' name='L250'></a><em class='comment'> * The arguments to the @add_func are:</em>
+<a id='L251' name='L251'></a><em class='comment'> *  - %ptr: the pointer set with gnutls_anti_replay_set_ptr()</em>
+<a id='L252' name='L252'></a><em class='comment'> *  - %exp_time: the expiration time of the entry</em>
+<a id='L253' name='L253'></a><em class='comment'> *  - %key: a pointer to the key</em>
+<a id='L254' name='L254'></a><em class='comment'> *  - %data: a pointer to data to store</em>
+<a id='L255' name='L255'></a><em class='comment'> *</em>
+<a id='L256' name='L256'></a><em class='comment'> * The data set by this function can be examined using</em>
+<a id='L257' name='L257'></a><em class='comment'> * gnutls_db_check_entry_expire_time() and gnutls_db_check_entry_time().</em>
+<a id='L258' name='L258'></a><em class='comment'> *</em>
+<a id='L259' name='L259'></a><em class='comment'> * Since: 3.6.5</em>
+<a id='L260' name='L260'></a><em class='comment'> **/</em>
+<a id='L261' name='L261'></a><strong class='reserved'>void</strong>
+<a id='L262' name='L262'></a><a href='../R/7512.html' title='Multiple referred from 6 places.'>gnutls_anti_replay_set_add_function</a>(gnutls_anti_replay_t anti_replay,
+<a id='L263' name='L263'></a>                                    gnutls_db_add_func add_func)
+<a id='L264' name='L264'></a><em class='brace'>{</em>
+<a id='L265' name='L265'></a>        anti_replay-&gt;db_add_func = add_func;
+<a id='L266' name='L266'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L53'>[^]</a><a href='#L262'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

@@ -1,0 +1,330 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>gen-trialdivtab.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/gen-trialdivtab.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L60'>[^]</a><a href='#L286'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L60' title='Defined at 60.'>main</a></li>
+<li><a href='#L220' title='Defined at 220.'>mpz_log2</a></li>
+<li><a href='#L226' title='Defined at 226.'>mpn_mod_1s_4p_cps</a></li>
+<li><a href='#L286' title='Defined at 286.'>sumspills</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* gen-trialdivtab.c</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Contributed to the GNU project by Torbjorn Granlund.</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>Copyright 2009, 2012, 2013, 2016, 2018 Free Software Foundation, Inc.</em>
+<a id='L6' name='L6'></a><em class='comment'></em>
+<a id='L7' name='L7'></a><em class='comment'>This file is part of the GNU MP Library.</em>
+<a id='L8' name='L8'></a><em class='comment'></em>
+<a id='L9' name='L9'></a><em class='comment'>The GNU MP Library is free software; you can redistribute it and/or modify</em>
+<a id='L10' name='L10'></a><em class='comment'>it under the terms of either:</em>
+<a id='L11' name='L11'></a><em class='comment'></em>
+<a id='L12' name='L12'></a><em class='comment'>  * the GNU Lesser General Public License as published by the Free</em>
+<a id='L13' name='L13'></a><em class='comment'>    Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L14' name='L14'></a><em class='comment'>    option) any later version.</em>
+<a id='L15' name='L15'></a><em class='comment'></em>
+<a id='L16' name='L16'></a><em class='comment'>or</em>
+<a id='L17' name='L17'></a><em class='comment'></em>
+<a id='L18' name='L18'></a><em class='comment'>  * the GNU General Public License as published by the Free Software</em>
+<a id='L19' name='L19'></a><em class='comment'>    Foundation; either version 2 of the License, or (at your option) any</em>
+<a id='L20' name='L20'></a><em class='comment'>    later version.</em>
+<a id='L21' name='L21'></a><em class='comment'></em>
+<a id='L22' name='L22'></a><em class='comment'>or both in parallel, as here.</em>
+<a id='L23' name='L23'></a><em class='comment'></em>
+<a id='L24' name='L24'></a><em class='comment'>The GNU MP Library is distributed in the hope that it will be useful, but</em>
+<a id='L25' name='L25'></a><em class='comment'>WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY</em>
+<a id='L26' name='L26'></a><em class='comment'>or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License</em>
+<a id='L27' name='L27'></a><em class='comment'>for more details.</em>
+<a id='L28' name='L28'></a><em class='comment'></em>
+<a id='L29' name='L29'></a><em class='comment'>You should have received copies of the GNU General Public License and the</em>
+<a id='L30' name='L30'></a><em class='comment'>GNU Lesser General Public License along with the GNU MP Library.  If not,</em>
+<a id='L31' name='L31'></a><em class='comment'>see https://www.gnu.org/licenses/.  */</em>
+<a id='L32' name='L32'></a>
+<a id='L33' name='L33'></a><em class='comment'>/*</em>
+<a id='L34' name='L34'></a><em class='comment'>  Generate tables for fast, division-free trial division for GMP.</em>
+<a id='L35' name='L35'></a><em class='comment'></em>
+<a id='L36' name='L36'></a><em class='comment'>  There is one main table, ptab.  It contains primes, multiplied together, and</em>
+<a id='L37' name='L37'></a><em class='comment'>  several types of pre-computed inverses.  It refers to tables of the type</em>
+<a id='L38' name='L38'></a><em class='comment'>  dtab, via the last two indices.  That table contains the individual primes in</em>
+<a id='L39' name='L39'></a><em class='comment'>  the range, except that the primes are not actually included in the table (see</em>
+<a id='L40' name='L40'></a><em class='comment'>  the P macro; it sneakingly excludes the primes themselves).  Instead, the</em>
+<a id='L41' name='L41'></a><em class='comment'>  dtab tables contains tuples for each prime (modular-inverse, limit) used for</em>
+<a id='L42' name='L42'></a><em class='comment'>  divisibility checks.</em>
+<a id='L43' name='L43'></a><em class='comment'></em>
+<a id='L44' name='L44'></a><em class='comment'>  This interface is not intended for division of very many primes, since then</em>
+<a id='L45' name='L45'></a><em class='comment'>  other algorithms apply.</em>
+<a id='L46' name='L46'></a><em class='comment'>*/</em>
+<a id='L47' name='L47'></a>
+<a id='L48' name='L48'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L49' name='L49'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L50' name='L50'></a><em class='sharp'>#include</em> "bootstrap.c"
+<a id='L51' name='L51'></a>
+<a id='L52' name='L52'></a><strong class='reserved'>int</strong> <a href='../S/597.html#L286' title='Defined at 286 in gen-trialdivtab.c.'>sumspills</a> (<a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a>, <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> *, <strong class='reserved'>int</strong>);
+<a id='L53' name='L53'></a><strong class='reserved'>void</strong> <a href='../D/3072.html' title='Multiple defined in 4 places.'>mpn_mod_1s_4p_cps</a> (<a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> [7], <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a>);
+<a id='L54' name='L54'></a>
+<a id='L55' name='L55'></a><strong class='reserved'>int</strong> limb_bits;
+<a id='L56' name='L56'></a>
+<a id='L57' name='L57'></a><a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> B;
+<a id='L58' name='L58'></a>
+<a id='L59' name='L59'></a><strong class='reserved'>int</strong>
+<a id='L60' name='L60'></a>main (<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> *argv[])
+<a id='L61' name='L61'></a><em class='brace'>{</em>
+<a id='L62' name='L62'></a>  <strong class='reserved'>int</strong> <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, p;
+<a id='L63' name='L63'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> ppp, acc, inv, gmp_numb_max, tmp, Bhalf;
+<a id='L64' name='L64'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> <a href='../S/394.html#L105' title='Defined at 105 in tests/mpn/t-instrument.c.'>pre</a>[7];
+<a id='L65' name='L65'></a>  <strong class='reserved'>int</strong> i;
+<a id='L66' name='L66'></a>  <strong class='reserved'>int</strong> start_p, end_p, interval_start, interval_end, omitted_p;
+<a id='L67' name='L67'></a>  <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *endtok;
+<a id='L68' name='L68'></a>  <strong class='reserved'>int</strong> stop;
+<a id='L69' name='L69'></a>  <strong class='reserved'>int</strong> np, start_idx;
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a>  <strong class='reserved'>if</strong> (argc &lt; 2)
+<a id='L72' name='L72'></a>    <em class='brace'>{</em>
+<a id='L73' name='L73'></a>      fprintf (stderr, "usage: %s bits endprime\n", argv[0]);
+<a id='L74' name='L74'></a>      exit (1);
+<a id='L75' name='L75'></a>    <em class='brace'>}</em>
+<a id='L76' name='L76'></a>
+<a id='L77' name='L77'></a>  limb_bits = atoi (argv[1]);
+<a id='L78' name='L78'></a>
+<a id='L79' name='L79'></a>  end_p = 1290;                 <em class='comment'>/* default end prime */</em>
+<a id='L80' name='L80'></a>  <strong class='reserved'>if</strong> (argc == 3)
+<a id='L81' name='L81'></a>    end_p = atoi (argv[2]);
+<a id='L82' name='L82'></a>
+<a id='L83' name='L83'></a>  printf ("#if GMP_LIMB_BITS != %d\n", limb_bits);
+<a id='L84' name='L84'></a>  printf ("#error This table is for GMP_LIMB_BITS = %d\n", limb_bits);
+<a id='L85' name='L85'></a>  printf ("#endif\n\n");
+<a id='L86' name='L86'></a>
+<a id='L87' name='L87'></a>  printf ("#if GMP_NAIL_BITS != 0\n");
+<a id='L88' name='L88'></a>  printf ("#error This table does not support nails\n");
+<a id='L89' name='L89'></a>  printf ("#endif\n\n");
+<a id='L90' name='L90'></a>
+<a id='L91' name='L91'></a>  <strong class='reserved'>for</strong> (i = 0; i &lt; 7; i++)
+<a id='L92' name='L92'></a>    <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (<a href='../S/394.html#L105' title='Defined at 105 in tests/mpn/t-instrument.c.'>pre</a>[i]);
+<a id='L93' name='L93'></a>
+<a id='L94' name='L94'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (B);
+<a id='L95' name='L95'></a>  <a href='../D/3557.html' title='Multiple defined in 2 places.'>mpz_setbit</a> (B, limb_bits);
+<a id='L96' name='L96'></a>  <a href='../D/3471.html' title='Multiple defined in 2 places.'>mpz_init_set</a> (gmp_numb_max, B);
+<a id='L97' name='L97'></a>  <a href='../S/21.html#L1924' title='Defined at 1924 in mini-gmp/mini-gmp.c.'>mpz_sub_ui</a> (gmp_numb_max, gmp_numb_max, 1);
+<a id='L98' name='L98'></a>
+<a id='L99' name='L99'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (tmp);
+<a id='L100' name='L100'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (inv);
+<a id='L101' name='L101'></a>
+<a id='L102' name='L102'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (Bhalf);
+<a id='L103' name='L103'></a>  <a href='../D/3557.html' title='Multiple defined in 2 places.'>mpz_setbit</a> (Bhalf, limb_bits - 1);
+<a id='L104' name='L104'></a>
+<a id='L105' name='L105'></a>  start_p = 3;
+<a id='L106' name='L106'></a>
+<a id='L107' name='L107'></a>  <a href='../D/3476.html' title='Multiple defined in 2 places.'>mpz_init_set_ui</a> (ppp, 1);
+<a id='L108' name='L108'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (acc);
+<a id='L109' name='L109'></a>  interval_start = start_p;
+<a id='L110' name='L110'></a>  omitted_p = 3;
+<a id='L111' name='L111'></a>  interval_end = 0;
+<a id='L112' name='L112'></a>
+<a id='L113' name='L113'></a><em class='comment'>/*  printf ("static struct gmp_primes_dtab gmp_primes_dtab[] = {\n"); */</em>
+<a id='L114' name='L114'></a>
+<a id='L115' name='L115'></a>  printf ("#ifdef WANT_dtab\n");
+<a id='L116' name='L116'></a>
+<a id='L117' name='L117'></a>  <strong class='reserved'>for</strong> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a> = start_p; <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a> &lt;= end_p; <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a> += 2)
+<a id='L118' name='L118'></a>    <em class='brace'>{</em>
+<a id='L119' name='L119'></a>      <strong class='reserved'>if</strong> (! <a href='../D/2682.html' title='Multiple defined in 5 places.'>isprime</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>))
+<a id='L120' name='L120'></a>        <strong class='reserved'>continue</strong>;
+<a id='L121' name='L121'></a>
+<a id='L122' name='L122'></a>      <a href='../S/21.html#L2025' title='Defined at 2025 in mini-gmp/mini-gmp.c.'>mpz_mul_ui</a> (acc, ppp, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L123' name='L123'></a>      stop = <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (acc, Bhalf) &gt;= 0;
+<a id='L124' name='L124'></a>      <strong class='reserved'>if</strong> (!stop)
+<a id='L125' name='L125'></a>        <em class='brace'>{</em>
+<a id='L126' name='L126'></a>          <a href='../D/3072.html' title='Multiple defined in 4 places.'>mpn_mod_1s_4p_cps</a> (<a href='../S/394.html#L105' title='Defined at 105 in tests/mpn/t-instrument.c.'>pre</a>, acc);
+<a id='L127' name='L127'></a>          stop = <a href='../S/597.html#L286' title='Defined at 286 in gen-trialdivtab.c.'>sumspills</a> (acc, <a href='../S/394.html#L105' title='Defined at 105 in tests/mpn/t-instrument.c.'>pre</a> + 2, 5);
+<a id='L128' name='L128'></a>        <em class='brace'>}</em>
+<a id='L129' name='L129'></a>
+<a id='L130' name='L130'></a>      <strong class='reserved'>if</strong> (stop)
+<a id='L131' name='L131'></a>        <em class='brace'>{</em>
+<a id='L132' name='L132'></a>          <strong class='reserved'>for</strong> (p = interval_start; p &lt;= interval_end; p += 2)
+<a id='L133' name='L133'></a>            <em class='brace'>{</em>
+<a id='L134' name='L134'></a>              <strong class='reserved'>if</strong> (! <a href='../D/2682.html' title='Multiple defined in 5 places.'>isprime</a> (p))
+<a id='L135' name='L135'></a>                <strong class='reserved'>continue</strong>;
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a>              printf ("  P(%d,", (<strong class='reserved'>int</strong>) p);
+<a id='L138' name='L138'></a>              <a href='../S/83.html#L139' title='Defined at 139 in bootstrap.c.'>mpz_invert_ui_2exp</a> (inv, p, limb_bits);
+<a id='L139' name='L139'></a>              printf ("CNST_LIMB(0x");  <a href='../D/3518.html' title='Multiple defined in 2 places.'>mpz_out_str</a> (stdout, 16, inv);  printf ("),");
+<a id='L140' name='L140'></a>
+<a id='L141' name='L141'></a>              <a href='../D/3576.html' title='Multiple defined in 2 places.'>mpz_tdiv_q_ui</a> (tmp, gmp_numb_max, p);
+<a id='L142' name='L142'></a>              printf ("CNST_LIMB(0x");  <a href='../D/3518.html' title='Multiple defined in 2 places.'>mpz_out_str</a> (stdout, 16, tmp);
+<a id='L143' name='L143'></a>              printf (")),\n");
+<a id='L144' name='L144'></a>            <em class='brace'>}</em>
+<a id='L145' name='L145'></a>          <a href='../D/3556.html' title='Multiple defined in 2 places.'>mpz_set_ui</a> (ppp, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L146' name='L146'></a>          interval_start = <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>;
+<a id='L147' name='L147'></a>          omitted_p = <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>;
+<a id='L148' name='L148'></a>        <em class='brace'>}</em>
+<a id='L149' name='L149'></a>      <strong class='reserved'>else</strong>
+<a id='L150' name='L150'></a>        <em class='brace'>{</em>
+<a id='L151' name='L151'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (ppp, acc);
+<a id='L152' name='L152'></a>        <em class='brace'>}</em>
+<a id='L153' name='L153'></a>      interval_end = <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>;
+<a id='L154' name='L154'></a>    <em class='brace'>}</em>
+<a id='L155' name='L155'></a>  printf ("#define SMALLEST_OMITTED_PRIME %d\n", (<strong class='reserved'>int</strong>) omitted_p);
+<a id='L156' name='L156'></a>  printf ("#endif\n");
+<a id='L157' name='L157'></a>
+<a id='L158' name='L158'></a>  printf ("#ifdef WANT_ptab\n");
+<a id='L159' name='L159'></a>
+<a id='L160' name='L160'></a><em class='comment'>/*  printf ("static struct gmp_primes_ptab gmp_primes_ptab[] = {\n"); */</em>
+<a id='L161' name='L161'></a>
+<a id='L162' name='L162'></a>  endtok = "";
+<a id='L163' name='L163'></a>
+<a id='L164' name='L164'></a>  <a href='../D/3556.html' title='Multiple defined in 2 places.'>mpz_set_ui</a> (ppp, 1);
+<a id='L165' name='L165'></a>  interval_start = start_p;
+<a id='L166' name='L166'></a>  interval_end = 0;
+<a id='L167' name='L167'></a>  np = 0;
+<a id='L168' name='L168'></a>  start_idx = 0;
+<a id='L169' name='L169'></a>  <strong class='reserved'>for</strong> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a> = start_p; <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a> &lt;= end_p; <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a> += 2)
+<a id='L170' name='L170'></a>    <em class='brace'>{</em>
+<a id='L171' name='L171'></a>      <strong class='reserved'>if</strong> (! <a href='../D/2682.html' title='Multiple defined in 5 places.'>isprime</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>))
+<a id='L172' name='L172'></a>        <strong class='reserved'>continue</strong>;
+<a id='L173' name='L173'></a>
+<a id='L174' name='L174'></a>      <a href='../S/21.html#L2025' title='Defined at 2025 in mini-gmp/mini-gmp.c.'>mpz_mul_ui</a> (acc, ppp, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L175' name='L175'></a>
+<a id='L176' name='L176'></a>      stop = <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (acc, Bhalf) &gt;= 0;
+<a id='L177' name='L177'></a>      <strong class='reserved'>if</strong> (!stop)
+<a id='L178' name='L178'></a>        <em class='brace'>{</em>
+<a id='L179' name='L179'></a>          <a href='../D/3072.html' title='Multiple defined in 4 places.'>mpn_mod_1s_4p_cps</a> (<a href='../S/394.html#L105' title='Defined at 105 in tests/mpn/t-instrument.c.'>pre</a>, acc);
+<a id='L180' name='L180'></a>          stop = <a href='../S/597.html#L286' title='Defined at 286 in gen-trialdivtab.c.'>sumspills</a> (acc, <a href='../S/394.html#L105' title='Defined at 105 in tests/mpn/t-instrument.c.'>pre</a> + 2, 5);
+<a id='L181' name='L181'></a>        <em class='brace'>}</em>
+<a id='L182' name='L182'></a>
+<a id='L183' name='L183'></a>      <strong class='reserved'>if</strong> (stop)
+<a id='L184' name='L184'></a>        <em class='brace'>{</em>
+<a id='L185' name='L185'></a>          <a href='../D/3072.html' title='Multiple defined in 4 places.'>mpn_mod_1s_4p_cps</a> (<a href='../S/394.html#L105' title='Defined at 105 in tests/mpn/t-instrument.c.'>pre</a>, ppp);
+<a id='L186' name='L186'></a>          printf ("%s", endtok);
+<a id='L187' name='L187'></a>          printf ("  {CNST_LIMB(0x");  <a href='../D/3518.html' title='Multiple defined in 2 places.'>mpz_out_str</a> (stdout, 16, ppp);
+<a id='L188' name='L188'></a>          printf ("),{CNST_LIMB(0x");  <a href='../D/3518.html' title='Multiple defined in 2 places.'>mpz_out_str</a> (stdout, 16, <a href='../S/394.html#L105' title='Defined at 105 in tests/mpn/t-instrument.c.'>pre</a>[0]);
+<a id='L189' name='L189'></a>          printf ("),%d", (<strong class='reserved'>int</strong>) <a href='../D/1055.html' title='Multiple defined in 2 places.'>PTR</a>(<a href='../S/394.html#L105' title='Defined at 105 in tests/mpn/t-instrument.c.'>pre</a>[1])[0]);
+<a id='L190' name='L190'></a>          <strong class='reserved'>for</strong> (i = 0; i &lt; 5; i++)
+<a id='L191' name='L191'></a>            <em class='brace'>{</em>
+<a id='L192' name='L192'></a>              printf (",");
+<a id='L193' name='L193'></a>              printf ("CNST_LIMB(0x");  <a href='../D/3518.html' title='Multiple defined in 2 places.'>mpz_out_str</a> (stdout, 16, <a href='../S/394.html#L105' title='Defined at 105 in tests/mpn/t-instrument.c.'>pre</a>[2 + i]);
+<a id='L194' name='L194'></a>              printf (")");
+<a id='L195' name='L195'></a>            <em class='brace'>}</em>
+<a id='L196' name='L196'></a>          printf ("},");
+<a id='L197' name='L197'></a>          printf ("%d,", start_idx);
+<a id='L198' name='L198'></a>          printf ("%d}", np - start_idx);
+<a id='L199' name='L199'></a>
+<a id='L200' name='L200'></a>          endtok = ",\n";
+<a id='L201' name='L201'></a>          <a href='../D/3556.html' title='Multiple defined in 2 places.'>mpz_set_ui</a> (ppp, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L202' name='L202'></a>          interval_start = <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>;
+<a id='L203' name='L203'></a>          start_idx = np;
+<a id='L204' name='L204'></a>        <em class='brace'>}</em>
+<a id='L205' name='L205'></a>      <strong class='reserved'>else</strong>
+<a id='L206' name='L206'></a>        <em class='brace'>{</em>
+<a id='L207' name='L207'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (ppp, acc);
+<a id='L208' name='L208'></a>        <em class='brace'>}</em>
+<a id='L209' name='L209'></a>      interval_end = <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>;
+<a id='L210' name='L210'></a>      np++;
+<a id='L211' name='L211'></a>    <em class='brace'>}</em>
+<a id='L212' name='L212'></a>
+<a id='L213' name='L213'></a>  printf ("\n");
+<a id='L214' name='L214'></a>  printf ("#endif\n");
+<a id='L215' name='L215'></a>
+<a id='L216' name='L216'></a>  <strong class='reserved'>return</strong> 0;
+<a id='L217' name='L217'></a><em class='brace'>}</em>
+<a id='L218' name='L218'></a>
+<a id='L219' name='L219'></a><strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>
+<a id='L220' name='L220'></a><a href='../S/597.html#L235' title='Referred from 235 in gen-trialdivtab.c.'>mpz_log2</a> (<a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> x)
+<a id='L221' name='L221'></a><em class='brace'>{</em>
+<a id='L222' name='L222'></a>  <strong class='reserved'>return</strong> <a href='../D/3558.html' title='Multiple defined in 2 places.'>mpz_sgn</a> (x) ? <a href='../D/3561.html' title='Multiple defined in 2 places.'>mpz_sizeinbase</a> (x, 2) : 0;
+<a id='L223' name='L223'></a><em class='brace'>}</em>
+<a id='L224' name='L224'></a>
+<a id='L225' name='L225'></a><strong class='reserved'>void</strong>
+<a id='L226' name='L226'></a><a href='../R/2808.html' title='Multiple referred from 10 places.'>mpn_mod_1s_4p_cps</a> (<a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> cps[7], <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> bparm)
+<a id='L227' name='L227'></a><em class='brace'>{</em>
+<a id='L228' name='L228'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> b, bi;
+<a id='L229' name='L229'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> B1modb, B2modb, B3modb, B4modb, B5modb;
+<a id='L230' name='L230'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>;
+<a id='L231' name='L231'></a>  <strong class='reserved'>int</strong> cnt;
+<a id='L232' name='L232'></a>
+<a id='L233' name='L233'></a>  <a href='../D/3471.html' title='Multiple defined in 2 places.'>mpz_init_set</a> (b, bparm);
+<a id='L234' name='L234'></a>
+<a id='L235' name='L235'></a>  cnt = limb_bits - <a href='../S/597.html#L220' title='Defined at 220 in gen-trialdivtab.c.'>mpz_log2</a> (b);
+<a id='L236' name='L236'></a>
+<a id='L237' name='L237'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (bi);
+<a id='L238' name='L238'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L239' name='L239'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (B1modb);
+<a id='L240' name='L240'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (B2modb);
+<a id='L241' name='L241'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (B3modb);
+<a id='L242' name='L242'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (B4modb);
+<a id='L243' name='L243'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (B5modb);
+<a id='L244' name='L244'></a>
+<a id='L245' name='L245'></a>  <a href='../D/3556.html' title='Multiple defined in 2 places.'>mpz_set_ui</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, 1);
+<a id='L246' name='L246'></a>  <a href='../D/3508.html' title='Multiple defined in 2 places.'>mpz_mul_2exp</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, limb_bits - cnt);
+<a id='L247' name='L247'></a>  <a href='../S/21.html#L1998' title='Defined at 1998 in mini-gmp/mini-gmp.c.'>mpz_sub</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, b);
+<a id='L248' name='L248'></a>  <a href='../D/3508.html' title='Multiple defined in 2 places.'>mpz_mul_2exp</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, limb_bits);
+<a id='L249' name='L249'></a>  <a href='../D/3574.html' title='Multiple defined in 2 places.'>mpz_tdiv_q</a> (bi, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, b);                <em class='comment'>/* bi = B^2/b, except msb */</em>
+<a id='L250' name='L250'></a>
+<a id='L251' name='L251'></a>  <a href='../D/3556.html' title='Multiple defined in 2 places.'>mpz_set_ui</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, 1);
+<a id='L252' name='L252'></a>  <a href='../D/3508.html' title='Multiple defined in 2 places.'>mpz_mul_2exp</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, limb_bits);       <em class='comment'>/* t = B */</em>
+<a id='L253' name='L253'></a>  <a href='../D/3579.html' title='Multiple defined in 2 places.'>mpz_tdiv_r</a> (B1modb, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, b);
+<a id='L254' name='L254'></a>
+<a id='L255' name='L255'></a>  <a href='../D/3508.html' title='Multiple defined in 2 places.'>mpz_mul_2exp</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, B1modb, limb_bits);
+<a id='L256' name='L256'></a>  <a href='../D/3579.html' title='Multiple defined in 2 places.'>mpz_tdiv_r</a> (B2modb, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, b);
+<a id='L257' name='L257'></a>
+<a id='L258' name='L258'></a>  <a href='../D/3508.html' title='Multiple defined in 2 places.'>mpz_mul_2exp</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, B2modb, limb_bits);
+<a id='L259' name='L259'></a>  <a href='../D/3579.html' title='Multiple defined in 2 places.'>mpz_tdiv_r</a> (B3modb, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, b);
+<a id='L260' name='L260'></a>
+<a id='L261' name='L261'></a>  <a href='../D/3508.html' title='Multiple defined in 2 places.'>mpz_mul_2exp</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, B3modb, limb_bits);
+<a id='L262' name='L262'></a>  <a href='../D/3579.html' title='Multiple defined in 2 places.'>mpz_tdiv_r</a> (B4modb, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, b);
+<a id='L263' name='L263'></a>
+<a id='L264' name='L264'></a>  <a href='../D/3508.html' title='Multiple defined in 2 places.'>mpz_mul_2exp</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, B4modb, limb_bits);
+<a id='L265' name='L265'></a>  <a href='../D/3579.html' title='Multiple defined in 2 places.'>mpz_tdiv_r</a> (B5modb, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, b);
+<a id='L266' name='L266'></a>
+<a id='L267' name='L267'></a>  <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (cps[0], bi);
+<a id='L268' name='L268'></a>  <a href='../D/3556.html' title='Multiple defined in 2 places.'>mpz_set_ui</a> (cps[1], cnt);
+<a id='L269' name='L269'></a>  <a href='../D/3575.html' title='Multiple defined in 3 places.'>mpz_tdiv_q_2exp</a> (cps[2], B1modb, 0);
+<a id='L270' name='L270'></a>  <a href='../D/3575.html' title='Multiple defined in 3 places.'>mpz_tdiv_q_2exp</a> (cps[3], B2modb, 0);
+<a id='L271' name='L271'></a>  <a href='../D/3575.html' title='Multiple defined in 3 places.'>mpz_tdiv_q_2exp</a> (cps[4], B3modb, 0);
+<a id='L272' name='L272'></a>  <a href='../D/3575.html' title='Multiple defined in 3 places.'>mpz_tdiv_q_2exp</a> (cps[5], B4modb, 0);
+<a id='L273' name='L273'></a>  <a href='../D/3575.html' title='Multiple defined in 3 places.'>mpz_tdiv_q_2exp</a> (cps[6], B5modb, 0);
+<a id='L274' name='L274'></a>
+<a id='L275' name='L275'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (b);
+<a id='L276' name='L276'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (bi);
+<a id='L277' name='L277'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L278' name='L278'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (B1modb);
+<a id='L279' name='L279'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (B2modb);
+<a id='L280' name='L280'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (B3modb);
+<a id='L281' name='L281'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (B4modb);
+<a id='L282' name='L282'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (B5modb);
+<a id='L283' name='L283'></a><em class='brace'>}</em>
+<a id='L284' name='L284'></a>
+<a id='L285' name='L285'></a><strong class='reserved'>int</strong>
+<a id='L286' name='L286'></a><a href='../R/3991.html' title='Multiple referred from 3 places.'>sumspills</a> (<a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> ppp, <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> *a, <strong class='reserved'>int</strong> n)
+<a id='L287' name='L287'></a><em class='brace'>{</em>
+<a id='L288' name='L288'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> <a href='../S/1163.html#L83' title='Defined at 83 in mpn/generic/toom42_mulmid.c.'>s</a>;
+<a id='L289' name='L289'></a>  <strong class='reserved'>int</strong> i, ret;
+<a id='L290' name='L290'></a>
+<a id='L291' name='L291'></a>  <a href='../D/3471.html' title='Multiple defined in 2 places.'>mpz_init_set</a> (<a href='../S/1163.html#L83' title='Defined at 83 in mpn/generic/toom42_mulmid.c.'>s</a>, a[0]);
+<a id='L292' name='L292'></a>
+<a id='L293' name='L293'></a>  <strong class='reserved'>for</strong> (i = 1; i &lt; n; i++)
+<a id='L294' name='L294'></a>    <em class='brace'>{</em>
+<a id='L295' name='L295'></a>      <a href='../S/21.html#L1985' title='Defined at 1985 in mini-gmp/mini-gmp.c.'>mpz_add</a> (<a href='../S/1163.html#L83' title='Defined at 83 in mpn/generic/toom42_mulmid.c.'>s</a>, <a href='../S/1163.html#L83' title='Defined at 83 in mpn/generic/toom42_mulmid.c.'>s</a>, a[i]);
+<a id='L296' name='L296'></a>    <em class='brace'>}</em>
+<a id='L297' name='L297'></a>  ret = <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (<a href='../S/1163.html#L83' title='Defined at 83 in mpn/generic/toom42_mulmid.c.'>s</a>, B) &gt;= 0;
+<a id='L298' name='L298'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (<a href='../S/1163.html#L83' title='Defined at 83 in mpn/generic/toom42_mulmid.c.'>s</a>);
+<a id='L299' name='L299'></a>
+<a id='L300' name='L300'></a>  <strong class='reserved'>return</strong> ret;
+<a id='L301' name='L301'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L60'>[^]</a><a href='#L286'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

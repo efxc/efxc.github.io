@@ -1,0 +1,547 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/algorithms/ciphers.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6473.html'>algorithms</a>/ciphers.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L351'>[^]</a><a href='#L497'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L351' title='Defined at 351.'>_gnutls_cipher_to_entry</a></li>
+<li><a href='#L361' title='Defined at 361.'>cipher_name_to_entry</a></li>
+<li><a href='#L380' title='Defined at 380.'>gnutls_cipher_get_block_size</a></li>
+<li><a href='#L399' title='Defined at 399.'>gnutls_cipher_get_tag_size</a></li>
+<li><a href='#L416' title='Defined at 416.'>gnutls_cipher_get_iv_size</a></li>
+<li><a href='#L432' title='Defined at 432.'>gnutls_cipher_get_key_size</a></li>
+<li><a href='#L449' title='Defined at 449.'>gnutls_cipher_get_name</a></li>
+<li><a href='#L468' title='Defined at 468.'>gnutls_cipher_get_id</a></li>
+<li><a href='#L497' title='Defined at 497.'>gnutls_cipher_list</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2011-2012 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L9' name='L9'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L10' name='L10'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L11' name='L11'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> &lt;<a href='6029.html'>algorithms.h</a>&gt;
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> &lt;<a href='../I/3.html'>x509/common.h</a>&gt;
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> "<a href='6058.html'>c-strcase.h</a>"
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a>
+<a id='L30' name='L30'></a><em class='comment'>/* Note that all algorithms are in CBC or STREAM modes.</em>
+<a id='L31' name='L31'></a><em class='comment'> * Do not add any algorithms in other modes (avoid modified algorithms).</em>
+<a id='L32' name='L32'></a><em class='comment'> * View first: "The order of encryption and authentication for</em>
+<a id='L33' name='L33'></a><em class='comment'> * protecting communications" by Hugo Krawczyk - CRYPTO 2001</em>
+<a id='L34' name='L34'></a><em class='comment'> *</em>
+<a id='L35' name='L35'></a><em class='comment'> * On update, make sure to update MAX_CIPHER_BLOCK_SIZE, MAX_CIPHER_IV_SIZE,</em>
+<a id='L36' name='L36'></a><em class='comment'> * and MAX_CIPHER_KEY_SIZE as well.</em>
+<a id='L37' name='L37'></a><em class='comment'> * If any ciphers are removed, remove them from the back-end but</em>
+<a id='L38' name='L38'></a><em class='comment'> * keep them in that list to allow backwards compatibility with applications</em>
+<a id='L39' name='L39'></a><em class='comment'> * that specify them (they will be a no-op).</em>
+<a id='L40' name='L40'></a><em class='comment'> */</em>
+<a id='L41' name='L41'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <a href='../D/7199.html' title='Multiple defined in 2 places.'>cipher_entry_st</a> algorithms[] = <em class='brace'>{</em>
+<a id='L42' name='L42'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-256-CBC",
+<a id='L43' name='L43'></a>          .id = GNUTLS_CIPHER_AES_256_CBC,
+<a id='L44' name='L44'></a>          .blocksize = 16,
+<a id='L45' name='L45'></a>          .keysize = 32,
+<a id='L46' name='L46'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_BLOCK</a>,
+<a id='L47' name='L47'></a>          .explicit_iv = 16,
+<a id='L48' name='L48'></a>          .cipher_iv = 16<em class='brace'>}</em>,
+<a id='L49' name='L49'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-192-CBC",
+<a id='L50' name='L50'></a>          .id = GNUTLS_CIPHER_AES_192_CBC,
+<a id='L51' name='L51'></a>          .blocksize = 16,
+<a id='L52' name='L52'></a>          .keysize = 24,
+<a id='L53' name='L53'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_BLOCK</a>,
+<a id='L54' name='L54'></a>          .explicit_iv = 16,
+<a id='L55' name='L55'></a>          .cipher_iv = 16<em class='brace'>}</em>,
+<a id='L56' name='L56'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-128-CBC",
+<a id='L57' name='L57'></a>          .id = GNUTLS_CIPHER_AES_128_CBC,
+<a id='L58' name='L58'></a>          .blocksize = 16,
+<a id='L59' name='L59'></a>          .keysize = 16,
+<a id='L60' name='L60'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_BLOCK</a>,
+<a id='L61' name='L61'></a>          .explicit_iv = 16,
+<a id='L62' name='L62'></a>          .cipher_iv = 16<em class='brace'>}</em>,
+<a id='L63' name='L63'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-128-GCM",
+<a id='L64' name='L64'></a>          .id = GNUTLS_CIPHER_AES_128_GCM,
+<a id='L65' name='L65'></a>          .blocksize = 16,
+<a id='L66' name='L66'></a>          .keysize = 16,
+<a id='L67' name='L67'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_AEAD</a>,
+<a id='L68' name='L68'></a>          .implicit_iv = 4,
+<a id='L69' name='L69'></a>          .explicit_iv = 8,
+<a id='L70' name='L70'></a>          .cipher_iv = 12,
+<a id='L71' name='L71'></a>          .tagsize = 16<em class='brace'>}</em>,
+<a id='L72' name='L72'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-192-GCM",
+<a id='L73' name='L73'></a>          .id = GNUTLS_CIPHER_AES_192_GCM,
+<a id='L74' name='L74'></a>          .blocksize = 16,
+<a id='L75' name='L75'></a>          .keysize = 24,
+<a id='L76' name='L76'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_AEAD</a>,
+<a id='L77' name='L77'></a>          .implicit_iv = 4,
+<a id='L78' name='L78'></a>          .explicit_iv = 8,
+<a id='L79' name='L79'></a>          .cipher_iv = 12,
+<a id='L80' name='L80'></a>          .tagsize = 16<em class='brace'>}</em>,
+<a id='L81' name='L81'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-256-GCM",
+<a id='L82' name='L82'></a>          .id = GNUTLS_CIPHER_AES_256_GCM,
+<a id='L83' name='L83'></a>          .blocksize = 16,
+<a id='L84' name='L84'></a>          .keysize = 32,
+<a id='L85' name='L85'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_AEAD</a>,
+<a id='L86' name='L86'></a>          .implicit_iv = 4,
+<a id='L87' name='L87'></a>          .explicit_iv = 8,
+<a id='L88' name='L88'></a>          .cipher_iv = 12,
+<a id='L89' name='L89'></a>          .tagsize = 16<em class='brace'>}</em>,
+<a id='L90' name='L90'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-128-CCM",
+<a id='L91' name='L91'></a>          .id = GNUTLS_CIPHER_AES_128_CCM,
+<a id='L92' name='L92'></a>          .blocksize = 16,
+<a id='L93' name='L93'></a>          .keysize = 16,
+<a id='L94' name='L94'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_AEAD</a>,
+<a id='L95' name='L95'></a>          .implicit_iv = 4,
+<a id='L96' name='L96'></a>          .explicit_iv = 8,
+<a id='L97' name='L97'></a>          .cipher_iv = 12,
+<a id='L98' name='L98'></a>          .flags = <a href='../S/5822.html#L620' title='Defined at 620 in lib/gnutls_int.h.'>GNUTLS_CIPHER_FLAG_ONLY_AEAD</a>,
+<a id='L99' name='L99'></a>          .tagsize = 16<em class='brace'>}</em>,
+<a id='L100' name='L100'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-256-CCM",
+<a id='L101' name='L101'></a>          .id = GNUTLS_CIPHER_AES_256_CCM,
+<a id='L102' name='L102'></a>          .blocksize = 16,
+<a id='L103' name='L103'></a>          .keysize = 32,
+<a id='L104' name='L104'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_AEAD</a>,
+<a id='L105' name='L105'></a>          .implicit_iv = 4,
+<a id='L106' name='L106'></a>          .explicit_iv = 8,
+<a id='L107' name='L107'></a>          .cipher_iv = 12,
+<a id='L108' name='L108'></a>          .flags = <a href='../S/5822.html#L620' title='Defined at 620 in lib/gnutls_int.h.'>GNUTLS_CIPHER_FLAG_ONLY_AEAD</a>,
+<a id='L109' name='L109'></a>          .tagsize = 16<em class='brace'>}</em>,
+<a id='L110' name='L110'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-128-CCM-8",
+<a id='L111' name='L111'></a>          .id = GNUTLS_CIPHER_AES_128_CCM_8,
+<a id='L112' name='L112'></a>          .blocksize = 16,
+<a id='L113' name='L113'></a>          .keysize = 16,
+<a id='L114' name='L114'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_AEAD</a>,
+<a id='L115' name='L115'></a>          .implicit_iv = 4,
+<a id='L116' name='L116'></a>          .explicit_iv = 8,
+<a id='L117' name='L117'></a>          .cipher_iv = 12,
+<a id='L118' name='L118'></a>          .flags = <a href='../S/5822.html#L620' title='Defined at 620 in lib/gnutls_int.h.'>GNUTLS_CIPHER_FLAG_ONLY_AEAD</a>,
+<a id='L119' name='L119'></a>          .tagsize = 8<em class='brace'>}</em>,
+<a id='L120' name='L120'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-256-CCM-8",
+<a id='L121' name='L121'></a>          .id = GNUTLS_CIPHER_AES_256_CCM_8,
+<a id='L122' name='L122'></a>          .blocksize = 16,
+<a id='L123' name='L123'></a>          .keysize = 32,
+<a id='L124' name='L124'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_AEAD</a>,
+<a id='L125' name='L125'></a>          .implicit_iv = 4,
+<a id='L126' name='L126'></a>          .explicit_iv = 8,
+<a id='L127' name='L127'></a>          .cipher_iv = 12,
+<a id='L128' name='L128'></a>          .flags = <a href='../S/5822.html#L620' title='Defined at 620 in lib/gnutls_int.h.'>GNUTLS_CIPHER_FLAG_ONLY_AEAD</a>,
+<a id='L129' name='L129'></a>          .tagsize = 8<em class='brace'>}</em>,
+<a id='L130' name='L130'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "ARCFOUR-128",
+<a id='L131' name='L131'></a>          .id = GNUTLS_CIPHER_ARCFOUR_128,
+<a id='L132' name='L132'></a>          .blocksize = 1,
+<a id='L133' name='L133'></a>          .keysize = 16,
+<a id='L134' name='L134'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_STREAM</a>,
+<a id='L135' name='L135'></a>         0, 0, 0, 0<em class='brace'>}</em>,
+<a id='L136' name='L136'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "ESTREAM-SALSA20-256",
+<a id='L137' name='L137'></a>          .id = GNUTLS_CIPHER_ESTREAM_SALSA20_256,
+<a id='L138' name='L138'></a>          .blocksize = 64,
+<a id='L139' name='L139'></a>          .keysize = 32,
+<a id='L140' name='L140'></a>         .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_STREAM</a>, 0, 0, 8, 0<em class='brace'>}</em>,
+<a id='L141' name='L141'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "SALSA20-256",
+<a id='L142' name='L142'></a>          .id = GNUTLS_CIPHER_SALSA20_256,
+<a id='L143' name='L143'></a>          .blocksize = 64,
+<a id='L144' name='L144'></a>          .keysize = 32,
+<a id='L145' name='L145'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_STREAM</a>,
+<a id='L146' name='L146'></a>          .explicit_iv = 0,
+<a id='L147' name='L147'></a>          .cipher_iv = 8<em class='brace'>}</em>,
+<a id='L148' name='L148'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "CHACHA20-32",
+<a id='L149' name='L149'></a>          .id = GNUTLS_CIPHER_CHACHA20_32,
+<a id='L150' name='L150'></a>          .blocksize = 64,
+<a id='L151' name='L151'></a>          .keysize = 32,
+<a id='L152' name='L152'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_STREAM</a>,
+<a id='L153' name='L153'></a>          .explicit_iv = 0,
+<a id='L154' name='L154'></a>          <em class='comment'>/* IV includes counter */</em>
+<a id='L155' name='L155'></a>          .cipher_iv = 16<em class='brace'>}</em>,
+<a id='L156' name='L156'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "CHACHA20-64",
+<a id='L157' name='L157'></a>          .id = GNUTLS_CIPHER_CHACHA20_64,
+<a id='L158' name='L158'></a>          .blocksize = 64,
+<a id='L159' name='L159'></a>          .keysize = 32,
+<a id='L160' name='L160'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_STREAM</a>,
+<a id='L161' name='L161'></a>          .explicit_iv = 0,
+<a id='L162' name='L162'></a>          <em class='comment'>/* IV includes counter */</em>
+<a id='L163' name='L163'></a>          .cipher_iv = 16<em class='brace'>}</em>,
+<a id='L164' name='L164'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "CAMELLIA-256-CBC",
+<a id='L165' name='L165'></a>          .id = GNUTLS_CIPHER_CAMELLIA_256_CBC,
+<a id='L166' name='L166'></a>          .blocksize = 16,
+<a id='L167' name='L167'></a>          .keysize = 32,
+<a id='L168' name='L168'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_BLOCK</a>,
+<a id='L169' name='L169'></a>          .explicit_iv = 16,
+<a id='L170' name='L170'></a>          .cipher_iv = 16<em class='brace'>}</em>,
+<a id='L171' name='L171'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "CAMELLIA-192-CBC",
+<a id='L172' name='L172'></a>          .id = GNUTLS_CIPHER_CAMELLIA_192_CBC,
+<a id='L173' name='L173'></a>          .blocksize = 16,
+<a id='L174' name='L174'></a>          .keysize = 24,
+<a id='L175' name='L175'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_BLOCK</a>,
+<a id='L176' name='L176'></a>          .explicit_iv = 16,
+<a id='L177' name='L177'></a>          .cipher_iv = 16<em class='brace'>}</em>,
+<a id='L178' name='L178'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "CAMELLIA-128-CBC",
+<a id='L179' name='L179'></a>          .id = GNUTLS_CIPHER_CAMELLIA_128_CBC,
+<a id='L180' name='L180'></a>          .blocksize = 16,
+<a id='L181' name='L181'></a>          .keysize = 16,
+<a id='L182' name='L182'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_BLOCK</a>,
+<a id='L183' name='L183'></a>          .explicit_iv = 16,
+<a id='L184' name='L184'></a>          .cipher_iv = 16<em class='brace'>}</em>,
+<a id='L185' name='L185'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "CHACHA20-POLY1305",
+<a id='L186' name='L186'></a>          .id = GNUTLS_CIPHER_CHACHA20_POLY1305,
+<a id='L187' name='L187'></a>          .blocksize = 64,
+<a id='L188' name='L188'></a>          .keysize = 32,
+<a id='L189' name='L189'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_AEAD</a>,
+<a id='L190' name='L190'></a>          .implicit_iv = 12,
+<a id='L191' name='L191'></a>          .explicit_iv = 0,
+<a id='L192' name='L192'></a>          <em class='comment'>/* in chacha20 we don't need a rekey after 2^24 messages */</em>
+<a id='L193' name='L193'></a>          .flags = <a href='../S/5822.html#L621' title='Defined at 621 in lib/gnutls_int.h.'>GNUTLS_CIPHER_FLAG_XOR_NONCE</a> | <a href='../S/5822.html#L622' title='Defined at 622 in lib/gnutls_int.h.'>GNUTLS_CIPHER_FLAG_NO_REKEY</a>,
+<a id='L194' name='L194'></a>          .cipher_iv = 12,
+<a id='L195' name='L195'></a>          .tagsize = 16
+<a id='L196' name='L196'></a>        <em class='brace'>}</em>,
+<a id='L197' name='L197'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "CAMELLIA-128-GCM",
+<a id='L198' name='L198'></a>          .id = GNUTLS_CIPHER_CAMELLIA_128_GCM,
+<a id='L199' name='L199'></a>          .blocksize = 16,
+<a id='L200' name='L200'></a>          .keysize = 16,
+<a id='L201' name='L201'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_AEAD</a>, 4, 8, 12, 16<em class='brace'>}</em>,
+<a id='L202' name='L202'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "CAMELLIA-256-GCM",
+<a id='L203' name='L203'></a>          .id = GNUTLS_CIPHER_CAMELLIA_256_GCM,
+<a id='L204' name='L204'></a>          .blocksize = 16,
+<a id='L205' name='L205'></a>          .keysize = 32,
+<a id='L206' name='L206'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_AEAD</a>,
+<a id='L207' name='L207'></a>          .implicit_iv = 4,
+<a id='L208' name='L208'></a>          .explicit_iv = 8,
+<a id='L209' name='L209'></a>          .cipher_iv = 12,
+<a id='L210' name='L210'></a>          .tagsize = 16<em class='brace'>}</em>,
+<a id='L211' name='L211'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "GOST28147-TC26Z-CFB",
+<a id='L212' name='L212'></a>          .id = GNUTLS_CIPHER_GOST28147_TC26Z_CFB,
+<a id='L213' name='L213'></a>          .blocksize = 8,
+<a id='L214' name='L214'></a>          .keysize = 32,
+<a id='L215' name='L215'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_STREAM</a>,
+<a id='L216' name='L216'></a>          .implicit_iv = 8,
+<a id='L217' name='L217'></a>          .cipher_iv = 8<em class='brace'>}</em>,
+<a id='L218' name='L218'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "GOST28147-CPA-CFB",
+<a id='L219' name='L219'></a>          .id = GNUTLS_CIPHER_GOST28147_CPA_CFB,
+<a id='L220' name='L220'></a>          .blocksize = 8,
+<a id='L221' name='L221'></a>          .keysize = 32,
+<a id='L222' name='L222'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_STREAM</a>,
+<a id='L223' name='L223'></a>          .implicit_iv = 8,
+<a id='L224' name='L224'></a>          .cipher_iv = 8<em class='brace'>}</em>,
+<a id='L225' name='L225'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "GOST28147-CPB-CFB",
+<a id='L226' name='L226'></a>          .id = GNUTLS_CIPHER_GOST28147_CPB_CFB,
+<a id='L227' name='L227'></a>          .blocksize = 8,
+<a id='L228' name='L228'></a>          .keysize = 32,
+<a id='L229' name='L229'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_STREAM</a>,
+<a id='L230' name='L230'></a>          .implicit_iv = 8,
+<a id='L231' name='L231'></a>          .cipher_iv = 8<em class='brace'>}</em>,
+<a id='L232' name='L232'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "GOST28147-CPC-CFB",
+<a id='L233' name='L233'></a>          .id = GNUTLS_CIPHER_GOST28147_CPC_CFB,
+<a id='L234' name='L234'></a>          .blocksize = 8,
+<a id='L235' name='L235'></a>          .keysize = 32,
+<a id='L236' name='L236'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_STREAM</a>,
+<a id='L237' name='L237'></a>          .implicit_iv = 8,
+<a id='L238' name='L238'></a>          .cipher_iv = 8<em class='brace'>}</em>,
+<a id='L239' name='L239'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "GOST28147-CPD-CFB",
+<a id='L240' name='L240'></a>          .id = GNUTLS_CIPHER_GOST28147_CPD_CFB,
+<a id='L241' name='L241'></a>          .blocksize = 8,
+<a id='L242' name='L242'></a>          .keysize = 32,
+<a id='L243' name='L243'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_STREAM</a>,
+<a id='L244' name='L244'></a>          .implicit_iv = 8,
+<a id='L245' name='L245'></a>          .cipher_iv = 8<em class='brace'>}</em>,
+<a id='L246' name='L246'></a>
+<a id='L247' name='L247'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-128-CFB8",
+<a id='L248' name='L248'></a>          .id = GNUTLS_CIPHER_AES_128_CFB8,
+<a id='L249' name='L249'></a>          .blocksize = 16,
+<a id='L250' name='L250'></a>          .keysize = 16,
+<a id='L251' name='L251'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_BLOCK</a>,
+<a id='L252' name='L252'></a>          .explicit_iv = 16,
+<a id='L253' name='L253'></a>          .cipher_iv = 16<em class='brace'>}</em>,
+<a id='L254' name='L254'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-192-CFB8",
+<a id='L255' name='L255'></a>          .id = GNUTLS_CIPHER_AES_192_CFB8,
+<a id='L256' name='L256'></a>          .blocksize = 16,
+<a id='L257' name='L257'></a>          .keysize = 24,
+<a id='L258' name='L258'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_BLOCK</a>,
+<a id='L259' name='L259'></a>          .explicit_iv = 16,
+<a id='L260' name='L260'></a>          .cipher_iv = 16<em class='brace'>}</em>,
+<a id='L261' name='L261'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-256-CFB8",
+<a id='L262' name='L262'></a>          .id = GNUTLS_CIPHER_AES_256_CFB8,
+<a id='L263' name='L263'></a>          .blocksize = 16,
+<a id='L264' name='L264'></a>          .keysize = 32,
+<a id='L265' name='L265'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_BLOCK</a>,
+<a id='L266' name='L266'></a>          .explicit_iv = 16,
+<a id='L267' name='L267'></a>          .cipher_iv = 16<em class='brace'>}</em>,
+<a id='L268' name='L268'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-128-XTS",
+<a id='L269' name='L269'></a>          .id = GNUTLS_CIPHER_AES_128_XTS,
+<a id='L270' name='L270'></a>          .blocksize = 16,
+<a id='L271' name='L271'></a>          .keysize = 32,
+<a id='L272' name='L272'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_BLOCK</a>,
+<a id='L273' name='L273'></a>          .explicit_iv = 16,
+<a id='L274' name='L274'></a>          .cipher_iv = 16<em class='brace'>}</em>,
+<a id='L275' name='L275'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-256-XTS",
+<a id='L276' name='L276'></a>          .id = GNUTLS_CIPHER_AES_256_XTS,
+<a id='L277' name='L277'></a>          .blocksize = 16,
+<a id='L278' name='L278'></a>          .keysize = 64,
+<a id='L279' name='L279'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_BLOCK</a>,
+<a id='L280' name='L280'></a>          .explicit_iv = 16,
+<a id='L281' name='L281'></a>          .cipher_iv = 16<em class='brace'>}</em>,
+<a id='L282' name='L282'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-128-SIV",
+<a id='L283' name='L283'></a>          .id = GNUTLS_CIPHER_AES_128_SIV,
+<a id='L284' name='L284'></a>          .blocksize = 16,
+<a id='L285' name='L285'></a>          .keysize = 32,
+<a id='L286' name='L286'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_AEAD</a>,
+<a id='L287' name='L287'></a>          .explicit_iv = 16,
+<a id='L288' name='L288'></a>          .cipher_iv = 16,
+<a id='L289' name='L289'></a>          .flags = <a href='../S/5822.html#L620' title='Defined at 620 in lib/gnutls_int.h.'>GNUTLS_CIPHER_FLAG_ONLY_AEAD</a>,
+<a id='L290' name='L290'></a>          .tagsize = 16<em class='brace'>}</em>,
+<a id='L291' name='L291'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "AES-256-SIV",
+<a id='L292' name='L292'></a>          .id = GNUTLS_CIPHER_AES_256_SIV,
+<a id='L293' name='L293'></a>          .blocksize = 16,
+<a id='L294' name='L294'></a>          .keysize = 64,
+<a id='L295' name='L295'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_AEAD</a>,
+<a id='L296' name='L296'></a>          .explicit_iv = 16,
+<a id='L297' name='L297'></a>          .cipher_iv = 16,
+<a id='L298' name='L298'></a>          .flags = <a href='../S/5822.html#L620' title='Defined at 620 in lib/gnutls_int.h.'>GNUTLS_CIPHER_FLAG_ONLY_AEAD</a>,
+<a id='L299' name='L299'></a>          .tagsize = 16<em class='brace'>}</em>,
+<a id='L300' name='L300'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "GOST28147-TC26Z-CNT",
+<a id='L301' name='L301'></a>          .id = GNUTLS_CIPHER_GOST28147_TC26Z_CNT,
+<a id='L302' name='L302'></a>          .blocksize = 8,
+<a id='L303' name='L303'></a>          .keysize = 32,
+<a id='L304' name='L304'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_STREAM</a>,
+<a id='L305' name='L305'></a>          .implicit_iv = 8,
+<a id='L306' name='L306'></a>          .cipher_iv = 8<em class='brace'>}</em>,
+<a id='L307' name='L307'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "3DES-CBC",
+<a id='L308' name='L308'></a>          .id = GNUTLS_CIPHER_3DES_CBC,
+<a id='L309' name='L309'></a>          .blocksize = 8,
+<a id='L310' name='L310'></a>          .keysize = 24,
+<a id='L311' name='L311'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_BLOCK</a>,
+<a id='L312' name='L312'></a>          .explicit_iv = 8,
+<a id='L313' name='L313'></a>          .cipher_iv = 8<em class='brace'>}</em>,
+<a id='L314' name='L314'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "DES-CBC",
+<a id='L315' name='L315'></a>          .id = GNUTLS_CIPHER_DES_CBC,
+<a id='L316' name='L316'></a>          .blocksize = 8,
+<a id='L317' name='L317'></a>          .keysize = 8,
+<a id='L318' name='L318'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_BLOCK</a>,
+<a id='L319' name='L319'></a>          .explicit_iv = 8,
+<a id='L320' name='L320'></a>          .cipher_iv = 8<em class='brace'>}</em>,
+<a id='L321' name='L321'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "ARCFOUR-40",
+<a id='L322' name='L322'></a>          .id = GNUTLS_CIPHER_ARCFOUR_40,
+<a id='L323' name='L323'></a>          .blocksize = 1,
+<a id='L324' name='L324'></a>          .keysize = 5,
+<a id='L325' name='L325'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_STREAM</a><em class='brace'>}</em>,
+<a id='L326' name='L326'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "RC2-40",
+<a id='L327' name='L327'></a>          .id = GNUTLS_CIPHER_RC2_40_CBC,
+<a id='L328' name='L328'></a>          .blocksize = 8,
+<a id='L329' name='L329'></a>          .keysize = 5,
+<a id='L330' name='L330'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_BLOCK</a>,
+<a id='L331' name='L331'></a>          .explicit_iv = 8,
+<a id='L332' name='L332'></a>          .cipher_iv = 8<em class='brace'>}</em>,
+<a id='L333' name='L333'></a>        <em class='brace'>{</em> .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "NULL",
+<a id='L334' name='L334'></a>          .id = GNUTLS_CIPHER_NULL,
+<a id='L335' name='L335'></a>          .blocksize = 1,
+<a id='L336' name='L336'></a>          .keysize = 0,
+<a id='L337' name='L337'></a>          .<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L362' title='Defined at 362 in lib/gnutls_int.h.'>CIPHER_STREAM</a>
+<a id='L338' name='L338'></a>        <em class='brace'>}</em>,
+<a id='L339' name='L339'></a>        <em class='brace'>{</em>0, 0, 0, 0, 0, 0, 0<em class='brace'>}</em>
+<a id='L340' name='L340'></a><em class='brace'>}</em>;
+<a id='L341' name='L341'></a>
+<a id='L342' name='L342'></a><em class='sharp'>#define</em> <a href='../R/1042.html' title='Multiple referred from 5 places.'>GNUTLS_CIPHER_LOOP</a>(<a href='../D/6902.html' title='Multiple defined in 2 places.'>b</a>) \
+<a id='L343' name='L343'></a>        <strong class='reserved'>const</strong> <a href='../D/7199.html' title='Multiple defined in 2 places.'>cipher_entry_st</a> *p; \
+<a id='L344' name='L344'></a>                <strong class='reserved'>for</strong>(p = algorithms; p-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>; p++) <em class='brace'>{</em> <a href='../D/6902.html' title='Multiple defined in 2 places.'>b</a> ; <em class='brace'>}</em>
+<a id='L345' name='L345'></a>
+<a id='L346' name='L346'></a><em class='sharp'>#define</em> <a href='../R/1023.html' title='Multiple referred from 4 places.'>GNUTLS_ALG_LOOP</a>(<a href='../S/6222.html#L29' title='Defined at 29 in gl/tests/test-verify.c.'>a</a>) \
+<a id='L347' name='L347'></a>                        <a href='../S/5256.html#L342' title='Defined at 342 in lib/algorithms/ciphers.c.'>GNUTLS_CIPHER_LOOP</a>( <strong class='reserved'>if</strong>(p-&gt;id == algorithm) <em class='brace'>{</em> <a href='../S/6222.html#L29' title='Defined at 29 in gl/tests/test-verify.c.'>a</a>; <strong class='reserved'>break</strong>; <em class='brace'>}</em> )
+<a id='L348' name='L348'></a>
+<a id='L349' name='L349'></a><em class='comment'>/* CIPHER functions */</em>
+<a id='L350' name='L350'></a>
+<a id='L351' name='L351'></a><strong class='reserved'>const</strong> <a href='../D/7199.html' title='Multiple defined in 2 places.'>cipher_entry_st</a> *<a href='../R/4943.html' title='Multiple referred from 2 places.'>_gnutls_cipher_to_entry</a>(gnutls_cipher_algorithm_t <a href='../D/6965.html' title='Multiple defined in 2 places.'>c</a>)
+<a id='L352' name='L352'></a><em class='brace'>{</em>
+<a id='L353' name='L353'></a>        <a href='../S/5256.html#L342' title='Defined at 342 in lib/algorithms/ciphers.c.'>GNUTLS_CIPHER_LOOP</a>(<strong class='reserved'>if</strong> (<a href='../D/6965.html' title='Multiple defined in 2 places.'>c</a> == p-&gt;id) <strong class='reserved'>return</strong> p);
+<a id='L354' name='L354'></a>
+<a id='L355' name='L355'></a>        <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L356' name='L356'></a><em class='brace'>}</em>
+<a id='L357' name='L357'></a>
+<a id='L358' name='L358'></a><em class='comment'>/* Returns cipher entry even for ciphers that are not supported,</em>
+<a id='L359' name='L359'></a><em class='comment'> * but are listed (e.g., deprecated ciphers).</em>
+<a id='L360' name='L360'></a><em class='comment'> */</em>
+<a id='L361' name='L361'></a><strong class='reserved'>const</strong> <a href='../D/7199.html' title='Multiple defined in 2 places.'>cipher_entry_st</a> *<a href='../R/6365.html' title='Multiple referred from 2 places.'>cipher_name_to_entry</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>)
+<a id='L362' name='L362'></a><em class='brace'>{</em>
+<a id='L363' name='L363'></a>        <a href='../S/5256.html#L342' title='Defined at 342 in lib/algorithms/ciphers.c.'>GNUTLS_CIPHER_LOOP</a>(
+<a id='L364' name='L364'></a>                <strong class='reserved'>if</strong> (<a href='../S/6335.html#L27' title='Defined at 27 in gl/c-strcasecmp.c.'>c_strcasecmp</a>(p-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>) == 0) <em class='brace'>{</em>
+<a id='L365' name='L365'></a>                        <strong class='reserved'>return</strong> p;
+<a id='L366' name='L366'></a>                <em class='brace'>}</em>
+<a id='L367' name='L367'></a>        );
+<a id='L368' name='L368'></a>
+<a id='L369' name='L369'></a>        <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L370' name='L370'></a><em class='brace'>}</em>
+<a id='L371' name='L371'></a>
+<a id='L372' name='L372'></a><em class='comment'>/**</em>
+<a id='L373' name='L373'></a><em class='comment'> * gnutls_cipher_get_block_size:</em>
+<a id='L374' name='L374'></a><em class='comment'> * @algorithm: is an encryption algorithm</em>
+<a id='L375' name='L375'></a><em class='comment'> *</em>
+<a id='L376' name='L376'></a><em class='comment'> * Returns: the block size of the encryption algorithm.</em>
+<a id='L377' name='L377'></a><em class='comment'> *</em>
+<a id='L378' name='L378'></a><em class='comment'> * Since: 2.10.0</em>
+<a id='L379' name='L379'></a><em class='comment'> **/</em>
+<a id='L380' name='L380'></a><strong class='reserved'>unsigned</strong> <a href='../S/5391.html#L287' title='Referred from 287 in lib/x509/privkey_openssl.c.'>gnutls_cipher_get_block_size</a>(gnutls_cipher_algorithm_t algorithm)
+<a id='L381' name='L381'></a><em class='brace'>{</em>
+<a id='L382' name='L382'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> ret = 0;
+<a id='L383' name='L383'></a>        <a href='../S/5256.html#L346' title='Defined at 346 in lib/algorithms/ciphers.c.'>GNUTLS_ALG_LOOP</a>(ret = p-&gt;blocksize);
+<a id='L384' name='L384'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L385' name='L385'></a>
+<a id='L386' name='L386'></a><em class='brace'>}</em>
+<a id='L387' name='L387'></a>
+<a id='L388' name='L388'></a><em class='comment'>/**</em>
+<a id='L389' name='L389'></a><em class='comment'> * gnutls_cipher_get_tag_size:</em>
+<a id='L390' name='L390'></a><em class='comment'> * @algorithm: is an encryption algorithm</em>
+<a id='L391' name='L391'></a><em class='comment'> *</em>
+<a id='L392' name='L392'></a><em class='comment'> * This function returns the tag size of an authenticated encryption</em>
+<a id='L393' name='L393'></a><em class='comment'> * algorithm. For non-AEAD algorithms, it returns zero.</em>
+<a id='L394' name='L394'></a><em class='comment'> *</em>
+<a id='L395' name='L395'></a><em class='comment'> * Returns: the tag size of the authenticated encryption algorithm.</em>
+<a id='L396' name='L396'></a><em class='comment'> *</em>
+<a id='L397' name='L397'></a><em class='comment'> * Since: 3.2.2</em>
+<a id='L398' name='L398'></a><em class='comment'> **/</em>
+<a id='L399' name='L399'></a><strong class='reserved'>unsigned</strong> <a href='../R/7626.html' title='Multiple referred from 8 places.'>gnutls_cipher_get_tag_size</a>(gnutls_cipher_algorithm_t algorithm)
+<a id='L400' name='L400'></a><em class='brace'>{</em>
+<a id='L401' name='L401'></a>        <strong class='reserved'>return</strong> <a href='../S/6029.html#L303' title='Defined at 303 in lib/algorithms.h.'>_gnutls_cipher_get_tag_size</a>(<a href='../S/6029.html#L232' title='Defined at 232 in lib/algorithms.h.'>cipher_to_entry</a>(algorithm));
+<a id='L402' name='L402'></a><em class='brace'>}</em>
+<a id='L403' name='L403'></a>
+<a id='L404' name='L404'></a><em class='comment'>/**</em>
+<a id='L405' name='L405'></a><em class='comment'> * gnutls_cipher_get_iv_size:</em>
+<a id='L406' name='L406'></a><em class='comment'> * @algorithm: is an encryption algorithm</em>
+<a id='L407' name='L407'></a><em class='comment'> *</em>
+<a id='L408' name='L408'></a><em class='comment'> * This function returns the size of the initialization vector (IV) for the</em>
+<a id='L409' name='L409'></a><em class='comment'> * provided algorithm. For algorithms with variable size IV (e.g., AES-CCM),</em>
+<a id='L410' name='L410'></a><em class='comment'> * the returned size will be the one used by TLS.</em>
+<a id='L411' name='L411'></a><em class='comment'> *</em>
+<a id='L412' name='L412'></a><em class='comment'> * Returns: block size for encryption algorithm.</em>
+<a id='L413' name='L413'></a><em class='comment'> *</em>
+<a id='L414' name='L414'></a><em class='comment'> * Since: 3.2.0</em>
+<a id='L415' name='L415'></a><em class='comment'> **/</em>
+<a id='L416' name='L416'></a><strong class='reserved'>unsigned</strong> <a href='../R/7623.html' title='Multiple referred from 16 places.'>gnutls_cipher_get_iv_size</a>(gnutls_cipher_algorithm_t algorithm)
+<a id='L417' name='L417'></a><em class='brace'>{</em>
+<a id='L418' name='L418'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> ret = 0;
+<a id='L419' name='L419'></a>        <a href='../S/5256.html#L346' title='Defined at 346 in lib/algorithms/ciphers.c.'>GNUTLS_ALG_LOOP</a>(ret = p-&gt;cipher_iv);
+<a id='L420' name='L420'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L421' name='L421'></a><em class='brace'>}</em>
+<a id='L422' name='L422'></a>
+<a id='L423' name='L423'></a><em class='comment'>/**</em>
+<a id='L424' name='L424'></a><em class='comment'> * gnutls_cipher_get_key_size:</em>
+<a id='L425' name='L425'></a><em class='comment'> * @algorithm: is an encryption algorithm</em>
+<a id='L426' name='L426'></a><em class='comment'> *</em>
+<a id='L427' name='L427'></a><em class='comment'> * This function returns the key size of the provided algorithm.</em>
+<a id='L428' name='L428'></a><em class='comment'> *</em>
+<a id='L429' name='L429'></a><em class='comment'> * Returns: length (in bytes) of the given cipher's key size, or 0 if</em>
+<a id='L430' name='L430'></a><em class='comment'> *   the given cipher is invalid.</em>
+<a id='L431' name='L431'></a><em class='comment'> **/</em>
+<a id='L432' name='L432'></a><a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../R/7624.html' title='Multiple referred from 14 places.'>gnutls_cipher_get_key_size</a>(gnutls_cipher_algorithm_t algorithm)
+<a id='L433' name='L433'></a><em class='brace'>{</em>                               <em class='comment'>/* In bytes */</em>
+<a id='L434' name='L434'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> ret = 0;
+<a id='L435' name='L435'></a>        <a href='../S/5256.html#L346' title='Defined at 346 in lib/algorithms/ciphers.c.'>GNUTLS_ALG_LOOP</a>(ret = p-&gt;keysize);
+<a id='L436' name='L436'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L437' name='L437'></a>
+<a id='L438' name='L438'></a><em class='brace'>}</em>
+<a id='L439' name='L439'></a>
+<a id='L440' name='L440'></a><em class='comment'>/**</em>
+<a id='L441' name='L441'></a><em class='comment'> * gnutls_cipher_get_name:</em>
+<a id='L442' name='L442'></a><em class='comment'> * @algorithm: is an encryption algorithm</em>
+<a id='L443' name='L443'></a><em class='comment'> *</em>
+<a id='L444' name='L444'></a><em class='comment'> * Convert a #gnutls_cipher_algorithm_t type to a string.</em>
+<a id='L445' name='L445'></a><em class='comment'> *</em>
+<a id='L446' name='L446'></a><em class='comment'> * Returns: a pointer to a string that contains the name of the</em>
+<a id='L447' name='L447'></a><em class='comment'> *   specified cipher, or %NULL.</em>
+<a id='L448' name='L448'></a><em class='comment'> **/</em>
+<a id='L449' name='L449'></a><strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../R/7625.html' title='Multiple referred from 65 places.'>gnutls_cipher_get_name</a>(gnutls_cipher_algorithm_t algorithm)
+<a id='L450' name='L450'></a><em class='brace'>{</em>
+<a id='L451' name='L451'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *ret = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L452' name='L452'></a>
+<a id='L453' name='L453'></a>        <em class='comment'>/* avoid prefix */</em>
+<a id='L454' name='L454'></a>        <a href='../S/5256.html#L346' title='Defined at 346 in lib/algorithms/ciphers.c.'>GNUTLS_ALG_LOOP</a>(ret = p-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>);
+<a id='L455' name='L455'></a>
+<a id='L456' name='L456'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L457' name='L457'></a><em class='brace'>}</em>
+<a id='L458' name='L458'></a>
+<a id='L459' name='L459'></a><em class='comment'>/**</em>
+<a id='L460' name='L460'></a><em class='comment'> * gnutls_cipher_get_id:</em>
+<a id='L461' name='L461'></a><em class='comment'> * @name: is a cipher algorithm name</em>
+<a id='L462' name='L462'></a><em class='comment'> *</em>
+<a id='L463' name='L463'></a><em class='comment'> * The names are compared in a case insensitive way.</em>
+<a id='L464' name='L464'></a><em class='comment'> *</em>
+<a id='L465' name='L465'></a><em class='comment'> * Returns: return a #gnutls_cipher_algorithm_t value corresponding to</em>
+<a id='L466' name='L466'></a><em class='comment'> *   the specified cipher, or %GNUTLS_CIPHER_UNKNOWN on error.</em>
+<a id='L467' name='L467'></a><em class='comment'> **/</em>
+<a id='L468' name='L468'></a>gnutls_cipher_algorithm_t <a href='../S/5260.html#L1172' title='Referred from 1172 in lib/priority.c.'>gnutls_cipher_get_id</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>)
+<a id='L469' name='L469'></a><em class='brace'>{</em>
+<a id='L470' name='L470'></a>        gnutls_cipher_algorithm_t ret = GNUTLS_CIPHER_UNKNOWN;
+<a id='L471' name='L471'></a>
+<a id='L472' name='L472'></a>        <a href='../S/5256.html#L342' title='Defined at 342 in lib/algorithms/ciphers.c.'>GNUTLS_CIPHER_LOOP</a>(
+<a id='L473' name='L473'></a>                <strong class='reserved'>if</strong> (<a href='../S/6335.html#L27' title='Defined at 27 in gl/c-strcasecmp.c.'>c_strcasecmp</a>(p-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>) == 0) <em class='brace'>{</em>
+<a id='L474' name='L474'></a>                        <strong class='reserved'>if</strong> (p-&gt;id == GNUTLS_CIPHER_NULL || <a href='../S/5750.html#L53' title='Defined at 53 in lib/cipher_int.c.'>_gnutls_cipher_exists</a>(p-&gt;id))
+<a id='L475' name='L475'></a>                                ret = p-&gt;id;
+<a id='L476' name='L476'></a>                        <strong class='reserved'>break</strong>;
+<a id='L477' name='L477'></a>                <em class='brace'>}</em>
+<a id='L478' name='L478'></a>        );
+<a id='L479' name='L479'></a>
+<a id='L480' name='L480'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L481' name='L481'></a><em class='brace'>}</em>
+<a id='L482' name='L482'></a>
+<a id='L483' name='L483'></a><em class='comment'>/**</em>
+<a id='L484' name='L484'></a><em class='comment'> * gnutls_cipher_list:</em>
+<a id='L485' name='L485'></a><em class='comment'> *</em>
+<a id='L486' name='L486'></a><em class='comment'> * Get a list of supported cipher algorithms.  Note that not</em>
+<a id='L487' name='L487'></a><em class='comment'> * necessarily all ciphers are supported as TLS cipher suites.  For</em>
+<a id='L488' name='L488'></a><em class='comment'> * example, DES is not supported as a cipher suite, but is supported</em>
+<a id='L489' name='L489'></a><em class='comment'> * for other purposes (e.g., PKCS#8 or similar).</em>
+<a id='L490' name='L490'></a><em class='comment'> *</em>
+<a id='L491' name='L491'></a><em class='comment'> * This function is not thread safe.</em>
+<a id='L492' name='L492'></a><em class='comment'> *</em>
+<a id='L493' name='L493'></a><em class='comment'> * Returns: a (0)-terminated list of #gnutls_cipher_algorithm_t</em>
+<a id='L494' name='L494'></a><em class='comment'> *   integers indicating the available ciphers.</em>
+<a id='L495' name='L495'></a><em class='comment'> *</em>
+<a id='L496' name='L496'></a><em class='comment'> **/</em>
+<a id='L497' name='L497'></a><strong class='reserved'>const</strong> gnutls_cipher_algorithm_t *<a href='../R/7629.html' title='Multiple referred from 2 places.'>gnutls_cipher_list</a>(<strong class='reserved'>void</strong>)
+<a id='L498' name='L498'></a><em class='brace'>{</em>
+<a id='L499' name='L499'></a>        <strong class='reserved'>static</strong> gnutls_cipher_algorithm_t supported_ciphers[<a href='../S/5822.html#L306' title='Defined at 306 in lib/gnutls_int.h.'>MAX_ALGOS</a>] =
+<a id='L500' name='L500'></a>            <em class='brace'>{</em> 0 <em class='brace'>}</em>;
+<a id='L501' name='L501'></a>
+<a id='L502' name='L502'></a>        <strong class='reserved'>if</strong> (supported_ciphers[0] == 0) <em class='brace'>{</em>
+<a id='L503' name='L503'></a>                <strong class='reserved'>int</strong> i = 0;
+<a id='L504' name='L504'></a>
+<a id='L505' name='L505'></a>                <a href='../S/5256.html#L342' title='Defined at 342 in lib/algorithms/ciphers.c.'>GNUTLS_CIPHER_LOOP</a>(
+<a id='L506' name='L506'></a>                        <strong class='reserved'>if</strong> (p-&gt;id == GNUTLS_CIPHER_NULL || <a href='../S/5750.html#L53' title='Defined at 53 in lib/cipher_int.c.'>_gnutls_cipher_exists</a>(p-&gt;id))
+<a id='L507' name='L507'></a>                                supported_ciphers[i++] = p-&gt;id;
+<a id='L508' name='L508'></a>                );
+<a id='L509' name='L509'></a>                supported_ciphers[i++] = 0;
+<a id='L510' name='L510'></a>        <em class='brace'>}</em>
+<a id='L511' name='L511'></a>
+<a id='L512' name='L512'></a>        <strong class='reserved'>return</strong> supported_ciphers;
+<a id='L513' name='L513'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L351'>[^]</a><a href='#L497'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

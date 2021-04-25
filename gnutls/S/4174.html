@@ -1,0 +1,722 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src/srptool.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6496.html'>src</a>/srptool.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L58'>[^]</a><a href='#L634'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L58' title='Defined at 58.'>print_num</a></li>
+<li><a href='#L75' title='Defined at 75.'>generate_create_conf</a></li>
+<li><a href='#L153' title='Defined at 153.'>_verify_passwd_int</a></li>
+<li><a href='#L212' title='Defined at 212.'>filecopy</a></li>
+<li><a href='#L248' title='Defined at 248.'>find_strchr</a></li>
+<li><a href='#L285' title='Defined at 285.'>verify_passwd</a></li>
+<li><a href='#L380' title='Defined at 380.'>tls_log_func</a></li>
+<li><a href='#L385' title='Defined at 385.'>main</a></li>
+<li><a href='#L459' title='Defined at 459.'>_srp_crypt</a></li>
+<li><a href='#L511' title='Defined at 511.'>crypt_int</a></li>
+<li><a href='#L634' title='Defined at 634.'>read_conf_values</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2001-2012 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * GnuTLS is free software: you can redistribute it and/or modify it</em>
+<a id='L7' name='L7'></a><em class='comment'> * under the terms of the GNU General Public License as published by</em>
+<a id='L8' name='L8'></a><em class='comment'> * the Free Software Foundation, either version 3 of the License, or</em>
+<a id='L9' name='L9'></a><em class='comment'> * (at your option) any later version.</em>
+<a id='L10' name='L10'></a><em class='comment'> *</em>
+<a id='L11' name='L11'></a><em class='comment'> * GnuTLS is distributed in the hope that it will be useful, but</em>
+<a id='L12' name='L12'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L13' name='L13'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L14' name='L14'></a><em class='comment'> * General Public License for more details.</em>
+<a id='L15' name='L15'></a><em class='comment'> *</em>
+<a id='L16' name='L16'></a><em class='comment'> * You should have received a copy of the GNU General Public License</em>
+<a id='L17' name='L17'></a><em class='comment'> * along with this program.  If not, see</em>
+<a id='L18' name='L18'></a><em class='comment'> * &lt;https://www.gnu.org/licenses/&gt;.</em>
+<a id='L19' name='L19'></a><em class='comment'> */</em>
+<a id='L20' name='L20'></a>
+<a id='L21' name='L21'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> &lt;gnutls/gnutls.h&gt;
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;<a href='../I/579.html'>gnutls/crypto.h</a>&gt;      <em class='comment'>/* for random */</em>
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;sys/types.h&gt;
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;sys/stat.h&gt;
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a><em class='sharp'>#ifndef</em> _WIN32
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;pwd.h&gt;
+<a id='L34' name='L34'></a><em class='sharp'>#include</em> &lt;unistd.h&gt;
+<a id='L35' name='L35'></a><em class='sharp'>#else</em>
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> &lt;windows.h&gt;
+<a id='L37' name='L37'></a><em class='sharp'>#endif</em>
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a><em class='comment'>/* Gnulib portability files. */</em>
+<a id='L40' name='L40'></a><em class='sharp'>#include</em> &lt;<a href='4109.html'>getpass.h</a>&gt;
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> &lt;<a href='../I/135.html'>minmax.h</a>&gt;
+<a id='L42' name='L42'></a>
+<a id='L43' name='L43'></a><em class='sharp'>#include</em> &lt;srptool-args.h&gt;
+<a id='L44' name='L44'></a>
+<a id='L45' name='L45'></a><em class='comment'>/* This may need some rewrite. A lot of stuff which should be here</em>
+<a id='L46' name='L46'></a><em class='comment'> * are in the library, which is not good.</em>
+<a id='L47' name='L47'></a><em class='comment'> */</em>
+<a id='L48' name='L48'></a>
+<a id='L49' name='L49'></a><strong class='reserved'>int</strong> <a href='../S/4174.html#L511' title='Defined at 511 in src/srptool.c.'>crypt_int</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *username, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *passwd, <strong class='reserved'>int</strong> salt,
+<a id='L50' name='L50'></a>              <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *tpasswd_conf, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *tpasswd, <strong class='reserved'>int</strong> uindex);
+<a id='L51' name='L51'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/4174.html#L634' title='Defined at 634 in src/srptool.c.'>read_conf_values</a>(gnutls_datum_t * <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>, gnutls_datum_t * n,
+<a id='L52' name='L52'></a>                            <strong class='reserved'>char</strong> *str);
+<a id='L53' name='L53'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/4174.html#L153' title='Defined at 153 in src/srptool.c.'>_verify_passwd_int</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *username, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *passwd,
+<a id='L54' name='L54'></a>                              <strong class='reserved'>char</strong> *verifier, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *salt,
+<a id='L55' name='L55'></a>                              <strong class='reserved'>const</strong> gnutls_datum_t * <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>,
+<a id='L56' name='L56'></a>                              <strong class='reserved'>const</strong> gnutls_datum_t * n);
+<a id='L57' name='L57'></a>
+<a id='L58' name='L58'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/9808.html' title='Multiple referred from 2 places.'>print_num</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *msg, <strong class='reserved'>const</strong> gnutls_datum_t * num)
+<a id='L59' name='L59'></a><em class='brace'>{</em>
+<a id='L60' name='L60'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> i;
+<a id='L61' name='L61'></a>
+<a id='L62' name='L62'></a>        <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("%s:\t", msg);
+<a id='L63' name='L63'></a>
+<a id='L64' name='L64'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; num-&gt;size; i++) <em class='brace'>{</em>
+<a id='L65' name='L65'></a>                <strong class='reserved'>if</strong> (i != 0 &amp;&amp; i % 12 == 0)
+<a id='L66' name='L66'></a>                        <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("\n\t");
+<a id='L67' name='L67'></a>                <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (i != 0 &amp;&amp; i != num-&gt;size)
+<a id='L68' name='L68'></a>                        <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>(":");
+<a id='L69' name='L69'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("%.2x", num-&gt;data[i]);
+<a id='L70' name='L70'></a>        <em class='brace'>}</em>
+<a id='L71' name='L71'></a>        <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("\n\n");
+<a id='L72' name='L72'></a>
+<a id='L73' name='L73'></a><em class='brace'>}</em>
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/4174.html#L408' title='Referred from 408 in src/srptool.c.'>generate_create_conf</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *tpasswd_conf)
+<a id='L76' name='L76'></a><em class='brace'>{</em>
+<a id='L77' name='L77'></a>        FILE *fp;
+<a id='L78' name='L78'></a>        <strong class='reserved'>char</strong> line[5 * 1024];
+<a id='L79' name='L79'></a>        <strong class='reserved'>int</strong> index = 1, srp_idx;
+<a id='L80' name='L80'></a>        gnutls_datum_t <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>, n;
+<a id='L81' name='L81'></a>        gnutls_datum_t str_g, str_n;
+<a id='L82' name='L82'></a>
+<a id='L83' name='L83'></a>        fp = <a href='../D/7898.html' title='Multiple defined in 7 places.'>fopen</a>(tpasswd_conf, "w");
+<a id='L84' name='L84'></a>        <strong class='reserved'>if</strong> (fp == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L85' name='L85'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot open file '%s'\n", tpasswd_conf);
+<a id='L86' name='L86'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L87' name='L87'></a>        <em class='brace'>}</em>
+<a id='L88' name='L88'></a>
+<a id='L89' name='L89'></a>        <strong class='reserved'>for</strong> (index = 1; index &lt;= 5; index++) <em class='brace'>{</em>
+<a id='L90' name='L90'></a>
+<a id='L91' name='L91'></a>                <strong class='reserved'>if</strong> (index == 1) <em class='brace'>{</em>
+<a id='L92' name='L92'></a>                        srp_idx = 2;
+<a id='L93' name='L93'></a>                        n = gnutls_srp_1536_group_prime;
+<a id='L94' name='L94'></a>                        <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a> = gnutls_srp_1536_group_generator;
+<a id='L95' name='L95'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (index == 2) <em class='brace'>{</em>
+<a id='L96' name='L96'></a>                        srp_idx = 3;
+<a id='L97' name='L97'></a>                        n = gnutls_srp_2048_group_prime;
+<a id='L98' name='L98'></a>                        <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a> = gnutls_srp_2048_group_generator;
+<a id='L99' name='L99'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (index == 3) <em class='brace'>{</em>
+<a id='L100' name='L100'></a>                        srp_idx = 4;
+<a id='L101' name='L101'></a>                        n = gnutls_srp_3072_group_prime;
+<a id='L102' name='L102'></a>                        <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a> = gnutls_srp_3072_group_generator;
+<a id='L103' name='L103'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (index == 4) <em class='brace'>{</em>
+<a id='L104' name='L104'></a>                        srp_idx = 5;
+<a id='L105' name='L105'></a>                        n = gnutls_srp_4096_group_prime;
+<a id='L106' name='L106'></a>                        <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a> = gnutls_srp_4096_group_generator;
+<a id='L107' name='L107'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (index == 5) <em class='brace'>{</em>
+<a id='L108' name='L108'></a>                        srp_idx = 7;
+<a id='L109' name='L109'></a>                        n = gnutls_srp_8192_group_prime;
+<a id='L110' name='L110'></a>                        <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a> = gnutls_srp_8192_group_generator;
+<a id='L111' name='L111'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L112' name='L112'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Unknown index: %d\n", index);
+<a id='L113' name='L113'></a>                        <strong class='reserved'>return</strong> -1;
+<a id='L114' name='L114'></a>                <em class='brace'>}</em>
+<a id='L115' name='L115'></a>
+<a id='L116' name='L116'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("\nGroup %d, of %d bits:\n", srp_idx, n.size * 8);
+<a id='L117' name='L117'></a>                <a href='../S/4174.html#L58' title='Defined at 58 in src/srptool.c.'>print_num</a>("Generator", &amp;<a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>);
+<a id='L118' name='L118'></a>                <a href='../S/4174.html#L58' title='Defined at 58 in src/srptool.c.'>print_num</a>("Prime", &amp;n);
+<a id='L119' name='L119'></a>
+<a id='L120' name='L120'></a>                <strong class='reserved'>if</strong> (gnutls_srp_base64_encode_alloc(&amp;n, &amp;str_n) &lt; 0) <em class='brace'>{</em>
+<a id='L121' name='L121'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Could not encode\n");
+<a id='L122' name='L122'></a>                        <a href='../D/7814.html' title='Multiple defined in 4 places.'>fclose</a>(fp);
+<a id='L123' name='L123'></a>                        <strong class='reserved'>return</strong> -1;
+<a id='L124' name='L124'></a>                <em class='brace'>}</em>
+<a id='L125' name='L125'></a>
+<a id='L126' name='L126'></a>                <strong class='reserved'>if</strong> (gnutls_srp_base64_encode_alloc(&amp;<a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>, &amp;str_g) &lt; 0) <em class='brace'>{</em>
+<a id='L127' name='L127'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Could not encode\n");
+<a id='L128' name='L128'></a>                        <a href='../D/7814.html' title='Multiple defined in 4 places.'>fclose</a>(fp);
+<a id='L129' name='L129'></a>                        <strong class='reserved'>return</strong> -1;
+<a id='L130' name='L130'></a>                <em class='brace'>}</em>
+<a id='L131' name='L131'></a>
+<a id='L132' name='L132'></a>                <a href='../D/11532.html' title='Multiple defined in 7 places.'>sprintf</a>(line, "%d:%s:%s\n", srp_idx, str_n.data, str_g.data);
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(str_n.data);
+<a id='L135' name='L135'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(str_g.data);
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a>                <a href='../D/7942.html' title='Multiple defined in 8 places.'>fwrite</a>(line, 1, strlen(line), fp);
+<a id='L138' name='L138'></a>
+<a id='L139' name='L139'></a>        <em class='brace'>}</em>
+<a id='L140' name='L140'></a>
+<a id='L141' name='L141'></a>        <a href='../D/7814.html' title='Multiple defined in 4 places.'>fclose</a>(fp);
+<a id='L142' name='L142'></a>
+<a id='L143' name='L143'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L144' name='L144'></a>
+<a id='L145' name='L145'></a><em class='brace'>}</em>
+<a id='L146' name='L146'></a>
+<a id='L147' name='L147'></a><em class='comment'>/* The format of a tpasswd file is:</em>
+<a id='L148' name='L148'></a><em class='comment'> * username:verifier:salt:index</em>
+<a id='L149' name='L149'></a><em class='comment'> *</em>
+<a id='L150' name='L150'></a><em class='comment'> * index is the index of the prime-generator pair in tpasswd.conf</em>
+<a id='L151' name='L151'></a><em class='comment'> */</em>
+<a id='L152' name='L152'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L153' name='L153'></a><a href='../R/5824.html' title='Multiple referred from 2 places.'>_verify_passwd_int</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *username, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *passwd,
+<a id='L154' name='L154'></a>                   <strong class='reserved'>char</strong> *verifier, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *salt,
+<a id='L155' name='L155'></a>                   <strong class='reserved'>const</strong> gnutls_datum_t * <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>, <strong class='reserved'>const</strong> gnutls_datum_t * n)
+<a id='L156' name='L156'></a><em class='brace'>{</em>
+<a id='L157' name='L157'></a>        <strong class='reserved'>char</strong> _salt[1024];
+<a id='L158' name='L158'></a>        gnutls_datum_t tmp, raw_salt, new_verifier;
+<a id='L159' name='L159'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> salt_size;
+<a id='L160' name='L160'></a>        <strong class='reserved'>char</strong> *pos;
+<a id='L161' name='L161'></a>
+<a id='L162' name='L162'></a>        <strong class='reserved'>if</strong> (salt == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> || verifier == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L163' name='L163'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L164' name='L164'></a>
+<a id='L165' name='L165'></a>        <strong class='reserved'>if</strong> (strlen(salt) &gt;= <strong class='reserved'>sizeof</strong>(_salt)) <em class='brace'>{</em>
+<a id='L166' name='L166'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Too long salt.\n");
+<a id='L167' name='L167'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L168' name='L168'></a>        <em class='brace'>}</em>
+<a id='L169' name='L169'></a>
+<a id='L170' name='L170'></a>        <em class='comment'>/* copy salt, and null terminate after the ':' */</em>
+<a id='L171' name='L171'></a>        strcpy(_salt, salt);
+<a id='L172' name='L172'></a>        pos = <a href='../D/11595.html' title='Multiple defined in 5 places.'>strchr</a>(_salt, ':');
+<a id='L173' name='L173'></a>        <strong class='reserved'>if</strong> (pos != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L174' name='L174'></a>                *pos = 0;
+<a id='L175' name='L175'></a>
+<a id='L176' name='L176'></a>        <em class='comment'>/* convert salt to binary. */</em>
+<a id='L177' name='L177'></a>        tmp.data = (<strong class='reserved'>void</strong> *) _salt;
+<a id='L178' name='L178'></a>        tmp.size = strlen(_salt);
+<a id='L179' name='L179'></a>
+<a id='L180' name='L180'></a>        <strong class='reserved'>if</strong> (gnutls_srp_base64_decode_alloc(&amp;tmp, &amp;raw_salt) &lt; 0) <em class='brace'>{</em>
+<a id='L181' name='L181'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Could not decode salt.\n");
+<a id='L182' name='L182'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L183' name='L183'></a>        <em class='brace'>}</em>
+<a id='L184' name='L184'></a>
+<a id='L185' name='L185'></a>        <strong class='reserved'>if</strong> (<a href='../S/5454.html#L732' title='Defined at 732 in lib/srp.c.'>gnutls_srp_verifier</a>
+<a id='L186' name='L186'></a>            (username, passwd, &amp;raw_salt, <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>, n, &amp;new_verifier) &lt; 0) <em class='brace'>{</em>
+<a id='L187' name='L187'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Could not make the verifier\n");
+<a id='L188' name='L188'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L189' name='L189'></a>        <em class='brace'>}</em>
+<a id='L190' name='L190'></a>
+<a id='L191' name='L191'></a>        <a href='../D/7914.html' title='Multiple defined in 4 places.'>free</a>(raw_salt.data);
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a>        <em class='comment'>/* encode the verifier into _salt */</em>
+<a id='L194' name='L194'></a>        salt_size = <strong class='reserved'>sizeof</strong>(_salt);
+<a id='L195' name='L195'></a>        memset(_salt, 0, salt_size);
+<a id='L196' name='L196'></a>        <strong class='reserved'>if</strong> (<a href='../S/5308.html#L308' title='Defined at 308 in lib/auth/srp_sb64.c.'>gnutls_srp_base64_encode</a>(&amp;new_verifier, _salt, &amp;salt_size) &lt; 0) <em class='brace'>{</em>
+<a id='L197' name='L197'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Encoding error\n");
+<a id='L198' name='L198'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L199' name='L199'></a>        <em class='brace'>}</em>
+<a id='L200' name='L200'></a>
+<a id='L201' name='L201'></a>        <a href='../D/7914.html' title='Multiple defined in 4 places.'>free</a>(new_verifier.data);
+<a id='L202' name='L202'></a>
+<a id='L203' name='L203'></a>        <strong class='reserved'>if</strong> (strncmp(verifier, _salt, strlen(_salt)) == 0) <em class='brace'>{</em>
+<a id='L204' name='L204'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Password verified\n");
+<a id='L205' name='L205'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L206' name='L206'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L207' name='L207'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Password does NOT match\n");
+<a id='L208' name='L208'></a>        <em class='brace'>}</em>
+<a id='L209' name='L209'></a>        <strong class='reserved'>return</strong> -1;
+<a id='L210' name='L210'></a><em class='brace'>}</em>
+<a id='L211' name='L211'></a>
+<a id='L212' name='L212'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../R/6979.html' title='Multiple referred from 2 places.'>filecopy</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *src, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *dst)
+<a id='L213' name='L213'></a><em class='brace'>{</em>
+<a id='L214' name='L214'></a>        FILE *fp, *fp2;
+<a id='L215' name='L215'></a>        <strong class='reserved'>char</strong> line[5 * 1024];
+<a id='L216' name='L216'></a>        <strong class='reserved'>char</strong> *p;
+<a id='L217' name='L217'></a>
+<a id='L218' name='L218'></a>        fp = <a href='../D/7898.html' title='Multiple defined in 7 places.'>fopen</a>(dst, "w");
+<a id='L219' name='L219'></a>        <strong class='reserved'>if</strong> (fp == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L220' name='L220'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot open '%s' for write\n", dst);
+<a id='L221' name='L221'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L222' name='L222'></a>        <em class='brace'>}</em>
+<a id='L223' name='L223'></a>
+<a id='L224' name='L224'></a>        fp2 = <a href='../D/7898.html' title='Multiple defined in 7 places.'>fopen</a>(src, "r");
+<a id='L225' name='L225'></a>        <strong class='reserved'>if</strong> (fp2 == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L226' name='L226'></a>                <em class='comment'>/* empty file */</em>
+<a id='L227' name='L227'></a>                <a href='../D/7814.html' title='Multiple defined in 4 places.'>fclose</a>(fp);
+<a id='L228' name='L228'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L229' name='L229'></a>        <em class='brace'>}</em>
+<a id='L230' name='L230'></a>
+<a id='L231' name='L231'></a>        line[<strong class='reserved'>sizeof</strong>(line) - 1] = 0;
+<a id='L232' name='L232'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L233' name='L233'></a>                p = <a href='../D/7826.html' title='Multiple defined in 4 places.'>fgets</a>(line, <strong class='reserved'>sizeof</strong>(line) - 1, fp2);
+<a id='L234' name='L234'></a>                <strong class='reserved'>if</strong> (p == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L235' name='L235'></a>                        <strong class='reserved'>break</strong>;
+<a id='L236' name='L236'></a>
+<a id='L237' name='L237'></a>                <a href='../D/7910.html' title='Multiple defined in 4 places.'>fputs</a>(line, fp);
+<a id='L238' name='L238'></a>        <em class='brace'>}</em>
+<a id='L239' name='L239'></a>        <strong class='reserved'>while</strong> (1);
+<a id='L240' name='L240'></a>
+<a id='L241' name='L241'></a>        <a href='../D/7814.html' title='Multiple defined in 4 places.'>fclose</a>(fp);
+<a id='L242' name='L242'></a>        <a href='../D/7814.html' title='Multiple defined in 4 places.'>fclose</a>(fp2);
+<a id='L243' name='L243'></a>
+<a id='L244' name='L244'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L245' name='L245'></a><em class='brace'>}</em>
+<a id='L246' name='L246'></a>
+<a id='L247' name='L247'></a><em class='comment'>/* accepts password file */</em>
+<a id='L248' name='L248'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/4174.html#L295' title='Referred from 295 in src/srptool.c.'>find_strchr</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *username, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *file)
+<a id='L249' name='L249'></a><em class='brace'>{</em>
+<a id='L250' name='L250'></a>        FILE *fp;
+<a id='L251' name='L251'></a>        <strong class='reserved'>char</strong> *pos;
+<a id='L252' name='L252'></a>        <strong class='reserved'>char</strong> line[5 * 1024];
+<a id='L253' name='L253'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> i;
+<a id='L254' name='L254'></a>
+<a id='L255' name='L255'></a>        fp = <a href='../D/7898.html' title='Multiple defined in 7 places.'>fopen</a>(file, "r");
+<a id='L256' name='L256'></a>        <strong class='reserved'>if</strong> (fp == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L257' name='L257'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot open file '%s'\n", file);
+<a id='L258' name='L258'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L259' name='L259'></a>        <em class='brace'>}</em>
+<a id='L260' name='L260'></a>
+<a id='L261' name='L261'></a>        <strong class='reserved'>while</strong> (<a href='../D/7826.html' title='Multiple defined in 4 places.'>fgets</a>(line, <strong class='reserved'>sizeof</strong>(line), fp) != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L262' name='L262'></a>                <em class='comment'>/* move to first ':' */</em>
+<a id='L263' name='L263'></a>                i = 0;
+<a id='L264' name='L264'></a>                <strong class='reserved'>while</strong> ((line[i] != ':') &amp;&amp; (line[i] != '\0')
+<a id='L265' name='L265'></a>                       &amp;&amp; (i &lt; <strong class='reserved'>sizeof</strong>(line))) <em class='brace'>{</em>
+<a id='L266' name='L266'></a>                        i++;
+<a id='L267' name='L267'></a>                <em class='brace'>}</em>
+<a id='L268' name='L268'></a>                <strong class='reserved'>if</strong> (strncmp(username, line, <a href='../D/2691.html' title='Multiple defined in 4 places.'>MAX</a>(i, strlen(username))) == 0) <em class='brace'>{</em>
+<a id='L269' name='L269'></a>                        <em class='comment'>/* find the index */</em>
+<a id='L270' name='L270'></a>                        pos = <a href='../D/11631.html' title='Multiple defined in 5 places.'>strrchr</a>(line, ':');
+<a id='L271' name='L271'></a>                        pos++;
+<a id='L272' name='L272'></a>                        <a href='../D/7814.html' title='Multiple defined in 4 places.'>fclose</a>(fp);
+<a id='L273' name='L273'></a>                        <strong class='reserved'>return</strong> atoi(pos);
+<a id='L274' name='L274'></a>                <em class='brace'>}</em>
+<a id='L275' name='L275'></a>        <em class='brace'>}</em>
+<a id='L276' name='L276'></a>
+<a id='L277' name='L277'></a>        <a href='../D/7814.html' title='Multiple defined in 4 places.'>fclose</a>(fp);
+<a id='L278' name='L278'></a>        <strong class='reserved'>return</strong> -1;
+<a id='L279' name='L279'></a><em class='brace'>}</em>
+<a id='L280' name='L280'></a>
+<a id='L281' name='L281'></a><em class='comment'>/* Parses the tpasswd files, in order to verify the given</em>
+<a id='L282' name='L282'></a><em class='comment'> * username/password pair.</em>
+<a id='L283' name='L283'></a><em class='comment'> */</em>
+<a id='L284' name='L284'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L285' name='L285'></a><a href='../S/4174.html#L449' title='Referred from 449 in src/srptool.c.'>verify_passwd</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *conffile, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *tpasswd,
+<a id='L286' name='L286'></a>              <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *username, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *passwd)
+<a id='L287' name='L287'></a><em class='brace'>{</em>
+<a id='L288' name='L288'></a>        FILE *fp;
+<a id='L289' name='L289'></a>        <strong class='reserved'>char</strong> line[5 * 1024];
+<a id='L290' name='L290'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> i;
+<a id='L291' name='L291'></a>        gnutls_datum_t <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>, n;
+<a id='L292' name='L292'></a>        <strong class='reserved'>int</strong> iindex;
+<a id='L293' name='L293'></a>        <strong class='reserved'>char</strong> *p, *pos;
+<a id='L294' name='L294'></a>
+<a id='L295' name='L295'></a>        iindex = <a href='../S/4174.html#L248' title='Defined at 248 in src/srptool.c.'>find_strchr</a>(username, tpasswd);
+<a id='L296' name='L296'></a>        <strong class='reserved'>if</strong> (iindex == -1) <em class='brace'>{</em>
+<a id='L297' name='L297'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot find '%s' in %s\n", username,
+<a id='L298' name='L298'></a>                        tpasswd);
+<a id='L299' name='L299'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L300' name='L300'></a>        <em class='brace'>}</em>
+<a id='L301' name='L301'></a>
+<a id='L302' name='L302'></a>        fp = <a href='../D/7898.html' title='Multiple defined in 7 places.'>fopen</a>(conffile, "r");
+<a id='L303' name='L303'></a>        <strong class='reserved'>if</strong> (fp == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L304' name='L304'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot find %s\n", conffile);
+<a id='L305' name='L305'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L306' name='L306'></a>        <em class='brace'>}</em>
+<a id='L307' name='L307'></a>
+<a id='L308' name='L308'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L309' name='L309'></a>                p = <a href='../D/7826.html' title='Multiple defined in 4 places.'>fgets</a>(line, <strong class='reserved'>sizeof</strong>(line) - 1, fp);
+<a id='L310' name='L310'></a>        <em class='brace'>}</em>
+<a id='L311' name='L311'></a>        <strong class='reserved'>while</strong> (p != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> &amp;&amp; atoi(p) != iindex);
+<a id='L312' name='L312'></a>
+<a id='L313' name='L313'></a>        <strong class='reserved'>if</strong> (p == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L314' name='L314'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot find entry in %s\n", conffile);
+<a id='L315' name='L315'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L316' name='L316'></a>        <em class='brace'>}</em>
+<a id='L317' name='L317'></a>        line[<strong class='reserved'>sizeof</strong>(line) - 1] = 0;
+<a id='L318' name='L318'></a>
+<a id='L319' name='L319'></a>        <a href='../D/7814.html' title='Multiple defined in 4 places.'>fclose</a>(fp);
+<a id='L320' name='L320'></a>
+<a id='L321' name='L321'></a>        <strong class='reserved'>if</strong> ((iindex = <a href='../S/4174.html#L634' title='Defined at 634 in src/srptool.c.'>read_conf_values</a>(&amp;<a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>, &amp;n, line)) &lt; 0) <em class='brace'>{</em>
+<a id='L322' name='L322'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot parse conf file '%s'\n", conffile);
+<a id='L323' name='L323'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L324' name='L324'></a>        <em class='brace'>}</em>
+<a id='L325' name='L325'></a>
+<a id='L326' name='L326'></a>        fp = <a href='../D/7898.html' title='Multiple defined in 7 places.'>fopen</a>(tpasswd, "r");
+<a id='L327' name='L327'></a>        <strong class='reserved'>if</strong> (fp == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L328' name='L328'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot open file '%s'\n", tpasswd);
+<a id='L329' name='L329'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L330' name='L330'></a>        <em class='brace'>}</em>
+<a id='L331' name='L331'></a>
+<a id='L332' name='L332'></a>        <strong class='reserved'>while</strong> (<a href='../D/7826.html' title='Multiple defined in 4 places.'>fgets</a>(line, <strong class='reserved'>sizeof</strong>(line), fp) != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L333' name='L333'></a>                <em class='comment'>/* move to first ':' </em>
+<a id='L334' name='L334'></a><em class='comment'>                 * This is the actual verifier.</em>
+<a id='L335' name='L335'></a><em class='comment'>                 */</em>
+<a id='L336' name='L336'></a>                i = 0;
+<a id='L337' name='L337'></a>                <strong class='reserved'>while</strong> ((line[i] != ':') &amp;&amp; (line[i] != '\0')
+<a id='L338' name='L338'></a>                       &amp;&amp; (i &lt; <strong class='reserved'>sizeof</strong>(line))) <em class='brace'>{</em>
+<a id='L339' name='L339'></a>                        i++;
+<a id='L340' name='L340'></a>                <em class='brace'>}</em>
+<a id='L341' name='L341'></a>                <strong class='reserved'>if</strong> (strncmp(username, line, <a href='../D/2691.html' title='Multiple defined in 4 places.'>MAX</a>(i, strlen(username))) == 0) <em class='brace'>{</em>
+<a id='L342' name='L342'></a>                        <strong class='reserved'>char</strong> *verifier_pos, *salt_pos;
+<a id='L343' name='L343'></a>
+<a id='L344' name='L344'></a>                        pos = <a href='../D/11595.html' title='Multiple defined in 5 places.'>strchr</a>(line, ':');
+<a id='L345' name='L345'></a>                        <a href='../D/7814.html' title='Multiple defined in 4 places.'>fclose</a>(fp);
+<a id='L346' name='L346'></a>                        <strong class='reserved'>if</strong> (pos == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L347' name='L347'></a>                                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr,
+<a id='L348' name='L348'></a>                                        "Cannot parse conf file '%s'\n",
+<a id='L349' name='L349'></a>                                        conffile);
+<a id='L350' name='L350'></a>                                <strong class='reserved'>return</strong> -1;
+<a id='L351' name='L351'></a>                        <em class='brace'>}</em>
+<a id='L352' name='L352'></a>                        pos++;
+<a id='L353' name='L353'></a>                        verifier_pos = pos;
+<a id='L354' name='L354'></a>
+<a id='L355' name='L355'></a>                        <em class='comment'>/* Move to the salt */</em>
+<a id='L356' name='L356'></a>                        pos = <a href='../D/11595.html' title='Multiple defined in 5 places.'>strchr</a>(pos, ':');
+<a id='L357' name='L357'></a>                        <strong class='reserved'>if</strong> (pos == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L358' name='L358'></a>                                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr,
+<a id='L359' name='L359'></a>                                        "Cannot parse conf file '%s'\n",
+<a id='L360' name='L360'></a>                                        conffile);
+<a id='L361' name='L361'></a>                                <strong class='reserved'>return</strong> -1;
+<a id='L362' name='L362'></a>                        <em class='brace'>}</em>
+<a id='L363' name='L363'></a>                        pos++;
+<a id='L364' name='L364'></a>                        salt_pos = pos;
+<a id='L365' name='L365'></a>
+<a id='L366' name='L366'></a>                        <strong class='reserved'>return</strong> <a href='../S/4174.html#L153' title='Defined at 153 in src/srptool.c.'>_verify_passwd_int</a>(username, passwd,
+<a id='L367' name='L367'></a>                                                  verifier_pos, salt_pos,
+<a id='L368' name='L368'></a>                                                  &amp;<a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>, &amp;n);
+<a id='L369' name='L369'></a>                <em class='brace'>}</em>
+<a id='L370' name='L370'></a>        <em class='brace'>}</em>
+<a id='L371' name='L371'></a>
+<a id='L372' name='L372'></a>        <a href='../D/7814.html' title='Multiple defined in 4 places.'>fclose</a>(fp);
+<a id='L373' name='L373'></a>        <strong class='reserved'>return</strong> -1;
+<a id='L374' name='L374'></a>
+<a id='L375' name='L375'></a><em class='brace'>}</em>
+<a id='L376' name='L376'></a>
+<a id='L377' name='L377'></a><em class='sharp'>#define</em> <a href='../S/4174.html#L414' title='Referred from 414 in src/srptool.c.'>KPASSWD</a> "/etc/tpasswd"
+<a id='L378' name='L378'></a><em class='sharp'>#define</em> <a href='../S/4174.html#L419' title='Referred from 419 in src/srptool.c.'>KPASSWD_CONF</a> "/etc/tpasswd.conf"
+<a id='L379' name='L379'></a>
+<a id='L380' name='L380'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/10917.html' title='Multiple referred from 309 places.'>tls_log_func</a>(<strong class='reserved'>int</strong> level, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str)
+<a id='L381' name='L381'></a><em class='brace'>{</em>
+<a id='L382' name='L382'></a>        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "|&lt;%d&gt;| %s", level, str);
+<a id='L383' name='L383'></a><em class='brace'>}</em>
+<a id='L384' name='L384'></a>
+<a id='L385' name='L385'></a><strong class='reserved'>int</strong> main(<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv)
+<a id='L386' name='L386'></a><em class='brace'>{</em>
+<a id='L387' name='L387'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *passwd;
+<a id='L388' name='L388'></a>        <strong class='reserved'>int</strong> salt_size, ret;
+<a id='L389' name='L389'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *fpasswd, *fpasswd_conf;
+<a id='L390' name='L390'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *username;
+<a id='L391' name='L391'></a><em class='sharp'>#ifndef</em> _WIN32
+<a id='L392' name='L392'></a>        <strong class='reserved'>struct</strong> passwd *pwd;
+<a id='L393' name='L393'></a><em class='sharp'>#endif</em>
+<a id='L394' name='L394'></a>
+<a id='L395' name='L395'></a>        <strong class='reserved'>if</strong> ((ret = <a href='../S/6039.html#L222' title='Defined at 222 in lib/global.c.'>gnutls_global_init</a>()) &lt; 0) <em class='brace'>{</em>
+<a id='L396' name='L396'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "global_init: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L397' name='L397'></a>                exit(1);
+<a id='L398' name='L398'></a>        <em class='brace'>}</em>
+<a id='L399' name='L399'></a>
+<a id='L400' name='L400'></a>        umask(066);
+<a id='L401' name='L401'></a>
+<a id='L402' name='L402'></a>        <a href='../S/4187.html#L327' title='Defined at 327 in src/libopts/autoopts.c.'>optionProcess</a>(&amp;srptoolOptions, argc, argv);
+<a id='L403' name='L403'></a>
+<a id='L404' name='L404'></a>        <a href='../S/6039.html#L104' title='Defined at 104 in lib/global.c.'>gnutls_global_set_log_function</a>(<a href='../D/11934.html' title='Multiple defined in 223 places.'>tls_log_func</a>);
+<a id='L405' name='L405'></a>        <a href='../S/6039.html#L155' title='Defined at 155 in lib/global.c.'>gnutls_global_set_log_level</a>(OPT_VALUE_DEBUG);
+<a id='L406' name='L406'></a>
+<a id='L407' name='L407'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(CREATE_CONF)) <em class='brace'>{</em>
+<a id='L408' name='L408'></a>                <strong class='reserved'>return</strong> <a href='../S/4174.html#L75' title='Defined at 75 in src/srptool.c.'>generate_create_conf</a>(OPT_ARG(CREATE_CONF));
+<a id='L409' name='L409'></a>        <em class='brace'>}</em>
+<a id='L410' name='L410'></a>
+<a id='L411' name='L411'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(PASSWD))
+<a id='L412' name='L412'></a>                fpasswd = OPT_ARG(PASSWD);
+<a id='L413' name='L413'></a>        <strong class='reserved'>else</strong>
+<a id='L414' name='L414'></a>                fpasswd = (<strong class='reserved'>char</strong> *) <a href='../S/4174.html#L377' title='Defined at 377 in src/srptool.c.'>KPASSWD</a>;
+<a id='L415' name='L415'></a>
+<a id='L416' name='L416'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(PASSWD_CONF))
+<a id='L417' name='L417'></a>                fpasswd_conf = OPT_ARG(PASSWD_CONF);
+<a id='L418' name='L418'></a>        <strong class='reserved'>else</strong>
+<a id='L419' name='L419'></a>                fpasswd_conf = (<strong class='reserved'>char</strong> *) <a href='../S/4174.html#L378' title='Defined at 378 in src/srptool.c.'>KPASSWD_CONF</a>;
+<a id='L420' name='L420'></a>
+<a id='L421' name='L421'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(<a href='../D/4828.html' title='Multiple defined in 2 places.'>USERNAME</a>))
+<a id='L422' name='L422'></a>                username = OPT_ARG(<a href='../D/4828.html' title='Multiple defined in 2 places.'>USERNAME</a>);
+<a id='L423' name='L423'></a>        <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L424' name='L424'></a><em class='sharp'>#ifndef</em> _WIN32
+<a id='L425' name='L425'></a>                pwd = getpwuid(getuid());
+<a id='L426' name='L426'></a>
+<a id='L427' name='L427'></a>                <strong class='reserved'>if</strong> (pwd == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L428' name='L428'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "No such user\n");
+<a id='L429' name='L429'></a>                        <strong class='reserved'>return</strong> -1;
+<a id='L430' name='L430'></a>                <em class='brace'>}</em>
+<a id='L431' name='L431'></a>
+<a id='L432' name='L432'></a>                username = pwd-&gt;pw_name;
+<a id='L433' name='L433'></a><em class='sharp'>#else</em>
+<a id='L434' name='L434'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Please specify a user\n");
+<a id='L435' name='L435'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L436' name='L436'></a><em class='sharp'>#endif</em>
+<a id='L437' name='L437'></a>        <em class='brace'>}</em>
+<a id='L438' name='L438'></a>
+<a id='L439' name='L439'></a>        salt_size = 16;
+<a id='L440' name='L440'></a>
+<a id='L441' name='L441'></a>        passwd = <a href='../D/8188.html' title='Multiple defined in 8 places.'>getpass</a>("Enter password: ");
+<a id='L442' name='L442'></a>        <strong class='reserved'>if</strong> (passwd == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L443' name='L443'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Please specify a password\n");
+<a id='L444' name='L444'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L445' name='L445'></a>        <em class='brace'>}</em>
+<a id='L446' name='L446'></a>
+<a id='L447' name='L447'></a><em class='comment'>/* not ready yet */</em>
+<a id='L448' name='L448'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(<a href='../D/4866.html' title='Multiple defined in 2 places.'>VERIFY</a>)) <em class='brace'>{</em>
+<a id='L449' name='L449'></a>                <strong class='reserved'>return</strong> <a href='../S/4174.html#L285' title='Defined at 285 in src/srptool.c.'>verify_passwd</a>(fpasswd_conf, fpasswd,
+<a id='L450' name='L450'></a>                                     username, passwd);
+<a id='L451' name='L451'></a>        <em class='brace'>}</em>
+<a id='L452' name='L452'></a>
+<a id='L453' name='L453'></a>
+<a id='L454' name='L454'></a>        <strong class='reserved'>return</strong> <a href='../S/4174.html#L511' title='Defined at 511 in src/srptool.c.'>crypt_int</a>(username, passwd, salt_size,
+<a id='L455' name='L455'></a>                         fpasswd_conf, fpasswd, OPT_VALUE_INDEX);
+<a id='L456' name='L456'></a>
+<a id='L457' name='L457'></a><em class='brace'>}</em>
+<a id='L458' name='L458'></a>
+<a id='L459' name='L459'></a><strong class='reserved'>static</strong> <strong class='reserved'>char</strong> *<a href='../S/4174.html#L546' title='Referred from 546 in src/srptool.c.'>_srp_crypt</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *username, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *passwd,
+<a id='L460' name='L460'></a>                        <strong class='reserved'>int</strong> salt_size, <strong class='reserved'>const</strong> gnutls_datum_t * <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>,
+<a id='L461' name='L461'></a>                        <strong class='reserved'>const</strong> gnutls_datum_t * n)
+<a id='L462' name='L462'></a><em class='brace'>{</em>
+<a id='L463' name='L463'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> salt[128];
+<a id='L464' name='L464'></a>        <strong class='reserved'>static</strong> <strong class='reserved'>char</strong> result[1024];
+<a id='L465' name='L465'></a>        gnutls_datum_t dat_salt, txt_salt;
+<a id='L466' name='L466'></a>        gnutls_datum_t verifier, txt_verifier;
+<a id='L467' name='L467'></a>
+<a id='L468' name='L468'></a>        <strong class='reserved'>if</strong> ((<strong class='reserved'>unsigned</strong>) salt_size &gt; <strong class='reserved'>sizeof</strong>(salt))
+<a id='L469' name='L469'></a>                <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L470' name='L470'></a>
+<a id='L471' name='L471'></a>        <em class='comment'>/* generate the salt</em>
+<a id='L472' name='L472'></a><em class='comment'>         */</em>
+<a id='L473' name='L473'></a>        <strong class='reserved'>if</strong> (<a href='../D/9220.html' title='Multiple defined in 6 places.'>gnutls_rnd</a>(GNUTLS_RND_NONCE, salt, salt_size) &lt; 0) <em class='brace'>{</em>
+<a id='L474' name='L474'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Could not create nonce\n");
+<a id='L475' name='L475'></a>                <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L476' name='L476'></a>        <em class='brace'>}</em>
+<a id='L477' name='L477'></a>
+<a id='L478' name='L478'></a>        dat_salt.data = salt;
+<a id='L479' name='L479'></a>        dat_salt.size = salt_size;
+<a id='L480' name='L480'></a>
+<a id='L481' name='L481'></a>        <strong class='reserved'>if</strong> (<a href='../S/5454.html#L732' title='Defined at 732 in lib/srp.c.'>gnutls_srp_verifier</a>
+<a id='L482' name='L482'></a>            (username, passwd, &amp;dat_salt, <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>, n, &amp;verifier) &lt; 0) <em class='brace'>{</em>
+<a id='L483' name='L483'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Error getting verifier\n");
+<a id='L484' name='L484'></a>                <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L485' name='L485'></a>        <em class='brace'>}</em>
+<a id='L486' name='L486'></a>
+<a id='L487' name='L487'></a>        <em class='comment'>/* base64 encode the verifier */</em>
+<a id='L488' name='L488'></a>        <strong class='reserved'>if</strong> (gnutls_srp_base64_encode_alloc(&amp;verifier, &amp;txt_verifier) &lt; 0) <em class='brace'>{</em>
+<a id='L489' name='L489'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Error encoding\n");
+<a id='L490' name='L490'></a>                <a href='../D/7914.html' title='Multiple defined in 4 places.'>free</a>(verifier.data);
+<a id='L491' name='L491'></a>                <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L492' name='L492'></a>        <em class='brace'>}</em>
+<a id='L493' name='L493'></a>
+<a id='L494' name='L494'></a>        <a href='../D/7914.html' title='Multiple defined in 4 places.'>free</a>(verifier.data);
+<a id='L495' name='L495'></a>
+<a id='L496' name='L496'></a>        <strong class='reserved'>if</strong> (gnutls_srp_base64_encode_alloc(&amp;dat_salt, &amp;txt_salt) &lt; 0) <em class='brace'>{</em>
+<a id='L497' name='L497'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Error encoding\n");
+<a id='L498' name='L498'></a>                <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L499' name='L499'></a>        <em class='brace'>}</em>
+<a id='L500' name='L500'></a>
+<a id='L501' name='L501'></a>        <a href='../D/11532.html' title='Multiple defined in 7 places.'>sprintf</a>(result, "%s:%s", txt_verifier.data, txt_salt.data);
+<a id='L502' name='L502'></a>        <a href='../D/7914.html' title='Multiple defined in 4 places.'>free</a>(txt_salt.data);
+<a id='L503' name='L503'></a>        <a href='../D/7914.html' title='Multiple defined in 4 places.'>free</a>(txt_verifier.data);
+<a id='L504' name='L504'></a>
+<a id='L505' name='L505'></a>        <strong class='reserved'>return</strong> result;
+<a id='L506' name='L506'></a>
+<a id='L507' name='L507'></a><em class='brace'>}</em>
+<a id='L508' name='L508'></a>
+<a id='L509' name='L509'></a>
+<a id='L510' name='L510'></a><strong class='reserved'>int</strong>
+<a id='L511' name='L511'></a><a href='../R/6518.html' title='Multiple referred from 2 places.'>crypt_int</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *username, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *passwd, <strong class='reserved'>int</strong> salt_size,
+<a id='L512' name='L512'></a>          <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *tpasswd_conf, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *tpasswd, <strong class='reserved'>int</strong> uindex)
+<a id='L513' name='L513'></a><em class='brace'>{</em>
+<a id='L514' name='L514'></a>        FILE *fp;
+<a id='L515' name='L515'></a>        <strong class='reserved'>char</strong> *cr;
+<a id='L516' name='L516'></a>        gnutls_datum_t <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>, n;
+<a id='L517' name='L517'></a>        <strong class='reserved'>char</strong> line[5 * 1024];
+<a id='L518' name='L518'></a>        <strong class='reserved'>char</strong> *p, *pp;
+<a id='L519' name='L519'></a>        <strong class='reserved'>int</strong> iindex;
+<a id='L520' name='L520'></a>        <strong class='reserved'>char</strong> tmpname[1024];
+<a id='L521' name='L521'></a>
+<a id='L522' name='L522'></a>        fp = <a href='../D/7898.html' title='Multiple defined in 7 places.'>fopen</a>(tpasswd_conf, "r");
+<a id='L523' name='L523'></a>        <strong class='reserved'>if</strong> (fp == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L524' name='L524'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot find %s\n", tpasswd_conf);
+<a id='L525' name='L525'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L526' name='L526'></a>        <em class='brace'>}</em>
+<a id='L527' name='L527'></a>
+<a id='L528' name='L528'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>                    <em class='comment'>/* find the specified uindex in file */</em>
+<a id='L529' name='L529'></a>                p = <a href='../D/7826.html' title='Multiple defined in 4 places.'>fgets</a>(line, <strong class='reserved'>sizeof</strong>(line) - 1, fp);
+<a id='L530' name='L530'></a>        <em class='brace'>}</em>
+<a id='L531' name='L531'></a>        <strong class='reserved'>while</strong> (p != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> &amp;&amp; (iindex = atoi(p)) != uindex);
+<a id='L532' name='L532'></a>
+<a id='L533' name='L533'></a>        <strong class='reserved'>if</strong> (p == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L534' name='L534'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot find entry in %s\n", tpasswd_conf);
+<a id='L535' name='L535'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L536' name='L536'></a>        <em class='brace'>}</em>
+<a id='L537' name='L537'></a>        line[<strong class='reserved'>sizeof</strong>(line) - 1] = 0;
+<a id='L538' name='L538'></a>
+<a id='L539' name='L539'></a>        <a href='../D/7814.html' title='Multiple defined in 4 places.'>fclose</a>(fp);
+<a id='L540' name='L540'></a>        <strong class='reserved'>if</strong> ((iindex = <a href='../S/4174.html#L634' title='Defined at 634 in src/srptool.c.'>read_conf_values</a>(&amp;<a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>, &amp;n, line)) &lt; 0) <em class='brace'>{</em>
+<a id='L541' name='L541'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot parse conf file '%s'\n",
+<a id='L542' name='L542'></a>                        tpasswd_conf);
+<a id='L543' name='L543'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L544' name='L544'></a>        <em class='brace'>}</em>
+<a id='L545' name='L545'></a>
+<a id='L546' name='L546'></a>        cr = <a href='../S/4174.html#L459' title='Defined at 459 in src/srptool.c.'>_srp_crypt</a>(username, passwd, salt_size, &amp;<a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>, &amp;n);
+<a id='L547' name='L547'></a>        <strong class='reserved'>if</strong> (cr == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L548' name='L548'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot _srp_crypt()...\n");
+<a id='L549' name='L549'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L550' name='L550'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L551' name='L551'></a>                <em class='comment'>/* delete previous entry */</em>
+<a id='L552' name='L552'></a>                <strong class='reserved'>struct</strong> <a href='../D/11566.html' title='Multiple defined in 15 places.'>stat</a> st;
+<a id='L553' name='L553'></a>                FILE *fp2;
+<a id='L554' name='L554'></a>                <strong class='reserved'>int</strong> put;
+<a id='L555' name='L555'></a>
+<a id='L556' name='L556'></a>                <strong class='reserved'>if</strong> (strlen(tpasswd) + 5 &gt; <strong class='reserved'>sizeof</strong>(tmpname)) <em class='brace'>{</em>
+<a id='L557' name='L557'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "file '%s' is tooooo long\n",
+<a id='L558' name='L558'></a>                                tpasswd);
+<a id='L559' name='L559'></a>                        <strong class='reserved'>return</strong> -1;
+<a id='L560' name='L560'></a>                <em class='brace'>}</em>
+<a id='L561' name='L561'></a>
+<a id='L562' name='L562'></a>                <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(tmpname, <strong class='reserved'>sizeof</strong>(tmpname), "%s.tmp", tpasswd);
+<a id='L563' name='L563'></a>
+<a id='L564' name='L564'></a>                <strong class='reserved'>if</strong> (<a href='../D/11566.html' title='Multiple defined in 15 places.'>stat</a>(tmpname, &amp;st) != -1) <em class='brace'>{</em>
+<a id='L565' name='L565'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "file '%s' is locked\n", tpasswd);
+<a id='L566' name='L566'></a>                        <strong class='reserved'>return</strong> -1;
+<a id='L567' name='L567'></a>                <em class='brace'>}</em>
+<a id='L568' name='L568'></a>
+<a id='L569' name='L569'></a>                <strong class='reserved'>if</strong> (<a href='../D/7831.html' title='Multiple defined in 2 places.'>filecopy</a>(tpasswd, tmpname) != 0) <em class='brace'>{</em>
+<a id='L570' name='L570'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot copy '%s' to '%s'\n",
+<a id='L571' name='L571'></a>                                tpasswd, tmpname);
+<a id='L572' name='L572'></a>                        <strong class='reserved'>return</strong> -1;
+<a id='L573' name='L573'></a>                <em class='brace'>}</em>
+<a id='L574' name='L574'></a>
+<a id='L575' name='L575'></a>                fp = <a href='../D/7898.html' title='Multiple defined in 7 places.'>fopen</a>(tpasswd, "w");
+<a id='L576' name='L576'></a>                <strong class='reserved'>if</strong> (fp == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L577' name='L577'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot open '%s' for write\n",
+<a id='L578' name='L578'></a>                                tpasswd);
+<a id='L579' name='L579'></a>                        (<strong class='reserved'>void</strong>)<a href='../D/11106.html' title='Multiple defined in 6 places.'>remove</a>(tmpname);
+<a id='L580' name='L580'></a>                        <strong class='reserved'>return</strong> -1;
+<a id='L581' name='L581'></a>                <em class='brace'>}</em>
+<a id='L582' name='L582'></a>
+<a id='L583' name='L583'></a>                fp2 = <a href='../D/7898.html' title='Multiple defined in 7 places.'>fopen</a>(tmpname, "r");
+<a id='L584' name='L584'></a>                <strong class='reserved'>if</strong> (fp2 == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L585' name='L585'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot open '%s' for read\n",
+<a id='L586' name='L586'></a>                                tmpname);
+<a id='L587' name='L587'></a>                        (<strong class='reserved'>void</strong>)<a href='../D/11106.html' title='Multiple defined in 6 places.'>remove</a>(tmpname);
+<a id='L588' name='L588'></a>                        <strong class='reserved'>return</strong> -1;
+<a id='L589' name='L589'></a>                <em class='brace'>}</em>
+<a id='L590' name='L590'></a>
+<a id='L591' name='L591'></a>                put = 0;
+<a id='L592' name='L592'></a>                <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L593' name='L593'></a>                        p = <a href='../D/7826.html' title='Multiple defined in 4 places.'>fgets</a>(line, <strong class='reserved'>sizeof</strong>(line) - 1, fp2);
+<a id='L594' name='L594'></a>                        <strong class='reserved'>if</strong> (p == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L595' name='L595'></a>                                <strong class='reserved'>break</strong>;
+<a id='L596' name='L596'></a>
+<a id='L597' name='L597'></a>                        pp = <a href='../D/11595.html' title='Multiple defined in 5 places.'>strchr</a>(line, ':');
+<a id='L598' name='L598'></a>                        <strong class='reserved'>if</strong> (pp == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L599' name='L599'></a>                                <strong class='reserved'>continue</strong>;
+<a id='L600' name='L600'></a>
+<a id='L601' name='L601'></a>                        <strong class='reserved'>if</strong> (strncmp(p, username,
+<a id='L602' name='L602'></a>                                    <a href='../D/2691.html' title='Multiple defined in 4 places.'>MAX</a>(strlen(username),
+<a id='L603' name='L603'></a>                                        (<strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong>) (pp - p))) == 0) <em class='brace'>{</em>
+<a id='L604' name='L604'></a>                                put = 1;
+<a id='L605' name='L605'></a>                                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(fp, "%s:%s:%u\n", username, cr,
+<a id='L606' name='L606'></a>                                        iindex);
+<a id='L607' name='L607'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L608' name='L608'></a>                                <a href='../D/7910.html' title='Multiple defined in 4 places.'>fputs</a>(line, fp);
+<a id='L609' name='L609'></a>                        <em class='brace'>}</em>
+<a id='L610' name='L610'></a>                <em class='brace'>}</em>
+<a id='L611' name='L611'></a>                <strong class='reserved'>while</strong> (1);
+<a id='L612' name='L612'></a>
+<a id='L613' name='L613'></a>                <strong class='reserved'>if</strong> (put == 0) <em class='brace'>{</em>
+<a id='L614' name='L614'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(fp, "%s:%s:%u\n", username, cr, iindex);
+<a id='L615' name='L615'></a>                <em class='brace'>}</em>
+<a id='L616' name='L616'></a>
+<a id='L617' name='L617'></a>                <a href='../D/7814.html' title='Multiple defined in 4 places.'>fclose</a>(fp);
+<a id='L618' name='L618'></a>                <a href='../D/7814.html' title='Multiple defined in 4 places.'>fclose</a>(fp2);
+<a id='L619' name='L619'></a>
+<a id='L620' name='L620'></a>                (<strong class='reserved'>void</strong>)<a href='../D/11106.html' title='Multiple defined in 6 places.'>remove</a>(tmpname);
+<a id='L621' name='L621'></a>
+<a id='L622' name='L622'></a>        <em class='brace'>}</em>
+<a id='L623' name='L623'></a>
+<a id='L624' name='L624'></a>
+<a id='L625' name='L625'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L626' name='L626'></a><em class='brace'>}</em>
+<a id='L627' name='L627'></a>
+<a id='L628' name='L628'></a>
+<a id='L629' name='L629'></a>
+<a id='L630' name='L630'></a><em class='comment'>/* this function parses tpasswd.conf file. Format is:</em>
+<a id='L631' name='L631'></a><em class='comment'> * int(index):base64(n):base64(g)</em>
+<a id='L632' name='L632'></a><em class='comment'> */</em>
+<a id='L633' name='L633'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L634' name='L634'></a><a href='../R/10048.html' title='Multiple referred from 3 places.'>read_conf_values</a>(gnutls_datum_t * <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>, gnutls_datum_t * n, <strong class='reserved'>char</strong> *str)
+<a id='L635' name='L635'></a><em class='brace'>{</em>
+<a id='L636' name='L636'></a>        <strong class='reserved'>char</strong> *p;
+<a id='L637' name='L637'></a>        <strong class='reserved'>int</strong> len;
+<a id='L638' name='L638'></a>        <strong class='reserved'>int</strong> index, ret;
+<a id='L639' name='L639'></a>        gnutls_datum_t dat;
+<a id='L640' name='L640'></a>
+<a id='L641' name='L641'></a>        index = atoi(str);
+<a id='L642' name='L642'></a>
+<a id='L643' name='L643'></a>        p = <a href='../D/11631.html' title='Multiple defined in 5 places.'>strrchr</a>(str, ':');  <em class='comment'>/* we have g */</em>
+<a id='L644' name='L644'></a>        <strong class='reserved'>if</strong> (p == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L645' name='L645'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L646' name='L646'></a>        <em class='brace'>}</em>
+<a id='L647' name='L647'></a>
+<a id='L648' name='L648'></a>        *p = '\0';
+<a id='L649' name='L649'></a>        p++;
+<a id='L650' name='L650'></a>
+<a id='L651' name='L651'></a>        <em class='comment'>/* read the generator */</em>
+<a id='L652' name='L652'></a>        len = strlen(p);
+<a id='L653' name='L653'></a>        <strong class='reserved'>if</strong> (p[len - 1] == '\n')
+<a id='L654' name='L654'></a>                len--;
+<a id='L655' name='L655'></a>
+<a id='L656' name='L656'></a>        dat.data = (<strong class='reserved'>void</strong> *) p;
+<a id='L657' name='L657'></a>        dat.size = len;
+<a id='L658' name='L658'></a>        ret = gnutls_srp_base64_decode_alloc(&amp;dat, <a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>);
+<a id='L659' name='L659'></a>
+<a id='L660' name='L660'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L661' name='L661'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Decoding error\n");
+<a id='L662' name='L662'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L663' name='L663'></a>        <em class='brace'>}</em>
+<a id='L664' name='L664'></a>
+<a id='L665' name='L665'></a>        <em class='comment'>/* now go for n - modulo */</em>
+<a id='L666' name='L666'></a>        p = <a href='../D/11631.html' title='Multiple defined in 5 places.'>strrchr</a>(str, ':');  <em class='comment'>/* we have n */</em>
+<a id='L667' name='L667'></a>        <strong class='reserved'>if</strong> (p == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L668' name='L668'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L669' name='L669'></a>        <em class='brace'>}</em>
+<a id='L670' name='L670'></a>
+<a id='L671' name='L671'></a>        *p = '\0';
+<a id='L672' name='L672'></a>        p++;
+<a id='L673' name='L673'></a>
+<a id='L674' name='L674'></a>        dat.data = (<strong class='reserved'>void</strong> *) p;
+<a id='L675' name='L675'></a>        dat.size = strlen(p);
+<a id='L676' name='L676'></a>
+<a id='L677' name='L677'></a>        ret = gnutls_srp_base64_decode_alloc(&amp;dat, n);
+<a id='L678' name='L678'></a>
+<a id='L679' name='L679'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L680' name='L680'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Decoding error\n");
+<a id='L681' name='L681'></a>                <a href='../D/7914.html' title='Multiple defined in 4 places.'>free</a>(<a href='../S/5567.html#L1173' title='Defined at 1173 in lib/nettle/gost/streebog.c.'>g</a>-&gt;data);
+<a id='L682' name='L682'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L683' name='L683'></a>        <em class='brace'>}</em>
+<a id='L684' name='L684'></a>
+<a id='L685' name='L685'></a>        <strong class='reserved'>return</strong> index;
+<a id='L686' name='L686'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L58'>[^]</a><a href='#L634'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

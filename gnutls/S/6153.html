@@ -1,0 +1,231 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>gl/tests/sigaction.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6458.html'>gl</a>/<a href='../files/6460.html'>tests</a>/sigaction.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L84'>[^]</a><a href='#L131'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L84' title='Defined at 84.'>sigaction_handler</a></li>
+<li><a href='#L131' title='Defined at 131.'>sigaction</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* POSIX compatible signal blocking.</em>
+<a id='L2' name='L2'></a><em class='comment'>   Copyright (C) 2008-2020 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'>   Written by Eric Blake &lt;ebb9@byu.net&gt;, 2008.</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   This program is free software: you can redistribute it and/or modify</em>
+<a id='L6' name='L6'></a><em class='comment'>   it under the terms of the GNU General Public License as published by</em>
+<a id='L7' name='L7'></a><em class='comment'>   the Free Software Foundation; either version 3 of the License, or</em>
+<a id='L8' name='L8'></a><em class='comment'>   (at your option) any later version.</em>
+<a id='L9' name='L9'></a><em class='comment'></em>
+<a id='L10' name='L10'></a><em class='comment'>   This program is distributed in the hope that it will be useful,</em>
+<a id='L11' name='L11'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L12' name='L12'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</em>
+<a id='L13' name='L13'></a><em class='comment'>   GNU General Public License for more details.</em>
+<a id='L14' name='L14'></a><em class='comment'></em>
+<a id='L15' name='L15'></a><em class='comment'>   You should have received a copy of the GNU General Public License</em>
+<a id='L16' name='L16'></a><em class='comment'>   along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;.  */</em>
+<a id='L17' name='L17'></a>
+<a id='L18' name='L18'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L19' name='L19'></a>
+<a id='L20' name='L20'></a><em class='comment'>/* Specification.  */</em>
+<a id='L21' name='L21'></a><em class='sharp'>#include</em> &lt;signal.h&gt;
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> &lt;stdint.h&gt;
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a><em class='comment'>/* This implementation of sigaction is tailored to native Windows behavior:</em>
+<a id='L28' name='L28'></a><em class='comment'>   signal() has SysV semantics (ie. the handler is uninstalled before</em>
+<a id='L29' name='L29'></a><em class='comment'>   it is invoked).  This is an inherent data race if an asynchronous</em>
+<a id='L30' name='L30'></a><em class='comment'>   signal is sent twice in a row before we can reinstall our handler,</em>
+<a id='L31' name='L31'></a><em class='comment'>   but there's nothing we can do about it.  Meanwhile, sigprocmask()</em>
+<a id='L32' name='L32'></a><em class='comment'>   is not present, and while we can use the gnulib replacement to</em>
+<a id='L33' name='L33'></a><em class='comment'>   provide critical sections, it too suffers from potential data races</em>
+<a id='L34' name='L34'></a><em class='comment'>   in the face of an ill-timed asynchronous signal.  And we compound</em>
+<a id='L35' name='L35'></a><em class='comment'>   the situation by reading static storage in a signal handler, which</em>
+<a id='L36' name='L36'></a><em class='comment'>   POSIX warns is not generically async-signal-safe.  Oh well.</em>
+<a id='L37' name='L37'></a><em class='comment'></em>
+<a id='L38' name='L38'></a><em class='comment'>   Additionally:</em>
+<a id='L39' name='L39'></a><em class='comment'>     - We don't implement SA_NOCLDSTOP or SA_NOCLDWAIT, because SIGCHLD</em>
+<a id='L40' name='L40'></a><em class='comment'>       is not defined.</em>
+<a id='L41' name='L41'></a><em class='comment'>     - We don't implement SA_ONSTACK, because sigaltstack() is not present.</em>
+<a id='L42' name='L42'></a><em class='comment'>     - We ignore SA_RESTART, because blocking native Windows API calls are</em>
+<a id='L43' name='L43'></a><em class='comment'>       not interrupted anyway when an asynchronous signal occurs, and the</em>
+<a id='L44' name='L44'></a><em class='comment'>       MSVCRT runtime never sets errno to EINTR.</em>
+<a id='L45' name='L45'></a><em class='comment'>     - We don't implement SA_SIGINFO because it is impossible to do so</em>
+<a id='L46' name='L46'></a><em class='comment'>       portably.</em>
+<a id='L47' name='L47'></a><em class='comment'></em>
+<a id='L48' name='L48'></a><em class='comment'>   POSIX states that an application should not mix signal() and</em>
+<a id='L49' name='L49'></a><em class='comment'>   sigaction().  We support the use of signal() within the gnulib</em>
+<a id='L50' name='L50'></a><em class='comment'>   sigprocmask() substitute, but all other application code linked</em>
+<a id='L51' name='L51'></a><em class='comment'>   with this module should stick with only sigaction().  */</em>
+<a id='L52' name='L52'></a>
+<a id='L53' name='L53'></a><em class='comment'>/* Check some of our assumptions.  */</em>
+<a id='L54' name='L54'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong> SIGCHLD || <strong class='reserved'>defined</strong> HAVE_SIGALTSTACK || <strong class='reserved'>defined</strong> HAVE_SIGINTERRUPT
+<a id='L55' name='L55'></a><em class='sharp'># error</em> "Revisit the assumptions made in the sigaction module"
+<a id='L56' name='L56'></a><em class='sharp'>#endif</em>
+<a id='L57' name='L57'></a>
+<a id='L58' name='L58'></a><em class='comment'>/* Out-of-range substitutes make a good fallback for uncatchable</em>
+<a id='L59' name='L59'></a><em class='comment'>   signals.  */</em>
+<a id='L60' name='L60'></a><em class='sharp'>#ifndef</em> <a href='../D/3808.html' title='Multiple defined in 2 places.'>SIGKILL</a>
+<a id='L61' name='L61'></a><em class='sharp'># define</em> <a href='../R/3322.html' title='Multiple referred from 6 places.'>SIGKILL</a> (-1)
+<a id='L62' name='L62'></a><em class='sharp'>#endif</em>
+<a id='L63' name='L63'></a><em class='sharp'>#ifndef</em> <a href='../D/3816.html' title='Multiple defined in 2 places.'>SIGSTOP</a>
+<a id='L64' name='L64'></a><em class='sharp'># define</em> <a href='../R/3330.html' title='Multiple referred from 6 places.'>SIGSTOP</a> (-1)
+<a id='L65' name='L65'></a><em class='sharp'>#endif</em>
+<a id='L66' name='L66'></a>
+<a id='L67' name='L67'></a><em class='comment'>/* On native Windows, as of 2008, the signal SIGABRT_COMPAT is an alias</em>
+<a id='L68' name='L68'></a><em class='comment'>   for the signal SIGABRT.  Only one signal handler is stored for both</em>
+<a id='L69' name='L69'></a><em class='comment'>   SIGABRT and SIGABRT_COMPAT.  SIGABRT_COMPAT is not a signal of its own.  */</em>
+<a id='L70' name='L70'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong> _WIN32 &amp;&amp; ! <strong class='reserved'>defined</strong> __CYGWIN__
+<a id='L71' name='L71'></a><em class='sharp'># undef</em> <a href='../R/3319.html' title='Multiple referred from 12 places.'>SIGABRT_COMPAT</a>
+<a id='L72' name='L72'></a><em class='sharp'># define</em> <a href='../R/3319.html' title='Multiple referred from 12 places.'>SIGABRT_COMPAT</a> 6
+<a id='L73' name='L73'></a><em class='sharp'>#endif</em>
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a><em class='comment'>/* A signal handler.  */</em>
+<a id='L76' name='L76'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> (*handler_t) (<strong class='reserved'>int</strong> <a href='../D/11480.html' title='Multiple defined in 6 places.'>signal</a>);
+<a id='L77' name='L77'></a>
+<a id='L78' name='L78'></a><em class='comment'>/* Set of current actions.  If sa_handler for an entry is NULL, then</em>
+<a id='L79' name='L79'></a><em class='comment'>   that signal is not currently handled by the sigaction handler.  */</em>
+<a id='L80' name='L80'></a><strong class='reserved'>static</strong> <strong class='reserved'>struct</strong> <a href='../D/11463.html' title='Multiple defined in 5 places.'>sigaction</a> <strong class='reserved'>volatile</strong> action_array[<a href='../D/2954.html' title='Multiple defined in 6 places.'>NSIG</a>] <em class='comment'>/* = 0 */</em>;
+<a id='L81' name='L81'></a>
+<a id='L82' name='L82'></a><em class='comment'>/* Signal handler that is installed for signals.  */</em>
+<a id='L83' name='L83'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L84' name='L84'></a><a href='../R/10458.html' title='Multiple referred from 2 places.'>sigaction_handler</a> (<strong class='reserved'>int</strong> sig)
+<a id='L85' name='L85'></a><em class='brace'>{</em>
+<a id='L86' name='L86'></a>  handler_t <a href='../D/9857.html' title='Multiple defined in 2 places.'>handler</a>;
+<a id='L87' name='L87'></a>  <a href='../D/11488.html' title='Multiple defined in 2 places.'>sigset_t</a> mask;
+<a id='L88' name='L88'></a>  <a href='../D/11488.html' title='Multiple defined in 2 places.'>sigset_t</a> oldmask;
+<a id='L89' name='L89'></a>  <strong class='reserved'>int</strong> saved_errno = errno;
+<a id='L90' name='L90'></a>  <strong class='reserved'>if</strong> (sig &lt; 0 || <a href='../D/2954.html' title='Multiple defined in 6 places.'>NSIG</a> &lt;= sig || !action_array[sig].<a href='../D/11244.html' title='Multiple defined in 2 places.'>sa_handler</a>)
+<a id='L91' name='L91'></a>    <em class='brace'>{</em>
+<a id='L92' name='L92'></a>      <em class='comment'>/* Unexpected situation; be careful to avoid recursive abort.  */</em>
+<a id='L93' name='L93'></a>      <strong class='reserved'>if</strong> (sig == SIGABRT)
+<a id='L94' name='L94'></a>        <a href='../D/11480.html' title='Multiple defined in 6 places.'>signal</a> (SIGABRT, SIG_DFL);
+<a id='L95' name='L95'></a>      abort ();
+<a id='L96' name='L96'></a>    <em class='brace'>}</em>
+<a id='L97' name='L97'></a>
+<a id='L98' name='L98'></a>  <em class='comment'>/* Reinstall the signal handler when required; otherwise update the</em>
+<a id='L99' name='L99'></a><em class='comment'>     bookkeeping so that the user's handler may call sigaction and get</em>
+<a id='L100' name='L100'></a><em class='comment'>     accurate results.  We know the signal isn't currently blocked, or</em>
+<a id='L101' name='L101'></a><em class='comment'>     we wouldn't be in its handler, therefore we know that we are not</em>
+<a id='L102' name='L102'></a><em class='comment'>     interrupting a sigaction() call.  There is a race where any</em>
+<a id='L103' name='L103'></a><em class='comment'>     asynchronous instance of the same signal occurring before we</em>
+<a id='L104' name='L104'></a><em class='comment'>     reinstall the handler will trigger the default handler; oh</em>
+<a id='L105' name='L105'></a><em class='comment'>     well.  */</em>
+<a id='L106' name='L106'></a>  <a href='../D/9857.html' title='Multiple defined in 2 places.'>handler</a> = action_array[sig].<a href='../D/11244.html' title='Multiple defined in 2 places.'>sa_handler</a>;
+<a id='L107' name='L107'></a>  <strong class='reserved'>if</strong> ((action_array[sig].sa_flags &amp; <a href='../D/3610.html' title='Multiple defined in 3 places.'>SA_RESETHAND</a>) == 0)
+<a id='L108' name='L108'></a>    <a href='../D/11480.html' title='Multiple defined in 6 places.'>signal</a> (sig, <a href='../S/6153.html#L84' title='Defined at 84 in gl/tests/sigaction.c.'>sigaction_handler</a>);
+<a id='L109' name='L109'></a>  <strong class='reserved'>else</strong>
+<a id='L110' name='L110'></a>    action_array[sig].<a href='../D/11244.html' title='Multiple defined in 2 places.'>sa_handler</a> = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a>  <em class='comment'>/* Block appropriate signals.  */</em>
+<a id='L113' name='L113'></a>  mask = action_array[sig].sa_mask;
+<a id='L114' name='L114'></a>  <strong class='reserved'>if</strong> ((action_array[sig].sa_flags &amp; <a href='../D/3608.html' title='Multiple defined in 4 places.'>SA_NODEFER</a>) == 0)
+<a id='L115' name='L115'></a>    <a href='../D/11465.html' title='Multiple defined in 7 places.'>sigaddset</a> (&amp;mask, sig);
+<a id='L116' name='L116'></a>  <a href='../D/11487.html' title='Multiple defined in 3 places.'>sigprocmask</a> (<a href='../D/3820.html' title='Multiple defined in 2 places.'>SIG_BLOCK</a>, &amp;mask, &amp;oldmask);
+<a id='L117' name='L117'></a>
+<a id='L118' name='L118'></a>  <em class='comment'>/* Invoke the user's handler, then restore prior mask.  */</em>
+<a id='L119' name='L119'></a>  errno = saved_errno;
+<a id='L120' name='L120'></a>  <a href='../D/9857.html' title='Multiple defined in 2 places.'>handler</a> (sig);
+<a id='L121' name='L121'></a>  saved_errno = errno;
+<a id='L122' name='L122'></a>  <a href='../D/11487.html' title='Multiple defined in 3 places.'>sigprocmask</a> (<a href='../D/3856.html' title='Multiple defined in 2 places.'>SIG_SETMASK</a>, &amp;oldmask, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L123' name='L123'></a>  errno = saved_errno;
+<a id='L124' name='L124'></a><em class='brace'>}</em>
+<a id='L125' name='L125'></a>
+<a id='L126' name='L126'></a><em class='comment'>/* Change and/or query the action that will be taken on delivery of</em>
+<a id='L127' name='L127'></a><em class='comment'>   signal SIG.  If not NULL, ACT describes the new behavior.  If not</em>
+<a id='L128' name='L128'></a><em class='comment'>   NULL, OACT is set to the prior behavior.  Return 0 on success, or</em>
+<a id='L129' name='L129'></a><em class='comment'>   set errno and return -1 on failure.  */</em>
+<a id='L130' name='L130'></a><strong class='reserved'>int</strong>
+<a id='L131' name='L131'></a><a href='../R/10457.html' title='Multiple referred from 41 places.'>sigaction</a> (<strong class='reserved'>int</strong> sig, <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../D/11463.html' title='Multiple defined in 5 places.'>sigaction</a> *<strong class='reserved'>restrict</strong> act,
+<a id='L132' name='L132'></a>           <strong class='reserved'>struct</strong> <a href='../D/11463.html' title='Multiple defined in 5 places.'>sigaction</a> *<strong class='reserved'>restrict</strong> oact)
+<a id='L133' name='L133'></a><em class='brace'>{</em>
+<a id='L134' name='L134'></a>  <a href='../D/11488.html' title='Multiple defined in 2 places.'>sigset_t</a> mask;
+<a id='L135' name='L135'></a>  <a href='../D/11488.html' title='Multiple defined in 2 places.'>sigset_t</a> oldmask;
+<a id='L136' name='L136'></a>  <strong class='reserved'>int</strong> saved_errno;
+<a id='L137' name='L137'></a>
+<a id='L138' name='L138'></a>  <strong class='reserved'>if</strong> (sig &lt; 0 || <a href='../D/2954.html' title='Multiple defined in 6 places.'>NSIG</a> &lt;= sig || sig == <a href='../D/3808.html' title='Multiple defined in 2 places.'>SIGKILL</a> || sig == <a href='../D/3816.html' title='Multiple defined in 2 places.'>SIGSTOP</a>
+<a id='L139' name='L139'></a>      || (act &amp;&amp; act-&gt;<a href='../D/11244.html' title='Multiple defined in 2 places.'>sa_handler</a> == SIG_ERR))
+<a id='L140' name='L140'></a>    <em class='brace'>{</em>
+<a id='L141' name='L141'></a>      errno = EINVAL;
+<a id='L142' name='L142'></a>      <strong class='reserved'>return</strong> -1;
+<a id='L143' name='L143'></a>    <em class='brace'>}</em>
+<a id='L144' name='L144'></a>
+<a id='L145' name='L145'></a><em class='sharp'>#ifdef</em> <a href='../D/3805.html' title='Multiple defined in 4 places.'>SIGABRT_COMPAT</a>
+<a id='L146' name='L146'></a>  <strong class='reserved'>if</strong> (sig == <a href='../D/3805.html' title='Multiple defined in 4 places.'>SIGABRT_COMPAT</a>)
+<a id='L147' name='L147'></a>    sig = SIGABRT;
+<a id='L148' name='L148'></a><em class='sharp'>#endif</em>
+<a id='L149' name='L149'></a>
+<a id='L150' name='L150'></a>  <em class='comment'>/* POSIX requires sigaction() to be async-signal-safe.  In other</em>
+<a id='L151' name='L151'></a><em class='comment'>     words, if an asynchronous signal can occur while we are anywhere</em>
+<a id='L152' name='L152'></a><em class='comment'>     inside this function, the user's handler could then call</em>
+<a id='L153' name='L153'></a><em class='comment'>     sigaction() recursively and expect consistent results.  We meet</em>
+<a id='L154' name='L154'></a><em class='comment'>     this rule by using sigprocmask to block all signals before</em>
+<a id='L155' name='L155'></a><em class='comment'>     modifying any data structure that could be read from a signal</em>
+<a id='L156' name='L156'></a><em class='comment'>     handler; this works since we know that the gnulib sigprocmask</em>
+<a id='L157' name='L157'></a><em class='comment'>     replacement does not try to use sigaction() from its handler.  */</em>
+<a id='L158' name='L158'></a>  <strong class='reserved'>if</strong> (!act &amp;&amp; !oact)
+<a id='L159' name='L159'></a>    <strong class='reserved'>return</strong> 0;
+<a id='L160' name='L160'></a>  <a href='../D/11468.html' title='Multiple defined in 7 places.'>sigfillset</a> (&amp;mask);
+<a id='L161' name='L161'></a>  <a href='../D/11487.html' title='Multiple defined in 3 places.'>sigprocmask</a> (<a href='../D/3820.html' title='Multiple defined in 2 places.'>SIG_BLOCK</a>, &amp;mask, &amp;oldmask);
+<a id='L162' name='L162'></a>  <strong class='reserved'>if</strong> (oact)
+<a id='L163' name='L163'></a>    <em class='brace'>{</em>
+<a id='L164' name='L164'></a>      <strong class='reserved'>if</strong> (action_array[sig].<a href='../D/11244.html' title='Multiple defined in 2 places.'>sa_handler</a>)
+<a id='L165' name='L165'></a>        *oact = action_array[sig];
+<a id='L166' name='L166'></a>      <strong class='reserved'>else</strong>
+<a id='L167' name='L167'></a>        <em class='brace'>{</em>
+<a id='L168' name='L168'></a>          <em class='comment'>/* Safe to change the handler at will here, since all</em>
+<a id='L169' name='L169'></a><em class='comment'>             signals are currently blocked.  */</em>
+<a id='L170' name='L170'></a>          oact-&gt;<a href='../D/11244.html' title='Multiple defined in 2 places.'>sa_handler</a> = <a href='../D/11480.html' title='Multiple defined in 6 places.'>signal</a> (sig, SIG_DFL);
+<a id='L171' name='L171'></a>          <strong class='reserved'>if</strong> (oact-&gt;<a href='../D/11244.html' title='Multiple defined in 2 places.'>sa_handler</a> == SIG_ERR)
+<a id='L172' name='L172'></a>            <strong class='reserved'>goto</strong> <a href='../D/7806.html' title='Multiple defined in 2 places.'>failure</a>;
+<a id='L173' name='L173'></a>          <a href='../D/11480.html' title='Multiple defined in 6 places.'>signal</a> (sig, oact-&gt;<a href='../D/11244.html' title='Multiple defined in 2 places.'>sa_handler</a>);
+<a id='L174' name='L174'></a>          oact-&gt;sa_flags = <a href='../D/3610.html' title='Multiple defined in 3 places.'>SA_RESETHAND</a> | <a href='../D/3608.html' title='Multiple defined in 4 places.'>SA_NODEFER</a>;
+<a id='L175' name='L175'></a>          <a href='../D/11467.html' title='Multiple defined in 7 places.'>sigemptyset</a> (&amp;oact-&gt;sa_mask);
+<a id='L176' name='L176'></a>        <em class='brace'>}</em>
+<a id='L177' name='L177'></a>    <em class='brace'>}</em>
+<a id='L178' name='L178'></a>
+<a id='L179' name='L179'></a>  <strong class='reserved'>if</strong> (act)
+<a id='L180' name='L180'></a>    <em class='brace'>{</em>
+<a id='L181' name='L181'></a>      <em class='comment'>/* Safe to install the handler before updating action_array,</em>
+<a id='L182' name='L182'></a><em class='comment'>         since all signals are currently blocked.  */</em>
+<a id='L183' name='L183'></a>      <strong class='reserved'>if</strong> (act-&gt;<a href='../D/11244.html' title='Multiple defined in 2 places.'>sa_handler</a> == SIG_DFL || act-&gt;<a href='../D/11244.html' title='Multiple defined in 2 places.'>sa_handler</a> == SIG_IGN)
+<a id='L184' name='L184'></a>        <em class='brace'>{</em>
+<a id='L185' name='L185'></a>          <strong class='reserved'>if</strong> (<a href='../D/11480.html' title='Multiple defined in 6 places.'>signal</a> (sig, act-&gt;<a href='../D/11244.html' title='Multiple defined in 2 places.'>sa_handler</a>) == SIG_ERR)
+<a id='L186' name='L186'></a>            <strong class='reserved'>goto</strong> <a href='../D/7806.html' title='Multiple defined in 2 places.'>failure</a>;
+<a id='L187' name='L187'></a>          action_array[sig].<a href='../D/11244.html' title='Multiple defined in 2 places.'>sa_handler</a> = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L188' name='L188'></a>        <em class='brace'>}</em>
+<a id='L189' name='L189'></a>      <strong class='reserved'>else</strong>
+<a id='L190' name='L190'></a>        <em class='brace'>{</em>
+<a id='L191' name='L191'></a>          <strong class='reserved'>if</strong> (<a href='../D/11480.html' title='Multiple defined in 6 places.'>signal</a> (sig, <a href='../S/6153.html#L84' title='Defined at 84 in gl/tests/sigaction.c.'>sigaction_handler</a>) == SIG_ERR)
+<a id='L192' name='L192'></a>            <strong class='reserved'>goto</strong> <a href='../D/7806.html' title='Multiple defined in 2 places.'>failure</a>;
+<a id='L193' name='L193'></a>          action_array[sig] = *act;
+<a id='L194' name='L194'></a>        <em class='brace'>}</em>
+<a id='L195' name='L195'></a>    <em class='brace'>}</em>
+<a id='L196' name='L196'></a>  <a href='../D/11487.html' title='Multiple defined in 3 places.'>sigprocmask</a> (<a href='../D/3856.html' title='Multiple defined in 2 places.'>SIG_SETMASK</a>, &amp;oldmask, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L197' name='L197'></a>  <strong class='reserved'>return</strong> 0;
+<a id='L198' name='L198'></a>
+<a id='L199' name='L199'></a> <a href='../D/7806.html' title='Multiple defined in 2 places.'>failure</a>:
+<a id='L200' name='L200'></a>  saved_errno = errno;
+<a id='L201' name='L201'></a>  <a href='../D/11487.html' title='Multiple defined in 3 places.'>sigprocmask</a> (<a href='../D/3856.html' title='Multiple defined in 2 places.'>SIG_SETMASK</a>, &amp;oldmask, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L202' name='L202'></a>  errno = saved_errno;
+<a id='L203' name='L203'></a>  <strong class='reserved'>return</strong> -1;
+<a id='L204' name='L204'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L84'>[^]</a><a href='#L131'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

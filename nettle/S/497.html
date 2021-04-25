@@ -1,0 +1,337 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>chacha-crypt.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/chacha-crypt.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L70'>[^]</a><a href='#L276'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L70' title='Defined at 70.'>_nettle_chacha_crypt_4core</a></li>
+<li><a href='#L116' title='Defined at 116.'>_nettle_chacha_crypt_3core</a></li>
+<li><a href='#L159' title='Defined at 159.'>_nettle_chacha_crypt_1core</a></li>
+<li><a href='#L193' title='Defined at 193.'>_nettle_chacha_crypt32_4core</a></li>
+<li><a href='#L235' title='Defined at 235.'>_nettle_chacha_crypt32_3core</a></li>
+<li><a href='#L276' title='Defined at 276.'>_nettle_chacha_crypt32_1core</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* chacha-crypt.c</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   The crypt function in the ChaCha stream cipher.</em>
+<a id='L4' name='L4'></a><em class='comment'>   Heavily based on the Salsa20 implementation in Nettle.</em>
+<a id='L5' name='L5'></a><em class='comment'></em>
+<a id='L6' name='L6'></a><em class='comment'>   Copyright (C) 2014 Niels Möller</em>
+<a id='L7' name='L7'></a><em class='comment'>   Copyright (C) 2013 Joachim Strömbergson</em>
+<a id='L8' name='L8'></a><em class='comment'>   Copyright (C) 2012 Simon Josefsson</em>
+<a id='L9' name='L9'></a><em class='comment'></em>
+<a id='L10' name='L10'></a><em class='comment'>   This file is part of GNU Nettle.</em>
+<a id='L11' name='L11'></a><em class='comment'></em>
+<a id='L12' name='L12'></a><em class='comment'>   GNU Nettle is free software: you can redistribute it and/or</em>
+<a id='L13' name='L13'></a><em class='comment'>   modify it under the terms of either:</em>
+<a id='L14' name='L14'></a><em class='comment'></em>
+<a id='L15' name='L15'></a><em class='comment'>     * the GNU Lesser General Public License as published by the Free</em>
+<a id='L16' name='L16'></a><em class='comment'>       Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L17' name='L17'></a><em class='comment'>       option) any later version.</em>
+<a id='L18' name='L18'></a><em class='comment'></em>
+<a id='L19' name='L19'></a><em class='comment'>   or</em>
+<a id='L20' name='L20'></a><em class='comment'></em>
+<a id='L21' name='L21'></a><em class='comment'>     * the GNU General Public License as published by the Free</em>
+<a id='L22' name='L22'></a><em class='comment'>       Software Foundation; either version 2 of the License, or (at your</em>
+<a id='L23' name='L23'></a><em class='comment'>       option) any later version.</em>
+<a id='L24' name='L24'></a><em class='comment'></em>
+<a id='L25' name='L25'></a><em class='comment'>   or both in parallel, as here.</em>
+<a id='L26' name='L26'></a><em class='comment'></em>
+<a id='L27' name='L27'></a><em class='comment'>   GNU Nettle is distributed in the hope that it will be useful,</em>
+<a id='L28' name='L28'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L29' name='L29'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L30' name='L30'></a><em class='comment'>   General Public License for more details.</em>
+<a id='L31' name='L31'></a><em class='comment'></em>
+<a id='L32' name='L32'></a><em class='comment'>   You should have received copies of the GNU General Public License and</em>
+<a id='L33' name='L33'></a><em class='comment'>   the GNU Lesser General Public License along with this program.  If</em>
+<a id='L34' name='L34'></a><em class='comment'>   not, see http://www.gnu.org/licenses/.</em>
+<a id='L35' name='L35'></a><em class='comment'>*/</em>
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a><em class='comment'>/* Based on:</em>
+<a id='L38' name='L38'></a><em class='comment'>   chacha-ref.c version 2008.01.20.</em>
+<a id='L39' name='L39'></a><em class='comment'>   D. J. Bernstein</em>
+<a id='L40' name='L40'></a><em class='comment'>   Public domain.</em>
+<a id='L41' name='L41'></a><em class='comment'>*/</em>
+<a id='L42' name='L42'></a>
+<a id='L43' name='L43'></a><em class='sharp'>#if</em> HAVE_CONFIG_H
+<a id='L44' name='L44'></a><em class='sharp'># include</em> "config.h"
+<a id='L45' name='L45'></a><em class='sharp'>#endif</em>
+<a id='L46' name='L46'></a>
+<a id='L47' name='L47'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L48' name='L48'></a>
+<a id='L49' name='L49'></a><em class='sharp'>#include</em> "<a href='689.html'>chacha.h</a>"
+<a id='L50' name='L50'></a><em class='sharp'>#include</em> "<a href='188.html'>chacha-internal.h</a>"
+<a id='L51' name='L51'></a>
+<a id='L52' name='L52'></a><em class='sharp'>#include</em> "<a href='251.html'>macros.h</a>"
+<a id='L53' name='L53'></a><em class='sharp'>#include</em> "<a href='193.html'>memxor.h</a>"
+<a id='L54' name='L54'></a>
+<a id='L55' name='L55'></a><em class='sharp'>#define</em> <a href='../R/130.html' title='Multiple referred from 15 places.'>CHACHA_ROUNDS</a> 20
+<a id='L56' name='L56'></a>
+<a id='L57' name='L57'></a><em class='sharp'>#if</em> HAVE_NATIVE_chacha_4core
+<a id='L58' name='L58'></a><em class='sharp'>#define</em> <a href='../R/868.html' title='Multiple referred from 2 places.'>_nettle_chacha_crypt_4core</a> <a href='../S/689.html#L51' title='Defined at 51 in chacha.h.'>chacha_crypt</a>
+<a id='L59' name='L59'></a><em class='sharp'>#define</em> <a href='../R/865.html' title='Multiple referred from 2 places.'>_nettle_chacha_crypt32_4core</a> <a href='../S/689.html#L52' title='Defined at 52 in chacha.h.'>chacha_crypt32</a>
+<a id='L60' name='L60'></a><em class='sharp'>#elif</em> HAVE_NATIVE_chacha_3core
+<a id='L61' name='L61'></a><em class='sharp'>#define</em> <a href='../R/867.html' title='Multiple referred from 2 places.'>_nettle_chacha_crypt_3core</a> <a href='../S/689.html#L51' title='Defined at 51 in chacha.h.'>chacha_crypt</a>
+<a id='L62' name='L62'></a><em class='sharp'>#define</em> <a href='../R/864.html' title='Multiple referred from 2 places.'>_nettle_chacha_crypt32_3core</a> <a href='../S/689.html#L52' title='Defined at 52 in chacha.h.'>chacha_crypt32</a>
+<a id='L63' name='L63'></a><em class='sharp'>#elif</em> !(HAVE_NATIVE_fat_chacha_4core || HAVE_NATIVE_fat_chacha_3core)
+<a id='L64' name='L64'></a><em class='sharp'>#define</em> <a href='../R/866.html' title='Multiple referred from 3 places.'>_nettle_chacha_crypt_1core</a> <a href='../S/689.html#L51' title='Defined at 51 in chacha.h.'>chacha_crypt</a>
+<a id='L65' name='L65'></a><em class='sharp'>#define</em> <a href='../R/863.html' title='Multiple referred from 3 places.'>_nettle_chacha_crypt32_1core</a> <a href='../S/689.html#L52' title='Defined at 52 in chacha.h.'>chacha_crypt32</a>
+<a id='L66' name='L66'></a><em class='sharp'>#endif</em>
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a><em class='sharp'>#if</em> HAVE_NATIVE_chacha_4core || HAVE_NATIVE_fat_chacha_4core
+<a id='L69' name='L69'></a><strong class='reserved'>void</strong>
+<a id='L70' name='L70'></a><a href='../R/868.html' title='Multiple referred from 2 places.'>_nettle_chacha_crypt_4core</a>(<strong class='reserved'>struct</strong> <a href='../S/689.html#L64' title='Defined at 64 in chacha.h.'>chacha_ctx</a> *ctx,
+<a id='L71' name='L71'></a>                           size_t length,
+<a id='L72' name='L72'></a>                           uint8_t *dst,
+<a id='L73' name='L73'></a>                           <strong class='reserved'>const</strong> uint8_t *src)
+<a id='L74' name='L74'></a><em class='brace'>{</em>
+<a id='L75' name='L75'></a>  uint32_t <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>[4*<a href='../S/689.html#L62' title='Defined at 62 in chacha.h.'>_CHACHA_STATE_LENGTH</a>];
+<a id='L76' name='L76'></a>
+<a id='L77' name='L77'></a>  <strong class='reserved'>if</strong> (!length)
+<a id='L78' name='L78'></a>    <strong class='reserved'>return</strong>;
+<a id='L79' name='L79'></a>
+<a id='L80' name='L80'></a>  <strong class='reserved'>while</strong> (length &gt; 2*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>)
+<a id='L81' name='L81'></a>    <em class='brace'>{</em>
+<a id='L82' name='L82'></a>      _nettle_chacha_4core (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ctx-&gt;state, <a href='../D/161.html' title='Multiple defined in 2 places.'>CHACHA_ROUNDS</a>);
+<a id='L83' name='L83'></a>      <strong class='reserved'>if</strong> (length &lt;= 4*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>)
+<a id='L84' name='L84'></a>        <em class='brace'>{</em>
+<a id='L85' name='L85'></a>          uint32_t incr = 3 + (length &gt; 3*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>);
+<a id='L86' name='L86'></a>          ctx-&gt;state[12] += incr;
+<a id='L87' name='L87'></a>          ctx-&gt;state[13] += (ctx-&gt;state[12] &lt; incr);
+<a id='L88' name='L88'></a>          <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, length);
+<a id='L89' name='L89'></a>          <strong class='reserved'>return</strong>;
+<a id='L90' name='L90'></a>        <em class='brace'>}</em>
+<a id='L91' name='L91'></a>      ctx-&gt;state[12] += 4;
+<a id='L92' name='L92'></a>      ctx-&gt;state[13] += (ctx-&gt;state[12] &lt; 4);
+<a id='L93' name='L93'></a>      <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, 4*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>);
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a>      length -= 4*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L96' name='L96'></a>      dst += 4*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L97' name='L97'></a>      src += 4*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L98' name='L98'></a>    <em class='brace'>}</em>
+<a id='L99' name='L99'></a>  <strong class='reserved'>if</strong> (length &gt; <a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>)
+<a id='L100' name='L100'></a>    <em class='brace'>{</em>
+<a id='L101' name='L101'></a>      _nettle_chacha_2core (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ctx-&gt;state, <a href='../D/161.html' title='Multiple defined in 2 places.'>CHACHA_ROUNDS</a>);
+<a id='L102' name='L102'></a>      ctx-&gt;state[12] += 2;
+<a id='L103' name='L103'></a>      ctx-&gt;state[13] += (ctx-&gt;state[12] &lt; 2);
+<a id='L104' name='L104'></a>    <em class='brace'>}</em>
+<a id='L105' name='L105'></a>  <strong class='reserved'>else</strong>
+<a id='L106' name='L106'></a>    <em class='brace'>{</em>
+<a id='L107' name='L107'></a>      <a href='../D/1037.html' title='Multiple defined in 2 places.'>_nettle_chacha_core</a> (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ctx-&gt;state, <a href='../D/161.html' title='Multiple defined in 2 places.'>CHACHA_ROUNDS</a>);
+<a id='L108' name='L108'></a>      ctx-&gt;state[13] += (++ctx-&gt;state[12] == 0);
+<a id='L109' name='L109'></a>    <em class='brace'>}</em>
+<a id='L110' name='L110'></a>  <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, length);
+<a id='L111' name='L111'></a><em class='brace'>}</em>
+<a id='L112' name='L112'></a><em class='sharp'>#endif</em>
+<a id='L113' name='L113'></a>
+<a id='L114' name='L114'></a><em class='sharp'>#if</em> HAVE_NATIVE_chacha_3core || HAVE_NATIVE_fat_chacha_3core
+<a id='L115' name='L115'></a><strong class='reserved'>void</strong>
+<a id='L116' name='L116'></a><a href='../R/867.html' title='Multiple referred from 2 places.'>_nettle_chacha_crypt_3core</a>(<strong class='reserved'>struct</strong> <a href='../S/689.html#L64' title='Defined at 64 in chacha.h.'>chacha_ctx</a> *ctx,
+<a id='L117' name='L117'></a>                           size_t length,
+<a id='L118' name='L118'></a>                           uint8_t *dst,
+<a id='L119' name='L119'></a>                           <strong class='reserved'>const</strong> uint8_t *src)
+<a id='L120' name='L120'></a><em class='brace'>{</em>
+<a id='L121' name='L121'></a>  uint32_t <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>[3*<a href='../S/689.html#L62' title='Defined at 62 in chacha.h.'>_CHACHA_STATE_LENGTH</a>];
+<a id='L122' name='L122'></a>
+<a id='L123' name='L123'></a>  <strong class='reserved'>if</strong> (!length)
+<a id='L124' name='L124'></a>    <strong class='reserved'>return</strong>;
+<a id='L125' name='L125'></a>
+<a id='L126' name='L126'></a>  <strong class='reserved'>while</strong> (length &gt; 2*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>)
+<a id='L127' name='L127'></a>    <em class='brace'>{</em>
+<a id='L128' name='L128'></a>      _nettle_chacha_3core (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ctx-&gt;state, <a href='../D/161.html' title='Multiple defined in 2 places.'>CHACHA_ROUNDS</a>);
+<a id='L129' name='L129'></a>      ctx-&gt;state[12] += 3;
+<a id='L130' name='L130'></a>      ctx-&gt;state[13] += (ctx-&gt;state[12] &lt; 3);
+<a id='L131' name='L131'></a>      <strong class='reserved'>if</strong> (length &lt;= 3*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>)
+<a id='L132' name='L132'></a>        <em class='brace'>{</em>
+<a id='L133' name='L133'></a>          <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, length);
+<a id='L134' name='L134'></a>          <strong class='reserved'>return</strong>;
+<a id='L135' name='L135'></a>        <em class='brace'>}</em>
+<a id='L136' name='L136'></a>      <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, 3*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>);
+<a id='L137' name='L137'></a>
+<a id='L138' name='L138'></a>      length -= 3*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L139' name='L139'></a>      dst += 3*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L140' name='L140'></a>      src += 3*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L141' name='L141'></a>    <em class='brace'>}</em>
+<a id='L142' name='L142'></a>  <strong class='reserved'>if</strong> (length &lt;= <a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>)
+<a id='L143' name='L143'></a>    <em class='brace'>{</em>
+<a id='L144' name='L144'></a>      <a href='../D/1037.html' title='Multiple defined in 2 places.'>_nettle_chacha_core</a> (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ctx-&gt;state, <a href='../D/161.html' title='Multiple defined in 2 places.'>CHACHA_ROUNDS</a>);
+<a id='L145' name='L145'></a>      ctx-&gt;state[13] += (++ctx-&gt;state[12] == 0);
+<a id='L146' name='L146'></a>    <em class='brace'>}</em>
+<a id='L147' name='L147'></a>  <strong class='reserved'>else</strong>
+<a id='L148' name='L148'></a>    <em class='brace'>{</em>
+<a id='L149' name='L149'></a>      _nettle_chacha_3core (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ctx-&gt;state, <a href='../D/161.html' title='Multiple defined in 2 places.'>CHACHA_ROUNDS</a>);
+<a id='L150' name='L150'></a>      ctx-&gt;state[12] += 2;
+<a id='L151' name='L151'></a>      ctx-&gt;state[13] += (ctx-&gt;state[12] &lt; 2);
+<a id='L152' name='L152'></a>    <em class='brace'>}</em>
+<a id='L153' name='L153'></a>  <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, length);
+<a id='L154' name='L154'></a><em class='brace'>}</em>
+<a id='L155' name='L155'></a><em class='sharp'>#endif</em>
+<a id='L156' name='L156'></a>
+<a id='L157' name='L157'></a><em class='sharp'>#if</em> !(HAVE_NATIVE_chacha_4core || HAVE_NATIVE_chacha_3core)
+<a id='L158' name='L158'></a><strong class='reserved'>void</strong>
+<a id='L159' name='L159'></a><a href='../R/866.html' title='Multiple referred from 3 places.'>_nettle_chacha_crypt_1core</a>(<strong class='reserved'>struct</strong> <a href='../S/689.html#L64' title='Defined at 64 in chacha.h.'>chacha_ctx</a> *ctx,
+<a id='L160' name='L160'></a>                           size_t length,
+<a id='L161' name='L161'></a>                           uint8_t *dst,
+<a id='L162' name='L162'></a>                           <strong class='reserved'>const</strong> uint8_t *src)
+<a id='L163' name='L163'></a><em class='brace'>{</em>
+<a id='L164' name='L164'></a>  <strong class='reserved'>if</strong> (!length)
+<a id='L165' name='L165'></a>    <strong class='reserved'>return</strong>;
+<a id='L166' name='L166'></a>  
+<a id='L167' name='L167'></a>  <strong class='reserved'>for</strong> (;;)
+<a id='L168' name='L168'></a>    <em class='brace'>{</em>
+<a id='L169' name='L169'></a>      uint32_t <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>[<a href='../S/689.html#L62' title='Defined at 62 in chacha.h.'>_CHACHA_STATE_LENGTH</a>];
+<a id='L170' name='L170'></a>
+<a id='L171' name='L171'></a>      <a href='../D/1037.html' title='Multiple defined in 2 places.'>_nettle_chacha_core</a> (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ctx-&gt;state, <a href='../D/161.html' title='Multiple defined in 2 places.'>CHACHA_ROUNDS</a>);
+<a id='L172' name='L172'></a>
+<a id='L173' name='L173'></a>      ctx-&gt;state[13] += (++ctx-&gt;state[12] == 0);
+<a id='L174' name='L174'></a>
+<a id='L175' name='L175'></a>      <em class='comment'>/* stopping at 2^70 length per nonce is user's responsibility */</em>
+<a id='L176' name='L176'></a>      
+<a id='L177' name='L177'></a>      <strong class='reserved'>if</strong> (length &lt;= <a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>)
+<a id='L178' name='L178'></a>        <em class='brace'>{</em>
+<a id='L179' name='L179'></a>          <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, length);
+<a id='L180' name='L180'></a>          <strong class='reserved'>return</strong>;
+<a id='L181' name='L181'></a>        <em class='brace'>}</em>
+<a id='L182' name='L182'></a>      <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, <a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>);
+<a id='L183' name='L183'></a>
+<a id='L184' name='L184'></a>      length -= <a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L185' name='L185'></a>      dst += <a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L186' name='L186'></a>      src += <a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L187' name='L187'></a>  <em class='brace'>}</em>
+<a id='L188' name='L188'></a><em class='brace'>}</em>
+<a id='L189' name='L189'></a><em class='sharp'>#endif</em>
+<a id='L190' name='L190'></a>
+<a id='L191' name='L191'></a><em class='sharp'>#if</em> HAVE_NATIVE_chacha_4core || HAVE_NATIVE_fat_chacha_4core
+<a id='L192' name='L192'></a><strong class='reserved'>void</strong>
+<a id='L193' name='L193'></a><a href='../R/865.html' title='Multiple referred from 2 places.'>_nettle_chacha_crypt32_4core</a>(<strong class='reserved'>struct</strong> <a href='../S/689.html#L64' title='Defined at 64 in chacha.h.'>chacha_ctx</a> *ctx,
+<a id='L194' name='L194'></a>                             size_t length,
+<a id='L195' name='L195'></a>                             uint8_t *dst,
+<a id='L196' name='L196'></a>                             <strong class='reserved'>const</strong> uint8_t *src)
+<a id='L197' name='L197'></a><em class='brace'>{</em>
+<a id='L198' name='L198'></a>  uint32_t <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>[4*<a href='../S/689.html#L62' title='Defined at 62 in chacha.h.'>_CHACHA_STATE_LENGTH</a>];
+<a id='L199' name='L199'></a>
+<a id='L200' name='L200'></a>  <strong class='reserved'>if</strong> (!length)
+<a id='L201' name='L201'></a>    <strong class='reserved'>return</strong>;
+<a id='L202' name='L202'></a>
+<a id='L203' name='L203'></a>  <strong class='reserved'>while</strong> (length &gt; 2*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>)
+<a id='L204' name='L204'></a>    <em class='brace'>{</em>
+<a id='L205' name='L205'></a>      _nettle_chacha_4core32 (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ctx-&gt;state, <a href='../D/161.html' title='Multiple defined in 2 places.'>CHACHA_ROUNDS</a>);
+<a id='L206' name='L206'></a>      <strong class='reserved'>if</strong> (length &lt;= 4*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>)
+<a id='L207' name='L207'></a>        <em class='brace'>{</em>
+<a id='L208' name='L208'></a>          ctx-&gt;state[12] += 3 + (length &gt; 3*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>);
+<a id='L209' name='L209'></a>          <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, length);
+<a id='L210' name='L210'></a>          <strong class='reserved'>return</strong>;
+<a id='L211' name='L211'></a>        <em class='brace'>}</em>
+<a id='L212' name='L212'></a>      ctx-&gt;state[12] += 4;
+<a id='L213' name='L213'></a>      <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, 4*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>);
+<a id='L214' name='L214'></a>
+<a id='L215' name='L215'></a>      length -= 4*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L216' name='L216'></a>      dst += 4*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L217' name='L217'></a>      src += 4*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L218' name='L218'></a>    <em class='brace'>}</em>
+<a id='L219' name='L219'></a>  <strong class='reserved'>if</strong> (length &gt; <a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>)
+<a id='L220' name='L220'></a>    <em class='brace'>{</em>
+<a id='L221' name='L221'></a>      _nettle_chacha_2core32 (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ctx-&gt;state, <a href='../D/161.html' title='Multiple defined in 2 places.'>CHACHA_ROUNDS</a>);
+<a id='L222' name='L222'></a>      ctx-&gt;state[12] += 2;
+<a id='L223' name='L223'></a>    <em class='brace'>}</em>
+<a id='L224' name='L224'></a>  <strong class='reserved'>else</strong>
+<a id='L225' name='L225'></a>    <em class='brace'>{</em>
+<a id='L226' name='L226'></a>      <a href='../D/1037.html' title='Multiple defined in 2 places.'>_nettle_chacha_core</a> (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ctx-&gt;state, <a href='../D/161.html' title='Multiple defined in 2 places.'>CHACHA_ROUNDS</a>);
+<a id='L227' name='L227'></a>      ++ctx-&gt;state[12];
+<a id='L228' name='L228'></a>    <em class='brace'>}</em>
+<a id='L229' name='L229'></a>  <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, length);
+<a id='L230' name='L230'></a><em class='brace'>}</em>
+<a id='L231' name='L231'></a><em class='sharp'>#endif</em>
+<a id='L232' name='L232'></a>
+<a id='L233' name='L233'></a><em class='sharp'>#if</em> HAVE_NATIVE_chacha_3core || HAVE_NATIVE_fat_chacha_3core
+<a id='L234' name='L234'></a><strong class='reserved'>void</strong>
+<a id='L235' name='L235'></a><a href='../R/864.html' title='Multiple referred from 2 places.'>_nettle_chacha_crypt32_3core</a>(<strong class='reserved'>struct</strong> <a href='../S/689.html#L64' title='Defined at 64 in chacha.h.'>chacha_ctx</a> *ctx,
+<a id='L236' name='L236'></a>                             size_t length,
+<a id='L237' name='L237'></a>                             uint8_t *dst,
+<a id='L238' name='L238'></a>                             <strong class='reserved'>const</strong> uint8_t *src)
+<a id='L239' name='L239'></a><em class='brace'>{</em>
+<a id='L240' name='L240'></a>  uint32_t <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>[3*<a href='../S/689.html#L62' title='Defined at 62 in chacha.h.'>_CHACHA_STATE_LENGTH</a>];
+<a id='L241' name='L241'></a>
+<a id='L242' name='L242'></a>  <strong class='reserved'>if</strong> (!length)
+<a id='L243' name='L243'></a>    <strong class='reserved'>return</strong>;
+<a id='L244' name='L244'></a>
+<a id='L245' name='L245'></a>  <strong class='reserved'>while</strong> (length &gt; 2*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>)
+<a id='L246' name='L246'></a>    <em class='brace'>{</em>
+<a id='L247' name='L247'></a>      _nettle_chacha_3core32 (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ctx-&gt;state, <a href='../D/161.html' title='Multiple defined in 2 places.'>CHACHA_ROUNDS</a>);
+<a id='L248' name='L248'></a>      ctx-&gt;state[12] += 3;
+<a id='L249' name='L249'></a>      <strong class='reserved'>if</strong> (length &lt;= 3*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>)
+<a id='L250' name='L250'></a>        <em class='brace'>{</em>
+<a id='L251' name='L251'></a>          <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, length);
+<a id='L252' name='L252'></a>          <strong class='reserved'>return</strong>;
+<a id='L253' name='L253'></a>        <em class='brace'>}</em>
+<a id='L254' name='L254'></a>      <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, 3*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>);
+<a id='L255' name='L255'></a>
+<a id='L256' name='L256'></a>      length -= 3*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L257' name='L257'></a>      dst += 3*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L258' name='L258'></a>      src += 3*<a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L259' name='L259'></a>    <em class='brace'>}</em>
+<a id='L260' name='L260'></a>  <strong class='reserved'>if</strong> (length &lt;= <a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>)
+<a id='L261' name='L261'></a>    <em class='brace'>{</em>
+<a id='L262' name='L262'></a>      <a href='../D/1037.html' title='Multiple defined in 2 places.'>_nettle_chacha_core</a> (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ctx-&gt;state, <a href='../D/161.html' title='Multiple defined in 2 places.'>CHACHA_ROUNDS</a>);
+<a id='L263' name='L263'></a>      ++ctx-&gt;state[12];
+<a id='L264' name='L264'></a>    <em class='brace'>}</em>
+<a id='L265' name='L265'></a>  <strong class='reserved'>else</strong>
+<a id='L266' name='L266'></a>    <em class='brace'>{</em>
+<a id='L267' name='L267'></a>      _nettle_chacha_3core32 (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ctx-&gt;state, <a href='../D/161.html' title='Multiple defined in 2 places.'>CHACHA_ROUNDS</a>);
+<a id='L268' name='L268'></a>      ctx-&gt;state[12] += 2;
+<a id='L269' name='L269'></a>    <em class='brace'>}</em>
+<a id='L270' name='L270'></a>  <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, length);
+<a id='L271' name='L271'></a><em class='brace'>}</em>
+<a id='L272' name='L272'></a><em class='sharp'>#endif</em>
+<a id='L273' name='L273'></a>
+<a id='L274' name='L274'></a><em class='sharp'>#if</em> !(HAVE_NATIVE_chacha_4core || HAVE_NATIVE_chacha_3core)
+<a id='L275' name='L275'></a><strong class='reserved'>void</strong>
+<a id='L276' name='L276'></a><a href='../R/863.html' title='Multiple referred from 3 places.'>_nettle_chacha_crypt32_1core</a>(<strong class='reserved'>struct</strong> <a href='../S/689.html#L64' title='Defined at 64 in chacha.h.'>chacha_ctx</a> *ctx,
+<a id='L277' name='L277'></a>                             size_t length,
+<a id='L278' name='L278'></a>                             uint8_t *dst,
+<a id='L279' name='L279'></a>                             <strong class='reserved'>const</strong> uint8_t *src)
+<a id='L280' name='L280'></a><em class='brace'>{</em>
+<a id='L281' name='L281'></a>  <strong class='reserved'>if</strong> (!length)
+<a id='L282' name='L282'></a>    <strong class='reserved'>return</strong>;
+<a id='L283' name='L283'></a>
+<a id='L284' name='L284'></a>  <strong class='reserved'>for</strong> (;;)
+<a id='L285' name='L285'></a>    <em class='brace'>{</em>
+<a id='L286' name='L286'></a>      uint32_t <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>[<a href='../S/689.html#L62' title='Defined at 62 in chacha.h.'>_CHACHA_STATE_LENGTH</a>];
+<a id='L287' name='L287'></a>
+<a id='L288' name='L288'></a>      <a href='../D/1037.html' title='Multiple defined in 2 places.'>_nettle_chacha_core</a> (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ctx-&gt;state, <a href='../D/161.html' title='Multiple defined in 2 places.'>CHACHA_ROUNDS</a>);
+<a id='L289' name='L289'></a>
+<a id='L290' name='L290'></a>      ++ctx-&gt;state[12];
+<a id='L291' name='L291'></a>
+<a id='L292' name='L292'></a>      <em class='comment'>/* stopping at 2^38 length per nonce is user's responsibility */</em>
+<a id='L293' name='L293'></a>
+<a id='L294' name='L294'></a>      <strong class='reserved'>if</strong> (length &lt;= <a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>)
+<a id='L295' name='L295'></a>        <em class='brace'>{</em>
+<a id='L296' name='L296'></a>          <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, length);
+<a id='L297' name='L297'></a>          <strong class='reserved'>return</strong>;
+<a id='L298' name='L298'></a>        <em class='brace'>}</em>
+<a id='L299' name='L299'></a>      <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (dst, src, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, <a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>);
+<a id='L300' name='L300'></a>
+<a id='L301' name='L301'></a>      length -= <a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L302' name='L302'></a>      dst += <a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L303' name='L303'></a>      src += <a href='../S/689.html#L56' title='Defined at 56 in chacha.h.'>CHACHA_BLOCK_SIZE</a>;
+<a id='L304' name='L304'></a>  <em class='brace'>}</em>
+<a id='L305' name='L305'></a><em class='brace'>}</em>
+<a id='L306' name='L306'></a><em class='sharp'>#endif</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L70'>[^]</a><a href='#L276'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

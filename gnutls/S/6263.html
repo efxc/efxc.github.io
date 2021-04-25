@@ -1,0 +1,277 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>gl/tests/windows-thread.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6458.html'>gl</a>/<a href='../files/6460.html'>tests</a>/windows-thread.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L38'>[^]</a><a href='#L236'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L38' title='Defined at 38.'>do_init_self_key</a></li>
+<li><a href='#L48' title='Defined at 48.'>init_self_key</a></li>
+<li><a href='#L71' title='Defined at 71.'>get_current_thread_handle</a></li>
+<li><a href='#L85' title='Defined at 85.'>glwthread_thread_self</a></li>
+<li><a href='#L120' title='Defined at 120.'>wrapper_func</a></li>
+<li><a href='#L155' title='Defined at 155.'>glwthread_thread_create</a></li>
+<li><a href='#L198' title='Defined at 198.'>glwthread_thread_join</a></li>
+<li><a href='#L223' title='Defined at 223.'>glwthread_thread_detach</a></li>
+<li><a href='#L236' title='Defined at 236.'>glwthread_thread_exit</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* Creating and controlling threads (native Windows implementation).</em>
+<a id='L2' name='L2'></a><em class='comment'>   Copyright (C) 2005-2020 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'></em>
+<a id='L4' name='L4'></a><em class='comment'>   This program is free software; you can redistribute it and/or modify</em>
+<a id='L5' name='L5'></a><em class='comment'>   it under the terms of the GNU General Public License as published by</em>
+<a id='L6' name='L6'></a><em class='comment'>   the Free Software Foundation; either version 3, or (at your option)</em>
+<a id='L7' name='L7'></a><em class='comment'>   any later version.</em>
+<a id='L8' name='L8'></a><em class='comment'></em>
+<a id='L9' name='L9'></a><em class='comment'>   This program is distributed in the hope that it will be useful,</em>
+<a id='L10' name='L10'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L11' name='L11'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</em>
+<a id='L12' name='L12'></a><em class='comment'>   GNU General Public License for more details.</em>
+<a id='L13' name='L13'></a><em class='comment'></em>
+<a id='L14' name='L14'></a><em class='comment'>   You should have received a copy of the GNU General Public License</em>
+<a id='L15' name='L15'></a><em class='comment'>   along with this program; if not, see &lt;https://www.gnu.org/licenses/&gt;.  */</em>
+<a id='L16' name='L16'></a>
+<a id='L17' name='L17'></a><em class='comment'>/* Written by Bruno Haible &lt;bruno@clisp.org&gt;, 2005.</em>
+<a id='L18' name='L18'></a><em class='comment'>   Based on GCC's gthr-win32.h.  */</em>
+<a id='L19' name='L19'></a>
+<a id='L20' name='L20'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L21' name='L21'></a>
+<a id='L22' name='L22'></a><em class='comment'>/* Specification.  */</em>
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> "<a href='6334.html'>windows-thread.h</a>"
+<a id='L24' name='L24'></a>
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> &lt;process.h&gt;
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> "<a href='6136.html'>windows-once.h</a>"
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> "<a href='6307.html'>windows-tls.h</a>"
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a><em class='comment'>/* The Thread-Local Storage (TLS) key that allows to access each thread's</em>
+<a id='L33' name='L33'></a><em class='comment'>   'struct glwthread_thread_struct *' pointer.  */</em>
+<a id='L34' name='L34'></a><strong class='reserved'>static</strong> DWORD self_key = (DWORD)-1;
+<a id='L35' name='L35'></a>
+<a id='L36' name='L36'></a><em class='comment'>/* Initializes self_key.  This function must only be called once.  */</em>
+<a id='L37' name='L37'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L38' name='L38'></a><a href='../S/6263.html#L51' title='Referred from 51 in gl/tests/windows-thread.c.'>do_init_self_key</a> (<strong class='reserved'>void</strong>)
+<a id='L39' name='L39'></a><em class='brace'>{</em>
+<a id='L40' name='L40'></a>  self_key = TlsAlloc ();
+<a id='L41' name='L41'></a>  <em class='comment'>/* If this fails, we're hosed.  */</em>
+<a id='L42' name='L42'></a>  <strong class='reserved'>if</strong> (self_key == (DWORD)-1)
+<a id='L43' name='L43'></a>    abort ();
+<a id='L44' name='L44'></a><em class='brace'>}</em>
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a><em class='comment'>/* Initializes self_key.  */</em>
+<a id='L47' name='L47'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L48' name='L48'></a><a href='../R/9035.html' title='Multiple referred from 2 places.'>init_self_key</a> (<strong class='reserved'>void</strong>)
+<a id='L49' name='L49'></a><em class='brace'>{</em>
+<a id='L50' name='L50'></a>  <strong class='reserved'>static</strong> <a href='../S/6136.html#L32' title='Defined at 32 in gl/tests/windows-once.h.'>glwthread_once_t</a> once = <a href='../S/6136.html#L34' title='Defined at 34 in gl/tests/windows-once.h.'>GLWTHREAD_ONCE_INIT</a>;
+<a id='L51' name='L51'></a>  <a href='../S/6106.html#L28' title='Defined at 28 in gl/tests/windows-once.c.'>glwthread_once</a> (&amp;once, <a href='../S/6263.html#L38' title='Defined at 38 in gl/tests/windows-thread.c.'>do_init_self_key</a>);
+<a id='L52' name='L52'></a><em class='brace'>}</em>
+<a id='L53' name='L53'></a>
+<a id='L54' name='L54'></a><em class='comment'>/* This structure contains information about a thread.</em>
+<a id='L55' name='L55'></a><em class='comment'>   It is stored in TLS under key self_key.  */</em>
+<a id='L56' name='L56'></a><strong class='reserved'>struct</strong> <a href='../R/7465.html' title='Multiple referred from 8 places.'>glwthread_thread_struct</a>
+<a id='L57' name='L57'></a><em class='brace'>{</em>
+<a id='L58' name='L58'></a>  <em class='comment'>/* Fields for managing the handle.  */</em>
+<a id='L59' name='L59'></a>  HANDLE <strong class='reserved'>volatile</strong> handle;
+<a id='L60' name='L60'></a>  CRITICAL_SECTION handle_lock;
+<a id='L61' name='L61'></a>  <em class='comment'>/* Fields for managing the exit value.  */</em>
+<a id='L62' name='L62'></a>  BOOL <strong class='reserved'>volatile</strong> detached;
+<a id='L63' name='L63'></a>  <strong class='reserved'>void</strong> * <strong class='reserved'>volatile</strong> result;
+<a id='L64' name='L64'></a>  <em class='comment'>/* Fields for managing the thread start.  */</em>
+<a id='L65' name='L65'></a>  <strong class='reserved'>void</strong> * (*func) (<strong class='reserved'>void</strong> *);
+<a id='L66' name='L66'></a>  <strong class='reserved'>void</strong> *arg;
+<a id='L67' name='L67'></a><em class='brace'>}</em>;
+<a id='L68' name='L68'></a>
+<a id='L69' name='L69'></a><em class='comment'>/* Return a real HANDLE object for the current thread.  */</em>
+<a id='L70' name='L70'></a><strong class='reserved'>static</strong> HANDLE
+<a id='L71' name='L71'></a><a href='../R/7174.html' title='Multiple referred from 2 places.'>get_current_thread_handle</a> (<strong class='reserved'>void</strong>)
+<a id='L72' name='L72'></a><em class='brace'>{</em>
+<a id='L73' name='L73'></a>  HANDLE this_handle;
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a>  <em class='comment'>/* GetCurrentThread() returns a pseudo-handle, i.e. only a symbolic</em>
+<a id='L76' name='L76'></a><em class='comment'>     identifier, not a real handle.  */</em>
+<a id='L77' name='L77'></a>  <strong class='reserved'>if</strong> (!DuplicateHandle (GetCurrentProcess (), GetCurrentThread (),
+<a id='L78' name='L78'></a>                        GetCurrentProcess (), &amp;this_handle,
+<a id='L79' name='L79'></a>                        0, <a href='../D/1035.html' title='Multiple defined in 2 places.'>FALSE</a>, DUPLICATE_SAME_ACCESS))
+<a id='L80' name='L80'></a>    abort ();
+<a id='L81' name='L81'></a>  <strong class='reserved'>return</strong> this_handle;
+<a id='L82' name='L82'></a><em class='brace'>}</em>
+<a id='L83' name='L83'></a>
+<a id='L84' name='L84'></a><a href='../S/6334.html#L35' title='Defined at 35 in gl/tests/windows-thread.h.'>glwthread_thread_t</a>
+<a id='L85' name='L85'></a><a href='../R/7464.html' title='Multiple referred from 5 places.'>glwthread_thread_self</a> (<strong class='reserved'>void</strong>)
+<a id='L86' name='L86'></a><em class='brace'>{</em>
+<a id='L87' name='L87'></a>  <a href='../S/6334.html#L35' title='Defined at 35 in gl/tests/windows-thread.h.'>glwthread_thread_t</a> thread;
+<a id='L88' name='L88'></a>
+<a id='L89' name='L89'></a>  <strong class='reserved'>if</strong> (self_key == (DWORD)-1)
+<a id='L90' name='L90'></a>    <a href='../S/6263.html#L48' title='Defined at 48 in gl/tests/windows-thread.c.'>init_self_key</a> ();
+<a id='L91' name='L91'></a>  thread = TlsGetValue (self_key);
+<a id='L92' name='L92'></a>  <strong class='reserved'>if</strong> (thread == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L93' name='L93'></a>    <em class='brace'>{</em>
+<a id='L94' name='L94'></a>      <em class='comment'>/* This happens only in threads that have not been created through</em>
+<a id='L95' name='L95'></a><em class='comment'>         glthread_create(), such as the main thread.  */</em>
+<a id='L96' name='L96'></a>      <strong class='reserved'>for</strong> (;;)
+<a id='L97' name='L97'></a>        <em class='brace'>{</em>
+<a id='L98' name='L98'></a>          thread =
+<a id='L99' name='L99'></a>            (<strong class='reserved'>struct</strong> <a href='../S/6263.html#L56' title='Defined at 56 in gl/tests/windows-thread.c.'>glwthread_thread_struct</a> *)
+<a id='L100' name='L100'></a>            <a href='../D/10239.html' title='Multiple defined in 8 places.'>malloc</a> (<strong class='reserved'>sizeof</strong> (<strong class='reserved'>struct</strong> <a href='../S/6263.html#L56' title='Defined at 56 in gl/tests/windows-thread.c.'>glwthread_thread_struct</a>));
+<a id='L101' name='L101'></a>          <strong class='reserved'>if</strong> (thread != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L102' name='L102'></a>            <strong class='reserved'>break</strong>;
+<a id='L103' name='L103'></a>          <em class='comment'>/* Memory allocation failed.  There is not much we can do.  Have to</em>
+<a id='L104' name='L104'></a><em class='comment'>             busy-loop, waiting for the availability of memory.  */</em>
+<a id='L105' name='L105'></a>          Sleep (1);
+<a id='L106' name='L106'></a>        <em class='brace'>}</em>
+<a id='L107' name='L107'></a>
+<a id='L108' name='L108'></a>      thread-&gt;handle = <a href='../S/6263.html#L71' title='Defined at 71 in gl/tests/windows-thread.c.'>get_current_thread_handle</a> ();
+<a id='L109' name='L109'></a>      InitializeCriticalSection (&amp;thread-&gt;handle_lock);
+<a id='L110' name='L110'></a>      thread-&gt;detached = <a href='../D/1035.html' title='Multiple defined in 2 places.'>FALSE</a>; <em class='comment'>/* This can lead to a memory leak.  */</em>
+<a id='L111' name='L111'></a>      thread-&gt;result = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>; <em class='comment'>/* just to be deterministic */</em>
+<a id='L112' name='L112'></a>      TlsSetValue (self_key, thread);
+<a id='L113' name='L113'></a>    <em class='brace'>}</em>
+<a id='L114' name='L114'></a>  <strong class='reserved'>return</strong> thread;
+<a id='L115' name='L115'></a><em class='brace'>}</em>
+<a id='L116' name='L116'></a>
+<a id='L117' name='L117'></a><em class='comment'>/* The main function of a freshly creating thread.  It's a wrapper around</em>
+<a id='L118' name='L118'></a><em class='comment'>   the FUNC and ARG arguments passed to glthread_create_func.  */</em>
+<a id='L119' name='L119'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> <a href='../S/5450.html#L35' title='Defined at 35 in lib/system.h.'>WINAPI</a>
+<a id='L120' name='L120'></a><a href='../S/6263.html#L175' title='Referred from 175 in gl/tests/windows-thread.c.'>wrapper_func</a> (<strong class='reserved'>void</strong> *varg)
+<a id='L121' name='L121'></a><em class='brace'>{</em>
+<a id='L122' name='L122'></a>  <strong class='reserved'>struct</strong> <a href='../S/6263.html#L56' title='Defined at 56 in gl/tests/windows-thread.c.'>glwthread_thread_struct</a> *thread =
+<a id='L123' name='L123'></a>    (<strong class='reserved'>struct</strong> <a href='../S/6263.html#L56' title='Defined at 56 in gl/tests/windows-thread.c.'>glwthread_thread_struct</a> *) varg;
+<a id='L124' name='L124'></a>
+<a id='L125' name='L125'></a>  EnterCriticalSection (&amp;thread-&gt;handle_lock);
+<a id='L126' name='L126'></a>  <em class='comment'>/* Create a new handle for the thread only if the parent thread did not yet</em>
+<a id='L127' name='L127'></a><em class='comment'>     fill in the handle.  */</em>
+<a id='L128' name='L128'></a>  <strong class='reserved'>if</strong> (thread-&gt;handle == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L129' name='L129'></a>    thread-&gt;handle = <a href='../S/6263.html#L71' title='Defined at 71 in gl/tests/windows-thread.c.'>get_current_thread_handle</a> ();
+<a id='L130' name='L130'></a>  LeaveCriticalSection (&amp;thread-&gt;handle_lock);
+<a id='L131' name='L131'></a>
+<a id='L132' name='L132'></a>  <strong class='reserved'>if</strong> (self_key == (DWORD)-1)
+<a id='L133' name='L133'></a>    <a href='../S/6263.html#L48' title='Defined at 48 in gl/tests/windows-thread.c.'>init_self_key</a> ();
+<a id='L134' name='L134'></a>  TlsSetValue (self_key, thread);
+<a id='L135' name='L135'></a>
+<a id='L136' name='L136'></a>  <em class='comment'>/* Run the thread.  Store the exit value if the thread was not terminated</em>
+<a id='L137' name='L137'></a><em class='comment'>     otherwise.  */</em>
+<a id='L138' name='L138'></a>  thread-&gt;result = thread-&gt;func (thread-&gt;arg);
+<a id='L139' name='L139'></a>
+<a id='L140' name='L140'></a>  <em class='comment'>/* Process the TLS destructors.  */</em>
+<a id='L141' name='L141'></a>  <a href='../S/6118.html#L129' title='Defined at 129 in gl/tests/windows-tls.c.'>glwthread_tls_process_destructors</a> ();
+<a id='L142' name='L142'></a>
+<a id='L143' name='L143'></a>  <strong class='reserved'>if</strong> (thread-&gt;detached)
+<a id='L144' name='L144'></a>    <em class='brace'>{</em>
+<a id='L145' name='L145'></a>      <em class='comment'>/* Clean up the thread, like thrd_join would do.  */</em>
+<a id='L146' name='L146'></a>      DeleteCriticalSection (&amp;thread-&gt;handle_lock);
+<a id='L147' name='L147'></a>      CloseHandle (thread-&gt;handle);
+<a id='L148' name='L148'></a>      <a href='../D/7914.html' title='Multiple defined in 4 places.'>free</a> (thread);
+<a id='L149' name='L149'></a>    <em class='brace'>}</em>
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a>  <strong class='reserved'>return</strong> 0;
+<a id='L152' name='L152'></a><em class='brace'>}</em>
+<a id='L153' name='L153'></a>
+<a id='L154' name='L154'></a><strong class='reserved'>int</strong>
+<a id='L155' name='L155'></a><a href='../R/7460.html' title='Multiple referred from 3 places.'>glwthread_thread_create</a> (<a href='../S/6334.html#L35' title='Defined at 35 in gl/tests/windows-thread.h.'>glwthread_thread_t</a> *threadp, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> attr,
+<a id='L156' name='L156'></a>                         <strong class='reserved'>void</strong> * (*func) (<strong class='reserved'>void</strong> *), <strong class='reserved'>void</strong> *arg)
+<a id='L157' name='L157'></a><em class='brace'>{</em>
+<a id='L158' name='L158'></a>  <strong class='reserved'>struct</strong> <a href='../S/6263.html#L56' title='Defined at 56 in gl/tests/windows-thread.c.'>glwthread_thread_struct</a> *thread =
+<a id='L159' name='L159'></a>    (<strong class='reserved'>struct</strong> <a href='../S/6263.html#L56' title='Defined at 56 in gl/tests/windows-thread.c.'>glwthread_thread_struct</a> *)
+<a id='L160' name='L160'></a>    <a href='../D/10239.html' title='Multiple defined in 8 places.'>malloc</a> (<strong class='reserved'>sizeof</strong> (<strong class='reserved'>struct</strong> <a href='../S/6263.html#L56' title='Defined at 56 in gl/tests/windows-thread.c.'>glwthread_thread_struct</a>));
+<a id='L161' name='L161'></a>  <strong class='reserved'>if</strong> (thread == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L162' name='L162'></a>    <strong class='reserved'>return</strong> ENOMEM;
+<a id='L163' name='L163'></a>  thread-&gt;handle = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L164' name='L164'></a>  InitializeCriticalSection (&amp;thread-&gt;handle_lock);
+<a id='L165' name='L165'></a>  thread-&gt;detached = (attr &amp; <a href='../S/6334.html#L42' title='Defined at 42 in gl/tests/windows-thread.h.'>GLWTHREAD_ATTR_DETACHED</a> ? <a href='../D/4590.html' title='Multiple defined in 2 places.'>TRUE</a> : <a href='../D/1035.html' title='Multiple defined in 2 places.'>FALSE</a>);
+<a id='L166' name='L166'></a>  thread-&gt;result = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>; <em class='comment'>/* just to be deterministic */</em>
+<a id='L167' name='L167'></a>  thread-&gt;func = func;
+<a id='L168' name='L168'></a>  thread-&gt;arg = arg;
+<a id='L169' name='L169'></a>
+<a id='L170' name='L170'></a>  <em class='brace'>{</em>
+<a id='L171' name='L171'></a>    <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> thread_id;
+<a id='L172' name='L172'></a>    HANDLE thread_handle;
+<a id='L173' name='L173'></a>
+<a id='L174' name='L174'></a>    thread_handle = (HANDLE)
+<a id='L175' name='L175'></a>      _beginthreadex (<a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 100000, <a href='../S/6263.html#L120' title='Defined at 120 in gl/tests/windows-thread.c.'>wrapper_func</a>, thread, 0, &amp;thread_id);
+<a id='L176' name='L176'></a>      <em class='comment'>/* calls CreateThread with the same arguments */</em>
+<a id='L177' name='L177'></a>    <strong class='reserved'>if</strong> (thread_handle == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L178' name='L178'></a>      <em class='brace'>{</em>
+<a id='L179' name='L179'></a>        DeleteCriticalSection (&amp;thread-&gt;handle_lock);
+<a id='L180' name='L180'></a>        <a href='../D/7914.html' title='Multiple defined in 4 places.'>free</a> (thread);
+<a id='L181' name='L181'></a>        <strong class='reserved'>return</strong> <a href='../S/5984.html#L58' title='Defined at 58 in lib/buffers.c.'>EAGAIN</a>;
+<a id='L182' name='L182'></a>      <em class='brace'>}</em>
+<a id='L183' name='L183'></a>
+<a id='L184' name='L184'></a>    EnterCriticalSection (&amp;thread-&gt;handle_lock);
+<a id='L185' name='L185'></a>    <strong class='reserved'>if</strong> (thread-&gt;handle == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L186' name='L186'></a>      thread-&gt;handle = thread_handle;
+<a id='L187' name='L187'></a>    <strong class='reserved'>else</strong>
+<a id='L188' name='L188'></a>      <em class='comment'>/* thread-&gt;handle was already set by the thread itself.  */</em>
+<a id='L189' name='L189'></a>      CloseHandle (thread_handle);
+<a id='L190' name='L190'></a>    LeaveCriticalSection (&amp;thread-&gt;handle_lock);
+<a id='L191' name='L191'></a>
+<a id='L192' name='L192'></a>    *threadp = thread;
+<a id='L193' name='L193'></a>    <strong class='reserved'>return</strong> 0;
+<a id='L194' name='L194'></a>  <em class='brace'>}</em>
+<a id='L195' name='L195'></a><em class='brace'>}</em>
+<a id='L196' name='L196'></a>
+<a id='L197' name='L197'></a><strong class='reserved'>int</strong>
+<a id='L198' name='L198'></a><a href='../R/7463.html' title='Multiple referred from 3 places.'>glwthread_thread_join</a> (<a href='../S/6334.html#L35' title='Defined at 35 in gl/tests/windows-thread.h.'>glwthread_thread_t</a> thread, <strong class='reserved'>void</strong> **retvalp)
+<a id='L199' name='L199'></a><em class='brace'>{</em>
+<a id='L200' name='L200'></a>  <strong class='reserved'>if</strong> (thread == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L201' name='L201'></a>    <strong class='reserved'>return</strong> EINVAL;
+<a id='L202' name='L202'></a>
+<a id='L203' name='L203'></a>  <strong class='reserved'>if</strong> (thread == <a href='../S/6263.html#L85' title='Defined at 85 in gl/tests/windows-thread.c.'>glwthread_thread_self</a> ())
+<a id='L204' name='L204'></a>    <strong class='reserved'>return</strong> EDEADLK;
+<a id='L205' name='L205'></a>
+<a id='L206' name='L206'></a>  <strong class='reserved'>if</strong> (thread-&gt;detached)
+<a id='L207' name='L207'></a>    <strong class='reserved'>return</strong> EINVAL;
+<a id='L208' name='L208'></a>
+<a id='L209' name='L209'></a>  <strong class='reserved'>if</strong> (WaitForSingleObject (thread-&gt;handle, INFINITE) == WAIT_FAILED)
+<a id='L210' name='L210'></a>    <strong class='reserved'>return</strong> EINVAL;
+<a id='L211' name='L211'></a>
+<a id='L212' name='L212'></a>  <strong class='reserved'>if</strong> (retvalp != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L213' name='L213'></a>    *retvalp = thread-&gt;result;
+<a id='L214' name='L214'></a>
+<a id='L215' name='L215'></a>  DeleteCriticalSection (&amp;thread-&gt;handle_lock);
+<a id='L216' name='L216'></a>  CloseHandle (thread-&gt;handle);
+<a id='L217' name='L217'></a>  <a href='../D/7914.html' title='Multiple defined in 4 places.'>free</a> (thread);
+<a id='L218' name='L218'></a>
+<a id='L219' name='L219'></a>  <strong class='reserved'>return</strong> 0;
+<a id='L220' name='L220'></a><em class='brace'>}</em>
+<a id='L221' name='L221'></a>
+<a id='L222' name='L222'></a><strong class='reserved'>int</strong>
+<a id='L223' name='L223'></a><a href='../R/7461.html' title='Multiple referred from 2 places.'>glwthread_thread_detach</a> (<a href='../S/6334.html#L35' title='Defined at 35 in gl/tests/windows-thread.h.'>glwthread_thread_t</a> thread)
+<a id='L224' name='L224'></a><em class='brace'>{</em>
+<a id='L225' name='L225'></a>  <strong class='reserved'>if</strong> (thread == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L226' name='L226'></a>    <strong class='reserved'>return</strong> EINVAL;
+<a id='L227' name='L227'></a>
+<a id='L228' name='L228'></a>  <strong class='reserved'>if</strong> (thread-&gt;detached)
+<a id='L229' name='L229'></a>    <strong class='reserved'>return</strong> EINVAL;
+<a id='L230' name='L230'></a>
+<a id='L231' name='L231'></a>  thread-&gt;detached = <a href='../D/4590.html' title='Multiple defined in 2 places.'>TRUE</a>;
+<a id='L232' name='L232'></a>  <strong class='reserved'>return</strong> 0;
+<a id='L233' name='L233'></a><em class='brace'>}</em>
+<a id='L234' name='L234'></a>
+<a id='L235' name='L235'></a><strong class='reserved'>int</strong>
+<a id='L236' name='L236'></a><a href='../R/7462.html' title='Multiple referred from 3 places.'>glwthread_thread_exit</a> (<strong class='reserved'>void</strong> *retval)
+<a id='L237' name='L237'></a><em class='brace'>{</em>
+<a id='L238' name='L238'></a>  <a href='../S/6334.html#L35' title='Defined at 35 in gl/tests/windows-thread.h.'>glwthread_thread_t</a> thread = <a href='../S/6263.html#L85' title='Defined at 85 in gl/tests/windows-thread.c.'>glwthread_thread_self</a> ();
+<a id='L239' name='L239'></a>  thread-&gt;result = retval;
+<a id='L240' name='L240'></a>  <a href='../S/6118.html#L129' title='Defined at 129 in gl/tests/windows-tls.c.'>glwthread_tls_process_destructors</a> ();
+<a id='L241' name='L241'></a>  _endthreadex (0); <em class='comment'>/* calls ExitThread (0) */</em>
+<a id='L242' name='L242'></a>  abort ();
+<a id='L243' name='L243'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L38'>[^]</a><a href='#L236'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

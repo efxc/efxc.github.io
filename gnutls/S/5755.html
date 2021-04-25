@@ -1,0 +1,458 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/db.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/db.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L52'>[^]</a><a href='#L394'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L52' title='Defined at 52.'>gnutls_db_set_retrieve_function</a></li>
+<li><a href='#L70' title='Defined at 70.'>gnutls_db_set_remove_function</a></li>
+<li><a href='#L88' title='Defined at 88.'>gnutls_db_set_store_function</a></li>
+<li><a href='#L102' title='Defined at 102.'>gnutls_db_set_ptr</a></li>
+<li><a href='#L116' title='Defined at 116.'>gnutls_db_get_ptr</a></li>
+<li><a href='#L133' title='Defined at 133.'>gnutls_db_set_cache_expiration</a></li>
+<li><a href='#L145' title='Defined at 145.'>gnutls_db_get_default_cache_expiration</a></li>
+<li><a href='#L163' title='Defined at 163.'>gnutls_db_check_entry</a></li>
+<li><a href='#L178' title='Defined at 178.'>gnutls_db_check_entry_time</a></li>
+<li><a href='#L207' title='Defined at 207.'>gnutls_db_check_entry_expire_time</a></li>
+<li><a href='#L233' title='Defined at 233.'>db_func_is_ok</a></li>
+<li><a href='#L245' title='Defined at 245.'>store_session</a></li>
+<li><a href='#L266' title='Defined at 266.'>_gnutls_server_register_current_session</a></li>
+<li><a href='#L297' title='Defined at 297.'>_gnutls_check_resumed_params</a></li>
+<li><a href='#L326' title='Defined at 326.'>_gnutls_server_restore_session</a></li>
+<li><a href='#L394' title='Defined at 394.'>gnutls_db_remove_session</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2000-2012 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L9' name='L9'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L10' name='L10'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L11' name='L11'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='comment'>/* This file contains functions that manipulate a database backend for</em>
+<a id='L24' name='L24'></a><em class='comment'> * resumed sessions.</em>
+<a id='L25' name='L25'></a><em class='comment'> */</em>
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;<a href='5461.html'>db.h</a>&gt;
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;<a href='6040.html'>session_pack.h</a>&gt;
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;<a href='6034.html'>datum.h</a>&gt;
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> "<a href='5417.html'>ext/server_name.h</a>"
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;<a href='../I/122.html'>intprops.h</a>&gt;
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='comment'>/**</em>
+<a id='L36' name='L36'></a><em class='comment'> * gnutls_db_set_retrieve_function:</em>
+<a id='L37' name='L37'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L38' name='L38'></a><em class='comment'> * @retr_func: is the function.</em>
+<a id='L39' name='L39'></a><em class='comment'> *</em>
+<a id='L40' name='L40'></a><em class='comment'> * Sets the function that will be used to retrieve data from the</em>
+<a id='L41' name='L41'></a><em class='comment'> * resumed sessions database.  This function must return a</em>
+<a id='L42' name='L42'></a><em class='comment'> * gnutls_datum_t containing the data on success, or a gnutls_datum_t</em>
+<a id='L43' name='L43'></a><em class='comment'> * containing null and 0 on failure.</em>
+<a id='L44' name='L44'></a><em class='comment'> *</em>
+<a id='L45' name='L45'></a><em class='comment'> * The datum's data must be allocated using the function</em>
+<a id='L46' name='L46'></a><em class='comment'> * gnutls_malloc().</em>
+<a id='L47' name='L47'></a><em class='comment'> *</em>
+<a id='L48' name='L48'></a><em class='comment'> * The first argument to @retr_func will be null unless</em>
+<a id='L49' name='L49'></a><em class='comment'> * gnutls_db_set_ptr() has been called.</em>
+<a id='L50' name='L50'></a><em class='comment'> **/</em>
+<a id='L51' name='L51'></a><strong class='reserved'>void</strong>
+<a id='L52' name='L52'></a><a href='../R/7672.html' title='Multiple referred from 8 places.'>gnutls_db_set_retrieve_function</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L53' name='L53'></a>                                gnutls_db_retr_func retr_func)
+<a id='L54' name='L54'></a><em class='brace'>{</em>
+<a id='L55' name='L55'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.db_retrieve_func = retr_func;
+<a id='L56' name='L56'></a><em class='brace'>}</em>
+<a id='L57' name='L57'></a>
+<a id='L58' name='L58'></a><em class='comment'>/**</em>
+<a id='L59' name='L59'></a><em class='comment'> * gnutls_db_set_remove_function:</em>
+<a id='L60' name='L60'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L61' name='L61'></a><em class='comment'> * @rem_func: is the function.</em>
+<a id='L62' name='L62'></a><em class='comment'> *</em>
+<a id='L63' name='L63'></a><em class='comment'> * Sets the function that will be used to remove data from the</em>
+<a id='L64' name='L64'></a><em class='comment'> * resumed sessions database. This function must return 0 on success.</em>
+<a id='L65' name='L65'></a><em class='comment'> *</em>
+<a id='L66' name='L66'></a><em class='comment'> * The first argument to @rem_func will be null unless</em>
+<a id='L67' name='L67'></a><em class='comment'> * gnutls_db_set_ptr() has been called.</em>
+<a id='L68' name='L68'></a><em class='comment'> **/</em>
+<a id='L69' name='L69'></a><strong class='reserved'>void</strong>
+<a id='L70' name='L70'></a><a href='../R/7671.html' title='Multiple referred from 8 places.'>gnutls_db_set_remove_function</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L71' name='L71'></a>                              gnutls_db_remove_func rem_func)
+<a id='L72' name='L72'></a><em class='brace'>{</em>
+<a id='L73' name='L73'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.db_remove_func = rem_func;
+<a id='L74' name='L74'></a><em class='brace'>}</em>
+<a id='L75' name='L75'></a>
+<a id='L76' name='L76'></a><em class='comment'>/**</em>
+<a id='L77' name='L77'></a><em class='comment'> * gnutls_db_set_store_function:</em>
+<a id='L78' name='L78'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L79' name='L79'></a><em class='comment'> * @store_func: is the function</em>
+<a id='L80' name='L80'></a><em class='comment'> *</em>
+<a id='L81' name='L81'></a><em class='comment'> * Sets the function that will be used to store data in the resumed</em>
+<a id='L82' name='L82'></a><em class='comment'> * sessions database. This function must return 0 on success.</em>
+<a id='L83' name='L83'></a><em class='comment'> *</em>
+<a id='L84' name='L84'></a><em class='comment'> * The first argument to @store_func will be null unless</em>
+<a id='L85' name='L85'></a><em class='comment'> * gnutls_db_set_ptr() has been called.</em>
+<a id='L86' name='L86'></a><em class='comment'> **/</em>
+<a id='L87' name='L87'></a><strong class='reserved'>void</strong>
+<a id='L88' name='L88'></a><a href='../R/7673.html' title='Multiple referred from 8 places.'>gnutls_db_set_store_function</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L89' name='L89'></a>                             gnutls_db_store_func store_func)
+<a id='L90' name='L90'></a><em class='brace'>{</em>
+<a id='L91' name='L91'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.db_store_func = store_func;
+<a id='L92' name='L92'></a><em class='brace'>}</em>
+<a id='L93' name='L93'></a>
+<a id='L94' name='L94'></a><em class='comment'>/**</em>
+<a id='L95' name='L95'></a><em class='comment'> * gnutls_db_set_ptr:</em>
+<a id='L96' name='L96'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L97' name='L97'></a><em class='comment'> * @ptr: is the pointer</em>
+<a id='L98' name='L98'></a><em class='comment'> *</em>
+<a id='L99' name='L99'></a><em class='comment'> * Sets the pointer that will be provided to db store, retrieve and</em>
+<a id='L100' name='L100'></a><em class='comment'> * delete functions, as the first argument.</em>
+<a id='L101' name='L101'></a><em class='comment'> **/</em>
+<a id='L102' name='L102'></a><strong class='reserved'>void</strong> <a href='../R/7670.html' title='Multiple referred from 8 places.'>gnutls_db_set_ptr</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <strong class='reserved'>void</strong> *<a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a>)
+<a id='L103' name='L103'></a><em class='brace'>{</em>
+<a id='L104' name='L104'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.db_ptr = <a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a>;
+<a id='L105' name='L105'></a><em class='brace'>}</em>
+<a id='L106' name='L106'></a>
+<a id='L107' name='L107'></a><em class='comment'>/**</em>
+<a id='L108' name='L108'></a><em class='comment'> * gnutls_db_get_ptr:</em>
+<a id='L109' name='L109'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L110' name='L110'></a><em class='comment'> *</em>
+<a id='L111' name='L111'></a><em class='comment'> * Get db function pointer.</em>
+<a id='L112' name='L112'></a><em class='comment'> *</em>
+<a id='L113' name='L113'></a><em class='comment'> * Returns: the pointer that will be sent to db store, retrieve and</em>
+<a id='L114' name='L114'></a><em class='comment'> *   delete functions, as the first argument.</em>
+<a id='L115' name='L115'></a><em class='comment'> **/</em>
+<a id='L116' name='L116'></a><strong class='reserved'>void</strong> *gnutls_db_get_ptr(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L117' name='L117'></a><em class='brace'>{</em>
+<a id='L118' name='L118'></a>        <strong class='reserved'>return</strong> <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.db_ptr;
+<a id='L119' name='L119'></a><em class='brace'>}</em>
+<a id='L120' name='L120'></a>
+<a id='L121' name='L121'></a><em class='comment'>/**</em>
+<a id='L122' name='L122'></a><em class='comment'> * gnutls_db_set_cache_expiration:</em>
+<a id='L123' name='L123'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L124' name='L124'></a><em class='comment'> * @seconds: is the number of seconds.</em>
+<a id='L125' name='L125'></a><em class='comment'> *</em>
+<a id='L126' name='L126'></a><em class='comment'> * Set the expiration time for resumed sessions. The default is 21600</em>
+<a id='L127' name='L127'></a><em class='comment'> * (6 hours) at the time of writing.</em>
+<a id='L128' name='L128'></a><em class='comment'> *</em>
+<a id='L129' name='L129'></a><em class='comment'> * The maximum value that can be set using this function is 604800</em>
+<a id='L130' name='L130'></a><em class='comment'> * (7 days).</em>
+<a id='L131' name='L131'></a><em class='comment'> *</em>
+<a id='L132' name='L132'></a><em class='comment'> **/</em>
+<a id='L133' name='L133'></a><strong class='reserved'>void</strong> <a href='../R/7669.html' title='Multiple referred from 5 places.'>gnutls_db_set_cache_expiration</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <strong class='reserved'>int</strong> seconds)
+<a id='L134' name='L134'></a><em class='brace'>{</em>
+<a id='L135' name='L135'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.expire_time = seconds;
+<a id='L136' name='L136'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.expire_time &gt; 604800)
+<a id='L137' name='L137'></a>                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.expire_time = 604800;
+<a id='L138' name='L138'></a><em class='brace'>}</em>
+<a id='L139' name='L139'></a>
+<a id='L140' name='L140'></a><em class='comment'>/**</em>
+<a id='L141' name='L141'></a><em class='comment'> * gnutls_db_get_default_cache_expiration:</em>
+<a id='L142' name='L142'></a><em class='comment'> *</em>
+<a id='L143' name='L143'></a><em class='comment'> * Returns the expiration time (in seconds) of stored sessions for resumption. </em>
+<a id='L144' name='L144'></a><em class='comment'> **/</em>
+<a id='L145' name='L145'></a><strong class='reserved'>unsigned</strong> gnutls_db_get_default_cache_expiration(<strong class='reserved'>void</strong>)
+<a id='L146' name='L146'></a><em class='brace'>{</em>
+<a id='L147' name='L147'></a>        <strong class='reserved'>return</strong> <a href='../S/5822.html#L139' title='Defined at 139 in lib/gnutls_int.h.'>DEFAULT_EXPIRE_TIME</a>;
+<a id='L148' name='L148'></a><em class='brace'>}</em>
+<a id='L149' name='L149'></a>
+<a id='L150' name='L150'></a><em class='comment'>/**</em>
+<a id='L151' name='L151'></a><em class='comment'> * gnutls_db_check_entry:</em>
+<a id='L152' name='L152'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L153' name='L153'></a><em class='comment'> * @session_entry: is the session data (not key)</em>
+<a id='L154' name='L154'></a><em class='comment'> *</em>
+<a id='L155' name='L155'></a><em class='comment'> * This function has no effect. </em>
+<a id='L156' name='L156'></a><em class='comment'> *</em>
+<a id='L157' name='L157'></a><em class='comment'> * Returns: Returns %GNUTLS_E_EXPIRED, if the database entry has</em>
+<a id='L158' name='L158'></a><em class='comment'> *   expired or 0 otherwise.</em>
+<a id='L159' name='L159'></a><em class='comment'> *</em>
+<a id='L160' name='L160'></a><em class='comment'> * Deprecated: This function is deprecated.</em>
+<a id='L161' name='L161'></a><em class='comment'> **/</em>
+<a id='L162' name='L162'></a><strong class='reserved'>int</strong>
+<a id='L163' name='L163'></a><a href='../S/5262.html#L402' title='Referred from 402 in lib/gnutlsxx.cpp.'>gnutls_db_check_entry</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L164' name='L164'></a>                      gnutls_datum_t session_entry)
+<a id='L165' name='L165'></a><em class='brace'>{</em>
+<a id='L166' name='L166'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L167' name='L167'></a><em class='brace'>}</em>
+<a id='L168' name='L168'></a>
+<a id='L169' name='L169'></a><em class='comment'>/**</em>
+<a id='L170' name='L170'></a><em class='comment'> * gnutls_db_check_entry_time:</em>
+<a id='L171' name='L171'></a><em class='comment'> * @entry: is a pointer to a #gnutls_datum_t type.</em>
+<a id='L172' name='L172'></a><em class='comment'> *</em>
+<a id='L173' name='L173'></a><em class='comment'> * This function returns the time that this entry was active.</em>
+<a id='L174' name='L174'></a><em class='comment'> * It can be used for database entry expiration.</em>
+<a id='L175' name='L175'></a><em class='comment'> *</em>
+<a id='L176' name='L176'></a><em class='comment'> * Returns: The time this entry was created, or zero on error.</em>
+<a id='L177' name='L177'></a><em class='comment'> **/</em>
+<a id='L178' name='L178'></a>time_t <a href='../S/4448.html#L1017' title='Referred from 1017 in tests/resume.c.'>gnutls_db_check_entry_time</a>(gnutls_datum_t * entry)
+<a id='L179' name='L179'></a><em class='brace'>{</em>
+<a id='L180' name='L180'></a>        <a href='../D/12096.html' title='Multiple defined in 11 places.'>uint32_t</a> t;
+<a id='L181' name='L181'></a>        <a href='../D/12096.html' title='Multiple defined in 11 places.'>uint32_t</a> magic;
+<a id='L182' name='L182'></a>
+<a id='L183' name='L183'></a>        <strong class='reserved'>if</strong> (entry-&gt;size &lt; 8)
+<a id='L184' name='L184'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(0);
+<a id='L185' name='L185'></a>
+<a id='L186' name='L186'></a>        magic = <a href='../S/5268.html#L63' title='Defined at 63 in lib/num.h.'>_gnutls_read_uint32</a>(entry-&gt;data);
+<a id='L187' name='L187'></a>
+<a id='L188' name='L188'></a>        <strong class='reserved'>if</strong> (magic != <a href='../S/5461.html#L33' title='Defined at 33 in lib/db.h.'>PACKED_SESSION_MAGIC</a>)
+<a id='L189' name='L189'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(0);
+<a id='L190' name='L190'></a>
+<a id='L191' name='L191'></a>        t = <a href='../S/5268.html#L63' title='Defined at 63 in lib/num.h.'>_gnutls_read_uint32</a>(&amp;entry-&gt;data[4]);
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a>        <strong class='reserved'>return</strong> t;
+<a id='L194' name='L194'></a><em class='brace'>}</em>
+<a id='L195' name='L195'></a>
+<a id='L196' name='L196'></a><em class='comment'>/**</em>
+<a id='L197' name='L197'></a><em class='comment'> * gnutls_db_check_entry_expire_time:</em>
+<a id='L198' name='L198'></a><em class='comment'> * @entry: is a pointer to a #gnutls_datum_t type.</em>
+<a id='L199' name='L199'></a><em class='comment'> *</em>
+<a id='L200' name='L200'></a><em class='comment'> * This function returns the time that this entry will expire.</em>
+<a id='L201' name='L201'></a><em class='comment'> * It can be used for database entry expiration.</em>
+<a id='L202' name='L202'></a><em class='comment'> *</em>
+<a id='L203' name='L203'></a><em class='comment'> * Returns: The time this entry will expire, or zero on error.</em>
+<a id='L204' name='L204'></a><em class='comment'> *</em>
+<a id='L205' name='L205'></a><em class='comment'> * Since: 3.6.5</em>
+<a id='L206' name='L206'></a><em class='comment'> **/</em>
+<a id='L207' name='L207'></a>time_t <a href='../R/7666.html' title='Multiple referred from 4 places.'>gnutls_db_check_entry_expire_time</a>(gnutls_datum_t *entry)
+<a id='L208' name='L208'></a><em class='brace'>{</em>
+<a id='L209' name='L209'></a>        <a href='../D/12096.html' title='Multiple defined in 11 places.'>uint32_t</a> t;
+<a id='L210' name='L210'></a>        <a href='../D/12096.html' title='Multiple defined in 11 places.'>uint32_t</a> <a href='../S/5535.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-eh.c.'>e</a>;
+<a id='L211' name='L211'></a>        <a href='../D/12096.html' title='Multiple defined in 11 places.'>uint32_t</a> magic;
+<a id='L212' name='L212'></a>
+<a id='L213' name='L213'></a>        <strong class='reserved'>if</strong> (entry-&gt;size &lt; 12)
+<a id='L214' name='L214'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(0);
+<a id='L215' name='L215'></a>
+<a id='L216' name='L216'></a>        magic = <a href='../S/5268.html#L63' title='Defined at 63 in lib/num.h.'>_gnutls_read_uint32</a>(entry-&gt;data);
+<a id='L217' name='L217'></a>
+<a id='L218' name='L218'></a>        <strong class='reserved'>if</strong> (magic != <a href='../S/5461.html#L33' title='Defined at 33 in lib/db.h.'>PACKED_SESSION_MAGIC</a>)
+<a id='L219' name='L219'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(0);
+<a id='L220' name='L220'></a>
+<a id='L221' name='L221'></a>        t = <a href='../S/5268.html#L63' title='Defined at 63 in lib/num.h.'>_gnutls_read_uint32</a>(&amp;entry-&gt;data[4]);
+<a id='L222' name='L222'></a>        <a href='../S/5535.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-eh.c.'>e</a> = <a href='../S/5268.html#L63' title='Defined at 63 in lib/num.h.'>_gnutls_read_uint32</a>(&amp;entry-&gt;data[8]);
+<a id='L223' name='L223'></a>
+<a id='L224' name='L224'></a>        <strong class='reserved'>if</strong> (<a href='../D/2291.html' title='Multiple defined in 3 places.'>INT_ADD_OVERFLOW</a>(t, <a href='../S/5535.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-eh.c.'>e</a>))
+<a id='L225' name='L225'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(0);
+<a id='L226' name='L226'></a>
+<a id='L227' name='L227'></a>        <strong class='reserved'>return</strong> t + <a href='../S/5535.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-eh.c.'>e</a>;
+<a id='L228' name='L228'></a><em class='brace'>}</em>
+<a id='L229' name='L229'></a>
+<a id='L230' name='L230'></a><em class='comment'>/* Checks if both db_store and db_retrieve functions have</em>
+<a id='L231' name='L231'></a><em class='comment'> * been set up.</em>
+<a id='L232' name='L232'></a><em class='comment'> */</em>
+<a id='L233' name='L233'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../R/6576.html' title='Multiple referred from 2 places.'>db_func_is_ok</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L234' name='L234'></a><em class='brace'>{</em>
+<a id='L235' name='L235'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.db_store_func != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> &amp;&amp;
+<a id='L236' name='L236'></a>            <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.db_retrieve_func != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L237' name='L237'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L238' name='L238'></a>        <strong class='reserved'>else</strong>
+<a id='L239' name='L239'></a>                <strong class='reserved'>return</strong> GNUTLS_E_DB_ERROR;
+<a id='L240' name='L240'></a><em class='brace'>}</em>
+<a id='L241' name='L241'></a>
+<a id='L242' name='L242'></a><em class='comment'>/* Stores session data to the db backend.</em>
+<a id='L243' name='L243'></a><em class='comment'> */</em>
+<a id='L244' name='L244'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L245' name='L245'></a><a href='../S/5755.html#L291' title='Referred from 291 in lib/db.c.'>store_session</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L246' name='L246'></a>              gnutls_datum_t session_id, gnutls_datum_t session_data)
+<a id='L247' name='L247'></a><em class='brace'>{</em>
+<a id='L248' name='L248'></a>        <strong class='reserved'>int</strong> ret = 0;
+<a id='L249' name='L249'></a>
+<a id='L250' name='L250'></a>        <strong class='reserved'>if</strong> (<a href='../S/5755.html#L233' title='Defined at 233 in lib/db.c.'>db_func_is_ok</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>) != 0) <em class='brace'>{</em>
+<a id='L251' name='L251'></a>                <strong class='reserved'>return</strong> GNUTLS_E_DB_ERROR;
+<a id='L252' name='L252'></a>        <em class='brace'>}</em>
+<a id='L253' name='L253'></a>
+<a id='L254' name='L254'></a>        <strong class='reserved'>if</strong> (session_data.data == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> || session_data.size == 0) <em class='brace'>{</em>
+<a id='L255' name='L255'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L256' name='L256'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_SESSION;
+<a id='L257' name='L257'></a>        <em class='brace'>}</em>
+<a id='L258' name='L258'></a>
+<a id='L259' name='L259'></a>        <em class='comment'>/* if we can't read why bother writing? */</em>
+<a id='L260' name='L260'></a>        ret = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.db_store_func(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.db_ptr,
+<a id='L261' name='L261'></a>                                               session_id, session_data);
+<a id='L262' name='L262'></a>
+<a id='L263' name='L263'></a>        <strong class='reserved'>return</strong> (ret == 0 ? ret : GNUTLS_E_DB_ERROR);
+<a id='L264' name='L264'></a><em class='brace'>}</em>
+<a id='L265' name='L265'></a>
+<a id='L266' name='L266'></a><strong class='reserved'>int</strong> <a href='../R/5463.html' title='Multiple referred from 2 places.'>_gnutls_server_register_current_session</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L267' name='L267'></a><em class='brace'>{</em>
+<a id='L268' name='L268'></a>        gnutls_datum_t key;
+<a id='L269' name='L269'></a>        gnutls_datum_t content;
+<a id='L270' name='L270'></a>        <strong class='reserved'>int</strong> ret = 0;
+<a id='L271' name='L271'></a>
+<a id='L272' name='L272'></a>        key.data = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.session_id;
+<a id='L273' name='L273'></a>        key.size = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.session_id_size;
+<a id='L274' name='L274'></a>
+<a id='L275' name='L275'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumable == <a href='../S/5822.html#L365' title='Defined at 365 in lib/gnutls_int.h.'>RESUME_FALSE</a>) <em class='brace'>{</em>
+<a id='L276' name='L276'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L277' name='L277'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_SESSION;
+<a id='L278' name='L278'></a>        <em class='brace'>}</em>
+<a id='L279' name='L279'></a>
+<a id='L280' name='L280'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.session_id_size == 0) <em class='brace'>{</em>
+<a id='L281' name='L281'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L282' name='L282'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_SESSION;
+<a id='L283' name='L283'></a>        <em class='brace'>}</em>
+<a id='L284' name='L284'></a>
+<a id='L285' name='L285'></a>        ret = <a href='../S/6030.html#L88' title='Defined at 88 in lib/session_pack.c.'>_gnutls_session_pack</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;content);
+<a id='L286' name='L286'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L287' name='L287'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L288' name='L288'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L289' name='L289'></a>        <em class='brace'>}</em>
+<a id='L290' name='L290'></a>
+<a id='L291' name='L291'></a>        ret = <a href='../S/5755.html#L245' title='Defined at 245 in lib/db.c.'>store_session</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, key, content);
+<a id='L292' name='L292'></a>        _gnutls_free_datum(&amp;content);
+<a id='L293' name='L293'></a>
+<a id='L294' name='L294'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L295' name='L295'></a><em class='brace'>}</em>
+<a id='L296' name='L296'></a>
+<a id='L297' name='L297'></a><strong class='reserved'>int</strong> <a href='../R/4914.html' title='Multiple referred from 4 places.'>_gnutls_check_resumed_params</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L298' name='L298'></a><em class='brace'>{</em>
+<a id='L299' name='L299'></a>        time_t timestamp = gnutls_time(0);
+<a id='L300' name='L300'></a>        <strong class='reserved'>const</strong> <a href='../S/5822.html#L713' title='Defined at 713 in lib/gnutls_int.h.'>version_entry_st</a> *vers;
+<a id='L301' name='L301'></a>
+<a id='L302' name='L302'></a>        <em class='comment'>/* check whether the session is expired */</em>
+<a id='L303' name='L303'></a>        <strong class='reserved'>if</strong> (timestamp -
+<a id='L304' name='L304'></a>            <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.timestamp &gt;
+<a id='L305' name='L305'></a>            <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.expire_time
+<a id='L306' name='L306'></a>            || <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.timestamp &gt;
+<a id='L307' name='L307'></a>            timestamp)
+<a id='L308' name='L308'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_EXPIRED);
+<a id='L309' name='L309'></a>
+<a id='L310' name='L310'></a>        <em class='comment'>/* check various parameters applicable to resumption in TLS1.2 or earlier</em>
+<a id='L311' name='L311'></a><em class='comment'>         */</em>
+<a id='L312' name='L312'></a>        vers = <a href='../S/5822.html#L1524' title='Defined at 1524 in lib/gnutls_int.h.'>get_version</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L313' name='L313'></a>        <strong class='reserved'>if</strong> (!vers || !vers-&gt;tls13_sem) <em class='brace'>{</em>
+<a id='L314' name='L314'></a>                <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.ext_master_secret !=
+<a id='L315' name='L315'></a>                    <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.ext_master_secret)
+<a id='L316' name='L316'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_SESSION);
+<a id='L317' name='L317'></a>
+<a id='L318' name='L318'></a>                <strong class='reserved'>if</strong> (!<a href='../S/5432.html#L348' title='Defined at 348 in lib/ext/server_name.c.'>_gnutls_server_name_matches_resumed</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>))
+<a id='L319' name='L319'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_SESSION);
+<a id='L320' name='L320'></a>        <em class='brace'>}</em>
+<a id='L321' name='L321'></a>
+<a id='L322' name='L322'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L323' name='L323'></a><em class='brace'>}</em>
+<a id='L324' name='L324'></a>
+<a id='L325' name='L325'></a><strong class='reserved'>int</strong>
+<a id='L326' name='L326'></a><a href='../R/5464.html' title='Multiple referred from 3 places.'>_gnutls_server_restore_session</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L327' name='L327'></a>                               <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * session_id, <strong class='reserved'>int</strong> session_id_size)
+<a id='L328' name='L328'></a><em class='brace'>{</em>
+<a id='L329' name='L329'></a>        gnutls_datum_t data;
+<a id='L330' name='L330'></a>        gnutls_datum_t key;
+<a id='L331' name='L331'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L332' name='L332'></a>
+<a id='L333' name='L333'></a>        <strong class='reserved'>if</strong> (session_id == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> || session_id_size == 0) <em class='brace'>{</em>
+<a id='L334' name='L334'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L335' name='L335'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L336' name='L336'></a>        <em class='brace'>}</em>
+<a id='L337' name='L337'></a>
+<a id='L338' name='L338'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.premaster_set != 0) <em class='brace'>{</em>    <em class='comment'>/* hack for CISCO's DTLS-0.9 */</em>
+<a id='L339' name='L339'></a>                <strong class='reserved'>if</strong> (session_id_size ==
+<a id='L340' name='L340'></a>                    <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L341' name='L341'></a>                    session_id_size
+<a id='L342' name='L342'></a>                    &amp;&amp; memcmp(session_id,
+<a id='L343' name='L343'></a>                              <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L344' name='L344'></a>                              resumed_security_parameters.session_id,
+<a id='L345' name='L345'></a>                              session_id_size) == 0)
+<a id='L346' name='L346'></a>                        <strong class='reserved'>return</strong> 0;
+<a id='L347' name='L347'></a>        <em class='brace'>}</em>
+<a id='L348' name='L348'></a>
+<a id='L349' name='L349'></a>        key.data = session_id;
+<a id='L350' name='L350'></a>        key.size = session_id_size;
+<a id='L351' name='L351'></a>
+<a id='L352' name='L352'></a>        <strong class='reserved'>if</strong> (<a href='../S/5755.html#L233' title='Defined at 233 in lib/db.c.'>db_func_is_ok</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>) != 0) <em class='brace'>{</em>
+<a id='L353' name='L353'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L354' name='L354'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_SESSION;
+<a id='L355' name='L355'></a>        <em class='brace'>}</em>
+<a id='L356' name='L356'></a>
+<a id='L357' name='L357'></a>        data =
+<a id='L358' name='L358'></a>            <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.db_retrieve_func(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.db_ptr,
+<a id='L359' name='L359'></a>                                                key);
+<a id='L360' name='L360'></a>
+<a id='L361' name='L361'></a>        <strong class='reserved'>if</strong> (data.data == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L362' name='L362'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L363' name='L363'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_SESSION;
+<a id='L364' name='L364'></a>        <em class='brace'>}</em>
+<a id='L365' name='L365'></a>
+<a id='L366' name='L366'></a>        ret = <a href='../S/5303.html#L290' title='Defined at 290 in lib/session.c.'>gnutls_session_set_data</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, data.data, data.size);
+<a id='L367' name='L367'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(data.data);
+<a id='L368' name='L368'></a>
+<a id='L369' name='L369'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L370' name='L370'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L371' name='L371'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L372' name='L372'></a>        <em class='brace'>}</em>
+<a id='L373' name='L373'></a>
+<a id='L374' name='L374'></a>        <em class='comment'>/* expiration check is performed inside */</em>
+<a id='L375' name='L375'></a>        ret = <a href='../S/5755.html#L297' title='Defined at 297 in lib/db.c.'>_gnutls_check_resumed_params</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L376' name='L376'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L377' name='L377'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L378' name='L378'></a>
+<a id='L379' name='L379'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L380' name='L380'></a><em class='brace'>}</em>
+<a id='L381' name='L381'></a>
+<a id='L382' name='L382'></a><em class='comment'>/**</em>
+<a id='L383' name='L383'></a><em class='comment'> * gnutls_db_remove_session:</em>
+<a id='L384' name='L384'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L385' name='L385'></a><em class='comment'> *</em>
+<a id='L386' name='L386'></a><em class='comment'> * This function will remove the current session data from the</em>
+<a id='L387' name='L387'></a><em class='comment'> * session database.  This will prevent future handshakes reusing</em>
+<a id='L388' name='L388'></a><em class='comment'> * these session data.  This function should be called if a session</em>
+<a id='L389' name='L389'></a><em class='comment'> * was terminated abnormally, and before gnutls_deinit() is called.</em>
+<a id='L390' name='L390'></a><em class='comment'> *</em>
+<a id='L391' name='L391'></a><em class='comment'> * Normally gnutls_deinit() will remove abnormally terminated</em>
+<a id='L392' name='L392'></a><em class='comment'> * sessions.</em>
+<a id='L393' name='L393'></a><em class='comment'> **/</em>
+<a id='L394' name='L394'></a><strong class='reserved'>void</strong> <a href='../S/5262.html#L397' title='Referred from 397 in lib/gnutlsxx.cpp.'>gnutls_db_remove_session</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L395' name='L395'></a><em class='brace'>{</em>
+<a id='L396' name='L396'></a>        gnutls_datum_t session_id;
+<a id='L397' name='L397'></a>        <strong class='reserved'>int</strong> ret = 0;
+<a id='L398' name='L398'></a>
+<a id='L399' name='L399'></a>        session_id.data = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.session_id;
+<a id='L400' name='L400'></a>        session_id.size = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.session_id_size;
+<a id='L401' name='L401'></a>
+<a id='L402' name='L402'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.db_remove_func == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L403' name='L403'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L404' name='L404'></a>                <strong class='reserved'>return</strong> <em class='comment'>/* GNUTLS_E_DB_ERROR */</em> ;
+<a id='L405' name='L405'></a>        <em class='brace'>}</em>
+<a id='L406' name='L406'></a>
+<a id='L407' name='L407'></a>        <strong class='reserved'>if</strong> (session_id.data == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> || session_id.size == 0) <em class='brace'>{</em>
+<a id='L408' name='L408'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L409' name='L409'></a>                <strong class='reserved'>return</strong> <em class='comment'>/* GNUTLS_E_INVALID_SESSION */</em> ;
+<a id='L410' name='L410'></a>        <em class='brace'>}</em>
+<a id='L411' name='L411'></a>
+<a id='L412' name='L412'></a>        <em class='comment'>/* if we can't read why bother writing? */</em>
+<a id='L413' name='L413'></a>        ret = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.db_remove_func(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.db_ptr,
+<a id='L414' name='L414'></a>                                                session_id);
+<a id='L415' name='L415'></a>        <strong class='reserved'>if</strong> (ret != 0)
+<a id='L416' name='L416'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L417' name='L417'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L52'>[^]</a><a href='#L394'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

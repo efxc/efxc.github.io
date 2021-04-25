@@ -1,0 +1,227 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/system_override.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/system_override.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L62'>[^]</a><a href='#L192'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L62' title='Defined at 62.'>gnutls_transport_set_errno</a></li>
+<li><a href='#L82' title='Defined at 82.'>gnutls_transport_set_pull_function</a></li>
+<li><a href='#L123' title='Defined at 123.'>gnutls_transport_set_pull_timeout_function</a></li>
+<li><a href='#L147' title='Defined at 147.'>gnutls_transport_set_push_function</a></li>
+<li><a href='#L170' title='Defined at 170.'>gnutls_transport_set_vec_push_function</a></li>
+<li><a href='#L192' title='Defined at 192.'>gnutls_transport_set_errno_function</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2000-2012 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L9' name='L9'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L10' name='L10'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L11' name='L11'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='comment'>/* This file contains function that will override the </em>
+<a id='L24' name='L24'></a><em class='comment'> * default berkeley sockets API per session.</em>
+<a id='L25' name='L25'></a><em class='comment'> */</em>
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;<a href='5268.html'>num.h</a>&gt;
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;<a href='5295.html'>record.h</a>&gt;
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;<a href='6033.html'>buffers.h</a>&gt;
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> &lt;<a href='5459.html'>mbuffers.h</a>&gt;
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;<a href='5748.html'>state.h</a>&gt;
+<a id='L34' name='L34'></a><em class='sharp'>#include</em> &lt;<a href='../I/592.html'>dtls.h</a>&gt;
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> &lt;<a href='5450.html'>system.h</a>&gt;
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L38' name='L38'></a><em class='sharp'>#ifdef</em> _WIN32
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> &lt;windows.h&gt;
+<a id='L40' name='L40'></a><em class='sharp'>#endif</em>
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a><em class='comment'>/**</em>
+<a id='L43' name='L43'></a><em class='comment'> * gnutls_transport_set_errno:</em>
+<a id='L44' name='L44'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L45' name='L45'></a><em class='comment'> * @err: error value to store in session-specific errno variable.</em>
+<a id='L46' name='L46'></a><em class='comment'> *</em>
+<a id='L47' name='L47'></a><em class='comment'> * Store @err in the session-specific errno variable.  Useful values</em>
+<a id='L48' name='L48'></a><em class='comment'> * for @err are EINTR, EAGAIN and EMSGSIZE, other values are treated will be</em>
+<a id='L49' name='L49'></a><em class='comment'> * treated as real errors in the push/pull function.</em>
+<a id='L50' name='L50'></a><em class='comment'> *</em>
+<a id='L51' name='L51'></a><em class='comment'> * This function is useful in replacement push and pull functions set by</em>
+<a id='L52' name='L52'></a><em class='comment'> * gnutls_transport_set_push_function() and</em>
+<a id='L53' name='L53'></a><em class='comment'> * gnutls_transport_set_pull_function() under Windows, where the</em>
+<a id='L54' name='L54'></a><em class='comment'> * replacements may not have access to the same @errno</em>
+<a id='L55' name='L55'></a><em class='comment'> * variable that is used by GnuTLS (e.g., the application is linked to</em>
+<a id='L56' name='L56'></a><em class='comment'> * msvcr71.dll and gnutls is linked to msvcrt.dll).</em>
+<a id='L57' name='L57'></a><em class='comment'> *</em>
+<a id='L58' name='L58'></a><em class='comment'> * This function is unreliable if you are using the same</em>
+<a id='L59' name='L59'></a><em class='comment'> * @session in different threads for sending and receiving.</em>
+<a id='L60' name='L60'></a><em class='comment'> *</em>
+<a id='L61' name='L61'></a><em class='comment'> **/</em>
+<a id='L62' name='L62'></a><strong class='reserved'>void</strong> <a href='../R/8407.html' title='Multiple referred from 9 places.'>gnutls_transport_set_errno</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <strong class='reserved'>int</strong> err)
+<a id='L63' name='L63'></a><em class='brace'>{</em>
+<a id='L64' name='L64'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.errnum = err;
+<a id='L65' name='L65'></a><em class='brace'>}</em>
+<a id='L66' name='L66'></a>
+<a id='L67' name='L67'></a><em class='comment'>/**</em>
+<a id='L68' name='L68'></a><em class='comment'> * gnutls_transport_set_pull_function:</em>
+<a id='L69' name='L69'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L70' name='L70'></a><em class='comment'> * @pull_func: a callback function similar to read()</em>
+<a id='L71' name='L71'></a><em class='comment'> *</em>
+<a id='L72' name='L72'></a><em class='comment'> * This is the function where you set a function for gnutls to receive</em>
+<a id='L73' name='L73'></a><em class='comment'> * data.  Normally, if you use berkeley style sockets, do not need to</em>
+<a id='L74' name='L74'></a><em class='comment'> * use this function since the default recv(2) will probably be ok.</em>
+<a id='L75' name='L75'></a><em class='comment'> * The callback should return 0 on connection termination, a positive</em>
+<a id='L76' name='L76'></a><em class='comment'> * number indicating the number of bytes received, and -1 on error.</em>
+<a id='L77' name='L77'></a><em class='comment'> *</em>
+<a id='L78' name='L78'></a><em class='comment'> * @gnutls_pull_func is of the form,</em>
+<a id='L79' name='L79'></a><em class='comment'> * ssize_t (*gnutls_pull_func)(gnutls_transport_ptr_t, void*, size_t);</em>
+<a id='L80' name='L80'></a><em class='comment'> **/</em>
+<a id='L81' name='L81'></a><strong class='reserved'>void</strong>
+<a id='L82' name='L82'></a><a href='../R/8412.html' title='Multiple referred from 203 places.'>gnutls_transport_set_pull_function</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L83' name='L83'></a>                                   gnutls_pull_func <a href='../D/10998.html' title='Multiple defined in 2 places.'>pull_func</a>)
+<a id='L84' name='L84'></a><em class='brace'>{</em>
+<a id='L85' name='L85'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.<a href='../D/10998.html' title='Multiple defined in 2 places.'>pull_func</a> = <a href='../D/10998.html' title='Multiple defined in 2 places.'>pull_func</a>;
+<a id='L86' name='L86'></a><em class='brace'>}</em>
+<a id='L87' name='L87'></a>
+<a id='L88' name='L88'></a><em class='comment'>/**</em>
+<a id='L89' name='L89'></a><em class='comment'> * gnutls_transport_set_pull_timeout_function:</em>
+<a id='L90' name='L90'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L91' name='L91'></a><em class='comment'> * @func: a callback function</em>
+<a id='L92' name='L92'></a><em class='comment'> *</em>
+<a id='L93' name='L93'></a><em class='comment'> * This is the function where you set a function for gnutls to know</em>
+<a id='L94' name='L94'></a><em class='comment'> * whether data are ready to be received. It should wait for data a</em>
+<a id='L95' name='L95'></a><em class='comment'> * given time frame in milliseconds. The callback should return 0 on </em>
+<a id='L96' name='L96'></a><em class='comment'> * timeout, a positive number if data can be received, and -1 on error.</em>
+<a id='L97' name='L97'></a><em class='comment'> * You'll need to override this function if select() is not suitable</em>
+<a id='L98' name='L98'></a><em class='comment'> * for the provided transport calls.</em>
+<a id='L99' name='L99'></a><em class='comment'> *</em>
+<a id='L100' name='L100'></a><em class='comment'> * As with select(), if the timeout value is zero the callback should return</em>
+<a id='L101' name='L101'></a><em class='comment'> * zero if no data are immediately available. The special value</em>
+<a id='L102' name='L102'></a><em class='comment'> * %GNUTLS_INDEFINITE_TIMEOUT indicates that the callback should wait indefinitely</em>
+<a id='L103' name='L103'></a><em class='comment'> * for data.</em>
+<a id='L104' name='L104'></a><em class='comment'> *</em>
+<a id='L105' name='L105'></a><em class='comment'> * @gnutls_pull_timeout_func is of the form,</em>
+<a id='L106' name='L106'></a><em class='comment'> * int (*gnutls_pull_timeout_func)(gnutls_transport_ptr_t, unsigned int ms);</em>
+<a id='L107' name='L107'></a><em class='comment'> *</em>
+<a id='L108' name='L108'></a><em class='comment'> * This callback is necessary when gnutls_handshake_set_timeout() or </em>
+<a id='L109' name='L109'></a><em class='comment'> * gnutls_record_set_timeout() are set, under TLS1.3 and for enforcing the DTLS</em>
+<a id='L110' name='L110'></a><em class='comment'> * mode timeouts when in blocking mode.</em>
+<a id='L111' name='L111'></a><em class='comment'> *</em>
+<a id='L112' name='L112'></a><em class='comment'> * For compatibility with future GnuTLS versions this callback must be set when</em>
+<a id='L113' name='L113'></a><em class='comment'> * a custom pull function is registered. The callback will not be used when the</em>
+<a id='L114' name='L114'></a><em class='comment'> * session is in TLS mode with non-blocking sockets. That is, when %GNUTLS_NONBLOCK</em>
+<a id='L115' name='L115'></a><em class='comment'> * is specified for a TLS session in gnutls_init().</em>
+<a id='L116' name='L116'></a><em class='comment'> *</em>
+<a id='L117' name='L117'></a><em class='comment'> * The helper function gnutls_system_recv_timeout() is provided to</em>
+<a id='L118' name='L118'></a><em class='comment'> * simplify writing callbacks. </em>
+<a id='L119' name='L119'></a><em class='comment'> *</em>
+<a id='L120' name='L120'></a><em class='comment'> * Since: 3.0</em>
+<a id='L121' name='L121'></a><em class='comment'> **/</em>
+<a id='L122' name='L122'></a><strong class='reserved'>void</strong>
+<a id='L123' name='L123'></a><a href='../R/8413.html' title='Multiple referred from 41 places.'>gnutls_transport_set_pull_timeout_function</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L124' name='L124'></a>                                           gnutls_pull_timeout_func func)
+<a id='L125' name='L125'></a><em class='brace'>{</em>
+<a id='L126' name='L126'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.<a href='../D/10999.html' title='Multiple defined in 3 places.'>pull_timeout_func</a> = func;
+<a id='L127' name='L127'></a><em class='brace'>}</em>
+<a id='L128' name='L128'></a>
+<a id='L129' name='L129'></a><em class='comment'>/**</em>
+<a id='L130' name='L130'></a><em class='comment'> * gnutls_transport_set_push_function:</em>
+<a id='L131' name='L131'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L132' name='L132'></a><em class='comment'> * @push_func: a callback function similar to write()</em>
+<a id='L133' name='L133'></a><em class='comment'> *</em>
+<a id='L134' name='L134'></a><em class='comment'> * This is the function where you set a push function for gnutls to</em>
+<a id='L135' name='L135'></a><em class='comment'> * use in order to send data.  If you are going to use berkeley style</em>
+<a id='L136' name='L136'></a><em class='comment'> * sockets, you do not need to use this function since the default</em>
+<a id='L137' name='L137'></a><em class='comment'> * send(2) will probably be ok.  Otherwise you should specify this</em>
+<a id='L138' name='L138'></a><em class='comment'> * function for gnutls to be able to send data.</em>
+<a id='L139' name='L139'></a><em class='comment'> * The callback should return a positive number indicating the</em>
+<a id='L140' name='L140'></a><em class='comment'> * bytes sent, and -1 on error.</em>
+<a id='L141' name='L141'></a><em class='comment'> *</em>
+<a id='L142' name='L142'></a><em class='comment'> * @push_func is of the form,</em>
+<a id='L143' name='L143'></a><em class='comment'> * ssize_t (*gnutls_push_func)(gnutls_transport_ptr_t, const void*, size_t);</em>
+<a id='L144' name='L144'></a><em class='comment'> *</em>
+<a id='L145' name='L145'></a><em class='comment'> **/</em>
+<a id='L146' name='L146'></a><strong class='reserved'>void</strong>
+<a id='L147' name='L147'></a><a href='../R/8414.html' title='Multiple referred from 235 places.'>gnutls_transport_set_push_function</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L148' name='L148'></a>                                   gnutls_push_func <a href='../D/11002.html' title='Multiple defined in 2 places.'>push_func</a>)
+<a id='L149' name='L149'></a><em class='brace'>{</em>
+<a id='L150' name='L150'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.<a href='../D/11002.html' title='Multiple defined in 2 places.'>push_func</a> = <a href='../D/11002.html' title='Multiple defined in 2 places.'>push_func</a>;
+<a id='L151' name='L151'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.vec_push_func = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L152' name='L152'></a><em class='brace'>}</em>
+<a id='L153' name='L153'></a>
+<a id='L154' name='L154'></a><em class='comment'>/**</em>
+<a id='L155' name='L155'></a><em class='comment'> * gnutls_transport_set_vec_push_function:</em>
+<a id='L156' name='L156'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L157' name='L157'></a><em class='comment'> * @vec_func: a callback function similar to writev()</em>
+<a id='L158' name='L158'></a><em class='comment'> *</em>
+<a id='L159' name='L159'></a><em class='comment'> * Using this function you can override the default writev(2)</em>
+<a id='L160' name='L160'></a><em class='comment'> * function for gnutls to send data. Setting this callback </em>
+<a id='L161' name='L161'></a><em class='comment'> * instead of gnutls_transport_set_push_function() is recommended</em>
+<a id='L162' name='L162'></a><em class='comment'> * since it introduces less overhead in the TLS handshake process.</em>
+<a id='L163' name='L163'></a><em class='comment'> *</em>
+<a id='L164' name='L164'></a><em class='comment'> * @vec_func is of the form,</em>
+<a id='L165' name='L165'></a><em class='comment'> * ssize_t (*gnutls_vec_push_func) (gnutls_transport_ptr_t, const giovec_t * iov, int iovcnt);</em>
+<a id='L166' name='L166'></a><em class='comment'> *</em>
+<a id='L167' name='L167'></a><em class='comment'> * Since: 2.12.0</em>
+<a id='L168' name='L168'></a><em class='comment'> **/</em>
+<a id='L169' name='L169'></a><strong class='reserved'>void</strong>
+<a id='L170' name='L170'></a><a href='../R/8415.html' title='Multiple referred from 5 places.'>gnutls_transport_set_vec_push_function</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L171' name='L171'></a>                                       gnutls_vec_push_func vec_func)
+<a id='L172' name='L172'></a><em class='brace'>{</em>
+<a id='L173' name='L173'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.<a href='../D/11002.html' title='Multiple defined in 2 places.'>push_func</a> = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L174' name='L174'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.vec_push_func = vec_func;
+<a id='L175' name='L175'></a><em class='brace'>}</em>
+<a id='L176' name='L176'></a>
+<a id='L177' name='L177'></a><em class='comment'>/**</em>
+<a id='L178' name='L178'></a><em class='comment'> * gnutls_transport_set_errno_function:</em>
+<a id='L179' name='L179'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L180' name='L180'></a><em class='comment'> * @errno_func: a callback function similar to write()</em>
+<a id='L181' name='L181'></a><em class='comment'> *</em>
+<a id='L182' name='L182'></a><em class='comment'> * This is the function where you set a function to retrieve errno</em>
+<a id='L183' name='L183'></a><em class='comment'> * after a failed push or pull operation.</em>
+<a id='L184' name='L184'></a><em class='comment'> *</em>
+<a id='L185' name='L185'></a><em class='comment'> * @errno_func is of the form,</em>
+<a id='L186' name='L186'></a><em class='comment'> * int (*gnutls_errno_func)(gnutls_transport_ptr_t);</em>
+<a id='L187' name='L187'></a><em class='comment'> * and should return the errno.</em>
+<a id='L188' name='L188'></a><em class='comment'> *</em>
+<a id='L189' name='L189'></a><em class='comment'> * Since: 2.12.0</em>
+<a id='L190' name='L190'></a><em class='comment'> **/</em>
+<a id='L191' name='L191'></a><strong class='reserved'>void</strong>
+<a id='L192' name='L192'></a>gnutls_transport_set_errno_function(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L193' name='L193'></a>                                    gnutls_errno_func errno_func)
+<a id='L194' name='L194'></a><em class='brace'>{</em>
+<a id='L195' name='L195'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.errno_func = errno_func;
+<a id='L196' name='L196'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L62'>[^]</a><a href='#L192'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

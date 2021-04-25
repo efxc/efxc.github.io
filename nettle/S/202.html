@@ -1,0 +1,135 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>rsa2openpgp.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/rsa2openpgp.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L66'>[^]</a>[v][top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L66' title='Defined at 66.'>rsa_keypair_to_openpgp</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* rsa2openpgp.c</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Converting rsa keys to OpenPGP format.</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   Copyright (C) 2001, 2002 Niels Möller</em>
+<a id='L6' name='L6'></a><em class='comment'></em>
+<a id='L7' name='L7'></a><em class='comment'>   This file is part of GNU Nettle.</em>
+<a id='L8' name='L8'></a><em class='comment'></em>
+<a id='L9' name='L9'></a><em class='comment'>   GNU Nettle is free software: you can redistribute it and/or</em>
+<a id='L10' name='L10'></a><em class='comment'>   modify it under the terms of either:</em>
+<a id='L11' name='L11'></a><em class='comment'></em>
+<a id='L12' name='L12'></a><em class='comment'>     * the GNU Lesser General Public License as published by the Free</em>
+<a id='L13' name='L13'></a><em class='comment'>       Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L14' name='L14'></a><em class='comment'>       option) any later version.</em>
+<a id='L15' name='L15'></a><em class='comment'></em>
+<a id='L16' name='L16'></a><em class='comment'>   or</em>
+<a id='L17' name='L17'></a><em class='comment'></em>
+<a id='L18' name='L18'></a><em class='comment'>     * the GNU General Public License as published by the Free</em>
+<a id='L19' name='L19'></a><em class='comment'>       Software Foundation; either version 2 of the License, or (at your</em>
+<a id='L20' name='L20'></a><em class='comment'>       option) any later version.</em>
+<a id='L21' name='L21'></a><em class='comment'></em>
+<a id='L22' name='L22'></a><em class='comment'>   or both in parallel, as here.</em>
+<a id='L23' name='L23'></a><em class='comment'></em>
+<a id='L24' name='L24'></a><em class='comment'>   GNU Nettle is distributed in the hope that it will be useful,</em>
+<a id='L25' name='L25'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L26' name='L26'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L27' name='L27'></a><em class='comment'>   General Public License for more details.</em>
+<a id='L28' name='L28'></a><em class='comment'></em>
+<a id='L29' name='L29'></a><em class='comment'>   You should have received copies of the GNU General Public License and</em>
+<a id='L30' name='L30'></a><em class='comment'>   the GNU Lesser General Public License along with this program.  If</em>
+<a id='L31' name='L31'></a><em class='comment'>   not, see http://www.gnu.org/licenses/.</em>
+<a id='L32' name='L32'></a><em class='comment'>*/</em>
+<a id='L33' name='L33'></a>
+<a id='L34' name='L34'></a><em class='sharp'>#if</em> HAVE_CONFIG_H
+<a id='L35' name='L35'></a><em class='sharp'># include</em> "config.h"
+<a id='L36' name='L36'></a><em class='sharp'>#endif</em>
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> &lt;time.h&gt;
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> "<a href='743.html'>rsa.h</a>"
+<a id='L42' name='L42'></a>
+<a id='L43' name='L43'></a><em class='sharp'>#include</em> "<a href='337.html'>buffer.h</a>"
+<a id='L44' name='L44'></a><em class='sharp'>#include</em> "<a href='67.html'>pgp.h</a>"
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a>
+<a id='L47' name='L47'></a><em class='comment'>/* According to RFC 2440, a public key consists of the following packets:</em>
+<a id='L48' name='L48'></a><em class='comment'> *</em>
+<a id='L49' name='L49'></a><em class='comment'> * Public key packet</em>
+<a id='L50' name='L50'></a><em class='comment'> *</em>
+<a id='L51' name='L51'></a><em class='comment'> * Zero or more revocation signatures</em>
+<a id='L52' name='L52'></a><em class='comment'> *</em>
+<a id='L53' name='L53'></a><em class='comment'> * One or more User ID packets</em>
+<a id='L54' name='L54'></a><em class='comment'> *</em>
+<a id='L55' name='L55'></a><em class='comment'> * After each User ID packet, zero or more signature packets</em>
+<a id='L56' name='L56'></a><em class='comment'> *</em>
+<a id='L57' name='L57'></a><em class='comment'> * Zero or more Subkey packets</em>
+<a id='L58' name='L58'></a><em class='comment'> *</em>
+<a id='L59' name='L59'></a><em class='comment'> * After each Subkey packet, one signature packet, optionally a</em>
+<a id='L60' name='L60'></a><em class='comment'> * revocation.</em>
+<a id='L61' name='L61'></a><em class='comment'> *</em>
+<a id='L62' name='L62'></a><em class='comment'> * Currently, we generate a public key packet, a single user id, and a</em>
+<a id='L63' name='L63'></a><em class='comment'> * signature. */</em>
+<a id='L64' name='L64'></a>
+<a id='L65' name='L65'></a><strong class='reserved'>int</strong>
+<a id='L66' name='L66'></a><a href='../S/743.html#L526' title='Referred from 526 in rsa.h.'>rsa_keypair_to_openpgp</a>(<strong class='reserved'>struct</strong> <a href='../S/337.html#L43' title='Defined at 43 in buffer.h.'>nettle_buffer</a> *buffer,
+<a id='L67' name='L67'></a>                       <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/743.html#L114' title='Defined at 114 in rsa.h.'>rsa_public_key</a> *pub,
+<a id='L68' name='L68'></a>                       <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/743.html#L127' title='Defined at 127 in rsa.h.'>rsa_private_key</a> *priv,
+<a id='L69' name='L69'></a>                       <em class='comment'>/* A single user id. NUL-terminated utf8. */</em>
+<a id='L70' name='L70'></a>                       <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *userid)
+<a id='L71' name='L71'></a><em class='brace'>{</em>
+<a id='L72' name='L72'></a>  time_t now = time(<a href='../S/765.html#L58' title='Defined at 58 in getopt1.c.'>NULL</a>);
+<a id='L73' name='L73'></a>
+<a id='L74' name='L74'></a>  <strong class='reserved'>unsigned</strong> key_start;
+<a id='L75' name='L75'></a>  <strong class='reserved'>unsigned</strong> userid_start;
+<a id='L76' name='L76'></a>  
+<a id='L77' name='L77'></a>  <strong class='reserved'>struct</strong> <a href='../S/70.html#L58' title='Defined at 58 in sha1.h.'>sha1_ctx</a> key_hash;
+<a id='L78' name='L78'></a>  <strong class='reserved'>struct</strong> <a href='../S/70.html#L58' title='Defined at 58 in sha1.h.'>sha1_ctx</a> signature_hash;
+<a id='L79' name='L79'></a>  uint8_t fingerprint[<a href='../S/70.html#L50' title='Defined at 50 in sha1.h.'>SHA1_DIGEST_SIZE</a>];
+<a id='L80' name='L80'></a>  
+<a id='L81' name='L81'></a>  key_start = buffer-&gt;size;
+<a id='L82' name='L82'></a>  
+<a id='L83' name='L83'></a>  <strong class='reserved'>if</strong> (!<a href='../D/2253.html' title='Multiple defined in 2 places.'>pgp_put_public_rsa_key</a>(buffer, pub, now))
+<a id='L84' name='L84'></a>    <strong class='reserved'>return</strong> 0;
+<a id='L85' name='L85'></a>
+<a id='L86' name='L86'></a>  <em class='comment'>/* userid packet */</em>
+<a id='L87' name='L87'></a>  userid_start = buffer-&gt;size;
+<a id='L88' name='L88'></a>  <strong class='reserved'>if</strong> (!<a href='../D/2259.html' title='Multiple defined in 2 places.'>pgp_put_userid</a>(buffer, strlen(userid), (<strong class='reserved'>const</strong> uint8_t *) userid))
+<a id='L89' name='L89'></a>    <strong class='reserved'>return</strong> 0;
+<a id='L90' name='L90'></a>
+<a id='L91' name='L91'></a>  <em class='comment'>/* FIXME: We hash the key first, and then the user id. Is this right? */</em>
+<a id='L92' name='L92'></a>  <a href='../D/2499.html' title='Multiple defined in 2 places.'>sha1_init</a>(&amp;key_hash);
+<a id='L93' name='L93'></a>  <a href='../D/2500.html' title='Multiple defined in 2 places.'>sha1_update</a>(&amp;key_hash,
+<a id='L94' name='L94'></a>              userid_start - key_start,
+<a id='L95' name='L95'></a>              buffer-&gt;contents + key_start);
+<a id='L96' name='L96'></a>
+<a id='L97' name='L97'></a>  signature_hash = key_hash;
+<a id='L98' name='L98'></a>  <a href='../D/2498.html' title='Multiple defined in 2 places.'>sha1_digest</a>(&amp;key_hash, <strong class='reserved'>sizeof</strong>(fingerprint), fingerprint);
+<a id='L99' name='L99'></a>
+<a id='L100' name='L100'></a>  <a href='../D/2500.html' title='Multiple defined in 2 places.'>sha1_update</a>(&amp;signature_hash,
+<a id='L101' name='L101'></a>              buffer-&gt;size - userid_start,
+<a id='L102' name='L102'></a>              buffer-&gt;contents + userid_start);
+<a id='L103' name='L103'></a>  
+<a id='L104' name='L104'></a>  <strong class='reserved'>return</strong> <a href='../D/2254.html' title='Multiple defined in 2 places.'>pgp_put_rsa_sha1_signature</a>(buffer,
+<a id='L105' name='L105'></a>                                    priv,
+<a id='L106' name='L106'></a>                                    fingerprint + <a href='../S/70.html#L50' title='Defined at 50 in sha1.h.'>SHA1_DIGEST_SIZE</a> - 8,
+<a id='L107' name='L107'></a>                                    <a href='../S/67.html#L207' title='Defined at 207 in pgp.h.'>PGP_SIGN_CERTIFICATION</a>,
+<a id='L108' name='L108'></a>                                    &amp;signature_hash);
+<a id='L109' name='L109'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;][^]<a href='#L66'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

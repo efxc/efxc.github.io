@@ -1,0 +1,280 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/tls13/post_handshake.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6487.html'>tls13</a>/post_handshake.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L62'>[^]</a><a href='#L241'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L62' title='Defined at 62.'>_gnutls13_reauth_client</a></li>
+<li><a href='#L140' title='Defined at 140.'>_gnutls13_reauth_server</a></li>
+<li><a href='#L241' title='Defined at 241.'>gnutls_reauth</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2017 Red Hat, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L9' name='L9'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L10' name='L10'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L11' name='L11'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='comment'>/* Functions that relate to the TLS handshake procedure.</em>
+<a id='L24' name='L24'></a><em class='comment'> */</em>
+<a id='L25' name='L25'></a>
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> "<a href='5983.html'>dh.h</a>"
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> "<a href='5626.html'>debug.h</a>"
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> "<a href='6029.html'>algorithms.h</a>"
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> "<a href='5821.html'>cipher.h</a>"
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> "<a href='6033.html'>buffers.h</a>"
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> "<a href='5459.html'>mbuffers.h</a>"
+<a id='L34' name='L34'></a><em class='sharp'>#include</em> "<a href='5287.html'>kx.h</a>"
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> "<a href='5744.html'>handshake.h</a>"
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> "<a href='5268.html'>num.h</a>"
+<a id='L37' name='L37'></a><em class='sharp'>#include</em> "<a href='5756.html'>hash_int.h</a>"
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> "<a href='5461.html'>db.h</a>"
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> "<a href='5302.html'>hello_ext.h</a>"
+<a id='L40' name='L40'></a><em class='sharp'>#include</em> "<a href='5751.html'>supplemental.h</a>"
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> "<a href='5289.html'>auth.h</a>"
+<a id='L42' name='L42'></a><em class='sharp'>#include</em> "<a href='5286.html'>sslv2_compat.h</a>"
+<a id='L43' name='L43'></a><em class='sharp'>#include</em> &lt;<a href='5326.html'>auth/cert.h</a>&gt;
+<a id='L44' name='L44'></a><em class='sharp'>#include</em> "<a href='5991.html'>constate.h</a>"
+<a id='L45' name='L45'></a><em class='sharp'>#include</em> &lt;<a href='5295.html'>record.h</a>&gt;
+<a id='L46' name='L46'></a><em class='sharp'>#include</em> &lt;<a href='5748.html'>state.h</a>&gt;
+<a id='L47' name='L47'></a><em class='sharp'>#include</em> &lt;<a href='5990.html'>random.h</a>&gt;
+<a id='L48' name='L48'></a><em class='sharp'>#include</em> &lt;<a href='../I/592.html'>dtls.h</a>&gt;
+<a id='L49' name='L49'></a><em class='sharp'>#include</em> "<a href='5765.html'>tls13/certificate_request.h</a>"
+<a id='L50' name='L50'></a><em class='sharp'>#include</em> "<a href='5762.html'>tls13/certificate_verify.h</a>"
+<a id='L51' name='L51'></a><em class='sharp'>#include</em> "<a href='5768.html'>tls13/certificate.h</a>"
+<a id='L52' name='L52'></a><em class='sharp'>#include</em> "<a href='5779.html'>tls13/finished.h</a>"
+<a id='L53' name='L53'></a>
+<a id='L54' name='L54'></a><em class='sharp'>#undef</em> <a href='../R/42.html' title='Multiple referred from 35 places.'>AGAIN</a>
+<a id='L55' name='L55'></a><em class='sharp'>#define</em> <a href='../R/42.html' title='Multiple referred from 35 places.'>AGAIN</a>(<a href='../D/12391.html' title='Multiple defined in 2 places.'>x</a>) ((<a href='../D/12391.html' title='Multiple defined in 2 places.'>x</a>)==(<a href='../S/5822.html#L278' title='Defined at 278 in lib/gnutls_int.h.'>REAUTH_STATE</a>))
+<a id='L56' name='L56'></a>
+<a id='L57' name='L57'></a><em class='comment'>/*</em>
+<a id='L58' name='L58'></a><em class='comment'> * _gnutls13_reauth_client</em>
+<a id='L59' name='L59'></a><em class='comment'> * This function performs the client side of the post-handshake authentication</em>
+<a id='L60' name='L60'></a><em class='comment'> */</em>
+<a id='L61' name='L61'></a><strong class='reserved'>static</strong>
+<a id='L62' name='L62'></a><strong class='reserved'>int</strong> <a href='../S/5764.html#L251' title='Referred from 251 in lib/tls13/post_handshake.c.'>_gnutls13_reauth_client</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L63' name='L63'></a><em class='brace'>{</em>
+<a id='L64' name='L64'></a>        <strong class='reserved'>int</strong> ret = 0;
+<a id='L65' name='L65'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> tmp;
+<a id='L66' name='L66'></a>
+<a id='L67' name='L67'></a>        <strong class='reserved'>if</strong> (!<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.initial_negotiation_completed)
+<a id='L68' name='L68'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_UNAVAILABLE_DURING_HANDSHAKE);
+<a id='L69' name='L69'></a>
+<a id='L70' name='L70'></a>        <strong class='reserved'>if</strong> (!(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.flags &amp; GNUTLS_POST_HANDSHAKE_AUTH))
+<a id='L71' name='L71'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L72' name='L72'></a>
+<a id='L73' name='L73'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.reauth_buffer.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> == 0)
+<a id='L74' name='L74'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L75' name='L75'></a>
+<a id='L76' name='L76'></a>        <strong class='reserved'>switch</strong> (<a href='../S/5822.html#L278' title='Defined at 278 in lib/gnutls_int.h.'>REAUTH_STATE</a>) <em class='brace'>{</em>
+<a id='L77' name='L77'></a>        <strong class='reserved'>case</strong> <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE0</a>:
+<a id='L78' name='L78'></a>
+<a id='L79' name='L79'></a>                <em class='comment'>/* restore handshake transcript */</em>
+<a id='L80' name='L80'></a>                <a href='../S/5333.html#L97' title='Defined at 97 in lib/str.h.'>_gnutls_buffer_reset</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_hash_buffer);
+<a id='L81' name='L81'></a>                ret = <a href='../S/5806.html#L112' title='Defined at 112 in lib/str.c.'>gnutls_buffer_append_data</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_hash_buffer,
+<a id='L82' name='L82'></a>                                                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.post_handshake_hash_buffer.data,
+<a id='L83' name='L83'></a>                                                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.post_handshake_hash_buffer.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L84' name='L84'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L85' name='L85'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L86' name='L86'></a>
+<a id='L87' name='L87'></a>                <em class='comment'>/* append the previously received certificate request message, to the</em>
+<a id='L88' name='L88'></a><em class='comment'>                 * transcript. */</em>
+<a id='L89' name='L89'></a>                ret = <a href='../S/5806.html#L112' title='Defined at 112 in lib/str.c.'>gnutls_buffer_append_data</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_hash_buffer,
+<a id='L90' name='L90'></a>                                                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.reauth_buffer.data,
+<a id='L91' name='L91'></a>                                                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.reauth_buffer.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L92' name='L92'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L93' name='L93'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a>                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_hash_buffer_prev_len = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_hash_buffer.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L96' name='L96'></a>
+<a id='L97' name='L97'></a>                <em class='comment'>/* skip the reauth buffer handshake message headers */</em>
+<a id='L98' name='L98'></a>                ret = <a href='../S/5806.html#L772' title='Defined at 772 in lib/str.c.'>_gnutls_buffer_pop_prefix32</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.reauth_buffer, &amp;tmp, 0);
+<a id='L99' name='L99'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L100' name='L100'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L101' name='L101'></a>
+<a id='L102' name='L102'></a>                <a href='../D/1034.html' title='Multiple defined in 7 places.'>FALLTHROUGH</a>;
+<a id='L103' name='L103'></a>        <strong class='reserved'>case</strong> <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE1</a>:
+<a id='L104' name='L104'></a>                ret = <a href='../S/5770.html#L136' title='Defined at 136 in lib/tls13/certificate_request.c.'>_gnutls13_recv_certificate_request_int</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L105' name='L105'></a>                                                             &amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.reauth_buffer);
+<a id='L106' name='L106'></a>                <a href='../S/5822.html#L278' title='Defined at 278 in lib/gnutls_int.h.'>REAUTH_STATE</a> = <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE1</a>;
+<a id='L107' name='L107'></a>                <a href='../S/5744.html#L36' title='Defined at 36 in lib/handshake.h.'>IMED_RET</a>("recv certificate request", ret, 0);
+<a id='L108' name='L108'></a>                <a href='../D/1034.html' title='Multiple defined in 7 places.'>FALLTHROUGH</a>;
+<a id='L109' name='L109'></a>        <strong class='reserved'>case</strong> <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE2</a>:
+<a id='L110' name='L110'></a>                ret = <a href='../S/5773.html#L196' title='Defined at 196 in lib/tls13/certificate.c.'>_gnutls13_send_certificate</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/48.html' title='Multiple defined in 3 places.'>AGAIN</a>(<a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE2</a>));
+<a id='L111' name='L111'></a>                <a href='../S/5822.html#L278' title='Defined at 278 in lib/gnutls_int.h.'>REAUTH_STATE</a> = <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE2</a>;
+<a id='L112' name='L112'></a>                <a href='../S/5744.html#L36' title='Defined at 36 in lib/handshake.h.'>IMED_RET</a>("send certificate", ret, 0);
+<a id='L113' name='L113'></a>                <a href='../D/1034.html' title='Multiple defined in 7 places.'>FALLTHROUGH</a>;
+<a id='L114' name='L114'></a>        <strong class='reserved'>case</strong> <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE3</a>:
+<a id='L115' name='L115'></a>                ret = <a href='../S/5777.html#L148' title='Defined at 148 in lib/tls13/certificate_verify.c.'>_gnutls13_send_certificate_verify</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/48.html' title='Multiple defined in 3 places.'>AGAIN</a>(<a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE3</a>));
+<a id='L116' name='L116'></a>                <a href='../S/5822.html#L278' title='Defined at 278 in lib/gnutls_int.h.'>REAUTH_STATE</a> = <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE3</a>;
+<a id='L117' name='L117'></a>                <a href='../S/5744.html#L36' title='Defined at 36 in lib/handshake.h.'>IMED_RET</a>("send certificate verify", ret, 0);
+<a id='L118' name='L118'></a>                <a href='../D/1034.html' title='Multiple defined in 7 places.'>FALLTHROUGH</a>;
+<a id='L119' name='L119'></a>        <strong class='reserved'>case</strong> <a href='../S/5822.html#L273' title='Defined at 273 in lib/gnutls_int.h.'>REAUTH_STATE4</a>:
+<a id='L120' name='L120'></a>                ret = <a href='../S/5778.html#L129' title='Defined at 129 in lib/tls13/finished.c.'>_gnutls13_send_finished</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/48.html' title='Multiple defined in 3 places.'>AGAIN</a>(<a href='../S/5822.html#L273' title='Defined at 273 in lib/gnutls_int.h.'>REAUTH_STATE4</a>));
+<a id='L121' name='L121'></a>                <a href='../S/5822.html#L278' title='Defined at 278 in lib/gnutls_int.h.'>REAUTH_STATE</a> = <a href='../S/5822.html#L273' title='Defined at 273 in lib/gnutls_int.h.'>REAUTH_STATE4</a>;
+<a id='L122' name='L122'></a>                <a href='../S/5744.html#L36' title='Defined at 36 in lib/handshake.h.'>IMED_RET</a>("send finished", ret, 0);
+<a id='L123' name='L123'></a>                <strong class='reserved'>break</strong>;
+<a id='L124' name='L124'></a>        <strong class='reserved'>default</strong>:
+<a id='L125' name='L125'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L126' name='L126'></a>        <em class='brace'>}</em>
+<a id='L127' name='L127'></a>
+<a id='L128' name='L128'></a>        <a href='../S/5300.html#L116' title='Defined at 116 in lib/handshake.c.'>_gnutls_handshake_hash_buffers_clear</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L129' name='L129'></a>        <a href='../S/5333.html#L97' title='Defined at 97 in lib/str.h.'>_gnutls_buffer_reset</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.reauth_buffer);
+<a id='L130' name='L130'></a>        <a href='../S/5822.html#L278' title='Defined at 278 in lib/gnutls_int.h.'>REAUTH_STATE</a> = <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE0</a>;
+<a id='L131' name='L131'></a>
+<a id='L132' name='L132'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L133' name='L133'></a><em class='brace'>}</em>
+<a id='L134' name='L134'></a>
+<a id='L135' name='L135'></a><em class='comment'>/*</em>
+<a id='L136' name='L136'></a><em class='comment'> * _gnutls13_reauth_server</em>
+<a id='L137' name='L137'></a><em class='comment'> * This function does the server stuff of the post-handshake authentication.</em>
+<a id='L138' name='L138'></a><em class='comment'> */</em>
+<a id='L139' name='L139'></a><strong class='reserved'>static</strong>
+<a id='L140' name='L140'></a><strong class='reserved'>int</strong> <a href='../S/5764.html#L249' title='Referred from 249 in lib/tls13/post_handshake.c.'>_gnutls13_reauth_server</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L141' name='L141'></a><em class='brace'>{</em>
+<a id='L142' name='L142'></a>        <strong class='reserved'>int</strong> ret = 0;
+<a id='L143' name='L143'></a>
+<a id='L144' name='L144'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.post_handshake_auth == 0 ||
+<a id='L145' name='L145'></a>            (!(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.flags &amp; GNUTLS_POST_HANDSHAKE_AUTH)))
+<a id='L146' name='L146'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L147' name='L147'></a>
+<a id='L148' name='L148'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.send_cert_req == 0) <em class='brace'>{</em>
+<a id='L149' name='L149'></a>                <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>("You need to call gnutls_certificate_server_set_request to enable post handshake auth\n");
+<a id='L150' name='L150'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L151' name='L151'></a>        <em class='brace'>}</em>
+<a id='L152' name='L152'></a>
+<a id='L153' name='L153'></a>        <strong class='reserved'>switch</strong> (<a href='../S/5822.html#L278' title='Defined at 278 in lib/gnutls_int.h.'>REAUTH_STATE</a>) <em class='brace'>{</em>
+<a id='L154' name='L154'></a>        <strong class='reserved'>case</strong> <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE0</a>:
+<a id='L155' name='L155'></a>                <em class='comment'>/* restore handshake transcript */</em>
+<a id='L156' name='L156'></a>                <a href='../S/5333.html#L97' title='Defined at 97 in lib/str.h.'>_gnutls_buffer_reset</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_hash_buffer);
+<a id='L157' name='L157'></a>                ret = <a href='../S/5806.html#L112' title='Defined at 112 in lib/str.c.'>gnutls_buffer_append_data</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_hash_buffer,
+<a id='L158' name='L158'></a>                                                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.post_handshake_hash_buffer.data,
+<a id='L159' name='L159'></a>                                                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.post_handshake_hash_buffer.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L160' name='L160'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L161' name='L161'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L162' name='L162'></a>
+<a id='L163' name='L163'></a>                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_hash_buffer_prev_len = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_hash_buffer.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L164' name='L164'></a>
+<a id='L165' name='L165'></a>                <a href='../D/1034.html' title='Multiple defined in 7 places.'>FALLTHROUGH</a>;
+<a id='L166' name='L166'></a>        <strong class='reserved'>case</strong> <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE1</a>:
+<a id='L167' name='L167'></a>                ret = <a href='../S/5770.html#L274' title='Defined at 274 in lib/tls13/certificate_request.c.'>_gnutls13_send_certificate_request</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/48.html' title='Multiple defined in 3 places.'>AGAIN</a>(<a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE1</a>));
+<a id='L168' name='L168'></a>                <a href='../S/5822.html#L278' title='Defined at 278 in lib/gnutls_int.h.'>REAUTH_STATE</a> = <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE1</a>;
+<a id='L169' name='L169'></a>                <a href='../S/5744.html#L36' title='Defined at 36 in lib/handshake.h.'>IMED_RET</a>("send certificate request", ret, 0);
+<a id='L170' name='L170'></a>                <a href='../D/1034.html' title='Multiple defined in 7 places.'>FALLTHROUGH</a>;
+<a id='L171' name='L171'></a>        <strong class='reserved'>case</strong> <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE2</a>:
+<a id='L172' name='L172'></a>                <em class='comment'>/* here we should tolerate application data */</em>
+<a id='L173' name='L173'></a>                ret = <a href='../S/5773.html#L35' title='Defined at 35 in lib/tls13/certificate.c.'>_gnutls13_recv_certificate</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L174' name='L174'></a>                <a href='../S/5822.html#L278' title='Defined at 278 in lib/gnutls_int.h.'>REAUTH_STATE</a> = <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE2</a>;
+<a id='L175' name='L175'></a>                <a href='../S/5744.html#L36' title='Defined at 36 in lib/handshake.h.'>IMED_RET</a>("recv certificate", ret, 0);
+<a id='L176' name='L176'></a>                <a href='../D/1034.html' title='Multiple defined in 7 places.'>FALLTHROUGH</a>;
+<a id='L177' name='L177'></a>        <strong class='reserved'>case</strong> <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE3</a>:
+<a id='L178' name='L178'></a>                ret = <a href='../S/5777.html#L43' title='Defined at 43 in lib/tls13/certificate_verify.c.'>_gnutls13_recv_certificate_verify</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L179' name='L179'></a>                <a href='../S/5822.html#L278' title='Defined at 278 in lib/gnutls_int.h.'>REAUTH_STATE</a> = <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE3</a>;
+<a id='L180' name='L180'></a>                <a href='../S/5744.html#L36' title='Defined at 36 in lib/handshake.h.'>IMED_RET</a>("recv certificate verify", ret, 0);
+<a id='L181' name='L181'></a>                <a href='../D/1034.html' title='Multiple defined in 7 places.'>FALLTHROUGH</a>;
+<a id='L182' name='L182'></a>        <strong class='reserved'>case</strong> <a href='../S/5822.html#L273' title='Defined at 273 in lib/gnutls_int.h.'>REAUTH_STATE4</a>:
+<a id='L183' name='L183'></a>                ret = <a href='../S/5300.html#L2863' title='Defined at 2863 in lib/handshake.c.'>_gnutls_run_verify_callback</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CLIENT);
+<a id='L184' name='L184'></a>                <a href='../S/5822.html#L278' title='Defined at 278 in lib/gnutls_int.h.'>REAUTH_STATE</a> = <a href='../S/5822.html#L273' title='Defined at 273 in lib/gnutls_int.h.'>REAUTH_STATE4</a>;
+<a id='L185' name='L185'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L186' name='L186'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L187' name='L187'></a>                <a href='../D/1034.html' title='Multiple defined in 7 places.'>FALLTHROUGH</a>;
+<a id='L188' name='L188'></a>        <strong class='reserved'>case</strong> <a href='../S/5822.html#L273' title='Defined at 273 in lib/gnutls_int.h.'>REAUTH_STATE5</a>:
+<a id='L189' name='L189'></a>                ret = <a href='../S/5778.html#L65' title='Defined at 65 in lib/tls13/finished.c.'>_gnutls13_recv_finished</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L190' name='L190'></a>                <a href='../S/5822.html#L278' title='Defined at 278 in lib/gnutls_int.h.'>REAUTH_STATE</a> = <a href='../S/5822.html#L273' title='Defined at 273 in lib/gnutls_int.h.'>REAUTH_STATE5</a>;
+<a id='L191' name='L191'></a>                <a href='../S/5744.html#L36' title='Defined at 36 in lib/handshake.h.'>IMED_RET</a>("recv finished", ret, 0);
+<a id='L192' name='L192'></a>                <strong class='reserved'>break</strong>;
+<a id='L193' name='L193'></a>        <strong class='reserved'>default</strong>:
+<a id='L194' name='L194'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L195' name='L195'></a>        <em class='brace'>}</em>
+<a id='L196' name='L196'></a>
+<a id='L197' name='L197'></a>        <a href='../S/5300.html#L116' title='Defined at 116 in lib/handshake.c.'>_gnutls_handshake_hash_buffers_clear</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L198' name='L198'></a>        <a href='../S/5822.html#L278' title='Defined at 278 in lib/gnutls_int.h.'>REAUTH_STATE</a> = <a href='../S/5822.html#L272' title='Defined at 272 in lib/gnutls_int.h.'>REAUTH_STATE0</a>;
+<a id='L199' name='L199'></a>
+<a id='L200' name='L200'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L201' name='L201'></a><em class='brace'>}</em>
+<a id='L202' name='L202'></a>
+<a id='L203' name='L203'></a><em class='comment'>/**</em>
+<a id='L204' name='L204'></a><em class='comment'> * gnutls_reauth:</em>
+<a id='L205' name='L205'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L206' name='L206'></a><em class='comment'> * @flags: must be zero</em>
+<a id='L207' name='L207'></a><em class='comment'> *</em>
+<a id='L208' name='L208'></a><em class='comment'> * This function performs the post-handshake authentication</em>
+<a id='L209' name='L209'></a><em class='comment'> * for TLS 1.3. The post-handshake authentication is initiated by the server</em>
+<a id='L210' name='L210'></a><em class='comment'> * by calling this function. Clients respond when %GNUTLS_E_REAUTH_REQUEST</em>
+<a id='L211' name='L211'></a><em class='comment'> * has been seen while receiving data.</em>
+<a id='L212' name='L212'></a><em class='comment'> *</em>
+<a id='L213' name='L213'></a><em class='comment'> * The non-fatal errors expected by this function are:</em>
+<a id='L214' name='L214'></a><em class='comment'> * %GNUTLS_E_INTERRUPTED, %GNUTLS_E_AGAIN, as well as</em>
+<a id='L215' name='L215'></a><em class='comment'> * %GNUTLS_E_GOT_APPLICATION_DATA when called on server side.</em>
+<a id='L216' name='L216'></a><em class='comment'> *</em>
+<a id='L217' name='L217'></a><em class='comment'> * The former two interrupt the authentication procedure due to the transport</em>
+<a id='L218' name='L218'></a><em class='comment'> * layer being interrupted, and the latter because there were pending data prior</em>
+<a id='L219' name='L219'></a><em class='comment'> * to peer initiating the re-authentication. The server should read/process that</em>
+<a id='L220' name='L220'></a><em class='comment'> * data as unauthenticated and retry calling gnutls_reauth().</em>
+<a id='L221' name='L221'></a><em class='comment'> *</em>
+<a id='L222' name='L222'></a><em class='comment'> * When this function is called under TLS1.2 or earlier or the peer didn't</em>
+<a id='L223' name='L223'></a><em class='comment'> * advertise post-handshake auth, it always fails with</em>
+<a id='L224' name='L224'></a><em class='comment'> * %GNUTLS_E_INVALID_REQUEST. The verification of the received peers certificate</em>
+<a id='L225' name='L225'></a><em class='comment'> * is delegated to the session or credentials verification callbacks. A</em>
+<a id='L226' name='L226'></a><em class='comment'> * server can check whether post handshake authentication is supported</em>
+<a id='L227' name='L227'></a><em class='comment'> * by the client by checking the session flags with gnutls_session_get_flags().</em>
+<a id='L228' name='L228'></a><em class='comment'> *</em>
+<a id='L229' name='L229'></a><em class='comment'> * Prior to calling this function in server side, the function</em>
+<a id='L230' name='L230'></a><em class='comment'> * gnutls_certificate_server_set_request() must be called setting expectations</em>
+<a id='L231' name='L231'></a><em class='comment'> * for the received certificate (request or require). If none are set</em>
+<a id='L232' name='L232'></a><em class='comment'> * this function will return with %GNUTLS_E_INVALID_REQUEST.</em>
+<a id='L233' name='L233'></a><em class='comment'> *</em>
+<a id='L234' name='L234'></a><em class='comment'> * Note that post handshake authentication is available irrespective</em>
+<a id='L235' name='L235'></a><em class='comment'> * of the initial negotiation type (PSK or certificate). In all cases</em>
+<a id='L236' name='L236'></a><em class='comment'> * however, certificate credentials must be set to the session prior</em>
+<a id='L237' name='L237'></a><em class='comment'> * to calling this function.</em>
+<a id='L238' name='L238'></a><em class='comment'> *</em>
+<a id='L239' name='L239'></a><em class='comment'> * Returns: %GNUTLS_E_SUCCESS on a successful authentication, otherwise a negative error code.</em>
+<a id='L240' name='L240'></a><em class='comment'> **/</em>
+<a id='L241' name='L241'></a><strong class='reserved'>int</strong> <a href='../R/8265.html' title='Multiple referred from 20 places.'>gnutls_reauth</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> flags)
+<a id='L242' name='L242'></a><em class='brace'>{</em>
+<a id='L243' name='L243'></a>        <strong class='reserved'>const</strong> <a href='../S/5822.html#L713' title='Defined at 713 in lib/gnutls_int.h.'>version_entry_st</a> *vers = <a href='../S/5822.html#L1524' title='Defined at 1524 in lib/gnutls_int.h.'>get_version</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L244' name='L244'></a>
+<a id='L245' name='L245'></a>        <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>(!vers-&gt;tls13_sem))
+<a id='L246' name='L246'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L247' name='L247'></a>
+<a id='L248' name='L248'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.entity == GNUTLS_SERVER)
+<a id='L249' name='L249'></a>                <strong class='reserved'>return</strong> <a href='../S/5764.html#L140' title='Defined at 140 in lib/tls13/post_handshake.c.'>_gnutls13_reauth_server</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L250' name='L250'></a>        <strong class='reserved'>else</strong>
+<a id='L251' name='L251'></a>                <strong class='reserved'>return</strong> <a href='../S/5764.html#L62' title='Defined at 62 in lib/tls13/post_handshake.c.'>_gnutls13_reauth_client</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L252' name='L252'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L62'>[^]</a><a href='#L241'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

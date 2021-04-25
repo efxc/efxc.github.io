@@ -1,0 +1,156 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>mpn/m88k/mul_1.s</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/2101.html'>mpn</a>/<a href='../files/2127.html'>m88k</a>/mul_1.s</h2>
+<em class='comment'>/* [&lt;][&gt;][^][v][top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<pre>
+<a id='L1' name='L1'></a>; mc88100 __gmpn_mul_1 -- Multiply a limb vector with a single limb and
+<a id='L2' name='L2'></a>; store the product in a second limb vector.
+<a id='L3' name='L3'></a>
+<a id='L4' name='L4'></a>; Copyright 1992, 1994, 1995, 2000 Free Software Foundation, Inc.
+<a id='L5' name='L5'></a>
+<a id='L6' name='L6'></a>;  This file is part of the GNU MP Library.
+<a id='L7' name='L7'></a>;
+<a id='L8' name='L8'></a>;  The GNU MP Library is free software; you can redistribute it and/or modify
+<a id='L9' name='L9'></a>;  it under the terms of either:
+<a id='L10' name='L10'></a>;
+<a id='L11' name='L11'></a>;    * the GNU Lesser General Public License as published by the Free
+<a id='L12' name='L12'></a>;      Software Foundation; either version 3 of the License, or (at your
+<a id='L13' name='L13'></a>;      option) any later version.
+<a id='L14' name='L14'></a>;
+<a id='L15' name='L15'></a>;  or
+<a id='L16' name='L16'></a>;
+<a id='L17' name='L17'></a>;    * the GNU General Public License as published by the Free Software
+<a id='L18' name='L18'></a>;      Foundation; either version 2 of the License, or (at your option) any
+<a id='L19' name='L19'></a>;      later version.
+<a id='L20' name='L20'></a>;
+<a id='L21' name='L21'></a>;  or both in parallel, as here.
+<a id='L22' name='L22'></a>;
+<a id='L23' name='L23'></a>;  The GNU MP Library is distributed in the hope that it will be useful, but
+<a id='L24' name='L24'></a>;  WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+<a id='L25' name='L25'></a>;  or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+<a id='L26' name='L26'></a>;  for more details.
+<a id='L27' name='L27'></a>;
+<a id='L28' name='L28'></a>;  You should have received copies of the GNU General Public License and the
+<a id='L29' name='L29'></a>;  GNU Lesser General Public License along with the GNU MP Library.  If not,
+<a id='L30' name='L30'></a>;  see https:<em class='comment'>//www.gnu.org/licenses/.</em>
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a>
+<a id='L33' name='L33'></a>; INPUT PARAMETERS
+<a id='L34' name='L34'></a>; res_ptr       r2
+<a id='L35' name='L35'></a>; s1_ptr        r3
+<a id='L36' name='L36'></a>; size          r4
+<a id='L37' name='L37'></a>; s2_limb       r5
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a>; Common overhead is about 11 cycles/invocation.
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a>; The speed for S2_LIMB &gt;= 0x10000 is approximately 21 cycles/limb.  (The
+<a id='L42' name='L42'></a>; pipeline stalls 2 cycles due to WB contention.)
+<a id='L43' name='L43'></a>
+<a id='L44' name='L44'></a>; The speed for S2_LIMB &lt; 0x10000 is approximately 16 cycles/limb.  (The
+<a id='L45' name='L45'></a>; pipeline stalls 2 cycles due to WB contention and 1 cycle due to latency.)
+<a id='L46' name='L46'></a>
+<a id='L47' name='L47'></a>; To enhance speed:
+<a id='L48' name='L48'></a>; 1. Unroll main loop 4-8 times.
+<a id='L49' name='L49'></a>; 2. Schedule code to avoid WB contention.  It might be tempting to move the
+<a id='L50' name='L50'></a>;    ld instruction in the loops down to save 2 cycles (less WB contention),
+<a id='L51' name='L51'></a>;    but that looses because the ultimate value will be read from outside
+<a id='L52' name='L52'></a>;    the allocated space.  But if we handle the ultimate multiplication in
+<a id='L53' name='L53'></a>;    the tail, we can do this.
+<a id='L54' name='L54'></a>; 3. Make the multiplication with less instructions.  I think the code for
+<a id='L55' name='L55'></a>;    (S2_LIMB &gt;= 0x10000) is not minimal.
+<a id='L56' name='L56'></a>; With these techniques the (S2_LIMB &gt;= 0x10000) case would run in 17 or
+<a id='L57' name='L57'></a>; less cycles/limb; the (S2_LIMB &lt; 0x10000) case would run in 11
+<a id='L58' name='L58'></a>; cycles/limb.  (Assuming infinite unrolling.)
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a>        text
+<a id='L61' name='L61'></a>        align    16
+<a id='L62' name='L62'></a>        global   ___gmpn_mul_1
+<a id='L63' name='L63'></a>___gmpn_mul_1:
+<a id='L64' name='L64'></a>
+<a id='L65' name='L65'></a>        ; Make S1_PTR and RES_PTR point at the end of their blocks
+<a id='L66' name='L66'></a>        ; and negate SIZE.
+<a id='L67' name='L67'></a>        lda      r3,r3[r4]
+<a id='L68' name='L68'></a>        lda      r6,r2[r4]      ; RES_PTR in r6 since r2 is retval
+<a id='L69' name='L69'></a>        subu     r4,r0,r4
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a>        addu.co  r2,r0,r0       ; r2 = cy = 0
+<a id='L72' name='L72'></a>        ld       r9,r3[r4]
+<a id='L73' name='L73'></a>        mask     r7,r5,0xffff   ; r7 = lo(S2_LIMB)
+<a id='L74' name='L74'></a>        extu     r8,r5,16       ; r8 = hi(S2_LIMB)
+<a id='L75' name='L75'></a>        bcnd.n   eq0,r8,Lsmall  ; jump if (hi(S2_LIMB) == 0)
+<a id='L76' name='L76'></a>         subu    r6,r6,4
+<a id='L77' name='L77'></a>
+<a id='L78' name='L78'></a>; General code for any value of S2_LIMB.
+<a id='L79' name='L79'></a>
+<a id='L80' name='L80'></a>        ; Make a stack frame and save r25 and r26
+<a id='L81' name='L81'></a>        subu     r31,r31,16
+<a id='L82' name='L82'></a>        st.d     r25,r31,8
+<a id='L83' name='L83'></a>
+<a id='L84' name='L84'></a>        ; Enter the loop in the middle
+<a id='L85' name='L85'></a>        br.n    L1
+<a id='L86' name='L86'></a>        addu     r4,r4,1
+<a id='L87' name='L87'></a>
+<a id='L88' name='L88'></a>Loop:   ld       r9,r3[r4]
+<a id='L89' name='L89'></a>        st       r26,r6[r4]
+<a id='L90' name='L90'></a>; bcnd  ne0,r0,0                ; bubble
+<a id='L91' name='L91'></a>        addu     r4,r4,1
+<a id='L92' name='L92'></a>L1:     mul      r26,r9,r5      ; low word of product   mul_1   WB ld
+<a id='L93' name='L93'></a>        mask     r12,r9,0xffff  ; r12 = lo(s1_limb)     mask_1
+<a id='L94' name='L94'></a>        mul      r11,r12,r7     ; r11 =  prod_0         mul_2   WB mask_1
+<a id='L95' name='L95'></a>        mul      r10,r12,r8     ; r10 = prod_1a         mul_3
+<a id='L96' name='L96'></a>        extu     r13,r9,16      ; r13 = hi(s1_limb)     extu_1  WB mul_1
+<a id='L97' name='L97'></a>        mul      r12,r13,r7     ; r12 = prod_1b         mul_4   WB extu_1
+<a id='L98' name='L98'></a>        mul      r25,r13,r8     ; r25  = prod_2         mul_5   WB mul_2
+<a id='L99' name='L99'></a>        extu     r11,r11,16     ; r11 = hi(prod_0)      extu_2  WB mul_3
+<a id='L100' name='L100'></a>        addu     r10,r10,r11    ;                       addu_1  WB extu_2
+<a id='L101' name='L101'></a>; bcnd  ne0,r0,0                ; bubble                        WB addu_1
+<a id='L102' name='L102'></a>        addu.co  r10,r10,r12    ;                               WB mul_4
+<a id='L103' name='L103'></a>        mask.u   r10,r10,0xffff ; move the 16 most significant bits...
+<a id='L104' name='L104'></a>        addu.ci  r10,r10,r0     ; ...to the low half of the word...
+<a id='L105' name='L105'></a>        rot      r10,r10,16     ; ...and put carry in pos 16.
+<a id='L106' name='L106'></a>        addu.co  r26,r26,r2     ; add old carry limb
+<a id='L107' name='L107'></a>        bcnd.n   ne0,r4,Loop
+<a id='L108' name='L108'></a>         addu.ci r2,r25,r10     ; compute new carry limb
+<a id='L109' name='L109'></a>
+<a id='L110' name='L110'></a>        st       r26,r6[r4]
+<a id='L111' name='L111'></a>        ld.d     r25,r31,8
+<a id='L112' name='L112'></a>        jmp.n    r1
+<a id='L113' name='L113'></a>         addu    r31,r31,16
+<a id='L114' name='L114'></a>
+<a id='L115' name='L115'></a>; Fast code for S2_LIMB &lt; 0x10000
+<a id='L116' name='L116'></a>Lsmall:
+<a id='L117' name='L117'></a>        ; Enter the loop in the middle
+<a id='L118' name='L118'></a>        br.n    SL1
+<a id='L119' name='L119'></a>        addu     r4,r4,1
+<a id='L120' name='L120'></a>
+<a id='L121' name='L121'></a>SLoop:  ld       r9,r3[r4]      ;
+<a id='L122' name='L122'></a>        st       r8,r6[r4]      ;
+<a id='L123' name='L123'></a>        addu     r4,r4,1        ;
+<a id='L124' name='L124'></a>SL1:    mul      r8,r9,r5       ; low word of product
+<a id='L125' name='L125'></a>        mask     r12,r9,0xffff  ; r12 = lo(s1_limb)
+<a id='L126' name='L126'></a>        extu     r13,r9,16      ; r13 = hi(s1_limb)
+<a id='L127' name='L127'></a>        mul      r11,r12,r7     ; r11 =  prod_0
+<a id='L128' name='L128'></a>        mul      r12,r13,r7     ; r12 = prod_1b
+<a id='L129' name='L129'></a>        addu.cio r8,r8,r2       ; add old carry limb
+<a id='L130' name='L130'></a>        extu     r10,r11,16     ; r11 = hi(prod_0)
+<a id='L131' name='L131'></a>        addu     r10,r10,r12    ;
+<a id='L132' name='L132'></a>        bcnd.n   ne0,r4,SLoop
+<a id='L133' name='L133'></a>        extu     r2,r10,16      ; r2 = new carry limb
+<a id='L134' name='L134'></a>
+<a id='L135' name='L135'></a>        jmp.n    r1
+<a id='L136' name='L136'></a>        st       r8,r6[r4]
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;][^][v]<a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

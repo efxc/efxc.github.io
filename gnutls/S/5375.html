@@ -1,0 +1,1661 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/x509/privkey_pkcs8.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6492.html'>x509</a>/privkey_pkcs8.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L64'>[^]</a><a href='#L1527'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L64' title='Defined at 64.'>_encode_privkey</a></li>
+<li><a href='#L165' title='Defined at 165.'>encode_to_private_key_info</a></li>
+<li><a href='#L315' title='Defined at 315.'>encode_to_pkcs8_key</a></li>
+<li><a href='#L435' title='Defined at 435.'>gnutls_x509_privkey_export_pkcs8</a></li>
+<li><a href='#L521' title='Defined at 521.'>gnutls_pkcs8_info</a></li>
+<li><a href='#L638' title='Defined at 638.'>gnutls_x509_privkey_export2_pkcs8</a></li>
+<li><a href='#L717' title='Defined at 717.'>pkcs8_key_decrypt</a></li>
+<li><a href='#L798' title='Defined at 798.'>check_for_decrypted</a></li>
+<li><a href='#L826' title='Defined at 826.'>pkcs8_key_info</a></li>
+<li><a href='#L932' title='Defined at 932.'>pkcs8_key_decode</a></li>
+<li><a href='#L972' title='Defined at 972.'>_decode_pkcs8_rsa_key</a></li>
+<li><a href='#L1001' title='Defined at 1001.'>_decode_pkcs8_rsa_pss_key</a></li>
+<li><a href='#L1046' title='Defined at 1046.'>_decode_pkcs8_ecc_key</a></li>
+<li><a href='#L1090' title='Defined at 1090.'>_decode_pkcs8_eddsa_key</a></li>
+<li><a href='#L1143' title='Defined at 1143.'>_privkey_decode_gost_key</a></li>
+<li><a href='#L1244' title='Defined at 1244.'>_decode_pkcs8_gost_key</a></li>
+<li><a href='#L1315' title='Defined at 1315.'>_decode_pkcs8_dsa_key</a></li>
+<li><a href='#L1397' title='Defined at 1397.'>decode_private_key_info</a></li>
+<li><a href='#L1527' title='Defined at 1527.'>gnutls_x509_privkey_import_pkcs8</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2003-2016 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> * Copyright (C) 2014-2017 Red Hat</em>
+<a id='L4' name='L4'></a><em class='comment'> * Copyright (C) 2014-2016 Nikos Mavrogiannopoulos</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L9' name='L9'></a><em class='comment'> *</em>
+<a id='L10' name='L10'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L11' name='L11'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L12' name='L12'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L13' name='L13'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L14' name='L14'></a><em class='comment'> *</em>
+<a id='L15' name='L15'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L16' name='L16'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L17' name='L17'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L18' name='L18'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L19' name='L19'></a><em class='comment'> *</em>
+<a id='L20' name='L20'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L21' name='L21'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L22' name='L22'></a><em class='comment'> *</em>
+<a id='L23' name='L23'></a><em class='comment'> */</em>
+<a id='L24' name='L24'></a>
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;<a href='6034.html'>datum.h</a>&gt;
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> &lt;<a href='6036.html'>global.h</a>&gt;
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;<a href='../I/3.html'>common.h</a>&gt;
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;<a href='../I/692.html'>x509.h</a>&gt;
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> &lt;<a href='5467.html'>x509_b64.h</a>&gt;
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> "<a href='5336.html'>x509_int.h</a>"
+<a id='L34' name='L34'></a><em class='sharp'>#include</em> "<a href='5363.html'>pkcs7_int.h</a>"
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> &lt;<a href='6029.html'>algorithms.h</a>&gt;
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> &lt;<a href='5268.html'>num.h</a>&gt;
+<a id='L37' name='L37'></a><em class='sharp'>#include</em> &lt;<a href='5990.html'>random.h</a>&gt;
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> &lt;<a href='5466.html'>pk.h</a>&gt;
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> "<a href='5356.html'>attributes.h</a>"
+<a id='L40' name='L40'></a><em class='sharp'>#include</em> "<a href='5361.html'>prov-seed.h</a>"
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5375.html#L1046' title='Defined at 1046 in lib/x509/privkey_pkcs8.c.'>_decode_pkcs8_ecc_key</a>(<a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkcs8_asn,
+<a id='L43' name='L43'></a>                                 gnutls_x509_privkey_t pkey);
+<a id='L44' name='L44'></a><strong class='reserved'>static</strong>
+<a id='L45' name='L45'></a><strong class='reserved'>int</strong> <a href='../S/5375.html#L826' title='Defined at 826 in lib/x509/privkey_pkcs8.c.'>pkcs8_key_info</a>(<strong class='reserved'>const</strong> gnutls_datum_t * raw_key,
+<a id='L46' name='L46'></a>                   <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/5363.html#L56' title='Defined at 56 in lib/x509/pkcs7_int.h.'>pkcs_cipher_schema_st</a> **p,
+<a id='L47' name='L47'></a>                   <strong class='reserved'>struct</strong> <a href='../S/5336.html#L134' title='Defined at 134 in lib/x509/x509_int.h.'>pbkdf2_params</a> *kdf_params,
+<a id='L48' name='L48'></a>                   <strong class='reserved'>char</strong> **oid);
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5375.html#L1397' title='Defined at 1397 in lib/x509/privkey_pkcs8.c.'>decode_private_key_info</a>(<strong class='reserved'>const</strong> gnutls_datum_t * der,
+<a id='L51' name='L51'></a>                                   gnutls_x509_privkey_t pkey);
+<a id='L52' name='L52'></a>
+<a id='L53' name='L53'></a><em class='sharp'>#define</em> <a href='../R/2769.html' title='Multiple referred from 4 places.'>PEM_PKCS8</a> "ENCRYPTED PRIVATE KEY"
+<a id='L54' name='L54'></a><em class='sharp'>#define</em> <a href='../R/2770.html' title='Multiple referred from 4 places.'>PEM_UNENCRYPTED_PKCS8</a> "PRIVATE KEY"
+<a id='L55' name='L55'></a>
+<a id='L56' name='L56'></a><em class='comment'>/* Returns a negative error code if the encryption schema in</em>
+<a id='L57' name='L57'></a><em class='comment'> * the OID is not supported. The schema ID is returned.</em>
+<a id='L58' name='L58'></a><em class='comment'> */</em>
+<a id='L59' name='L59'></a><em class='comment'>/* Encodes a private key to the raw format PKCS #8 needs.</em>
+<a id='L60' name='L60'></a><em class='comment'> * For RSA it is a PKCS #1 DER private key and for DSA it is</em>
+<a id='L61' name='L61'></a><em class='comment'> * an ASN.1 INTEGER of the x value.</em>
+<a id='L62' name='L62'></a><em class='comment'> */</em>
+<a id='L63' name='L63'></a><strong class='reserved'>inline</strong> <strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L64' name='L64'></a><a href='../S/5375.html#L231' title='Referred from 231 in lib/x509/privkey_pkcs8.c.'>_encode_privkey</a>(gnutls_x509_privkey_t pkey, gnutls_datum_t * raw)
+<a id='L65' name='L65'></a><em class='brace'>{</em>
+<a id='L66' name='L66'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L67' name='L67'></a>        <a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> spk = <a href='../S/5274.html#L537' title='Defined at 537 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE_EMPTY</a>;
+<a id='L68' name='L68'></a>
+<a id='L69' name='L69'></a>        <strong class='reserved'>switch</strong> (pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.algo) <em class='brace'>{</em>
+<a id='L70' name='L70'></a>        <strong class='reserved'>case</strong> GNUTLS_PK_EDDSA_ED25519:
+<a id='L71' name='L71'></a>        <strong class='reserved'>case</strong> GNUTLS_PK_EDDSA_ED448:
+<a id='L72' name='L72'></a>                <em class='comment'>/* we encode as octet string (which is going to be stored inside</em>
+<a id='L73' name='L73'></a><em class='comment'>                 * another octet string). No comments. */</em>
+<a id='L74' name='L74'></a>                ret = <a href='../S/5381.html#L808' title='Defined at 808 in lib/x509/common.c.'>_gnutls_x509_encode_string</a>(<a href='../S/5274.html#L226' title='Defined at 226 in lib/minitasn1/libtasn1.h.'>ASN1_ETYPE_OCTET_STRING</a>,
+<a id='L75' name='L75'></a>                                                 pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.raw_priv.data, pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.raw_priv.size,
+<a id='L76' name='L76'></a>                                                 raw);
+<a id='L77' name='L77'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L78' name='L78'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L79' name='L79'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a>        <strong class='reserved'>case</strong> GNUTLS_PK_GOST_01:
+<a id='L82' name='L82'></a>        <strong class='reserved'>case</strong> GNUTLS_PK_GOST_12_256:
+<a id='L83' name='L83'></a>        <strong class='reserved'>case</strong> GNUTLS_PK_GOST_12_512:
+<a id='L84' name='L84'></a>                <strong class='reserved'>if</strong> ((ret = <a href='../S/5280.html#L700' title='Defined at 700 in lib/minitasn1/structure.c.'>asn1_create_element</a>
+<a id='L85' name='L85'></a>                                        (<a href='../S/6036.html#L38' title='Defined at 38 in lib/global.h.'>_gnutls_get_gnutls_asn</a>(), "GNUTLS.GOSTPrivateKey", &amp;spk))
+<a id='L86' name='L86'></a>                                != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L87' name='L87'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L88' name='L88'></a>                        ret = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(ret);
+<a id='L89' name='L89'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L90' name='L90'></a>                <em class='brace'>}</em>
+<a id='L91' name='L91'></a>
+<a id='L92' name='L92'></a>                ret = <a href='../S/5759.html#L479' title='Defined at 479 in lib/mpi.c.'>_gnutls_x509_write_key_int_le</a>(spk, "", pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[<a href='../S/5825.html#L338' title='Defined at 338 in lib/crypto-backend.h.'>GOST_K</a>]);
+<a id='L93' name='L93'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L94' name='L94'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L95' name='L95'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L96' name='L96'></a>                <em class='brace'>}</em>
+<a id='L97' name='L97'></a>
+<a id='L98' name='L98'></a>                ret = <a href='../S/5381.html#L843' title='Defined at 843 in lib/x509/common.c.'>_gnutls_x509_der_encode</a>(spk, "", raw, 0);
+<a id='L99' name='L99'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L100' name='L100'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L101' name='L101'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L102' name='L102'></a>                <em class='brace'>}</em>
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a>                <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;spk, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L105' name='L105'></a>                <strong class='reserved'>break</strong>;
+<a id='L106' name='L106'></a>
+<a id='L107' name='L107'></a>        <strong class='reserved'>case</strong> GNUTLS_PK_RSA:
+<a id='L108' name='L108'></a>        <strong class='reserved'>case</strong> GNUTLS_PK_RSA_PSS:
+<a id='L109' name='L109'></a>        <strong class='reserved'>case</strong> GNUTLS_PK_ECDSA:
+<a id='L110' name='L110'></a>                ret =
+<a id='L111' name='L111'></a>                    <a href='../S/5392.html#L166' title='Defined at 166 in lib/x509/common.h.'>_gnutls_x509_export_int2</a>(pkey-&gt;key, GNUTLS_X509_FMT_DER,
+<a id='L112' name='L112'></a>                                             "", raw);
+<a id='L113' name='L113'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L114' name='L114'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L115' name='L115'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L116' name='L116'></a>                <em class='brace'>}</em>
+<a id='L117' name='L117'></a>
+<a id='L118' name='L118'></a>                <strong class='reserved'>break</strong>;
+<a id='L119' name='L119'></a>        <strong class='reserved'>case</strong> GNUTLS_PK_DSA:
+<a id='L120' name='L120'></a>                <em class='comment'>/* DSAPublicKey == INTEGER */</em>
+<a id='L121' name='L121'></a>                <strong class='reserved'>if</strong> ((ret = <a href='../S/5280.html#L700' title='Defined at 700 in lib/minitasn1/structure.c.'>asn1_create_element</a>
+<a id='L122' name='L122'></a>                     (<a href='../S/6036.html#L38' title='Defined at 38 in lib/global.h.'>_gnutls_get_gnutls_asn</a>(), "GNUTLS.DSAPublicKey",
+<a id='L123' name='L123'></a>                      &amp;spk))
+<a id='L124' name='L124'></a>                    != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L125' name='L125'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L126' name='L126'></a>                        <strong class='reserved'>return</strong> <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(ret);
+<a id='L127' name='L127'></a>                <em class='brace'>}</em>
+<a id='L128' name='L128'></a>
+<a id='L129' name='L129'></a>                ret =
+<a id='L130' name='L130'></a>                    <a href='../S/5759.html#L462' title='Defined at 462 in lib/mpi.c.'>_gnutls_x509_write_int</a>(spk, "", pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[4],
+<a id='L131' name='L131'></a>                                           1);
+<a id='L132' name='L132'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L133' name='L133'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L134' name='L134'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L135' name='L135'></a>                <em class='brace'>}</em>
+<a id='L136' name='L136'></a>                ret = <a href='../S/5381.html#L843' title='Defined at 843 in lib/x509/common.c.'>_gnutls_x509_der_encode</a>(spk, "", raw, 0);
+<a id='L137' name='L137'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L138' name='L138'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L139' name='L139'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L140' name='L140'></a>                <em class='brace'>}</em>
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a>                <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;spk, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L143' name='L143'></a>                <strong class='reserved'>break</strong>;
+<a id='L144' name='L144'></a>
+<a id='L145' name='L145'></a>        <strong class='reserved'>default</strong>:
+<a id='L146' name='L146'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L147' name='L147'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L148' name='L148'></a>        <em class='brace'>}</em>
+<a id='L149' name='L149'></a>
+<a id='L150' name='L150'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L151' name='L151'></a>
+<a id='L152' name='L152'></a>      error:
+<a id='L153' name='L153'></a>        <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;spk, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L154' name='L154'></a>        <a href='../S/5280.html#L294' title='Defined at 294 in lib/minitasn1/structure.c.'>asn1_delete_structure</a>(&amp;spk);
+<a id='L155' name='L155'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L156' name='L156'></a>
+<a id='L157' name='L157'></a><em class='brace'>}</em>
+<a id='L158' name='L158'></a>
+<a id='L159' name='L159'></a><em class='comment'>/* </em>
+<a id='L160' name='L160'></a><em class='comment'> * Encodes a PKCS #1 private key to a PKCS #8 private key</em>
+<a id='L161' name='L161'></a><em class='comment'> * info. The output will be allocated and stored into der. Also</em>
+<a id='L162' name='L162'></a><em class='comment'> * the ASN1_TYPE of private key info will be returned.</em>
+<a id='L163' name='L163'></a><em class='comment'> */</em>
+<a id='L164' name='L164'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L165' name='L165'></a><a href='../R/6882.html' title='Multiple referred from 2 places.'>encode_to_private_key_info</a>(gnutls_x509_privkey_t pkey,
+<a id='L166' name='L166'></a>                           gnutls_datum_t * der, <a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> * pkey_info)
+<a id='L167' name='L167'></a><em class='brace'>{</em>
+<a id='L168' name='L168'></a>        <strong class='reserved'>int</strong> result, len;
+<a id='L169' name='L169'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> null = 0;
+<a id='L170' name='L170'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *oid;
+<a id='L171' name='L171'></a>        gnutls_datum_t algo_params = <em class='brace'>{</em> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0 <em class='brace'>}</em>;
+<a id='L172' name='L172'></a>        gnutls_datum_t algo_privkey = <em class='brace'>{</em> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0 <em class='brace'>}</em>;
+<a id='L173' name='L173'></a>
+<a id='L174' name='L174'></a>        oid = <a href='../S/5248.html#L324' title='Defined at 324 in lib/algorithms/publickey.c.'>gnutls_pk_get_oid</a>(pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.algo);
+<a id='L175' name='L175'></a>        <strong class='reserved'>if</strong> (oid == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L176' name='L176'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L177' name='L177'></a>                <strong class='reserved'>return</strong> GNUTLS_E_UNIMPLEMENTED_FEATURE;
+<a id='L178' name='L178'></a>        <em class='brace'>}</em>
+<a id='L179' name='L179'></a>
+<a id='L180' name='L180'></a>        result =
+<a id='L181' name='L181'></a>            <a href='../S/5370.html#L237' title='Defined at 237 in lib/x509/key_encode.c.'>_gnutls_x509_write_pubkey_params</a>(&amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>, &amp;algo_params);
+<a id='L182' name='L182'></a>        <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>
+<a id='L183' name='L183'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L184' name='L184'></a>                <strong class='reserved'>return</strong> result;
+<a id='L185' name='L185'></a>        <em class='brace'>}</em>
+<a id='L186' name='L186'></a>
+<a id='L187' name='L187'></a>        <strong class='reserved'>if</strong> ((result =
+<a id='L188' name='L188'></a>             <a href='../S/5280.html#L700' title='Defined at 700 in lib/minitasn1/structure.c.'>asn1_create_element</a>(<a href='../S/6036.html#L39' title='Defined at 39 in lib/global.h.'>_gnutls_get_pkix</a>(),
+<a id='L189' name='L189'></a>                                 "PKIX1.pkcs-8-PrivateKeyInfo",
+<a id='L190' name='L190'></a>                                 pkey_info)) != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L191' name='L191'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L192' name='L192'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L193' name='L193'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L194' name='L194'></a>        <em class='brace'>}</em>
+<a id='L195' name='L195'></a>
+<a id='L196' name='L196'></a>        <em class='comment'>/* Write the version.</em>
+<a id='L197' name='L197'></a><em class='comment'>         */</em>
+<a id='L198' name='L198'></a>        result = <a href='../S/5285.html#L302' title='Defined at 302 in lib/minitasn1/element.c.'>asn1_write_value</a>(*pkey_info, "version", &amp;null, 1);
+<a id='L199' name='L199'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L200' name='L200'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L201' name='L201'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L202' name='L202'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L203' name='L203'></a>        <em class='brace'>}</em>
+<a id='L204' name='L204'></a>
+<a id='L205' name='L205'></a>        <em class='comment'>/* write the privateKeyAlgorithm</em>
+<a id='L206' name='L206'></a><em class='comment'>         * fields. (OID+NULL data)</em>
+<a id='L207' name='L207'></a><em class='comment'>         */</em>
+<a id='L208' name='L208'></a>        result =
+<a id='L209' name='L209'></a>            <a href='../S/5285.html#L302' title='Defined at 302 in lib/minitasn1/element.c.'>asn1_write_value</a>(*pkey_info, "privateKeyAlgorithm.algorithm",
+<a id='L210' name='L210'></a>                             oid, 1);
+<a id='L211' name='L211'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L212' name='L212'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L213' name='L213'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L214' name='L214'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L215' name='L215'></a>        <em class='brace'>}</em>
+<a id='L216' name='L216'></a>
+<a id='L217' name='L217'></a>        result =
+<a id='L218' name='L218'></a>            <a href='../S/5285.html#L302' title='Defined at 302 in lib/minitasn1/element.c.'>asn1_write_value</a>(*pkey_info, "privateKeyAlgorithm.parameters",
+<a id='L219' name='L219'></a>                             algo_params.data, algo_params.size);
+<a id='L220' name='L220'></a>        _gnutls_free_key_datum(&amp;algo_params);
+<a id='L221' name='L221'></a>
+<a id='L222' name='L222'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L223' name='L223'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L224' name='L224'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L225' name='L225'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L226' name='L226'></a>        <em class='brace'>}</em>
+<a id='L227' name='L227'></a>
+<a id='L228' name='L228'></a>
+<a id='L229' name='L229'></a>        <em class='comment'>/* Write the raw private key</em>
+<a id='L230' name='L230'></a><em class='comment'>         */</em>
+<a id='L231' name='L231'></a>        result = <a href='../S/5375.html#L64' title='Defined at 64 in lib/x509/privkey_pkcs8.c.'>_encode_privkey</a>(pkey, &amp;algo_privkey);
+<a id='L232' name='L232'></a>        <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>
+<a id='L233' name='L233'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L234' name='L234'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L235' name='L235'></a>        <em class='brace'>}</em>
+<a id='L236' name='L236'></a>
+<a id='L237' name='L237'></a>        result =
+<a id='L238' name='L238'></a>            <a href='../S/5285.html#L302' title='Defined at 302 in lib/minitasn1/element.c.'>asn1_write_value</a>(*pkey_info, "privateKey", algo_privkey.data,
+<a id='L239' name='L239'></a>                             algo_privkey.size);
+<a id='L240' name='L240'></a>        _gnutls_free_key_datum(&amp;algo_privkey);
+<a id='L241' name='L241'></a>
+<a id='L242' name='L242'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L243' name='L243'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L244' name='L244'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L245' name='L245'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L246' name='L246'></a>        <em class='brace'>}</em>
+<a id='L247' name='L247'></a>
+<a id='L248' name='L248'></a>        <strong class='reserved'>if</strong> ((pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.pkflags &amp; <a href='../S/5825.html#L245' title='Defined at 245 in lib/crypto-backend.h.'>GNUTLS_PK_FLAG_PROVABLE</a>) &amp;&amp; pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.seed_size &gt; 0) <em class='brace'>{</em>
+<a id='L249' name='L249'></a>                gnutls_datum_t seed_info;
+<a id='L250' name='L250'></a>                <em class='comment'>/* rfc8479 attribute encoding */</em>
+<a id='L251' name='L251'></a>
+<a id='L252' name='L252'></a>                result = <a href='../S/5350.html#L36' title='Defined at 36 in lib/x509/prov-seed.c.'>_x509_encode_provable_seed</a>(pkey, &amp;seed_info);
+<a id='L253' name='L253'></a>                <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>
+<a id='L254' name='L254'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L255' name='L255'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L256' name='L256'></a>                <em class='brace'>}</em>
+<a id='L257' name='L257'></a>
+<a id='L258' name='L258'></a>                result = <a href='../S/5341.html#L233' title='Defined at 233 in lib/x509/attributes.c.'>_x509_set_attribute</a>(*pkey_info, "attributes", <a href='../S/5336.html#L60' title='Defined at 60 in lib/x509/x509_int.h.'>OID_ATTR_PROV_SEED</a>, &amp;seed_info);
+<a id='L259' name='L259'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(seed_info.data);
+<a id='L260' name='L260'></a>                <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>
+<a id='L261' name='L261'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L262' name='L262'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L263' name='L263'></a>                <em class='brace'>}</em>
+<a id='L264' name='L264'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L265' name='L265'></a>                <em class='comment'>/* Append an empty Attributes field.</em>
+<a id='L266' name='L266'></a><em class='comment'>                 */</em>
+<a id='L267' name='L267'></a>                result = <a href='../S/5285.html#L302' title='Defined at 302 in lib/minitasn1/element.c.'>asn1_write_value</a>(*pkey_info, "attributes", <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0);
+<a id='L268' name='L268'></a>                <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L269' name='L269'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L270' name='L270'></a>                        result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L271' name='L271'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L272' name='L272'></a>                <em class='brace'>}</em>
+<a id='L273' name='L273'></a>        <em class='brace'>}</em>
+<a id='L274' name='L274'></a>
+<a id='L275' name='L275'></a>        <em class='comment'>/* DER Encode the generated private key info.</em>
+<a id='L276' name='L276'></a><em class='comment'>         */</em>
+<a id='L277' name='L277'></a>        len = 0;
+<a id='L278' name='L278'></a>        result = <a href='../S/5283.html#L1079' title='Defined at 1079 in lib/minitasn1/coding.c.'>asn1_der_coding</a>(*pkey_info, "", <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, &amp;len, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L279' name='L279'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L132' title='Defined at 132 in lib/minitasn1/libtasn1.h.'>ASN1_MEM_ERROR</a>) <em class='brace'>{</em>
+<a id='L280' name='L280'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L281' name='L281'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L282' name='L282'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L283' name='L283'></a>        <em class='brace'>}</em>
+<a id='L284' name='L284'></a>
+<a id='L285' name='L285'></a>        <em class='comment'>/* allocate data for the der</em>
+<a id='L286' name='L286'></a><em class='comment'>         */</em>
+<a id='L287' name='L287'></a>        der-&gt;size = len;
+<a id='L288' name='L288'></a>        der-&gt;data = <a href='../S/5460.html#L95' title='Defined at 95 in lib/mem.c.'>gnutls_malloc</a>(len);
+<a id='L289' name='L289'></a>        <strong class='reserved'>if</strong> (der-&gt;data == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L290' name='L290'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L291' name='L291'></a>                <strong class='reserved'>return</strong> GNUTLS_E_MEMORY_ERROR;
+<a id='L292' name='L292'></a>        <em class='brace'>}</em>
+<a id='L293' name='L293'></a>
+<a id='L294' name='L294'></a>        result = <a href='../S/5283.html#L1079' title='Defined at 1079 in lib/minitasn1/coding.c.'>asn1_der_coding</a>(*pkey_info, "", der-&gt;data, &amp;len, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L295' name='L295'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L296' name='L296'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L297' name='L297'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L298' name='L298'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L299' name='L299'></a>        <em class='brace'>}</em>
+<a id='L300' name='L300'></a>
+<a id='L301' name='L301'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L302' name='L302'></a>
+<a id='L303' name='L303'></a>      error:
+<a id='L304' name='L304'></a>        <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(pkey_info, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L305' name='L305'></a>        _gnutls_free_datum(&amp;algo_params);
+<a id='L306' name='L306'></a>        _gnutls_free_key_datum(&amp;algo_privkey);
+<a id='L307' name='L307'></a>        <strong class='reserved'>return</strong> result;
+<a id='L308' name='L308'></a>
+<a id='L309' name='L309'></a><em class='brace'>}</em>
+<a id='L310' name='L310'></a>
+<a id='L311' name='L311'></a><em class='comment'>/* Converts a PKCS #8 private key info to</em>
+<a id='L312' name='L312'></a><em class='comment'> * a PKCS #8 EncryptedPrivateKeyInfo.</em>
+<a id='L313' name='L313'></a><em class='comment'> */</em>
+<a id='L314' name='L314'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L315' name='L315'></a><a href='../R/6881.html' title='Multiple referred from 2 places.'>encode_to_pkcs8_key</a>(<a href='../D/11272.html' title='Multiple defined in 2 places.'>schema_id</a> schema, <strong class='reserved'>const</strong> gnutls_datum_t * der_key,
+<a id='L316' name='L316'></a>                    <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *password, <a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> * out)
+<a id='L317' name='L317'></a><em class='brace'>{</em>
+<a id='L318' name='L318'></a>        <strong class='reserved'>int</strong> result;
+<a id='L319' name='L319'></a>        gnutls_datum_t key = <em class='brace'>{</em> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0 <em class='brace'>}</em>;
+<a id='L320' name='L320'></a>        gnutls_datum_t tmp = <em class='brace'>{</em> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0 <em class='brace'>}</em>;
+<a id='L321' name='L321'></a>        <a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkcs8_asn = <a href='../S/5274.html#L537' title='Defined at 537 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE_EMPTY</a>;
+<a id='L322' name='L322'></a>        <strong class='reserved'>struct</strong> <a href='../S/5336.html#L134' title='Defined at 134 in lib/x509/x509_int.h.'>pbkdf2_params</a> kdf_params;
+<a id='L323' name='L323'></a>        <strong class='reserved'>struct</strong> <a href='../S/5363.html#L71' title='Defined at 71 in lib/x509/pkcs7_int.h.'>pbe_enc_params</a> enc_params;
+<a id='L324' name='L324'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/5363.html#L56' title='Defined at 56 in lib/x509/pkcs7_int.h.'>pkcs_cipher_schema_st</a> *<a href='../D/11231.html' title='Multiple defined in 2 places.'>s</a>;
+<a id='L325' name='L325'></a>
+<a id='L326' name='L326'></a>        <a href='../D/11231.html' title='Multiple defined in 2 places.'>s</a> = <a href='../S/5346.html#L296' title='Defined at 296 in lib/x509/pkcs7-crypt.c.'>_gnutls_pkcs_schema_get</a>(schema);
+<a id='L327' name='L327'></a>        <strong class='reserved'>if</strong> (<a href='../D/11231.html' title='Multiple defined in 2 places.'>s</a> == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> || <a href='../D/11231.html' title='Multiple defined in 2 places.'>s</a>-&gt;decrypt_only) <em class='brace'>{</em>
+<a id='L328' name='L328'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L329' name='L329'></a>        <em class='brace'>}</em>
+<a id='L330' name='L330'></a>
+<a id='L331' name='L331'></a>        <strong class='reserved'>if</strong> ((result =
+<a id='L332' name='L332'></a>             <a href='../S/5280.html#L700' title='Defined at 700 in lib/minitasn1/structure.c.'>asn1_create_element</a>(<a href='../S/6036.html#L39' title='Defined at 39 in lib/global.h.'>_gnutls_get_pkix</a>(),
+<a id='L333' name='L333'></a>                                 "PKIX1.pkcs-8-EncryptedPrivateKeyInfo",
+<a id='L334' name='L334'></a>                                 &amp;pkcs8_asn)) != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L335' name='L335'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L336' name='L336'></a>                <strong class='reserved'>return</strong> <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L337' name='L337'></a>        <em class='brace'>}</em>
+<a id='L338' name='L338'></a>
+<a id='L339' name='L339'></a>        <em class='comment'>/* Write the encryption schema OID</em>
+<a id='L340' name='L340'></a><em class='comment'>         */</em>
+<a id='L341' name='L341'></a>        result =
+<a id='L342' name='L342'></a>            <a href='../S/5285.html#L302' title='Defined at 302 in lib/minitasn1/element.c.'>asn1_write_value</a>(pkcs8_asn, "encryptionAlgorithm.algorithm",
+<a id='L343' name='L343'></a>                             <a href='../D/11231.html' title='Multiple defined in 2 places.'>s</a>-&gt;write_oid, 1);
+<a id='L344' name='L344'></a>
+<a id='L345' name='L345'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L346' name='L346'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L347' name='L347'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L348' name='L348'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L349' name='L349'></a>        <em class='brace'>}</em>
+<a id='L350' name='L350'></a>
+<a id='L351' name='L351'></a>        <em class='comment'>/* Generate a symmetric key.</em>
+<a id='L352' name='L352'></a><em class='comment'>         */</em>
+<a id='L353' name='L353'></a>
+<a id='L354' name='L354'></a>        result =
+<a id='L355' name='L355'></a>            <a href='../S/5346.html#L1500' title='Defined at 1500 in lib/x509/pkcs7-crypt.c.'>_gnutls_pkcs_generate_key</a>(schema, password, &amp;kdf_params, &amp;enc_params, &amp;key);
+<a id='L356' name='L356'></a>        <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>
+<a id='L357' name='L357'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L358' name='L358'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L359' name='L359'></a>        <em class='brace'>}</em>
+<a id='L360' name='L360'></a>
+<a id='L361' name='L361'></a>        result =
+<a id='L362' name='L362'></a>            <a href='../S/5346.html#L1643' title='Defined at 1643 in lib/x509/pkcs7-crypt.c.'>_gnutls_pkcs_write_schema_params</a>(schema, pkcs8_asn,
+<a id='L363' name='L363'></a>                                "encryptionAlgorithm.parameters",
+<a id='L364' name='L364'></a>                                &amp;kdf_params, &amp;enc_params);
+<a id='L365' name='L365'></a>        <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>
+<a id='L366' name='L366'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L367' name='L367'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L368' name='L368'></a>        <em class='brace'>}</em>
+<a id='L369' name='L369'></a>
+<a id='L370' name='L370'></a>        <em class='comment'>/* Parameters have been encoded. Now</em>
+<a id='L371' name='L371'></a><em class='comment'>         * encrypt the Data.</em>
+<a id='L372' name='L372'></a><em class='comment'>         */</em>
+<a id='L373' name='L373'></a>        result = <a href='../S/5346.html#L1720' title='Defined at 1720 in lib/x509/pkcs7-crypt.c.'>_gnutls_pkcs_raw_encrypt_data</a>(der_key, &amp;enc_params, &amp;key, &amp;tmp);
+<a id='L374' name='L374'></a>        <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>
+<a id='L375' name='L375'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L376' name='L376'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L377' name='L377'></a>        <em class='brace'>}</em>
+<a id='L378' name='L378'></a>
+<a id='L379' name='L379'></a>        <em class='comment'>/* write the encrypted data.</em>
+<a id='L380' name='L380'></a><em class='comment'>         */</em>
+<a id='L381' name='L381'></a>        result =
+<a id='L382' name='L382'></a>            <a href='../S/5285.html#L302' title='Defined at 302 in lib/minitasn1/element.c.'>asn1_write_value</a>(pkcs8_asn, "encryptedData", tmp.data,
+<a id='L383' name='L383'></a>                             tmp.size);
+<a id='L384' name='L384'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L385' name='L385'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L386' name='L386'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L387' name='L387'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L388' name='L388'></a>        <em class='brace'>}</em>
+<a id='L389' name='L389'></a>
+<a id='L390' name='L390'></a>        _gnutls_free_datum(&amp;tmp);
+<a id='L391' name='L391'></a>        _gnutls_free_key_datum(&amp;key);
+<a id='L392' name='L392'></a>
+<a id='L393' name='L393'></a>        *out = pkcs8_asn;
+<a id='L394' name='L394'></a>
+<a id='L395' name='L395'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L396' name='L396'></a>
+<a id='L397' name='L397'></a>      error:
+<a id='L398' name='L398'></a>        _gnutls_free_key_datum(&amp;key);
+<a id='L399' name='L399'></a>        _gnutls_free_datum(&amp;tmp);
+<a id='L400' name='L400'></a>        <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkcs8_asn, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L401' name='L401'></a>        <strong class='reserved'>return</strong> result;
+<a id='L402' name='L402'></a><em class='brace'>}</em>
+<a id='L403' name='L403'></a>
+<a id='L404' name='L404'></a>
+<a id='L405' name='L405'></a><em class='comment'>/**</em>
+<a id='L406' name='L406'></a><em class='comment'> * gnutls_x509_privkey_export_pkcs8:</em>
+<a id='L407' name='L407'></a><em class='comment'> * @key: Holds the key</em>
+<a id='L408' name='L408'></a><em class='comment'> * @format: the format of output params. One of PEM or DER.</em>
+<a id='L409' name='L409'></a><em class='comment'> * @password: the password that will be used to encrypt the key.</em>
+<a id='L410' name='L410'></a><em class='comment'> * @flags: an ORed sequence of gnutls_pkcs_encrypt_flags_t</em>
+<a id='L411' name='L411'></a><em class='comment'> * @output_data: will contain a private key PEM or DER encoded</em>
+<a id='L412' name='L412'></a><em class='comment'> * @output_data_size: holds the size of output_data (and will be</em>
+<a id='L413' name='L413'></a><em class='comment'> *   replaced by the actual size of parameters)</em>
+<a id='L414' name='L414'></a><em class='comment'> *</em>
+<a id='L415' name='L415'></a><em class='comment'> * This function will export the private key to a PKCS8 structure.</em>
+<a id='L416' name='L416'></a><em class='comment'> * Both RSA and DSA keys can be exported. For DSA keys we use</em>
+<a id='L417' name='L417'></a><em class='comment'> * PKCS #11 definitions. If the flags do not specify the encryption</em>
+<a id='L418' name='L418'></a><em class='comment'> * cipher, then the default 3DES (PBES2) will be used.</em>
+<a id='L419' name='L419'></a><em class='comment'> *</em>
+<a id='L420' name='L420'></a><em class='comment'> * The @password can be either ASCII or UTF-8 in the default PBES2</em>
+<a id='L421' name='L421'></a><em class='comment'> * encryption schemas, or ASCII for the PKCS12 schemas.</em>
+<a id='L422' name='L422'></a><em class='comment'> *</em>
+<a id='L423' name='L423'></a><em class='comment'> * If the buffer provided is not long enough to hold the output, then</em>
+<a id='L424' name='L424'></a><em class='comment'> * *output_data_size is updated and GNUTLS_E_SHORT_MEMORY_BUFFER will</em>
+<a id='L425' name='L425'></a><em class='comment'> * be returned.</em>
+<a id='L426' name='L426'></a><em class='comment'> *</em>
+<a id='L427' name='L427'></a><em class='comment'> * If the structure is PEM encoded, it will have a header</em>
+<a id='L428' name='L428'></a><em class='comment'> * of "BEGIN ENCRYPTED PRIVATE KEY" or "BEGIN PRIVATE KEY" if</em>
+<a id='L429' name='L429'></a><em class='comment'> * encryption is not used.</em>
+<a id='L430' name='L430'></a><em class='comment'> *</em>
+<a id='L431' name='L431'></a><em class='comment'> * Returns: In case of failure a negative error code will be</em>
+<a id='L432' name='L432'></a><em class='comment'> *   returned, and 0 on success.</em>
+<a id='L433' name='L433'></a><em class='comment'> **/</em>
+<a id='L434' name='L434'></a><strong class='reserved'>int</strong>
+<a id='L435' name='L435'></a><a href='../R/8755.html' title='Multiple referred from 4 places.'>gnutls_x509_privkey_export_pkcs8</a>(gnutls_x509_privkey_t key,
+<a id='L436' name='L436'></a>                                 gnutls_x509_crt_fmt_t format,
+<a id='L437' name='L437'></a>                                 <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *password,
+<a id='L438' name='L438'></a>                                 <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> flags,
+<a id='L439' name='L439'></a>                                 <strong class='reserved'>void</strong> *output_data,
+<a id='L440' name='L440'></a>                                 <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> * output_data_size)
+<a id='L441' name='L441'></a><em class='brace'>{</em>
+<a id='L442' name='L442'></a>        <a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkcs8_asn = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, pkey_info;
+<a id='L443' name='L443'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L444' name='L444'></a>        gnutls_datum_t tmp = <em class='brace'>{</em><a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0<em class='brace'>}</em>;
+<a id='L445' name='L445'></a>        <a href='../D/11272.html' title='Multiple defined in 2 places.'>schema_id</a> schema;
+<a id='L446' name='L446'></a>
+<a id='L447' name='L447'></a>        <strong class='reserved'>if</strong> (key == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L448' name='L448'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L449' name='L449'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L450' name='L450'></a>        <em class='brace'>}</em>
+<a id='L451' name='L451'></a>
+<a id='L452' name='L452'></a>        <em class='comment'>/* Get the private key info</em>
+<a id='L453' name='L453'></a><em class='comment'>         * tmp holds the DER encoding.</em>
+<a id='L454' name='L454'></a><em class='comment'>         */</em>
+<a id='L455' name='L455'></a>        ret = <a href='../S/5375.html#L165' title='Defined at 165 in lib/x509/privkey_pkcs8.c.'>encode_to_private_key_info</a>(key, &amp;tmp, &amp;pkey_info);
+<a id='L456' name='L456'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L457' name='L457'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L458' name='L458'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L459' name='L459'></a>        <em class='brace'>}</em>
+<a id='L460' name='L460'></a>
+<a id='L461' name='L461'></a>        schema = <a href='../S/5346.html#L221' title='Defined at 221 in lib/x509/pkcs7-crypt.c.'>_gnutls_pkcs_flags_to_schema</a>(flags);
+<a id='L462' name='L462'></a>
+<a id='L463' name='L463'></a>        <strong class='reserved'>if</strong> (((flags &amp; <a href='../S/6011.html#L1119' title='Defined at 1119 in lib/includes/gnutls/x509.h.'>GNUTLS_PKCS_PLAIN</a>) || password == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L464' name='L464'></a>            &amp;&amp; !(flags &amp; <a href='../S/6011.html#L1127' title='Defined at 1127 in lib/includes/gnutls/x509.h.'>GNUTLS_PKCS_NULL_PASSWORD</a>)) <em class='brace'>{</em>
+<a id='L465' name='L465'></a>                _gnutls_free_datum(&amp;tmp);
+<a id='L466' name='L466'></a>
+<a id='L467' name='L467'></a>                ret =
+<a id='L468' name='L468'></a>                    <a href='../S/5392.html#L157' title='Defined at 157 in lib/x509/common.h.'>_gnutls_x509_export_int</a>(pkey_info, format,
+<a id='L469' name='L469'></a>                                            <a href='../S/5375.html#L54' title='Defined at 54 in lib/x509/privkey_pkcs8.c.'>PEM_UNENCRYPTED_PKCS8</a>,
+<a id='L470' name='L470'></a>                                            output_data, output_data_size);
+<a id='L471' name='L471'></a>
+<a id='L472' name='L472'></a>                <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkey_info, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L473' name='L473'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L474' name='L474'></a>                <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkey_info, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);   <em class='comment'>/* we don't need it */</em>
+<a id='L475' name='L475'></a>
+<a id='L476' name='L476'></a>                ret =
+<a id='L477' name='L477'></a>                    <a href='../S/5375.html#L315' title='Defined at 315 in lib/x509/privkey_pkcs8.c.'>encode_to_pkcs8_key</a>(schema, &amp;tmp, password,
+<a id='L478' name='L478'></a>                                        &amp;pkcs8_asn);
+<a id='L479' name='L479'></a>                _gnutls_free_key_datum(&amp;tmp);
+<a id='L480' name='L480'></a>
+<a id='L481' name='L481'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L482' name='L482'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L483' name='L483'></a>                        <strong class='reserved'>return</strong> ret;
+<a id='L484' name='L484'></a>                <em class='brace'>}</em>
+<a id='L485' name='L485'></a>
+<a id='L486' name='L486'></a>                ret =
+<a id='L487' name='L487'></a>                    <a href='../S/5392.html#L157' title='Defined at 157 in lib/x509/common.h.'>_gnutls_x509_export_int</a>(pkcs8_asn, format, <a href='../S/5375.html#L53' title='Defined at 53 in lib/x509/privkey_pkcs8.c.'>PEM_PKCS8</a>,
+<a id='L488' name='L488'></a>                                            output_data, output_data_size);
+<a id='L489' name='L489'></a>
+<a id='L490' name='L490'></a>                <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkcs8_asn, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L491' name='L491'></a>        <em class='brace'>}</em>
+<a id='L492' name='L492'></a>
+<a id='L493' name='L493'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L494' name='L494'></a><em class='brace'>}</em>
+<a id='L495' name='L495'></a>
+<a id='L496' name='L496'></a><em class='comment'>/**</em>
+<a id='L497' name='L497'></a><em class='comment'> * gnutls_pkcs8_info:</em>
+<a id='L498' name='L498'></a><em class='comment'> * @data: Holds the PKCS #8 data</em>
+<a id='L499' name='L499'></a><em class='comment'> * @format: the format of the PKCS #8 data</em>
+<a id='L500' name='L500'></a><em class='comment'> * @schema: indicate the schema as one of %gnutls_pkcs_encrypt_flags_t</em>
+<a id='L501' name='L501'></a><em class='comment'> * @cipher: the cipher used as %gnutls_cipher_algorithm_t</em>
+<a id='L502' name='L502'></a><em class='comment'> * @salt: PBKDF2 salt (if non-NULL then @salt_size initially holds its size)</em>
+<a id='L503' name='L503'></a><em class='comment'> * @salt_size: PBKDF2 salt size</em>
+<a id='L504' name='L504'></a><em class='comment'> * @iter_count: PBKDF2 iteration count</em>
+<a id='L505' name='L505'></a><em class='comment'> * @oid: if non-NULL it will contain an allocated null-terminated variable with the OID</em>
+<a id='L506' name='L506'></a><em class='comment'> *</em>
+<a id='L507' name='L507'></a><em class='comment'> * This function will provide information on the algorithms used</em>
+<a id='L508' name='L508'></a><em class='comment'> * in a particular PKCS #8 structure. If the structure algorithms</em>
+<a id='L509' name='L509'></a><em class='comment'> * are unknown the code %GNUTLS_E_UNKNOWN_CIPHER_TYPE will be returned,</em>
+<a id='L510' name='L510'></a><em class='comment'> * and only @oid, will be set. That is, @oid will be set on encrypted PKCS #8</em>
+<a id='L511' name='L511'></a><em class='comment'> * structures whether supported or not. It must be deinitialized using gnutls_free().</em>
+<a id='L512' name='L512'></a><em class='comment'> * The other variables are only set on supported structures.</em>
+<a id='L513' name='L513'></a><em class='comment'> *</em>
+<a id='L514' name='L514'></a><em class='comment'> * Returns: %GNUTLS_E_INVALID_REQUEST if the provided structure isn't an encrypted key,</em>
+<a id='L515' name='L515'></a><em class='comment'> *  %GNUTLS_E_UNKNOWN_CIPHER_TYPE if the structure's encryption isn't supported, or</em>
+<a id='L516' name='L516'></a><em class='comment'> *  another negative error code in case of a failure. Zero on success.</em>
+<a id='L517' name='L517'></a><em class='comment'> *</em>
+<a id='L518' name='L518'></a><em class='comment'> * Since: 3.4.0</em>
+<a id='L519' name='L519'></a><em class='comment'> **/</em>
+<a id='L520' name='L520'></a><strong class='reserved'>int</strong>
+<a id='L521' name='L521'></a><a href='../R/8116.html' title='Multiple referred from 2 places.'>gnutls_pkcs8_info</a>(<strong class='reserved'>const</strong> gnutls_datum_t * data, gnutls_x509_crt_fmt_t format,
+<a id='L522' name='L522'></a>                  <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> *schema, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> *cipher,
+<a id='L523' name='L523'></a>                  <strong class='reserved'>void</strong> *salt, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> *salt_size,
+<a id='L524' name='L524'></a>                  <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> *iter_count,
+<a id='L525' name='L525'></a>                  <strong class='reserved'>char</strong> **oid)
+<a id='L526' name='L526'></a><em class='brace'>{</em>
+<a id='L527' name='L527'></a>        <strong class='reserved'>int</strong> ret = 0, need_free = 0;
+<a id='L528' name='L528'></a>        gnutls_datum_t _data;
+<a id='L529' name='L529'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/5363.html#L56' title='Defined at 56 in lib/x509/pkcs7_int.h.'>pkcs_cipher_schema_st</a> *p = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L530' name='L530'></a>        <strong class='reserved'>struct</strong> <a href='../S/5336.html#L134' title='Defined at 134 in lib/x509/x509_int.h.'>pbkdf2_params</a> kdf;
+<a id='L531' name='L531'></a>
+<a id='L532' name='L532'></a>        memset(&amp;kdf, 0, <strong class='reserved'>sizeof</strong>(kdf));
+<a id='L533' name='L533'></a>
+<a id='L534' name='L534'></a>        <strong class='reserved'>if</strong> (oid)
+<a id='L535' name='L535'></a>                *oid = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L536' name='L536'></a>
+<a id='L537' name='L537'></a>        _data.data = data-&gt;data;
+<a id='L538' name='L538'></a>        _data.size = data-&gt;size;
+<a id='L539' name='L539'></a>
+<a id='L540' name='L540'></a>        <em class='comment'>/* If the Certificate is in PEM format then decode it</em>
+<a id='L541' name='L541'></a><em class='comment'>         */</em>
+<a id='L542' name='L542'></a>        <strong class='reserved'>if</strong> (format == GNUTLS_X509_FMT_PEM) <em class='brace'>{</em>
+<a id='L543' name='L543'></a>                <em class='comment'>/* Try the first header </em>
+<a id='L544' name='L544'></a><em class='comment'>                 */</em>
+<a id='L545' name='L545'></a>                ret =
+<a id='L546' name='L546'></a>                    <a href='../S/5290.html#L325' title='Defined at 325 in lib/x509_b64.c.'>_gnutls_fbase64_decode</a>(<a href='../S/5375.html#L54' title='Defined at 54 in lib/x509/privkey_pkcs8.c.'>PEM_UNENCRYPTED_PKCS8</a>,
+<a id='L547' name='L547'></a>                                           data-&gt;data, data-&gt;size, &amp;_data);
+<a id='L548' name='L548'></a>
+<a id='L549' name='L549'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>  <em class='comment'>/* Try the encrypted header </em>
+<a id='L550' name='L550'></a><em class='comment'>                                         */</em>
+<a id='L551' name='L551'></a>                        ret =
+<a id='L552' name='L552'></a>                            <a href='../S/5290.html#L325' title='Defined at 325 in lib/x509_b64.c.'>_gnutls_fbase64_decode</a>(<a href='../S/5375.html#L53' title='Defined at 53 in lib/x509/privkey_pkcs8.c.'>PEM_PKCS8</a>, data-&gt;data,
+<a id='L553' name='L553'></a>                                                   data-&gt;size, &amp;_data);
+<a id='L554' name='L554'></a>
+<a id='L555' name='L555'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L556' name='L556'></a>                                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L557' name='L557'></a>                                <strong class='reserved'>return</strong> ret;
+<a id='L558' name='L558'></a>                        <em class='brace'>}</em>
+<a id='L559' name='L559'></a>                <em class='brace'>}</em>
+<a id='L560' name='L560'></a>
+<a id='L561' name='L561'></a>                need_free = 1;
+<a id='L562' name='L562'></a>        <em class='brace'>}</em>
+<a id='L563' name='L563'></a>
+<a id='L564' name='L564'></a>        ret = <a href='../S/5375.html#L826' title='Defined at 826 in lib/x509/privkey_pkcs8.c.'>pkcs8_key_info</a>(&amp;_data, &amp;p, &amp;kdf, oid);
+<a id='L565' name='L565'></a>        <strong class='reserved'>if</strong> (ret == GNUTLS_E_DECRYPTION_FAILED)
+<a id='L566' name='L566'></a>                ret = GNUTLS_E_INVALID_REQUEST;
+<a id='L567' name='L567'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L568' name='L568'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L569' name='L569'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L570' name='L570'></a>        <em class='brace'>}</em>
+<a id='L571' name='L571'></a>
+<a id='L572' name='L572'></a>        assert(p != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L573' name='L573'></a>
+<a id='L574' name='L574'></a>        <strong class='reserved'>if</strong> (need_free)
+<a id='L575' name='L575'></a>                _gnutls_free_datum(&amp;_data);
+<a id='L576' name='L576'></a>
+<a id='L577' name='L577'></a>        <strong class='reserved'>if</strong> (schema)
+<a id='L578' name='L578'></a>                *schema = p-&gt;flag;
+<a id='L579' name='L579'></a>
+<a id='L580' name='L580'></a>        <strong class='reserved'>if</strong> (cipher)
+<a id='L581' name='L581'></a>                *cipher = p-&gt;cipher;
+<a id='L582' name='L582'></a>
+<a id='L583' name='L583'></a>        <strong class='reserved'>if</strong> (iter_count)
+<a id='L584' name='L584'></a>                *iter_count = kdf.iter_count;
+<a id='L585' name='L585'></a>
+<a id='L586' name='L586'></a>        <strong class='reserved'>if</strong> (salt) <em class='brace'>{</em>
+<a id='L587' name='L587'></a>                <strong class='reserved'>if</strong> (*salt_size &gt;= (<strong class='reserved'>unsigned</strong>)kdf.salt_size) <em class='brace'>{</em>
+<a id='L588' name='L588'></a>                        memcpy(salt, kdf.salt, kdf.salt_size);
+<a id='L589' name='L589'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L590' name='L590'></a>                        *salt_size = kdf.salt_size;
+<a id='L591' name='L591'></a>                        ret = <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_SHORT_MEMORY_BUFFER);
+<a id='L592' name='L592'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L593' name='L593'></a>                <em class='brace'>}</em>
+<a id='L594' name='L594'></a>        <em class='brace'>}</em>
+<a id='L595' name='L595'></a>
+<a id='L596' name='L596'></a>        <strong class='reserved'>if</strong> (salt_size)
+<a id='L597' name='L597'></a>                *salt_size = kdf.salt_size;
+<a id='L598' name='L598'></a>
+<a id='L599' name='L599'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L600' name='L600'></a>
+<a id='L601' name='L601'></a> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>:
+<a id='L602' name='L602'></a>        <strong class='reserved'>if</strong> (ret != GNUTLS_E_UNKNOWN_CIPHER_TYPE &amp;&amp; oid) <em class='brace'>{</em>
+<a id='L603' name='L603'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(*oid);
+<a id='L604' name='L604'></a>        <em class='brace'>}</em>
+<a id='L605' name='L605'></a>        <strong class='reserved'>if</strong> (need_free)
+<a id='L606' name='L606'></a>                _gnutls_free_datum(&amp;_data);
+<a id='L607' name='L607'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L608' name='L608'></a><em class='brace'>}</em>
+<a id='L609' name='L609'></a>
+<a id='L610' name='L610'></a><em class='comment'>/**</em>
+<a id='L611' name='L611'></a><em class='comment'> * gnutls_x509_privkey_export2_pkcs8:</em>
+<a id='L612' name='L612'></a><em class='comment'> * @key: Holds the key</em>
+<a id='L613' name='L613'></a><em class='comment'> * @format: the format of output params. One of PEM or DER.</em>
+<a id='L614' name='L614'></a><em class='comment'> * @password: the password that will be used to encrypt the key.</em>
+<a id='L615' name='L615'></a><em class='comment'> * @flags: an ORed sequence of gnutls_pkcs_encrypt_flags_t</em>
+<a id='L616' name='L616'></a><em class='comment'> * @out: will contain a private key PEM or DER encoded</em>
+<a id='L617' name='L617'></a><em class='comment'> *</em>
+<a id='L618' name='L618'></a><em class='comment'> * This function will export the private key to a PKCS8 structure.</em>
+<a id='L619' name='L619'></a><em class='comment'> * Both RSA and DSA keys can be exported. For DSA keys we use</em>
+<a id='L620' name='L620'></a><em class='comment'> * PKCS #11 definitions. If the flags do not specify the encryption</em>
+<a id='L621' name='L621'></a><em class='comment'> * cipher, then the default 3DES (PBES2) will be used.</em>
+<a id='L622' name='L622'></a><em class='comment'> *</em>
+<a id='L623' name='L623'></a><em class='comment'> * The @password can be either ASCII or UTF-8 in the default PBES2</em>
+<a id='L624' name='L624'></a><em class='comment'> * encryption schemas, or ASCII for the PKCS12 schemas.</em>
+<a id='L625' name='L625'></a><em class='comment'> *</em>
+<a id='L626' name='L626'></a><em class='comment'> * The output buffer is allocated using gnutls_malloc().</em>
+<a id='L627' name='L627'></a><em class='comment'> *</em>
+<a id='L628' name='L628'></a><em class='comment'> * If the structure is PEM encoded, it will have a header</em>
+<a id='L629' name='L629'></a><em class='comment'> * of "BEGIN ENCRYPTED PRIVATE KEY" or "BEGIN PRIVATE KEY" if</em>
+<a id='L630' name='L630'></a><em class='comment'> * encryption is not used.</em>
+<a id='L631' name='L631'></a><em class='comment'> *</em>
+<a id='L632' name='L632'></a><em class='comment'> * Returns: In case of failure a negative error code will be</em>
+<a id='L633' name='L633'></a><em class='comment'> *   returned, and 0 on success.</em>
+<a id='L634' name='L634'></a><em class='comment'> *</em>
+<a id='L635' name='L635'></a><em class='comment'> * Since 3.1.3</em>
+<a id='L636' name='L636'></a><em class='comment'> **/</em>
+<a id='L637' name='L637'></a><strong class='reserved'>int</strong>
+<a id='L638' name='L638'></a><a href='../R/8751.html' title='Multiple referred from 10 places.'>gnutls_x509_privkey_export2_pkcs8</a>(gnutls_x509_privkey_t key,
+<a id='L639' name='L639'></a>                                  gnutls_x509_crt_fmt_t format,
+<a id='L640' name='L640'></a>                                  <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *password,
+<a id='L641' name='L641'></a>                                  <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> flags, gnutls_datum_t * out)
+<a id='L642' name='L642'></a><em class='brace'>{</em>
+<a id='L643' name='L643'></a>        <a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkcs8_asn = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, pkey_info;
+<a id='L644' name='L644'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L645' name='L645'></a>        gnutls_datum_t tmp = <em class='brace'>{</em><a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0<em class='brace'>}</em>;
+<a id='L646' name='L646'></a>        <a href='../D/11272.html' title='Multiple defined in 2 places.'>schema_id</a> schema;
+<a id='L647' name='L647'></a>
+<a id='L648' name='L648'></a>        <strong class='reserved'>if</strong> (key == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L649' name='L649'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L650' name='L650'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L651' name='L651'></a>        <em class='brace'>}</em>
+<a id='L652' name='L652'></a>
+<a id='L653' name='L653'></a>        <em class='comment'>/* Get the private key info</em>
+<a id='L654' name='L654'></a><em class='comment'>         * tmp holds the DER encoding.</em>
+<a id='L655' name='L655'></a><em class='comment'>         */</em>
+<a id='L656' name='L656'></a>        ret = <a href='../S/5375.html#L165' title='Defined at 165 in lib/x509/privkey_pkcs8.c.'>encode_to_private_key_info</a>(key, &amp;tmp, &amp;pkey_info);
+<a id='L657' name='L657'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L658' name='L658'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L659' name='L659'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L660' name='L660'></a>        <em class='brace'>}</em>
+<a id='L661' name='L661'></a>
+<a id='L662' name='L662'></a>        schema = <a href='../S/5346.html#L221' title='Defined at 221 in lib/x509/pkcs7-crypt.c.'>_gnutls_pkcs_flags_to_schema</a>(flags);
+<a id='L663' name='L663'></a>
+<a id='L664' name='L664'></a>        <strong class='reserved'>if</strong> (((flags &amp; <a href='../S/6011.html#L1119' title='Defined at 1119 in lib/includes/gnutls/x509.h.'>GNUTLS_PKCS_PLAIN</a>) || password == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L665' name='L665'></a>            &amp;&amp; !(flags &amp; <a href='../S/6011.html#L1127' title='Defined at 1127 in lib/includes/gnutls/x509.h.'>GNUTLS_PKCS_NULL_PASSWORD</a>)) <em class='brace'>{</em>
+<a id='L666' name='L666'></a>                _gnutls_free_key_datum(&amp;tmp);
+<a id='L667' name='L667'></a>
+<a id='L668' name='L668'></a>                ret =
+<a id='L669' name='L669'></a>                    <a href='../S/5392.html#L166' title='Defined at 166 in lib/x509/common.h.'>_gnutls_x509_export_int2</a>(pkey_info, format,
+<a id='L670' name='L670'></a>                                             <a href='../S/5375.html#L54' title='Defined at 54 in lib/x509/privkey_pkcs8.c.'>PEM_UNENCRYPTED_PKCS8</a>, out);
+<a id='L671' name='L671'></a>
+<a id='L672' name='L672'></a>                <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkey_info, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L673' name='L673'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L674' name='L674'></a>                <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkey_info, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);   <em class='comment'>/* we don't need it */</em>
+<a id='L675' name='L675'></a>
+<a id='L676' name='L676'></a>                ret =
+<a id='L677' name='L677'></a>                    <a href='../S/5375.html#L315' title='Defined at 315 in lib/x509/privkey_pkcs8.c.'>encode_to_pkcs8_key</a>(schema, &amp;tmp, password,
+<a id='L678' name='L678'></a>                                        &amp;pkcs8_asn);
+<a id='L679' name='L679'></a>                _gnutls_free_key_datum(&amp;tmp);
+<a id='L680' name='L680'></a>
+<a id='L681' name='L681'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L682' name='L682'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L683' name='L683'></a>                        <strong class='reserved'>return</strong> ret;
+<a id='L684' name='L684'></a>                <em class='brace'>}</em>
+<a id='L685' name='L685'></a>
+<a id='L686' name='L686'></a>                ret =
+<a id='L687' name='L687'></a>                    <a href='../S/5392.html#L166' title='Defined at 166 in lib/x509/common.h.'>_gnutls_x509_export_int2</a>(pkcs8_asn, format, <a href='../S/5375.html#L53' title='Defined at 53 in lib/x509/privkey_pkcs8.c.'>PEM_PKCS8</a>,
+<a id='L688' name='L688'></a>                                             out);
+<a id='L689' name='L689'></a>
+<a id='L690' name='L690'></a>                <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkcs8_asn, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L691' name='L691'></a>        <em class='brace'>}</em>
+<a id='L692' name='L692'></a>
+<a id='L693' name='L693'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L694' name='L694'></a><em class='brace'>}</em>
+<a id='L695' name='L695'></a>
+<a id='L696' name='L696'></a>
+<a id='L697' name='L697'></a>
+<a id='L698' name='L698'></a>        <em class='comment'>/* We've gotten this far. In the real world it's almost certain</em>
+<a id='L699' name='L699'></a><em class='comment'>         * that we're dealing with a good file, but wrong password.</em>
+<a id='L700' name='L700'></a><em class='comment'>         * Sadly like 90% of random data is somehow valid DER for the</em>
+<a id='L701' name='L701'></a><em class='comment'>         * a first small number of bytes, so no easy way to guarantee. */</em>
+<a id='L702' name='L702'></a><em class='sharp'>#define</em> <a href='../S/5375.html#L786' title='Referred from 786 in lib/x509/privkey_pkcs8.c.'>CHECK_ERR_FOR_ENCRYPTED</a>(result) \
+<a id='L703' name='L703'></a>                <strong class='reserved'>if</strong> (result == GNUTLS_E_ASN1_ELEMENT_NOT_FOUND || \
+<a id='L704' name='L704'></a>                    result == GNUTLS_E_ASN1_IDENTIFIER_NOT_FOUND || \
+<a id='L705' name='L705'></a>                    result == GNUTLS_E_ASN1_DER_ERROR || \
+<a id='L706' name='L706'></a>                    result == GNUTLS_E_ASN1_VALUE_NOT_FOUND || \
+<a id='L707' name='L707'></a>                    result == GNUTLS_E_ASN1_GENERIC_ERROR || \
+<a id='L708' name='L708'></a>                    result == GNUTLS_E_ASN1_VALUE_NOT_VALID || \
+<a id='L709' name='L709'></a>                    result == GNUTLS_E_ASN1_TAG_ERROR || \
+<a id='L710' name='L710'></a>                    result == GNUTLS_E_ASN1_TAG_IMPLICIT || \
+<a id='L711' name='L711'></a>                    result == GNUTLS_E_ASN1_TYPE_ANY_ERROR || \
+<a id='L712' name='L712'></a>                    result == GNUTLS_E_ASN1_SYNTAX_ERROR || \
+<a id='L713' name='L713'></a>                    result == GNUTLS_E_ASN1_DER_OVERFLOW) <em class='brace'>{</em> \
+<a id='L714' name='L714'></a>                        result = GNUTLS_E_DECRYPTION_FAILED; \
+<a id='L715' name='L715'></a>                <em class='brace'>}</em>
+<a id='L716' name='L716'></a>
+<a id='L717' name='L717'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5375.html#L959' title='Referred from 959 in lib/x509/privkey_pkcs8.c.'>pkcs8_key_decrypt</a>(<strong class='reserved'>const</strong> gnutls_datum_t * raw_key,
+<a id='L718' name='L718'></a>                             <a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkcs8_asn, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *password,
+<a id='L719' name='L719'></a>                             gnutls_x509_privkey_t pkey)
+<a id='L720' name='L720'></a><em class='brace'>{</em>
+<a id='L721' name='L721'></a>        <strong class='reserved'>int</strong> result, len;
+<a id='L722' name='L722'></a>        <strong class='reserved'>char</strong> enc_oid[<a href='../S/5336.html#L34' title='Defined at 34 in lib/x509/x509_int.h.'>MAX_OID_SIZE</a>];
+<a id='L723' name='L723'></a>        gnutls_datum_t tmp = <em class='brace'>{</em><a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0<em class='brace'>}</em>;
+<a id='L724' name='L724'></a>        <strong class='reserved'>int</strong> params_start, params_end, params_len;
+<a id='L725' name='L725'></a>        <strong class='reserved'>struct</strong> <a href='../S/5336.html#L134' title='Defined at 134 in lib/x509/x509_int.h.'>pbkdf2_params</a> kdf_params;
+<a id='L726' name='L726'></a>        <strong class='reserved'>struct</strong> <a href='../S/5363.html#L71' title='Defined at 71 in lib/x509/pkcs7_int.h.'>pbe_enc_params</a> enc_params;
+<a id='L727' name='L727'></a>        <a href='../D/11272.html' title='Multiple defined in 2 places.'>schema_id</a> schema;
+<a id='L728' name='L728'></a>
+<a id='L729' name='L729'></a>        <em class='comment'>/* Check the encryption schema OID</em>
+<a id='L730' name='L730'></a><em class='comment'>         */</em>
+<a id='L731' name='L731'></a>        len = <strong class='reserved'>sizeof</strong>(enc_oid);
+<a id='L732' name='L732'></a>        result =
+<a id='L733' name='L733'></a>            <a href='../S/5285.html#L760' title='Defined at 760 in lib/minitasn1/element.c.'>asn1_read_value</a>(pkcs8_asn, "encryptionAlgorithm.algorithm",
+<a id='L734' name='L734'></a>                            enc_oid, &amp;len);
+<a id='L735' name='L735'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L736' name='L736'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L737' name='L737'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L738' name='L738'></a>        <em class='brace'>}</em>
+<a id='L739' name='L739'></a>
+<a id='L740' name='L740'></a>        <strong class='reserved'>if</strong> ((result = <a href='../S/5346.html#L282' title='Defined at 282 in lib/x509/pkcs7-crypt.c.'>_gnutls_check_pkcs_cipher_schema</a>(enc_oid)) &lt; 0) <em class='brace'>{</em>
+<a id='L741' name='L741'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L742' name='L742'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L743' name='L743'></a>        <em class='brace'>}</em>
+<a id='L744' name='L744'></a>
+<a id='L745' name='L745'></a>        schema = result;
+<a id='L746' name='L746'></a>
+<a id='L747' name='L747'></a>        <em class='comment'>/* Get the DER encoding of the parameters.</em>
+<a id='L748' name='L748'></a><em class='comment'>         */</em>
+<a id='L749' name='L749'></a>        result =
+<a id='L750' name='L750'></a>            <a href='../S/5273.html#L1676' title='Defined at 1676 in lib/minitasn1/decoding.c.'>asn1_der_decoding_startEnd</a>(pkcs8_asn, raw_key-&gt;data,
+<a id='L751' name='L751'></a>                                       raw_key-&gt;size,
+<a id='L752' name='L752'></a>                                       "encryptionAlgorithm.parameters",
+<a id='L753' name='L753'></a>                                       &amp;params_start, &amp;params_end);
+<a id='L754' name='L754'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L755' name='L755'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L756' name='L756'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L757' name='L757'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L758' name='L758'></a>        <em class='brace'>}</em>
+<a id='L759' name='L759'></a>        params_len = params_end - params_start + 1;
+<a id='L760' name='L760'></a>
+<a id='L761' name='L761'></a>        result =
+<a id='L762' name='L762'></a>            <a href='../S/5346.html#L981' title='Defined at 981 in lib/x509/pkcs7-crypt.c.'>_gnutls_read_pkcs_schema_params</a>(&amp;schema, password,
+<a id='L763' name='L763'></a>                                    &amp;raw_key-&gt;data[params_start],
+<a id='L764' name='L764'></a>                                    params_len, &amp;kdf_params, &amp;enc_params);
+<a id='L765' name='L765'></a>
+<a id='L766' name='L766'></a>        <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>
+<a id='L767' name='L767'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L768' name='L768'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L769' name='L769'></a>        <em class='brace'>}</em>
+<a id='L770' name='L770'></a>
+<a id='L771' name='L771'></a>        <em class='comment'>/* Parameters have been decoded. Now</em>
+<a id='L772' name='L772'></a><em class='comment'>         * decrypt the EncryptedData.</em>
+<a id='L773' name='L773'></a><em class='comment'>         */</em>
+<a id='L774' name='L774'></a>        result =
+<a id='L775' name='L775'></a>            <a href='../S/5346.html#L1124' title='Defined at 1124 in lib/x509/pkcs7-crypt.c.'>_gnutls_pkcs_raw_decrypt_data</a>(schema, pkcs8_asn, "encryptedData", password,
+<a id='L776' name='L776'></a>                         &amp;kdf_params, &amp;enc_params, &amp;tmp);
+<a id='L777' name='L777'></a>        <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>
+<a id='L778' name='L778'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L779' name='L779'></a>                result = GNUTLS_E_DECRYPTION_FAILED;
+<a id='L780' name='L780'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L781' name='L781'></a>        <em class='brace'>}</em>
+<a id='L782' name='L782'></a>
+<a id='L783' name='L783'></a>        result = <a href='../S/5375.html#L1397' title='Defined at 1397 in lib/x509/privkey_pkcs8.c.'>decode_private_key_info</a>(&amp;tmp, pkey);
+<a id='L784' name='L784'></a>        _gnutls_free_key_datum(&amp;tmp);
+<a id='L785' name='L785'></a>
+<a id='L786' name='L786'></a>        <a href='../S/5375.html#L702' title='Defined at 702 in lib/x509/privkey_pkcs8.c.'>CHECK_ERR_FOR_ENCRYPTED</a>(result);
+<a id='L787' name='L787'></a>        <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>
+<a id='L788' name='L788'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L789' name='L789'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L790' name='L790'></a>        <em class='brace'>}</em>
+<a id='L791' name='L791'></a>
+<a id='L792' name='L792'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L793' name='L793'></a>
+<a id='L794' name='L794'></a>      error:
+<a id='L795' name='L795'></a>        <strong class='reserved'>return</strong> result;
+<a id='L796' name='L796'></a><em class='brace'>}</em>
+<a id='L797' name='L797'></a>
+<a id='L798' name='L798'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5375.html#L840' title='Referred from 840 in lib/x509/privkey_pkcs8.c.'>check_for_decrypted</a>(<strong class='reserved'>const</strong> gnutls_datum_t *der)
+<a id='L799' name='L799'></a><em class='brace'>{</em>
+<a id='L800' name='L800'></a>        <strong class='reserved'>int</strong> result;
+<a id='L801' name='L801'></a>        <a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkcs8_asn = <a href='../S/5274.html#L537' title='Defined at 537 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE_EMPTY</a>;
+<a id='L802' name='L802'></a>
+<a id='L803' name='L803'></a>        <strong class='reserved'>if</strong> ((result =
+<a id='L804' name='L804'></a>             <a href='../S/5280.html#L700' title='Defined at 700 in lib/minitasn1/structure.c.'>asn1_create_element</a>(<a href='../S/6036.html#L39' title='Defined at 39 in lib/global.h.'>_gnutls_get_pkix</a>(),
+<a id='L805' name='L805'></a>                                 "PKIX1.pkcs-8-PrivateKeyInfo",
+<a id='L806' name='L806'></a>                                 &amp;pkcs8_asn)) != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L807' name='L807'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L808' name='L808'></a>                <strong class='reserved'>return</strong> <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L809' name='L809'></a>        <em class='brace'>}</em>
+<a id='L810' name='L810'></a>
+<a id='L811' name='L811'></a>        result = <a href='../S/5392.html#L294' title='Defined at 294 in lib/x509/common.h.'>_asn1_strict_der_decode</a>(&amp;pkcs8_asn, der-&gt;data, der-&gt;size, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L812' name='L812'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L813' name='L813'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L814' name='L814'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L815' name='L815'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L816' name='L816'></a>        <em class='brace'>}</em>
+<a id='L817' name='L817'></a>
+<a id='L818' name='L818'></a>        result = 0;
+<a id='L819' name='L819'></a> error:
+<a id='L820' name='L820'></a>        <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkcs8_asn, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L821' name='L821'></a>        <strong class='reserved'>return</strong> result;
+<a id='L822' name='L822'></a>
+<a id='L823' name='L823'></a><em class='brace'>}</em>
+<a id='L824' name='L824'></a>
+<a id='L825' name='L825'></a><strong class='reserved'>static</strong>
+<a id='L826' name='L826'></a><strong class='reserved'>int</strong> <a href='../R/9733.html' title='Multiple referred from 2 places.'>pkcs8_key_info</a>(<strong class='reserved'>const</strong> gnutls_datum_t * raw_key,
+<a id='L827' name='L827'></a>                   <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/5363.html#L56' title='Defined at 56 in lib/x509/pkcs7_int.h.'>pkcs_cipher_schema_st</a> **p,
+<a id='L828' name='L828'></a>                   <strong class='reserved'>struct</strong> <a href='../S/5336.html#L134' title='Defined at 134 in lib/x509/x509_int.h.'>pbkdf2_params</a> *kdf_params,
+<a id='L829' name='L829'></a>                   <strong class='reserved'>char</strong> **oid)
+<a id='L830' name='L830'></a><em class='brace'>{</em>
+<a id='L831' name='L831'></a>        <strong class='reserved'>int</strong> result, len;
+<a id='L832' name='L832'></a>        <strong class='reserved'>char</strong> enc_oid[<a href='../S/5336.html#L34' title='Defined at 34 in lib/x509/x509_int.h.'>MAX_OID_SIZE</a>*2];
+<a id='L833' name='L833'></a>        <strong class='reserved'>int</strong> params_start, params_end, params_len;
+<a id='L834' name='L834'></a>        <strong class='reserved'>struct</strong> <a href='../S/5363.html#L71' title='Defined at 71 in lib/x509/pkcs7_int.h.'>pbe_enc_params</a> enc_params;
+<a id='L835' name='L835'></a>        <a href='../D/11272.html' title='Multiple defined in 2 places.'>schema_id</a> schema;
+<a id='L836' name='L836'></a>        <a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkcs8_asn = <a href='../S/5274.html#L537' title='Defined at 537 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE_EMPTY</a>;
+<a id='L837' name='L837'></a>
+<a id='L838' name='L838'></a>        memset(&amp;enc_params, 0, <strong class='reserved'>sizeof</strong>(enc_params));
+<a id='L839' name='L839'></a>
+<a id='L840' name='L840'></a>        result = <a href='../S/5375.html#L798' title='Defined at 798 in lib/x509/privkey_pkcs8.c.'>check_for_decrypted</a>(raw_key);
+<a id='L841' name='L841'></a>        <strong class='reserved'>if</strong> (result == 0)
+<a id='L842' name='L842'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L843' name='L843'></a>
+<a id='L844' name='L844'></a>        <strong class='reserved'>if</strong> ((result =
+<a id='L845' name='L845'></a>             <a href='../S/5280.html#L700' title='Defined at 700 in lib/minitasn1/structure.c.'>asn1_create_element</a>(<a href='../S/6036.html#L39' title='Defined at 39 in lib/global.h.'>_gnutls_get_pkix</a>(),
+<a id='L846' name='L846'></a>                                 "PKIX1.pkcs-8-EncryptedPrivateKeyInfo",
+<a id='L847' name='L847'></a>                                 &amp;pkcs8_asn)) != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L848' name='L848'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L849' name='L849'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L850' name='L850'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L851' name='L851'></a>        <em class='brace'>}</em>
+<a id='L852' name='L852'></a>
+<a id='L853' name='L853'></a>        result =
+<a id='L854' name='L854'></a>            <a href='../S/5392.html#L294' title='Defined at 294 in lib/x509/common.h.'>_asn1_strict_der_decode</a>(&amp;pkcs8_asn, raw_key-&gt;data, raw_key-&gt;size,
+<a id='L855' name='L855'></a>                              <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L856' name='L856'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L857' name='L857'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L858' name='L858'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L859' name='L859'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L860' name='L860'></a>        <em class='brace'>}</em>
+<a id='L861' name='L861'></a>
+<a id='L862' name='L862'></a>        <em class='comment'>/* Check the encryption schema OID</em>
+<a id='L863' name='L863'></a><em class='comment'>         */</em>
+<a id='L864' name='L864'></a>        len = <strong class='reserved'>sizeof</strong>(enc_oid);
+<a id='L865' name='L865'></a>        result =
+<a id='L866' name='L866'></a>            <a href='../S/5285.html#L760' title='Defined at 760 in lib/minitasn1/element.c.'>asn1_read_value</a>(pkcs8_asn, "encryptionAlgorithm.algorithm",
+<a id='L867' name='L867'></a>                            enc_oid, &amp;len);
+<a id='L868' name='L868'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L869' name='L869'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L870' name='L870'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L871' name='L871'></a>        <em class='brace'>}</em>
+<a id='L872' name='L872'></a>
+<a id='L873' name='L873'></a>        <strong class='reserved'>if</strong> (oid) <em class='brace'>{</em>
+<a id='L874' name='L874'></a>                *oid = gnutls_strdup(enc_oid);
+<a id='L875' name='L875'></a>        <em class='brace'>}</em>
+<a id='L876' name='L876'></a>
+<a id='L877' name='L877'></a>        <strong class='reserved'>if</strong> ((result = <a href='../S/5346.html#L282' title='Defined at 282 in lib/x509/pkcs7-crypt.c.'>_gnutls_check_pkcs_cipher_schema</a>(enc_oid)) &lt; 0) <em class='brace'>{</em>
+<a id='L878' name='L878'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L879' name='L879'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L880' name='L880'></a>        <em class='brace'>}</em>
+<a id='L881' name='L881'></a>
+<a id='L882' name='L882'></a>        schema = result;
+<a id='L883' name='L883'></a>
+<a id='L884' name='L884'></a>        <em class='comment'>/* Get the DER encoding of the parameters.</em>
+<a id='L885' name='L885'></a><em class='comment'>         */</em>
+<a id='L886' name='L886'></a>        result =
+<a id='L887' name='L887'></a>            <a href='../S/5273.html#L1676' title='Defined at 1676 in lib/minitasn1/decoding.c.'>asn1_der_decoding_startEnd</a>(pkcs8_asn, raw_key-&gt;data,
+<a id='L888' name='L888'></a>                                       raw_key-&gt;size,
+<a id='L889' name='L889'></a>                                       "encryptionAlgorithm.parameters",
+<a id='L890' name='L890'></a>                                       &amp;params_start, &amp;params_end);
+<a id='L891' name='L891'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L892' name='L892'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L893' name='L893'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L894' name='L894'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L895' name='L895'></a>        <em class='brace'>}</em>
+<a id='L896' name='L896'></a>        params_len = params_end - params_start + 1;
+<a id='L897' name='L897'></a>
+<a id='L898' name='L898'></a>        result =
+<a id='L899' name='L899'></a>            <a href='../S/5346.html#L981' title='Defined at 981 in lib/x509/pkcs7-crypt.c.'>_gnutls_read_pkcs_schema_params</a>(&amp;schema, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L900' name='L900'></a>                                    &amp;raw_key-&gt;data[params_start],
+<a id='L901' name='L901'></a>                                    params_len, kdf_params, &amp;enc_params);
+<a id='L902' name='L902'></a>
+<a id='L903' name='L903'></a>        <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>
+<a id='L904' name='L904'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L905' name='L905'></a>                <strong class='reserved'>if</strong> (oid &amp;&amp; enc_params.pbes2_oid[0] != 0) <em class='brace'>{</em>
+<a id='L906' name='L906'></a>                        <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(enc_oid, <strong class='reserved'>sizeof</strong>(enc_oid), "%s/%s", *oid, enc_params.pbes2_oid);
+<a id='L907' name='L907'></a>                        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(*oid);
+<a id='L908' name='L908'></a>                        *oid = gnutls_strdup(enc_oid);
+<a id='L909' name='L909'></a>                <em class='brace'>}</em>
+<a id='L910' name='L910'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L911' name='L911'></a>        <em class='brace'>}</em>
+<a id='L912' name='L912'></a>
+<a id='L913' name='L913'></a>        *p = <a href='../S/5346.html#L296' title='Defined at 296 in lib/x509/pkcs7-crypt.c.'>_gnutls_pkcs_schema_get</a>(schema);
+<a id='L914' name='L914'></a>        <strong class='reserved'>if</strong> (*p == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L915' name='L915'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L916' name='L916'></a>                result = GNUTLS_E_UNKNOWN_CIPHER_TYPE;
+<a id='L917' name='L917'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L918' name='L918'></a>        <em class='brace'>}</em>
+<a id='L919' name='L919'></a>
+<a id='L920' name='L920'></a>        result = 0;
+<a id='L921' name='L921'></a>
+<a id='L922' name='L922'></a>      error:
+<a id='L923' name='L923'></a>        <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkcs8_asn, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L924' name='L924'></a>        <strong class='reserved'>return</strong> result;
+<a id='L925' name='L925'></a><em class='brace'>}</em>
+<a id='L926' name='L926'></a>
+<a id='L927' name='L927'></a><em class='comment'>/* Converts a PKCS #8 key to</em>
+<a id='L928' name='L928'></a><em class='comment'> * an internal structure (gnutls_private_key)</em>
+<a id='L929' name='L929'></a><em class='comment'> * (normally a PKCS #1 encoded RSA key)</em>
+<a id='L930' name='L930'></a><em class='comment'> */</em>
+<a id='L931' name='L931'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L932' name='L932'></a><a href='../R/9731.html' title='Multiple referred from 2 places.'>pkcs8_key_decode</a>(<strong class='reserved'>const</strong> gnutls_datum_t * raw_key,
+<a id='L933' name='L933'></a>                 <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *password, gnutls_x509_privkey_t pkey,
+<a id='L934' name='L934'></a>                 <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> decrypt)
+<a id='L935' name='L935'></a><em class='brace'>{</em>
+<a id='L936' name='L936'></a>        <strong class='reserved'>int</strong> result;
+<a id='L937' name='L937'></a>        <a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkcs8_asn = <a href='../S/5274.html#L537' title='Defined at 537 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE_EMPTY</a>;
+<a id='L938' name='L938'></a>
+<a id='L939' name='L939'></a>        <strong class='reserved'>if</strong> ((result =
+<a id='L940' name='L940'></a>             <a href='../S/5280.html#L700' title='Defined at 700 in lib/minitasn1/structure.c.'>asn1_create_element</a>(<a href='../S/6036.html#L39' title='Defined at 39 in lib/global.h.'>_gnutls_get_pkix</a>(),
+<a id='L941' name='L941'></a>                                 "PKIX1.pkcs-8-EncryptedPrivateKeyInfo",
+<a id='L942' name='L942'></a>                                 &amp;pkcs8_asn)) != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L943' name='L943'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L944' name='L944'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L945' name='L945'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L946' name='L946'></a>        <em class='brace'>}</em>
+<a id='L947' name='L947'></a>
+<a id='L948' name='L948'></a>        result =
+<a id='L949' name='L949'></a>            <a href='../S/5392.html#L294' title='Defined at 294 in lib/x509/common.h.'>_asn1_strict_der_decode</a>(&amp;pkcs8_asn, raw_key-&gt;data, raw_key-&gt;size,
+<a id='L950' name='L950'></a>                              <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L951' name='L951'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L952' name='L952'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L953' name='L953'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L954' name='L954'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L955' name='L955'></a>        <em class='brace'>}</em>
+<a id='L956' name='L956'></a>
+<a id='L957' name='L957'></a>        <strong class='reserved'>if</strong> (decrypt)
+<a id='L958' name='L958'></a>                result =
+<a id='L959' name='L959'></a>                    <a href='../S/5375.html#L717' title='Defined at 717 in lib/x509/privkey_pkcs8.c.'>pkcs8_key_decrypt</a>(raw_key, pkcs8_asn, password, pkey);
+<a id='L960' name='L960'></a>        <strong class='reserved'>else</strong>
+<a id='L961' name='L961'></a>                result = 0;
+<a id='L962' name='L962'></a>
+<a id='L963' name='L963'></a>      error:
+<a id='L964' name='L964'></a>        <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkcs8_asn, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L965' name='L965'></a>        <strong class='reserved'>return</strong> result;
+<a id='L966' name='L966'></a>
+<a id='L967' name='L967'></a><em class='brace'>}</em>
+<a id='L968' name='L968'></a>
+<a id='L969' name='L969'></a><em class='comment'>/* Decodes an RSA privateKey from a PKCS8 structure.</em>
+<a id='L970' name='L970'></a><em class='comment'> */</em>
+<a id='L971' name='L971'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L972' name='L972'></a><a href='../R/4732.html' title='Multiple referred from 2 places.'>_decode_pkcs8_rsa_key</a>(<a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkcs8_asn, gnutls_x509_privkey_t pkey)
+<a id='L973' name='L973'></a><em class='brace'>{</em>
+<a id='L974' name='L974'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L975' name='L975'></a>        gnutls_datum_t tmp = <em class='brace'>{</em><a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0<em class='brace'>}</em>;
+<a id='L976' name='L976'></a>
+<a id='L977' name='L977'></a>        ret = <a href='../S/5381.html#L733' title='Defined at 733 in lib/x509/common.c.'>_gnutls_x509_read_value</a>(pkcs8_asn, "privateKey", &amp;tmp);
+<a id='L978' name='L978'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L979' name='L979'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L980' name='L980'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L981' name='L981'></a>        <em class='brace'>}</em>
+<a id='L982' name='L982'></a>
+<a id='L983' name='L983'></a>        pkey-&gt;key = <a href='../S/5382.html#L130' title='Defined at 130 in lib/x509/privkey.c.'>_gnutls_privkey_decode_pkcs1_rsa_key</a>(&amp;tmp, pkey);
+<a id='L984' name='L984'></a>        _gnutls_free_key_datum(&amp;tmp);
+<a id='L985' name='L985'></a>
+<a id='L986' name='L986'></a>        <strong class='reserved'>if</strong> (pkey-&gt;key == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L987' name='L987'></a>                ret = GNUTLS_E_PK_INVALID_PRIVKEY;
+<a id='L988' name='L988'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L989' name='L989'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L990' name='L990'></a>        <em class='brace'>}</em>
+<a id='L991' name='L991'></a>
+<a id='L992' name='L992'></a>        ret = 0;
+<a id='L993' name='L993'></a>
+<a id='L994' name='L994'></a>      error:
+<a id='L995' name='L995'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L996' name='L996'></a><em class='brace'>}</em>
+<a id='L997' name='L997'></a>
+<a id='L998' name='L998'></a><em class='comment'>/* Decodes an RSA-PSS privateKey from a PKCS8 structure.</em>
+<a id='L999' name='L999'></a><em class='comment'> */</em>
+<a id='L1000' name='L1000'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L1001' name='L1001'></a><a href='../S/5375.html#L1452' title='Referred from 1452 in lib/x509/privkey_pkcs8.c.'>_decode_pkcs8_rsa_pss_key</a>(<a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkcs8_asn, gnutls_x509_privkey_t pkey)
+<a id='L1002' name='L1002'></a><em class='brace'>{</em>
+<a id='L1003' name='L1003'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L1004' name='L1004'></a>        gnutls_datum_t tmp = <em class='brace'>{</em><a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0<em class='brace'>}</em>;
+<a id='L1005' name='L1005'></a>        <a href='../D/9750.html' title='Multiple defined in 2 places.'>gnutls_x509_spki_st</a> <a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>;
+<a id='L1006' name='L1006'></a>
+<a id='L1007' name='L1007'></a>        memset(&amp;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>, 0, <strong class='reserved'>sizeof</strong>(<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>));
+<a id='L1008' name='L1008'></a>
+<a id='L1009' name='L1009'></a>        ret = <a href='../S/5381.html#L733' title='Defined at 733 in lib/x509/common.c.'>_gnutls_x509_read_value</a>(pkcs8_asn,
+<a id='L1010' name='L1010'></a>                                      "privateKeyAlgorithm.parameters", &amp;tmp);
+<a id='L1011' name='L1011'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1012' name='L1012'></a>                <strong class='reserved'>if</strong> (ret == GNUTLS_E_ASN1_VALUE_NOT_FOUND || ret == GNUTLS_E_ASN1_ELEMENT_NOT_FOUND)
+<a id='L1013' name='L1013'></a>                        <strong class='reserved'>goto</strong> skip_params;
+<a id='L1014' name='L1014'></a>
+<a id='L1015' name='L1015'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1016' name='L1016'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1017' name='L1017'></a>        <em class='brace'>}</em>
+<a id='L1018' name='L1018'></a>
+<a id='L1019' name='L1019'></a>        ret = <a href='../S/5376.html#L297' title='Defined at 297 in lib/x509/key_decode.c.'>_gnutls_x509_read_rsa_pss_params</a>(tmp.data, tmp.size, &amp;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>);
+<a id='L1020' name='L1020'></a>        _gnutls_free_key_datum(&amp;tmp);
+<a id='L1021' name='L1021'></a>
+<a id='L1022' name='L1022'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1023' name='L1023'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1024' name='L1024'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1025' name='L1025'></a>        <em class='brace'>}</em>
+<a id='L1026' name='L1026'></a>
+<a id='L1027' name='L1027'></a> skip_params:
+<a id='L1028' name='L1028'></a>        ret = <a href='../S/5375.html#L972' title='Defined at 972 in lib/x509/privkey_pkcs8.c.'>_decode_pkcs8_rsa_key</a>(pkcs8_asn, pkey);
+<a id='L1029' name='L1029'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1030' name='L1030'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1031' name='L1031'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1032' name='L1032'></a>        <em class='brace'>}</em>
+<a id='L1033' name='L1033'></a>
+<a id='L1034' name='L1034'></a>        pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.algo = GNUTLS_PK_RSA_PSS;
+<a id='L1035' name='L1035'></a>        memcpy(&amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.spki, &amp;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>, <strong class='reserved'>sizeof</strong>(<a href='../D/9750.html' title='Multiple defined in 2 places.'>gnutls_x509_spki_st</a>));
+<a id='L1036' name='L1036'></a>
+<a id='L1037' name='L1037'></a>        ret = 0;
+<a id='L1038' name='L1038'></a>
+<a id='L1039' name='L1039'></a>      error:
+<a id='L1040' name='L1040'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L1041' name='L1041'></a><em class='brace'>}</em>
+<a id='L1042' name='L1042'></a>
+<a id='L1043' name='L1043'></a><em class='comment'>/* Decodes an ECC privateKey from a PKCS8 structure.</em>
+<a id='L1044' name='L1044'></a><em class='comment'> */</em>
+<a id='L1045' name='L1045'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L1046' name='L1046'></a><a href='../R/4729.html' title='Multiple referred from 2 places.'>_decode_pkcs8_ecc_key</a>(<a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkcs8_asn, gnutls_x509_privkey_t pkey)
+<a id='L1047' name='L1047'></a><em class='brace'>{</em>
+<a id='L1048' name='L1048'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L1049' name='L1049'></a>        gnutls_datum_t tmp = <em class='brace'>{</em><a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0<em class='brace'>}</em>;
+<a id='L1050' name='L1050'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> oid[<a href='../S/5336.html#L34' title='Defined at 34 in lib/x509/x509_int.h.'>MAX_OID_SIZE</a>];
+<a id='L1051' name='L1051'></a>        <strong class='reserved'>unsigned</strong> curve = GNUTLS_ECC_CURVE_INVALID;
+<a id='L1052' name='L1052'></a>        <strong class='reserved'>int</strong> len, result;
+<a id='L1053' name='L1053'></a>
+<a id='L1054' name='L1054'></a>        <em class='comment'>/* openssl PKCS #8 files with ECC keys place the curve in</em>
+<a id='L1055' name='L1055'></a><em class='comment'>         * privateKeyAlgorithm.parameters instead of the ECPrivateKey.parameters.</em>
+<a id='L1056' name='L1056'></a><em class='comment'>         */</em>
+<a id='L1057' name='L1057'></a>        len = <strong class='reserved'>sizeof</strong>(oid);
+<a id='L1058' name='L1058'></a>        result =
+<a id='L1059' name='L1059'></a>            <a href='../S/5285.html#L760' title='Defined at 760 in lib/minitasn1/element.c.'>asn1_read_value</a>(pkcs8_asn, "privateKeyAlgorithm.parameters",
+<a id='L1060' name='L1060'></a>                            oid, &amp;len);
+<a id='L1061' name='L1061'></a>        <strong class='reserved'>if</strong> (result == <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L1062' name='L1062'></a>                ret = <a href='../S/5376.html#L244' title='Defined at 244 in lib/x509/key_decode.c.'>_gnutls_x509_read_ecc_params</a>(oid, len, &amp;curve);
+<a id='L1063' name='L1063'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1064' name='L1064'></a>                        <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>("PKCS#8: unknown curve OID %s\n", oid);
+<a id='L1065' name='L1065'></a>                        curve = GNUTLS_ECC_CURVE_INVALID;
+<a id='L1066' name='L1066'></a>                <em class='brace'>}</em>
+<a id='L1067' name='L1067'></a>        <em class='brace'>}</em>
+<a id='L1068' name='L1068'></a>
+<a id='L1069' name='L1069'></a>        ret = <a href='../S/5381.html#L733' title='Defined at 733 in lib/x509/common.c.'>_gnutls_x509_read_value</a>(pkcs8_asn, "privateKey", &amp;tmp);
+<a id='L1070' name='L1070'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1071' name='L1071'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1072' name='L1072'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1073' name='L1073'></a>        <em class='brace'>}</em>
+<a id='L1074' name='L1074'></a>
+<a id='L1075' name='L1075'></a>        ret = <a href='../S/5382.html#L234' title='Defined at 234 in lib/x509/privkey.c.'>_gnutls_privkey_decode_ecc_key</a>(&amp;pkey-&gt;key, &amp;tmp, pkey, curve);
+<a id='L1076' name='L1076'></a>        _gnutls_free_key_datum(&amp;tmp);
+<a id='L1077' name='L1077'></a>
+<a id='L1078' name='L1078'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1079' name='L1079'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1080' name='L1080'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1081' name='L1081'></a>        <em class='brace'>}</em>
+<a id='L1082' name='L1082'></a>
+<a id='L1083' name='L1083'></a>        ret = 0;
+<a id='L1084' name='L1084'></a>
+<a id='L1085' name='L1085'></a>      error:
+<a id='L1086' name='L1086'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L1087' name='L1087'></a><em class='brace'>}</em>
+<a id='L1088' name='L1088'></a>
+<a id='L1089' name='L1089'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L1090' name='L1090'></a><a href='../S/5375.html#L1462' title='Referred from 1462 in lib/x509/privkey_pkcs8.c.'>_decode_pkcs8_eddsa_key</a>(<a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkcs8_asn, gnutls_x509_privkey_t pkey, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *oid)
+<a id='L1091' name='L1091'></a><em class='brace'>{</em>
+<a id='L1092' name='L1092'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L1093' name='L1093'></a>        gnutls_datum_t tmp;
+<a id='L1094' name='L1094'></a>        gnutls_ecc_curve_t curve = GNUTLS_ECC_CURVE_INVALID;
+<a id='L1095' name='L1095'></a>        <strong class='reserved'>const</strong> <a href='../D/8601.html' title='Multiple defined in 2 places.'>gnutls_ecc_curve_entry_st</a> *ce;
+<a id='L1096' name='L1096'></a>
+<a id='L1097' name='L1097'></a>        <a href='../S/5999.html#L527' title='Defined at 527 in lib/pk.c.'>gnutls_pk_params_init</a>(&amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>);
+<a id='L1098' name='L1098'></a>
+<a id='L1099' name='L1099'></a>        curve = <a href='../S/5249.html#L313' title='Defined at 313 in lib/algorithms/ecc.c.'>gnutls_oid_to_ecc_curve</a>(oid);
+<a id='L1100' name='L1100'></a>        <strong class='reserved'>if</strong> (curve == GNUTLS_ECC_CURVE_INVALID) <em class='brace'>{</em>
+<a id='L1101' name='L1101'></a>                <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>("PKCS#8: unknown curve OID %s\n", oid);
+<a id='L1102' name='L1102'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_ECC_UNSUPPORTED_CURVE);
+<a id='L1103' name='L1103'></a>        <em class='brace'>}</em>
+<a id='L1104' name='L1104'></a>
+<a id='L1105' name='L1105'></a>        ce = <a href='../S/5249.html#L471' title='Defined at 471 in lib/algorithms/ecc.c.'>_gnutls_ecc_curve_get_params</a>(curve);
+<a id='L1106' name='L1106'></a>        <strong class='reserved'>if</strong> (<a href='../S/6029.html#L468' title='Defined at 468 in lib/algorithms.h.'>_curve_is_eddsa</a>(ce)) <em class='brace'>{</em>
+<a id='L1107' name='L1107'></a>                ret = <a href='../S/5381.html#L753' title='Defined at 753 in lib/x509/common.c.'>_gnutls_x509_read_string</a>(pkcs8_asn, "privateKey", &amp;tmp, <a href='../S/5274.html#L226' title='Defined at 226 in lib/minitasn1/libtasn1.h.'>ASN1_ETYPE_OCTET_STRING</a>, 1);
+<a id='L1108' name='L1108'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1109' name='L1109'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1110' name='L1110'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L1111' name='L1111'></a>                <em class='brace'>}</em>
+<a id='L1112' name='L1112'></a>
+<a id='L1113' name='L1113'></a>                <strong class='reserved'>if</strong> (tmp.size != ce-&gt;size) <em class='brace'>{</em>
+<a id='L1114' name='L1114'></a>                        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(tmp.data);
+<a id='L1115' name='L1115'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_ILLEGAL_PARAMETER);
+<a id='L1116' name='L1116'></a>                <em class='brace'>}</em>
+<a id='L1117' name='L1117'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.raw_priv.data);
+<a id='L1118' name='L1118'></a>                <strong class='reserved'>switch</strong> (curve) <em class='brace'>{</em>
+<a id='L1119' name='L1119'></a>                <strong class='reserved'>case</strong> GNUTLS_ECC_CURVE_ED25519:
+<a id='L1120' name='L1120'></a>                        pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.algo = GNUTLS_PK_EDDSA_ED25519;
+<a id='L1121' name='L1121'></a>                        <strong class='reserved'>break</strong>;
+<a id='L1122' name='L1122'></a>                <strong class='reserved'>case</strong> GNUTLS_ECC_CURVE_ED448:
+<a id='L1123' name='L1123'></a>                        pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.algo = GNUTLS_PK_EDDSA_ED448;
+<a id='L1124' name='L1124'></a>                        <strong class='reserved'>break</strong>;
+<a id='L1125' name='L1125'></a>                <strong class='reserved'>default</strong>:
+<a id='L1126' name='L1126'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L1127' name='L1127'></a>                <em class='brace'>}</em>
+<a id='L1128' name='L1128'></a>                pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.raw_priv.data = tmp.data;
+<a id='L1129' name='L1129'></a>                pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.raw_priv.size = tmp.size;
+<a id='L1130' name='L1130'></a>                pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.curve = curve;
+<a id='L1131' name='L1131'></a>
+<a id='L1132' name='L1132'></a>                tmp.data = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L1133' name='L1133'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L1134' name='L1134'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L1135' name='L1135'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_ECC_UNSUPPORTED_CURVE);
+<a id='L1136' name='L1136'></a>        <em class='brace'>}</em>
+<a id='L1137' name='L1137'></a><em class='brace'>}</em>
+<a id='L1138' name='L1138'></a>
+<a id='L1139' name='L1139'></a><em class='comment'>/* Converts a GOST key to</em>
+<a id='L1140' name='L1140'></a><em class='comment'> * an internal structure (gnutls_private_key)</em>
+<a id='L1141' name='L1141'></a><em class='comment'> */</em>
+<a id='L1142' name='L1142'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L1143' name='L1143'></a><a href='../S/5375.html#L1293' title='Referred from 1293 in lib/x509/privkey_pkcs8.c.'>_privkey_decode_gost_key</a>(<strong class='reserved'>const</strong> gnutls_datum_t * raw_key,
+<a id='L1144' name='L1144'></a>                         gnutls_x509_privkey_t pkey)
+<a id='L1145' name='L1145'></a><em class='brace'>{</em>
+<a id='L1146' name='L1146'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L1147' name='L1147'></a>        <strong class='reserved'>int</strong> ecc_size = <a href='../S/5249.html#L493' title='Defined at 493 in lib/algorithms/ecc.c.'>gnutls_ecc_curve_get_size</a>(pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.curve);
+<a id='L1148' name='L1148'></a>
+<a id='L1149' name='L1149'></a>        <em class='comment'>/* Just to be sure here */</em>
+<a id='L1150' name='L1150'></a>        <strong class='reserved'>if</strong> (ecc_size &lt;= 0) <em class='brace'>{</em>
+<a id='L1151' name='L1151'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1152' name='L1152'></a>                ret = GNUTLS_E_ECC_UNSUPPORTED_CURVE;
+<a id='L1153' name='L1153'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1154' name='L1154'></a>        <em class='brace'>}</em>
+<a id='L1155' name='L1155'></a>
+<a id='L1156' name='L1156'></a>        <em class='comment'>/* Private key form described in R 50.1.112-2016.</em>
+<a id='L1157' name='L1157'></a><em class='comment'>         * Private key can come up as masked value concatenated with several masks.</em>
+<a id='L1158' name='L1158'></a><em class='comment'>         * each part is of ecc_size bytes. Key will be unmasked in pk_fixup */</em>
+<a id='L1159' name='L1159'></a>        <strong class='reserved'>if</strong> (raw_key-&gt;size % ecc_size == 0) <em class='brace'>{</em>
+<a id='L1160' name='L1160'></a>                ret = <a href='../S/5759.html#L156' title='Defined at 156 in lib/mpi.c.'>_gnutls_mpi_init_scan_le</a>(&amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[<a href='../S/5825.html#L338' title='Defined at 338 in lib/crypto-backend.h.'>GOST_K</a>],
+<a id='L1161' name='L1161'></a>                                raw_key-&gt;data, raw_key-&gt;size);
+<a id='L1162' name='L1162'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1163' name='L1163'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1164' name='L1164'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L1165' name='L1165'></a>                <em class='brace'>}</em>
+<a id='L1166' name='L1166'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (raw_key-&gt;data[0] == <a href='../S/5274.html#L162' title='Defined at 162 in lib/minitasn1/libtasn1.h.'>ASN1_TAG_INTEGER</a>) <em class='brace'>{</em>
+<a id='L1167' name='L1167'></a>                <a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkey_asn;
+<a id='L1168' name='L1168'></a>
+<a id='L1169' name='L1169'></a>                <em class='comment'>/* Very old format: INTEGER packed in OCTET STRING */</em>
+<a id='L1170' name='L1170'></a>                <strong class='reserved'>if</strong> ((ret = <a href='../S/5280.html#L700' title='Defined at 700 in lib/minitasn1/structure.c.'>asn1_create_element</a>(<a href='../S/6036.html#L38' title='Defined at 38 in lib/global.h.'>_gnutls_get_gnutls_asn</a>(),
+<a id='L1171' name='L1171'></a>                                               "GNUTLS.GOSTPrivateKeyOld",
+<a id='L1172' name='L1172'></a>                                               &amp;pkey_asn)) != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L1173' name='L1173'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1174' name='L1174'></a>                        ret = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(ret);
+<a id='L1175' name='L1175'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L1176' name='L1176'></a>                <em class='brace'>}</em>
+<a id='L1177' name='L1177'></a>
+<a id='L1178' name='L1178'></a>                ret = <a href='../S/5392.html#L294' title='Defined at 294 in lib/x509/common.h.'>_asn1_strict_der_decode</a>(&amp;pkey_asn,
+<a id='L1179' name='L1179'></a>                                raw_key-&gt;data, raw_key-&gt;size,
+<a id='L1180' name='L1180'></a>                                <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L1181' name='L1181'></a>                <strong class='reserved'>if</strong> (ret != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L1182' name='L1182'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1183' name='L1183'></a>                        ret = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(ret);
+<a id='L1184' name='L1184'></a>                        <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkey_asn, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L1185' name='L1185'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L1186' name='L1186'></a>                <em class='brace'>}</em>
+<a id='L1187' name='L1187'></a>
+<a id='L1188' name='L1188'></a>                ret = <a href='../S/5759.html#L388' title='Defined at 388 in lib/mpi.c.'>_gnutls_x509_read_key_int</a>(pkey_asn, "",
+<a id='L1189' name='L1189'></a>                                                &amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[<a href='../S/5825.html#L338' title='Defined at 338 in lib/crypto-backend.h.'>GOST_K</a>]);
+<a id='L1190' name='L1190'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1191' name='L1191'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1192' name='L1192'></a>                        <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkey_asn, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L1193' name='L1193'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L1194' name='L1194'></a>                <em class='brace'>}</em>
+<a id='L1195' name='L1195'></a>                <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkey_asn, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L1196' name='L1196'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (raw_key-&gt;data[0] == <a href='../S/5274.html#L165' title='Defined at 165 in lib/minitasn1/libtasn1.h.'>ASN1_TAG_OCTET_STRING</a>) <em class='brace'>{</em>
+<a id='L1197' name='L1197'></a>                <a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkey_asn;
+<a id='L1198' name='L1198'></a>
+<a id='L1199' name='L1199'></a>                <em class='comment'>/* format: OCTET STRING packed in OCTET STRING */</em>
+<a id='L1200' name='L1200'></a>                <strong class='reserved'>if</strong> ((ret = <a href='../S/5280.html#L700' title='Defined at 700 in lib/minitasn1/structure.c.'>asn1_create_element</a>(<a href='../S/6036.html#L38' title='Defined at 38 in lib/global.h.'>_gnutls_get_gnutls_asn</a>(),
+<a id='L1201' name='L1201'></a>                                               "GNUTLS.GOSTPrivateKey",
+<a id='L1202' name='L1202'></a>                                               &amp;pkey_asn)) != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L1203' name='L1203'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1204' name='L1204'></a>                        ret = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(ret);
+<a id='L1205' name='L1205'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L1206' name='L1206'></a>                <em class='brace'>}</em>
+<a id='L1207' name='L1207'></a>
+<a id='L1208' name='L1208'></a>                ret = <a href='../S/5392.html#L294' title='Defined at 294 in lib/x509/common.h.'>_asn1_strict_der_decode</a>(&amp;pkey_asn,
+<a id='L1209' name='L1209'></a>                                raw_key-&gt;data, raw_key-&gt;size,
+<a id='L1210' name='L1210'></a>                                <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L1211' name='L1211'></a>                <strong class='reserved'>if</strong> (ret != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L1212' name='L1212'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1213' name='L1213'></a>                        ret = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(ret);
+<a id='L1214' name='L1214'></a>                        <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkey_asn, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L1215' name='L1215'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L1216' name='L1216'></a>                <em class='brace'>}</em>
+<a id='L1217' name='L1217'></a>
+<a id='L1218' name='L1218'></a>                ret = <a href='../S/5759.html#L396' title='Defined at 396 in lib/mpi.c.'>_gnutls_x509_read_key_int_le</a>(pkey_asn, "",
+<a id='L1219' name='L1219'></a>                                                   &amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[<a href='../S/5825.html#L338' title='Defined at 338 in lib/crypto-backend.h.'>GOST_K</a>]);
+<a id='L1220' name='L1220'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1221' name='L1221'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1222' name='L1222'></a>                        <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkey_asn, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L1223' name='L1223'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L1224' name='L1224'></a>                <em class='brace'>}</em>
+<a id='L1225' name='L1225'></a>                <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkey_asn, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L1226' name='L1226'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L1227' name='L1227'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1228' name='L1228'></a>                ret = GNUTLS_E_PARSING_ERROR;
+<a id='L1229' name='L1229'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1230' name='L1230'></a>        <em class='brace'>}</em>
+<a id='L1231' name='L1231'></a>
+<a id='L1232' name='L1232'></a>        pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.params_nr++;
+<a id='L1233' name='L1233'></a>
+<a id='L1234' name='L1234'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L1235' name='L1235'></a>
+<a id='L1236' name='L1236'></a>      error:
+<a id='L1237' name='L1237'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L1238' name='L1238'></a>
+<a id='L1239' name='L1239'></a><em class='brace'>}</em>
+<a id='L1240' name='L1240'></a>
+<a id='L1241' name='L1241'></a><em class='comment'>/* Decodes a GOST privateKey from a PKCS8 structure.</em>
+<a id='L1242' name='L1242'></a><em class='comment'> */</em>
+<a id='L1243' name='L1243'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L1244' name='L1244'></a><a href='../S/5375.html#L1467' title='Referred from 1467 in lib/x509/privkey_pkcs8.c.'>_decode_pkcs8_gost_key</a>(<a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkcs8_asn, gnutls_x509_privkey_t pkey,
+<a id='L1245' name='L1245'></a>                       gnutls_pk_algorithm_t algo)
+<a id='L1246' name='L1246'></a><em class='brace'>{</em>
+<a id='L1247' name='L1247'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L1248' name='L1248'></a>        gnutls_datum_t tmp;
+<a id='L1249' name='L1249'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> oid[3 * <a href='../S/5336.html#L34' title='Defined at 34 in lib/x509/x509_int.h.'>MAX_OID_SIZE</a>]; <em class='comment'>/* GOST parameters can have 3 OIDs at most */</em>
+<a id='L1250' name='L1250'></a>        <strong class='reserved'>int</strong> len, result;
+<a id='L1251' name='L1251'></a>
+<a id='L1252' name='L1252'></a>        <a href='../S/5999.html#L527' title='Defined at 527 in lib/pk.c.'>gnutls_pk_params_init</a>(&amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>);
+<a id='L1253' name='L1253'></a>
+<a id='L1254' name='L1254'></a>        len = <strong class='reserved'>sizeof</strong>(oid);
+<a id='L1255' name='L1255'></a>        result = <a href='../S/5285.html#L760' title='Defined at 760 in lib/minitasn1/element.c.'>asn1_read_value</a>(pkcs8_asn, "privateKeyAlgorithm.parameters",
+<a id='L1256' name='L1256'></a>                                 oid, &amp;len);
+<a id='L1257' name='L1257'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L1258' name='L1258'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1259' name='L1259'></a>                ret = GNUTLS_E_PARSING_ERROR;
+<a id='L1260' name='L1260'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1261' name='L1261'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L1262' name='L1262'></a>                ret = <a href='../S/5376.html#L444' title='Defined at 444 in lib/x509/key_decode.c.'>_gnutls_x509_read_gost_params</a>(oid, len, &amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>, algo);
+<a id='L1263' name='L1263'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1264' name='L1264'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1265' name='L1265'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L1266' name='L1266'></a>                <em class='brace'>}</em>
+<a id='L1267' name='L1267'></a>        <em class='brace'>}</em>
+<a id='L1268' name='L1268'></a>
+<a id='L1269' name='L1269'></a>        <em class='comment'>/* Will be fixed later by pk_fixup */</em>
+<a id='L1270' name='L1270'></a>        ret = <a href='../S/6026.html#L36' title='Defined at 36 in lib/mpi.h.'>_gnutls_mpi_init</a>(&amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[<a href='../S/5825.html#L336' title='Defined at 336 in lib/crypto-backend.h.'>GOST_X</a>]);
+<a id='L1271' name='L1271'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1272' name='L1272'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1273' name='L1273'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1274' name='L1274'></a>        <em class='brace'>}</em>
+<a id='L1275' name='L1275'></a>        pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.params_nr++;
+<a id='L1276' name='L1276'></a>
+<a id='L1277' name='L1277'></a>        ret = <a href='../S/6026.html#L36' title='Defined at 36 in lib/mpi.h.'>_gnutls_mpi_init</a>(&amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[<a href='../S/5825.html#L337' title='Defined at 337 in lib/crypto-backend.h.'>GOST_Y</a>]);
+<a id='L1278' name='L1278'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1279' name='L1279'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1280' name='L1280'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1281' name='L1281'></a>        <em class='brace'>}</em>
+<a id='L1282' name='L1282'></a>        pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.params_nr++;
+<a id='L1283' name='L1283'></a>
+<a id='L1284' name='L1284'></a>        <a href='../S/6026.html#L44' title='Defined at 44 in lib/mpi.h.'>_gnutls_mpi_set_ui</a>(pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[<a href='../S/5825.html#L336' title='Defined at 336 in lib/crypto-backend.h.'>GOST_X</a>], 0);
+<a id='L1285' name='L1285'></a>        <a href='../S/6026.html#L44' title='Defined at 44 in lib/mpi.h.'>_gnutls_mpi_set_ui</a>(pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[<a href='../S/5825.html#L337' title='Defined at 337 in lib/crypto-backend.h.'>GOST_Y</a>], 0);
+<a id='L1286' name='L1286'></a>
+<a id='L1287' name='L1287'></a>        ret = <a href='../S/5381.html#L733' title='Defined at 733 in lib/x509/common.c.'>_gnutls_x509_read_value</a>(pkcs8_asn, "privateKey", &amp;tmp);
+<a id='L1288' name='L1288'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1289' name='L1289'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1290' name='L1290'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1291' name='L1291'></a>        <em class='brace'>}</em>
+<a id='L1292' name='L1292'></a>
+<a id='L1293' name='L1293'></a>        ret = <a href='../S/5375.html#L1143' title='Defined at 1143 in lib/x509/privkey_pkcs8.c.'>_privkey_decode_gost_key</a>(&amp;tmp, pkey);
+<a id='L1294' name='L1294'></a>        _gnutls_free_key_datum(&amp;tmp);
+<a id='L1295' name='L1295'></a>
+<a id='L1296' name='L1296'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1297' name='L1297'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1298' name='L1298'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1299' name='L1299'></a>        <em class='brace'>}</em>
+<a id='L1300' name='L1300'></a>
+<a id='L1301' name='L1301'></a>        pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.algo = algo;
+<a id='L1302' name='L1302'></a>
+<a id='L1303' name='L1303'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L1304' name='L1304'></a>
+<a id='L1305' name='L1305'></a>error:
+<a id='L1306' name='L1306'></a>        <a href='../S/5999.html#L544' title='Defined at 544 in lib/pk.c.'>gnutls_pk_params_clear</a>(&amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>);
+<a id='L1307' name='L1307'></a>        <a href='../S/5999.html#L532' title='Defined at 532 in lib/pk.c.'>gnutls_pk_params_release</a>(&amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>);
+<a id='L1308' name='L1308'></a>
+<a id='L1309' name='L1309'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L1310' name='L1310'></a><em class='brace'>}</em>
+<a id='L1311' name='L1311'></a>
+<a id='L1312' name='L1312'></a><em class='comment'>/* Decodes an DSA privateKey and params from a PKCS8 structure.</em>
+<a id='L1313' name='L1313'></a><em class='comment'> */</em>
+<a id='L1314' name='L1314'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L1315' name='L1315'></a><a href='../S/5375.html#L1455' title='Referred from 1455 in lib/x509/privkey_pkcs8.c.'>_decode_pkcs8_dsa_key</a>(<a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkcs8_asn, gnutls_x509_privkey_t pkey)
+<a id='L1316' name='L1316'></a><em class='brace'>{</em>
+<a id='L1317' name='L1317'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L1318' name='L1318'></a>        gnutls_datum_t tmp = <em class='brace'>{</em><a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0<em class='brace'>}</em>;
+<a id='L1319' name='L1319'></a>
+<a id='L1320' name='L1320'></a>        <a href='../S/5999.html#L527' title='Defined at 527 in lib/pk.c.'>gnutls_pk_params_init</a>(&amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>);
+<a id='L1321' name='L1321'></a>
+<a id='L1322' name='L1322'></a>        ret = <a href='../S/5381.html#L733' title='Defined at 733 in lib/x509/common.c.'>_gnutls_x509_read_value</a>(pkcs8_asn, "privateKey", &amp;tmp);
+<a id='L1323' name='L1323'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1324' name='L1324'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1325' name='L1325'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1326' name='L1326'></a>        <em class='brace'>}</em>
+<a id='L1327' name='L1327'></a>
+<a id='L1328' name='L1328'></a>        ret =
+<a id='L1329' name='L1329'></a>            <a href='../S/5368.html#L37' title='Defined at 37 in lib/x509/mpi.c.'>_gnutls_x509_read_der_int</a>(tmp.data, tmp.size,
+<a id='L1330' name='L1330'></a>                                      &amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[4]);
+<a id='L1331' name='L1331'></a>        _gnutls_free_key_datum(&amp;tmp);
+<a id='L1332' name='L1332'></a>
+<a id='L1333' name='L1333'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1334' name='L1334'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1335' name='L1335'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1336' name='L1336'></a>        <em class='brace'>}</em>
+<a id='L1337' name='L1337'></a>
+<a id='L1338' name='L1338'></a>        ret =
+<a id='L1339' name='L1339'></a>            <a href='../S/5381.html#L733' title='Defined at 733 in lib/x509/common.c.'>_gnutls_x509_read_value</a>(pkcs8_asn,
+<a id='L1340' name='L1340'></a>                                    "privateKeyAlgorithm.parameters",
+<a id='L1341' name='L1341'></a>                                    &amp;tmp);
+<a id='L1342' name='L1342'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1343' name='L1343'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1344' name='L1344'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1345' name='L1345'></a>        <em class='brace'>}</em>
+<a id='L1346' name='L1346'></a>
+<a id='L1347' name='L1347'></a>        ret =
+<a id='L1348' name='L1348'></a>            <a href='../S/5376.html#L589' title='Defined at 589 in lib/x509/key_decode.c.'>_gnutls_x509_read_pubkey_params</a>(GNUTLS_PK_DSA, tmp.data,
+<a id='L1349' name='L1349'></a>                                            tmp.size, &amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>);
+<a id='L1350' name='L1350'></a>        _gnutls_free_datum(&amp;tmp);
+<a id='L1351' name='L1351'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1352' name='L1352'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1353' name='L1353'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1354' name='L1354'></a>        <em class='brace'>}</em>
+<a id='L1355' name='L1355'></a>
+<a id='L1356' name='L1356'></a>        <strong class='reserved'>if</strong> (<a href='../S/6026.html#L40' title='Defined at 40 in lib/mpi.h.'>_gnutls_mpi_cmp_ui</a>(pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[0], 0) == 0) <em class='brace'>{</em>
+<a id='L1357' name='L1357'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1358' name='L1358'></a>                ret = GNUTLS_E_ILLEGAL_PARAMETER;
+<a id='L1359' name='L1359'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1360' name='L1360'></a>        <em class='brace'>}</em>
+<a id='L1361' name='L1361'></a>
+<a id='L1362' name='L1362'></a>        <em class='comment'>/* the public key can be generated as g^x mod p */</em>
+<a id='L1363' name='L1363'></a>        ret = <a href='../S/6026.html#L36' title='Defined at 36 in lib/mpi.h.'>_gnutls_mpi_init</a>(&amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[3]);
+<a id='L1364' name='L1364'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1365' name='L1365'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1366' name='L1366'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1367' name='L1367'></a>        <em class='brace'>}</em>
+<a id='L1368' name='L1368'></a>
+<a id='L1369' name='L1369'></a>        ret = <a href='../S/6026.html#L46' title='Defined at 46 in lib/mpi.h.'>_gnutls_mpi_powm</a>(pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[3], pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[2],
+<a id='L1370' name='L1370'></a>                         pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[4], pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[0]);
+<a id='L1371' name='L1371'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1372' name='L1372'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1373' name='L1373'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1374' name='L1374'></a>        <em class='brace'>}</em>
+<a id='L1375' name='L1375'></a>
+<a id='L1376' name='L1376'></a>        pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.algo = GNUTLS_PK_DSA;
+<a id='L1377' name='L1377'></a>        pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.params_nr = <a href='../S/5825.html#L274' title='Defined at 274 in lib/crypto-backend.h.'>DSA_PRIVATE_PARAMS</a>;
+<a id='L1378' name='L1378'></a>
+<a id='L1379' name='L1379'></a>        ret =
+<a id='L1380' name='L1380'></a>            <a href='../S/5370.html#L1030' title='Defined at 1030 in lib/x509/key_encode.c.'>_gnutls_asn1_encode_privkey</a>(&amp;pkey-&gt;key,
+<a id='L1381' name='L1381'></a>                                        &amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>);
+<a id='L1382' name='L1382'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1383' name='L1383'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1384' name='L1384'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1385' name='L1385'></a>        <em class='brace'>}</em>
+<a id='L1386' name='L1386'></a>
+<a id='L1387' name='L1387'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L1388' name='L1388'></a>
+<a id='L1389' name='L1389'></a> error:
+<a id='L1390' name='L1390'></a>        <strong class='reserved'>if</strong> (pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.params_nr != <a href='../S/5825.html#L274' title='Defined at 274 in lib/crypto-backend.h.'>DSA_PRIVATE_PARAMS</a>)
+<a id='L1391' name='L1391'></a>                <a href='../S/6026.html#L66' title='Defined at 66 in lib/mpi.h.'>_gnutls_mpi_release</a>(&amp;pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>[4]);
+<a id='L1392' name='L1392'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L1393' name='L1393'></a><em class='brace'>}</em>
+<a id='L1394' name='L1394'></a>
+<a id='L1395' name='L1395'></a>
+<a id='L1396' name='L1396'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L1397' name='L1397'></a><a href='../R/6602.html' title='Multiple referred from 3 places.'>decode_private_key_info</a>(<strong class='reserved'>const</strong> gnutls_datum_t * der,
+<a id='L1398' name='L1398'></a>                        gnutls_x509_privkey_t pkey)
+<a id='L1399' name='L1399'></a><em class='brace'>{</em>
+<a id='L1400' name='L1400'></a>        <strong class='reserved'>int</strong> result, len;
+<a id='L1401' name='L1401'></a>        <strong class='reserved'>char</strong> oid[<a href='../S/5336.html#L34' title='Defined at 34 in lib/x509/x509_int.h.'>MAX_OID_SIZE</a>];
+<a id='L1402' name='L1402'></a>        <a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> pkcs8_asn = <a href='../S/5274.html#L537' title='Defined at 537 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE_EMPTY</a>;
+<a id='L1403' name='L1403'></a>        gnutls_datum_t sder;
+<a id='L1404' name='L1404'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L1405' name='L1405'></a>
+<a id='L1406' name='L1406'></a>        <strong class='reserved'>if</strong> ((result =
+<a id='L1407' name='L1407'></a>             <a href='../S/5280.html#L700' title='Defined at 700 in lib/minitasn1/structure.c.'>asn1_create_element</a>(<a href='../S/6036.html#L39' title='Defined at 39 in lib/global.h.'>_gnutls_get_pkix</a>(),
+<a id='L1408' name='L1408'></a>                                 "PKIX1.pkcs-8-PrivateKeyInfo",
+<a id='L1409' name='L1409'></a>                                 &amp;pkcs8_asn)) != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L1410' name='L1410'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1411' name='L1411'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L1412' name='L1412'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1413' name='L1413'></a>        <em class='brace'>}</em>
+<a id='L1414' name='L1414'></a>
+<a id='L1415' name='L1415'></a>        result = <a href='../S/5392.html#L294' title='Defined at 294 in lib/x509/common.h.'>_asn1_strict_der_decode</a>(&amp;pkcs8_asn, der-&gt;data, der-&gt;size, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L1416' name='L1416'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L1417' name='L1417'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1418' name='L1418'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L1419' name='L1419'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1420' name='L1420'></a>        <em class='brace'>}</em>
+<a id='L1421' name='L1421'></a>
+<a id='L1422' name='L1422'></a>        <em class='comment'>/* Check the private key algorithm OID</em>
+<a id='L1423' name='L1423'></a><em class='comment'>         */</em>
+<a id='L1424' name='L1424'></a>        len = <strong class='reserved'>sizeof</strong>(oid);
+<a id='L1425' name='L1425'></a>        result =
+<a id='L1426' name='L1426'></a>            <a href='../S/5285.html#L760' title='Defined at 760 in lib/minitasn1/element.c.'>asn1_read_value</a>(pkcs8_asn, "privateKeyAlgorithm.algorithm",
+<a id='L1427' name='L1427'></a>                            oid, &amp;len);
+<a id='L1428' name='L1428'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L1429' name='L1429'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1430' name='L1430'></a>                result = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L1431' name='L1431'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1432' name='L1432'></a>        <em class='brace'>}</em>
+<a id='L1433' name='L1433'></a>
+<a id='L1434' name='L1434'></a>        pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.algo = <a href='../S/5248.html#L299' title='Defined at 299 in lib/algorithms/publickey.c.'>gnutls_oid_to_pk</a>(oid);
+<a id='L1435' name='L1435'></a>        <strong class='reserved'>if</strong> (pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.algo == GNUTLS_PK_UNKNOWN) <em class='brace'>{</em>
+<a id='L1436' name='L1436'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1437' name='L1437'></a>                <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>
+<a id='L1438' name='L1438'></a>                    ("PKCS #8 private key OID '%s' is unsupported.\n",
+<a id='L1439' name='L1439'></a>                     oid);
+<a id='L1440' name='L1440'></a>                result = GNUTLS_E_UNKNOWN_PK_ALGORITHM;
+<a id='L1441' name='L1441'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1442' name='L1442'></a>        <em class='brace'>}</em>
+<a id='L1443' name='L1443'></a>
+<a id='L1444' name='L1444'></a>        <em class='comment'>/* Get the DER encoding of the actual private key.</em>
+<a id='L1445' name='L1445'></a><em class='comment'>         */</em>
+<a id='L1446' name='L1446'></a>
+<a id='L1447' name='L1447'></a>        <strong class='reserved'>switch</strong>(pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.algo) <em class='brace'>{</em>
+<a id='L1448' name='L1448'></a>                <strong class='reserved'>case</strong> GNUTLS_PK_RSA:
+<a id='L1449' name='L1449'></a>                        result = <a href='../S/5375.html#L972' title='Defined at 972 in lib/x509/privkey_pkcs8.c.'>_decode_pkcs8_rsa_key</a>(pkcs8_asn, pkey);
+<a id='L1450' name='L1450'></a>                        <strong class='reserved'>break</strong>;
+<a id='L1451' name='L1451'></a>                <strong class='reserved'>case</strong> GNUTLS_PK_RSA_PSS:
+<a id='L1452' name='L1452'></a>                        result = <a href='../S/5375.html#L1001' title='Defined at 1001 in lib/x509/privkey_pkcs8.c.'>_decode_pkcs8_rsa_pss_key</a>(pkcs8_asn, pkey);
+<a id='L1453' name='L1453'></a>                        <strong class='reserved'>break</strong>;
+<a id='L1454' name='L1454'></a>                <strong class='reserved'>case</strong> GNUTLS_PK_DSA:
+<a id='L1455' name='L1455'></a>                        result = <a href='../S/5375.html#L1315' title='Defined at 1315 in lib/x509/privkey_pkcs8.c.'>_decode_pkcs8_dsa_key</a>(pkcs8_asn, pkey);
+<a id='L1456' name='L1456'></a>                        <strong class='reserved'>break</strong>;
+<a id='L1457' name='L1457'></a>                <strong class='reserved'>case</strong> GNUTLS_PK_ECDSA:
+<a id='L1458' name='L1458'></a>                        result = <a href='../S/5375.html#L1046' title='Defined at 1046 in lib/x509/privkey_pkcs8.c.'>_decode_pkcs8_ecc_key</a>(pkcs8_asn, pkey);
+<a id='L1459' name='L1459'></a>                        <strong class='reserved'>break</strong>;
+<a id='L1460' name='L1460'></a>                <strong class='reserved'>case</strong> GNUTLS_PK_EDDSA_ED25519:
+<a id='L1461' name='L1461'></a>                <strong class='reserved'>case</strong> GNUTLS_PK_EDDSA_ED448:
+<a id='L1462' name='L1462'></a>                        result = <a href='../S/5375.html#L1090' title='Defined at 1090 in lib/x509/privkey_pkcs8.c.'>_decode_pkcs8_eddsa_key</a>(pkcs8_asn, pkey, oid);
+<a id='L1463' name='L1463'></a>                        <strong class='reserved'>break</strong>;
+<a id='L1464' name='L1464'></a>                <strong class='reserved'>case</strong> GNUTLS_PK_GOST_01:
+<a id='L1465' name='L1465'></a>                <strong class='reserved'>case</strong> GNUTLS_PK_GOST_12_256:
+<a id='L1466' name='L1466'></a>                <strong class='reserved'>case</strong> GNUTLS_PK_GOST_12_512:
+<a id='L1467' name='L1467'></a>                        result = <a href='../S/5375.html#L1244' title='Defined at 1244 in lib/x509/privkey_pkcs8.c.'>_decode_pkcs8_gost_key</a>(pkcs8_asn,
+<a id='L1468' name='L1468'></a>                                                        pkey, pkey-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.algo);
+<a id='L1469' name='L1469'></a>                        <strong class='reserved'>break</strong>;
+<a id='L1470' name='L1470'></a>                <strong class='reserved'>default</strong>:
+<a id='L1471' name='L1471'></a>                        result = <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_UNIMPLEMENTED_FEATURE);
+<a id='L1472' name='L1472'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L1473' name='L1473'></a>        <em class='brace'>}</em>
+<a id='L1474' name='L1474'></a>
+<a id='L1475' name='L1475'></a>        <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>
+<a id='L1476' name='L1476'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1477' name='L1477'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L1478' name='L1478'></a>        <em class='brace'>}</em>
+<a id='L1479' name='L1479'></a>
+<a id='L1480' name='L1480'></a>        <em class='comment'>/* check for provable parameters attribute */</em>
+<a id='L1481' name='L1481'></a>        ret = <a href='../S/5341.html#L73' title='Defined at 73 in lib/x509/attributes.c.'>_x509_parse_attribute</a>(pkcs8_asn, "attributes", <a href='../S/5336.html#L60' title='Defined at 60 in lib/x509/x509_int.h.'>OID_ATTR_PROV_SEED</a>, 0, 1, &amp;sder);
+<a id='L1482' name='L1482'></a>        <strong class='reserved'>if</strong> (ret &gt;= 0) <em class='brace'>{</em> <em class='comment'>/* ignore it when not being present */</em>
+<a id='L1483' name='L1483'></a>                ret = <a href='../S/5350.html#L85' title='Defined at 85 in lib/x509/prov-seed.c.'>_x509_decode_provable_seed</a>(pkey, &amp;sder);
+<a id='L1484' name='L1484'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(sder.data);
+<a id='L1485' name='L1485'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1486' name='L1486'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1487' name='L1487'></a>                <em class='brace'>}</em>
+<a id='L1488' name='L1488'></a>        <em class='brace'>}</em>
+<a id='L1489' name='L1489'></a>
+<a id='L1490' name='L1490'></a>        result = 0;
+<a id='L1491' name='L1491'></a>
+<a id='L1492' name='L1492'></a>error:
+<a id='L1493' name='L1493'></a>        <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;pkcs8_asn, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L1494' name='L1494'></a>        <strong class='reserved'>return</strong> result;
+<a id='L1495' name='L1495'></a>
+<a id='L1496' name='L1496'></a><em class='brace'>}</em>
+<a id='L1497' name='L1497'></a>
+<a id='L1498' name='L1498'></a><em class='comment'>/**</em>
+<a id='L1499' name='L1499'></a><em class='comment'> * gnutls_x509_privkey_import_pkcs8:</em>
+<a id='L1500' name='L1500'></a><em class='comment'> * @key: The data to store the parsed key</em>
+<a id='L1501' name='L1501'></a><em class='comment'> * @data: The DER or PEM encoded key.</em>
+<a id='L1502' name='L1502'></a><em class='comment'> * @format: One of DER or PEM</em>
+<a id='L1503' name='L1503'></a><em class='comment'> * @password: the password to decrypt the key (if it is encrypted).</em>
+<a id='L1504' name='L1504'></a><em class='comment'> * @flags: 0 if encrypted or GNUTLS_PKCS_PLAIN if not encrypted.</em>
+<a id='L1505' name='L1505'></a><em class='comment'> *</em>
+<a id='L1506' name='L1506'></a><em class='comment'> * This function will convert the given DER or PEM encoded PKCS8 2.0</em>
+<a id='L1507' name='L1507'></a><em class='comment'> * encrypted key to the native gnutls_x509_privkey_t format. The</em>
+<a id='L1508' name='L1508'></a><em class='comment'> * output will be stored in @key.  Both RSA and DSA keys can be</em>
+<a id='L1509' name='L1509'></a><em class='comment'> * imported, and flags can only be used to indicate an unencrypted</em>
+<a id='L1510' name='L1510'></a><em class='comment'> * key.</em>
+<a id='L1511' name='L1511'></a><em class='comment'> *</em>
+<a id='L1512' name='L1512'></a><em class='comment'> * The @password can be either ASCII or UTF-8 in the default PBES2</em>
+<a id='L1513' name='L1513'></a><em class='comment'> * encryption schemas, or ASCII for the PKCS12 schemas.</em>
+<a id='L1514' name='L1514'></a><em class='comment'> *</em>
+<a id='L1515' name='L1515'></a><em class='comment'> * If the Certificate is PEM encoded it should have a header of</em>
+<a id='L1516' name='L1516'></a><em class='comment'> * "ENCRYPTED PRIVATE KEY", or "PRIVATE KEY". You only need to</em>
+<a id='L1517' name='L1517'></a><em class='comment'> * specify the flags if the key is DER encoded, since in that case</em>
+<a id='L1518' name='L1518'></a><em class='comment'> * the encryption status cannot be auto-detected.</em>
+<a id='L1519' name='L1519'></a><em class='comment'> *</em>
+<a id='L1520' name='L1520'></a><em class='comment'> * If the %GNUTLS_PKCS_PLAIN flag is specified and the supplied data</em>
+<a id='L1521' name='L1521'></a><em class='comment'> * are encrypted then %GNUTLS_E_DECRYPTION_FAILED is returned.</em>
+<a id='L1522' name='L1522'></a><em class='comment'> *</em>
+<a id='L1523' name='L1523'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned, otherwise a</em>
+<a id='L1524' name='L1524'></a><em class='comment'> *   negative error value.</em>
+<a id='L1525' name='L1525'></a><em class='comment'> **/</em>
+<a id='L1526' name='L1526'></a><strong class='reserved'>int</strong>
+<a id='L1527' name='L1527'></a><a href='../R/8772.html' title='Multiple referred from 13 places.'>gnutls_x509_privkey_import_pkcs8</a>(gnutls_x509_privkey_t key,
+<a id='L1528' name='L1528'></a>                                 <strong class='reserved'>const</strong> gnutls_datum_t * data,
+<a id='L1529' name='L1529'></a>                                 gnutls_x509_crt_fmt_t format,
+<a id='L1530' name='L1530'></a>                                 <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *password, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> flags)
+<a id='L1531' name='L1531'></a><em class='brace'>{</em>
+<a id='L1532' name='L1532'></a>        <strong class='reserved'>int</strong> result = 0, need_free = 0;
+<a id='L1533' name='L1533'></a>        gnutls_datum_t _data;
+<a id='L1534' name='L1534'></a>
+<a id='L1535' name='L1535'></a>        <strong class='reserved'>if</strong> (key == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L1536' name='L1536'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1537' name='L1537'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L1538' name='L1538'></a>        <em class='brace'>}</em>
+<a id='L1539' name='L1539'></a>
+<a id='L1540' name='L1540'></a>        _data.data = data-&gt;data;
+<a id='L1541' name='L1541'></a>        _data.size = data-&gt;size;
+<a id='L1542' name='L1542'></a>
+<a id='L1543' name='L1543'></a>        key-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.algo = GNUTLS_PK_UNKNOWN;
+<a id='L1544' name='L1544'></a>
+<a id='L1545' name='L1545'></a>        <em class='comment'>/* If the Certificate is in PEM format then decode it</em>
+<a id='L1546' name='L1546'></a><em class='comment'>         */</em>
+<a id='L1547' name='L1547'></a>        <strong class='reserved'>if</strong> (format == GNUTLS_X509_FMT_PEM) <em class='brace'>{</em>
+<a id='L1548' name='L1548'></a>                <em class='comment'>/* Try the first header </em>
+<a id='L1549' name='L1549'></a><em class='comment'>                 */</em>
+<a id='L1550' name='L1550'></a>                result =
+<a id='L1551' name='L1551'></a>                    <a href='../S/5290.html#L325' title='Defined at 325 in lib/x509_b64.c.'>_gnutls_fbase64_decode</a>(<a href='../S/5375.html#L54' title='Defined at 54 in lib/x509/privkey_pkcs8.c.'>PEM_UNENCRYPTED_PKCS8</a>,
+<a id='L1552' name='L1552'></a>                                           data-&gt;data, data-&gt;size, &amp;_data);
+<a id='L1553' name='L1553'></a>
+<a id='L1554' name='L1554'></a>                <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>       <em class='comment'>/* Try the encrypted header </em>
+<a id='L1555' name='L1555'></a><em class='comment'>                                         */</em>
+<a id='L1556' name='L1556'></a>                        result =
+<a id='L1557' name='L1557'></a>                            <a href='../S/5290.html#L325' title='Defined at 325 in lib/x509_b64.c.'>_gnutls_fbase64_decode</a>(<a href='../S/5375.html#L53' title='Defined at 53 in lib/x509/privkey_pkcs8.c.'>PEM_PKCS8</a>, data-&gt;data,
+<a id='L1558' name='L1558'></a>                                                   data-&gt;size, &amp;_data);
+<a id='L1559' name='L1559'></a>
+<a id='L1560' name='L1560'></a>                        <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>
+<a id='L1561' name='L1561'></a>                                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1562' name='L1562'></a>                                <strong class='reserved'>return</strong> result;
+<a id='L1563' name='L1563'></a>                        <em class='brace'>}</em>
+<a id='L1564' name='L1564'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (flags == 0)
+<a id='L1565' name='L1565'></a>                        flags |= <a href='../S/6011.html#L1119' title='Defined at 1119 in lib/includes/gnutls/x509.h.'>GNUTLS_PKCS_PLAIN</a>;
+<a id='L1566' name='L1566'></a>
+<a id='L1567' name='L1567'></a>                need_free = 1;
+<a id='L1568' name='L1568'></a>        <em class='brace'>}</em>
+<a id='L1569' name='L1569'></a>
+<a id='L1570' name='L1570'></a>        <strong class='reserved'>if</strong> (key-&gt;expanded) <em class='brace'>{</em>
+<a id='L1571' name='L1571'></a>                <a href='../S/5382.html#L62' title='Defined at 62 in lib/x509/privkey.c.'>_gnutls_x509_privkey_reinit</a>(key);
+<a id='L1572' name='L1572'></a>        <em class='brace'>}</em>
+<a id='L1573' name='L1573'></a>        key-&gt;expanded = 1;
+<a id='L1574' name='L1574'></a>
+<a id='L1575' name='L1575'></a>        <em class='comment'>/* Here we don't check for password == NULL to maintain a backwards</em>
+<a id='L1576' name='L1576'></a><em class='comment'>         * compatibility behavior, with old versions that were encrypting using</em>
+<a id='L1577' name='L1577'></a><em class='comment'>         * a NULL password.</em>
+<a id='L1578' name='L1578'></a><em class='comment'>         */</em>
+<a id='L1579' name='L1579'></a>        <strong class='reserved'>if</strong> (flags &amp; <a href='../S/6011.html#L1119' title='Defined at 1119 in lib/includes/gnutls/x509.h.'>GNUTLS_PKCS_PLAIN</a>) <em class='brace'>{</em>
+<a id='L1580' name='L1580'></a>                result = <a href='../S/5375.html#L1397' title='Defined at 1397 in lib/x509/privkey_pkcs8.c.'>decode_private_key_info</a>(&amp;_data, key);
+<a id='L1581' name='L1581'></a>                <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>       <em class='comment'>/* check if it is encrypted */</em>
+<a id='L1582' name='L1582'></a>                        <strong class='reserved'>if</strong> (<a href='../S/5375.html#L932' title='Defined at 932 in lib/x509/privkey_pkcs8.c.'>pkcs8_key_decode</a>(&amp;_data, "", key, 0) == 0)
+<a id='L1583' name='L1583'></a>                                result = GNUTLS_E_DECRYPTION_FAILED;
+<a id='L1584' name='L1584'></a>                <em class='brace'>}</em>
+<a id='L1585' name='L1585'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>                <em class='comment'>/* encrypted. */</em>
+<a id='L1586' name='L1586'></a>                result = <a href='../S/5375.html#L932' title='Defined at 932 in lib/x509/privkey_pkcs8.c.'>pkcs8_key_decode</a>(&amp;_data, password, key, 1);
+<a id='L1587' name='L1587'></a>        <em class='brace'>}</em>
+<a id='L1588' name='L1588'></a>
+<a id='L1589' name='L1589'></a>        <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>
+<a id='L1590' name='L1590'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1591' name='L1591'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L1592' name='L1592'></a>        <em class='brace'>}</em>
+<a id='L1593' name='L1593'></a>
+<a id='L1594' name='L1594'></a>        <em class='comment'>/* This part is necessary to get the public key on certain algorithms.</em>
+<a id='L1595' name='L1595'></a><em class='comment'>         * In the import above we only get the private key. */</em>
+<a id='L1596' name='L1596'></a>        result =
+<a id='L1597' name='L1597'></a>            <a href='../S/5466.html#L45' title='Defined at 45 in lib/pk.h.'>_gnutls_pk_fixup</a>(key-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.algo, <a href='../S/5825.html#L369' title='Defined at 369 in lib/crypto-backend.h.'>GNUTLS_IMPORT</a>, &amp;key-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>);
+<a id='L1598' name='L1598'></a>        <strong class='reserved'>if</strong> (result &lt; 0) <em class='brace'>{</em>
+<a id='L1599' name='L1599'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1600' name='L1600'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L1601' name='L1601'></a>        <em class='brace'>}</em>
+<a id='L1602' name='L1602'></a>
+<a id='L1603' name='L1603'></a>        <strong class='reserved'>if</strong> (need_free)
+<a id='L1604' name='L1604'></a>                _gnutls_free_datum(&amp;_data);
+<a id='L1605' name='L1605'></a>
+<a id='L1606' name='L1606'></a>        <em class='comment'>/* The key has now been decoded.</em>
+<a id='L1607' name='L1607'></a><em class='comment'>         */</em>
+<a id='L1608' name='L1608'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L1609' name='L1609'></a>
+<a id='L1610' name='L1610'></a> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>:
+<a id='L1611' name='L1611'></a>        <a href='../S/5280.html#L311' title='Defined at 311 in lib/minitasn1/structure.c.'>asn1_delete_structure2</a>(&amp;key-&gt;key, <a href='../S/5274.html#L259' title='Defined at 259 in lib/minitasn1/libtasn1.h.'>ASN1_DELETE_FLAG_ZEROIZE</a>);
+<a id='L1612' name='L1612'></a>        key-&gt;<a href='../S/5156.html#L44' title='Defined at 44 in tests/dh-compute.c.'>params</a>.algo = GNUTLS_PK_UNKNOWN;
+<a id='L1613' name='L1613'></a>        <strong class='reserved'>if</strong> (need_free)
+<a id='L1614' name='L1614'></a>                _gnutls_free_datum(&amp;_data);
+<a id='L1615' name='L1615'></a>        <strong class='reserved'>return</strong> result;
+<a id='L1616' name='L1616'></a><em class='brace'>}</em>
+<a id='L1617' name='L1617'></a>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L64'>[^]</a><a href='#L1527'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

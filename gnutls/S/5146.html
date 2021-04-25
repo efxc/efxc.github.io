@@ -1,0 +1,1246 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>tests/hostname-check.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6501.html'>tests</a>/hostname-check.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L835'>[^]</a>[v][top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L835' title='Defined at 835.'>doit</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2007-2012 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Simon Josefsson</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * GnuTLS is free software; you can redistribute it and/or modify it</em>
+<a id='L9' name='L9'></a><em class='comment'> * under the terms of the GNU General Public License as published by</em>
+<a id='L10' name='L10'></a><em class='comment'> * the Free Software Foundation; either version 3 of the License, or</em>
+<a id='L11' name='L11'></a><em class='comment'> * (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * GnuTLS is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with GnuTLS; if not, write to the Free Software Foundation,</em>
+<a id='L20' name='L20'></a><em class='comment'> * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#ifdef</em> HAVE_CONFIG_H
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L25' name='L25'></a><em class='sharp'>#endif</em>
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> &lt;gnutls/gnutls.h&gt;
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;<a href='../I/692.html'>gnutls/x509.h</a>&gt;
+<a id='L30' name='L30'></a><em class='sharp'>#ifdef</em> ENABLE_OPENPGP
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;<a href='6013.html'>gnutls/openpgp.h</a>&gt;
+<a id='L32' name='L32'></a><em class='sharp'>#endif</em>
+<a id='L33' name='L33'></a>
+<a id='L34' name='L34'></a><em class='sharp'>#include</em> "<a href='../I/424.html'>utils.h</a>"
+<a id='L35' name='L35'></a>
+<a id='L36' name='L36'></a><em class='comment'>/*</em>
+<a id='L37' name='L37'></a><em class='comment'>  A self-test of the RFC 2818 hostname matching algorithm.  Used to</em>
+<a id='L38' name='L38'></a><em class='comment'>  detect regressions of the bug reported in:</em>
+<a id='L39' name='L39'></a><em class='comment'>  http://lists.gnupg.org/pipermail/gnutls-dev/2007-February/001385.html</em>
+<a id='L40' name='L40'></a><em class='comment'>*/</em>
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a><em class='comment'>/* CN="*.com"</em>
+<a id='L43' name='L43'></a><em class='comment'> * dns_name = *.org</em>
+<a id='L44' name='L44'></a><em class='comment'> * dns_name = .example.net</em>
+<a id='L45' name='L45'></a><em class='comment'> * dns_name = .example.edu.gr</em>
+<a id='L46' name='L46'></a><em class='comment'>*/</em>
+<a id='L47' name='L47'></a><strong class='reserved'>char</strong> wildcards[] = "-----BEGIN CERTIFICATE-----"
+<a id='L48' name='L48'></a>"MIICwDCCAimgAwIBAgICPd8wDQYJKoZIhvcNAQELBQAwVTEOMAwGA1UEAwwFKi5j"
+<a id='L49' name='L49'></a>"b20xETAPBgNVBAsTCENBIGRlcHQuMRIwEAYDVQQKEwlLb2tvIGluYy4xDzANBgNV"
+<a id='L50' name='L50'></a>"BAgTBkF0dGlraTELMAkGA1UEBhMCR1IwIhgPMjAxNDAzMTkxMzI4MDhaGA85OTk5"
+<a id='L51' name='L51'></a>"MTIzMTIzNTk1OVowVTEOMAwGA1UEAwwFKi5jb20xETAPBgNVBAsTCENBIGRlcHQu"
+<a id='L52' name='L52'></a>"MRIwEAYDVQQKEwlLb2tvIGluYy4xDzANBgNVBAgTBkF0dGlraTELMAkGA1UEBhMC"
+<a id='L53' name='L53'></a>"R1IwgZ8wDQYJKoZIhvcNAQEBBQADgY0AMIGJAoGBAKXGznVDhL9kngInE/EDWfd5"
+<a id='L54' name='L54'></a>"LZLtfC9QpAPxLXm5hosFfjq7RKqvhM8TmB4cSjj3My16n3LUa20msDE3cBD7QunY"
+<a id='L55' name='L55'></a>"nRhlfhlJ/AWWBGiDHneGv+315RI7E/4zGJwaeh1pr0cCYHofuejP28g0MFGWPYyW"
+<a id='L56' name='L56'></a>"XAC8Yd4ID7E2IX+pAOMFAgMBAAGjgZowgZcwDAYDVR0TAQH/BAIwADBCBgNVHREE"
+<a id='L57' name='L57'></a>"OzA5gg93d3cuZXhhbXBsZS5jb22CBSoub3Jngg0qLmV4YW1wbGUubmV0ghAqLmV4"
+<a id='L58' name='L58'></a>"YW1wbGUuZWR1LmdyMBMGA1UdJQQMMAoGCCsGAQUFBwMBMA8GA1UdDwEB/wQFAwMH"
+<a id='L59' name='L59'></a>"oAAwHQYDVR0OBBYEFF1ArfDOlECVi36ZlB2SVCLKcjZfMA0GCSqGSIb3DQEBCwUA"
+<a id='L60' name='L60'></a>"A4GBAGcDnJIJFqjaDMk806xkfz7/FtbHYkj18ma3l7wgp27jeO/QDYunns5pqbqV"
+<a id='L61' name='L61'></a>"sxaKuPKLdWQdfIG7l4+TUnm/Hue6h2PFgbAyZtZbHlAtpEmLoSCmYlFqbRNqux0z"
+<a id='L62' name='L62'></a>"F5H1ocGzmbu1WQYXMlY1FYBvRDrAk7Wxt09WLdajH00S/fPT"
+<a id='L63' name='L63'></a>"-----END CERTIFICATE-----";
+<a id='L64' name='L64'></a>
+<a id='L65' name='L65'></a><em class='comment'>/* Certificate with no SAN nor CN. */</em>
+<a id='L66' name='L66'></a><strong class='reserved'>char</strong> pem1[] =
+<a id='L67' name='L67'></a>    "X.509 Certificate Information:\n"
+<a id='L68' name='L68'></a>    "   Version: 3\n"
+<a id='L69' name='L69'></a>    "   Serial Number (hex): 00\n"
+<a id='L70' name='L70'></a>    "   Issuer: O=GnuTLS hostname check test CA\n"
+<a id='L71' name='L71'></a>    "   Validity:\n"
+<a id='L72' name='L72'></a>    "           Not Before: Fri Feb 16 12:59:09 UTC 2007\n"
+<a id='L73' name='L73'></a>    "           Not After: Fri Mar 30 12:59:13 UTC 2007\n"
+<a id='L74' name='L74'></a>    "   Subject: O=GnuTLS hostname check test CA\n"
+<a id='L75' name='L75'></a>    "   Subject Public Key Algorithm: RSA\n"
+<a id='L76' name='L76'></a>    "           Modulus (bits 1024):\n"
+<a id='L77' name='L77'></a>    "                   be:ec:98:7a:1d:6f:7e:6b:25:9e:e8:20:78:42:a0:64\n"
+<a id='L78' name='L78'></a>    "                   05:66:43:99:6d:49:d5:18:ec:7d:b9:58:64:b2:80:a3\n"
+<a id='L79' name='L79'></a>    "                   14:61:9d:0a:4f:be:2f:f0:2e:fc:d2:ab:5c:36:df:53\n"
+<a id='L80' name='L80'></a>    "                   ec:43:c7:fc:de:91:bc:1e:01:a6:b7:6c:b2:07:10:2e\n"
+<a id='L81' name='L81'></a>    "                   cb:61:47:75:ca:03:ce:23:6e:38:f1:34:27:1a:1a:cd\n"
+<a id='L82' name='L82'></a>    "                   f7:96:f3:b3:f0:0d:67:7f:ca:77:84:3f:9c:29:f4:62\n"
+<a id='L83' name='L83'></a>    "                   91:f6:12:5b:62:5a:cc:ba:ed:08:2e:32:44:26:ac:fd\n"
+<a id='L84' name='L84'></a>    "                   23:ce:53:1b:bb:f2:87:fe:dc:78:93:7c:59:bf:a1:75\n"
+<a id='L85' name='L85'></a>    "           Exponent:\n"
+<a id='L86' name='L86'></a>    "                   01:00:01\n"
+<a id='L87' name='L87'></a>    "   Extensions:\n"
+<a id='L88' name='L88'></a>    "           Basic Constraints (critical):\n"
+<a id='L89' name='L89'></a>    "                   Certificate Authority (CA): TRUE\n"
+<a id='L90' name='L90'></a>    "           Subject Key Identifier (not critical):\n"
+<a id='L91' name='L91'></a>    "                   e93c1cfbad926ee606a4562ca2e1c05327c8f295\n"
+<a id='L92' name='L92'></a>    "   Signature Algorithm: RSA-SHA\n"
+<a id='L93' name='L93'></a>    "   Signature:\n"
+<a id='L94' name='L94'></a>    "           7b:e8:11:6c:15:3f:f9:01:a0:f1:28:0c:62:50:58:f8\n"
+<a id='L95' name='L95'></a>    "           92:44:fb:bf:ab:20:8a:3b:81:ca:e5:68:60:71:df:2b\n"
+<a id='L96' name='L96'></a>    "           e8:50:58:82:32:ef:fb:6e:4a:72:2c:c9:37:4f:88:1d\n"
+<a id='L97' name='L97'></a>    "           d7:1b:68:5b:db:83:1b:1a:f3:b4:8e:e0:88:03:e2:43\n"
+<a id='L98' name='L98'></a>    "           91:be:d8:b1:ca:f2:62:ec:a1:fd:1a:c8:41:8c:fe:53\n"
+<a id='L99' name='L99'></a>    "           1b:be:03:c9:a1:3d:f4:ae:57:fc:44:a6:34:bb:2c:2e\n"
+<a id='L100' name='L100'></a>    "           a7:56:14:1f:89:e9:3a:ec:1f:a3:da:d7:a1:94:3b:72\n"
+<a id='L101' name='L101'></a>    "           1d:12:71:b9:65:a1:85:a2:4c:3a:d1:2c:e9:e9:ea:1c\n"
+<a id='L102' name='L102'></a>    "Other Information:\n"
+<a id='L103' name='L103'></a>    "   MD5 fingerprint:\n"
+<a id='L104' name='L104'></a>    "           fd845ded8c28ba5e78d6c1844ceafd24\n"
+<a id='L105' name='L105'></a>    "   SHA-1 fingerprint:\n"
+<a id='L106' name='L106'></a>    "           0bae431dda3cae76012b82276e4cd92ad7961798\n"
+<a id='L107' name='L107'></a>    "   Public Key ID:\n"
+<a id='L108' name='L108'></a>    "           e93c1cfbad926ee606a4562ca2e1c05327c8f295\n"
+<a id='L109' name='L109'></a>    "\n"
+<a id='L110' name='L110'></a>    "-----BEGIN CERTIFICATE-----\n"
+<a id='L111' name='L111'></a>    "MIIB8TCCAVygAwIBAgIBADALBgkqhkiG9w0BAQUwKDEmMCQGA1UEChMdR251VExT\n"
+<a id='L112' name='L112'></a>    "IGhvc3RuYW1lIGNoZWNrIHRlc3QgQ0EwHhcNMDcwMjE2MTI1OTA5WhcNMDcwMzMw\n"
+<a id='L113' name='L113'></a>    "MTI1OTEzWjAoMSYwJAYDVQQKEx1HbnVUTFMgaG9zdG5hbWUgY2hlY2sgdGVzdCBD\n"
+<a id='L114' name='L114'></a>    "QTCBnDALBgkqhkiG9w0BAQEDgYwAMIGIAoGAvuyYeh1vfmslnuggeEKgZAVmQ5lt\n"
+<a id='L115' name='L115'></a>    "SdUY7H25WGSygKMUYZ0KT74v8C780qtcNt9T7EPH/N6RvB4BprdssgcQLsthR3XK\n"
+<a id='L116' name='L116'></a>    "A84jbjjxNCcaGs33lvOz8A1nf8p3hD+cKfRikfYSW2JazLrtCC4yRCas/SPOUxu7\n"
+<a id='L117' name='L117'></a>    "8of+3HiTfFm/oXUCAwEAAaMyMDAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQU\n"
+<a id='L118' name='L118'></a>    "6Twc+62SbuYGpFYsouHAUyfI8pUwCwYJKoZIhvcNAQEFA4GBAHvoEWwVP/kBoPEo\n"
+<a id='L119' name='L119'></a>    "DGJQWPiSRPu/qyCKO4HK5Whgcd8r6FBYgjLv+25KcizJN0+IHdcbaFvbgxsa87SO\n"
+<a id='L120' name='L120'></a>    "4IgD4kORvtixyvJi7KH9GshBjP5TG74DyaE99K5X/ESmNLssLqdWFB+J6TrsH6Pa\n"
+<a id='L121' name='L121'></a>    "16GUO3IdEnG5ZaGFokw60Szp6eoc\n" "-----END CERTIFICATE-----\n";
+<a id='L122' name='L122'></a>
+<a id='L123' name='L123'></a><em class='comment'>/* Certificate with CN but no SAN. */</em>
+<a id='L124' name='L124'></a><strong class='reserved'>char</strong> pem2[] =
+<a id='L125' name='L125'></a>    "X.509 Certificate Information:\n"
+<a id='L126' name='L126'></a>    "   Version: 3\n"
+<a id='L127' name='L127'></a>    "   Serial Number (hex): 00\n"
+<a id='L128' name='L128'></a>    "   Issuer: CN=www.example.org\n"
+<a id='L129' name='L129'></a>    "   Validity:\n"
+<a id='L130' name='L130'></a>    "           Not Before: Fri Feb 16 13:30:30 UTC 2007\n"
+<a id='L131' name='L131'></a>    "           Not After: Fri Mar 30 13:30:32 UTC 2007\n"
+<a id='L132' name='L132'></a>    "   Subject: CN=www.example.org\n"
+<a id='L133' name='L133'></a>    "   Subject Public Key Algorithm: RSA\n"
+<a id='L134' name='L134'></a>    "           Modulus (bits 1024):\n"
+<a id='L135' name='L135'></a>    "                   be:ec:98:7a:1d:6f:7e:6b:25:9e:e8:20:78:42:a0:64\n"
+<a id='L136' name='L136'></a>    "                   05:66:43:99:6d:49:d5:18:ec:7d:b9:58:64:b2:80:a3\n"
+<a id='L137' name='L137'></a>    "                   14:61:9d:0a:4f:be:2f:f0:2e:fc:d2:ab:5c:36:df:53\n"
+<a id='L138' name='L138'></a>    "                   ec:43:c7:fc:de:91:bc:1e:01:a6:b7:6c:b2:07:10:2e\n"
+<a id='L139' name='L139'></a>    "                   cb:61:47:75:ca:03:ce:23:6e:38:f1:34:27:1a:1a:cd\n"
+<a id='L140' name='L140'></a>    "                   f7:96:f3:b3:f0:0d:67:7f:ca:77:84:3f:9c:29:f4:62\n"
+<a id='L141' name='L141'></a>    "                   91:f6:12:5b:62:5a:cc:ba:ed:08:2e:32:44:26:ac:fd\n"
+<a id='L142' name='L142'></a>    "                   23:ce:53:1b:bb:f2:87:fe:dc:78:93:7c:59:bf:a1:75\n"
+<a id='L143' name='L143'></a>    "           Exponent:\n"
+<a id='L144' name='L144'></a>    "                   01:00:01\n"
+<a id='L145' name='L145'></a>    "   Extensions:\n"
+<a id='L146' name='L146'></a>    "           Basic Constraints (critical):\n"
+<a id='L147' name='L147'></a>    "                   Certificate Authority (CA): TRUE\n"
+<a id='L148' name='L148'></a>    "           Subject Key Identifier (not critical):\n"
+<a id='L149' name='L149'></a>    "                   e93c1cfbad926ee606a4562ca2e1c05327c8f295\n"
+<a id='L150' name='L150'></a>    "   Signature Algorithm: RSA-SHA\n"
+<a id='L151' name='L151'></a>    "   Signature:\n"
+<a id='L152' name='L152'></a>    "           b0:4e:ac:fb:89:12:36:27:f3:72:b8:1a:57:dc:bf:f3\n"
+<a id='L153' name='L153'></a>    "           a9:27:de:15:75:94:4f:65:cc:3a:59:12:4b:91:0e:28\n"
+<a id='L154' name='L154'></a>    "           b9:8d:d3:6e:ac:5d:a8:3e:b9:35:81:0c:8f:c7:95:72\n"
+<a id='L155' name='L155'></a>    "           d9:51:61:06:00:c6:aa:68:54:c8:52:3f:b6:1f:21:92\n"
+<a id='L156' name='L156'></a>    "           c8:fd:15:50:15:ac:d4:18:29:a1:ff:c9:25:5a:ce:5e\n"
+<a id='L157' name='L157'></a>    "           11:7f:82:b2:94:8c:44:3c:3f:de:d7:3b:ff:1c:da:9c\n"
+<a id='L158' name='L158'></a>    "           81:fa:63:e1:a7:67:ee:aa:fa:d0:c9:2f:66:1b:5e:af\n"
+<a id='L159' name='L159'></a>    "           46:8c:f9:53:55:e7:80:7e:74:95:98:d4:2d:5f:94:ab\n"
+<a id='L160' name='L160'></a>    "Other Information:\n"
+<a id='L161' name='L161'></a>    "   MD5 fingerprint:\n"
+<a id='L162' name='L162'></a>    "           30cda7de4f0360892547974f45111ac1\n"
+<a id='L163' name='L163'></a>    "   SHA-1 fingerprint:\n"
+<a id='L164' name='L164'></a>    "           39e3f8fec6a8d842390b6536998a957c1a6b7322\n"
+<a id='L165' name='L165'></a>    "   Public Key ID:\n"
+<a id='L166' name='L166'></a>    "           e93c1cfbad926ee606a4562ca2e1c05327c8f295\n"
+<a id='L167' name='L167'></a>    "\n"
+<a id='L168' name='L168'></a>    "-----BEGIN CERTIFICATE-----\n"
+<a id='L169' name='L169'></a>    "MIIB1TCCAUCgAwIBAgIBADALBgkqhkiG9w0BAQUwGjEYMBYGA1UEAxMPd3d3LmV4\n"
+<a id='L170' name='L170'></a>    "YW1wbGUub3JnMB4XDTA3MDIxNjEzMzAzMFoXDTA3MDMzMDEzMzAzMlowGjEYMBYG\n"
+<a id='L171' name='L171'></a>    "A1UEAxMPd3d3LmV4YW1wbGUub3JnMIGcMAsGCSqGSIb3DQEBAQOBjAAwgYgCgYC+\n"
+<a id='L172' name='L172'></a>    "7Jh6HW9+ayWe6CB4QqBkBWZDmW1J1RjsfblYZLKAoxRhnQpPvi/wLvzSq1w231Ps\n"
+<a id='L173' name='L173'></a>    "Q8f83pG8HgGmt2yyBxAuy2FHdcoDziNuOPE0JxoazfeW87PwDWd/yneEP5wp9GKR\n"
+<a id='L174' name='L174'></a>    "9hJbYlrMuu0ILjJEJqz9I85TG7vyh/7ceJN8Wb+hdQIDAQABozIwMDAPBgNVHRMB\n"
+<a id='L175' name='L175'></a>    "Af8EBTADAQH/MB0GA1UdDgQWBBTpPBz7rZJu5gakViyi4cBTJ8jylTALBgkqhkiG\n"
+<a id='L176' name='L176'></a>    "9w0BAQUDgYEAsE6s+4kSNifzcrgaV9y/86kn3hV1lE9lzDpZEkuRDii5jdNurF2o\n"
+<a id='L177' name='L177'></a>    "Prk1gQyPx5Vy2VFhBgDGqmhUyFI/th8hksj9FVAVrNQYKaH/ySVazl4Rf4KylIxE\n"
+<a id='L178' name='L178'></a>    "PD/e1zv/HNqcgfpj4adn7qr60MkvZhter0aM+VNV54B+dJWY1C1flKs=\n"
+<a id='L179' name='L179'></a>    "-----END CERTIFICATE-----\n";
+<a id='L180' name='L180'></a>
+<a id='L181' name='L181'></a><em class='comment'>/* Certificate with SAN but no CN. */</em>
+<a id='L182' name='L182'></a><strong class='reserved'>char</strong> pem3[] =
+<a id='L183' name='L183'></a>    "X.509 Certificate Information:"
+<a id='L184' name='L184'></a>    "   Version: 3\n"
+<a id='L185' name='L185'></a>    "   Serial Number (hex): 00\n"
+<a id='L186' name='L186'></a>    "   Issuer: O=GnuTLS hostname check test CA\n"
+<a id='L187' name='L187'></a>    "   Validity:\n"
+<a id='L188' name='L188'></a>    "           Not Before: Fri Feb 16 13:36:27 UTC 2007\n"
+<a id='L189' name='L189'></a>    "           Not After: Fri Mar 30 13:36:29 UTC 2007\n"
+<a id='L190' name='L190'></a>    "   Subject: O=GnuTLS hostname check test CA\n"
+<a id='L191' name='L191'></a>    "   Subject Public Key Algorithm: RSA\n"
+<a id='L192' name='L192'></a>    "           Modulus (bits 1024):\n"
+<a id='L193' name='L193'></a>    "                   be:ec:98:7a:1d:6f:7e:6b:25:9e:e8:20:78:42:a0:64\n"
+<a id='L194' name='L194'></a>    "                   05:66:43:99:6d:49:d5:18:ec:7d:b9:58:64:b2:80:a3\n"
+<a id='L195' name='L195'></a>    "                   14:61:9d:0a:4f:be:2f:f0:2e:fc:d2:ab:5c:36:df:53\n"
+<a id='L196' name='L196'></a>    "                   ec:43:c7:fc:de:91:bc:1e:01:a6:b7:6c:b2:07:10:2e\n"
+<a id='L197' name='L197'></a>    "                   cb:61:47:75:ca:03:ce:23:6e:38:f1:34:27:1a:1a:cd\n"
+<a id='L198' name='L198'></a>    "                   f7:96:f3:b3:f0:0d:67:7f:ca:77:84:3f:9c:29:f4:62\n"
+<a id='L199' name='L199'></a>    "                   91:f6:12:5b:62:5a:cc:ba:ed:08:2e:32:44:26:ac:fd\n"
+<a id='L200' name='L200'></a>    "                   23:ce:53:1b:bb:f2:87:fe:dc:78:93:7c:59:bf:a1:75\n"
+<a id='L201' name='L201'></a>    "           Exponent:\n"
+<a id='L202' name='L202'></a>    "                   01:00:01\n"
+<a id='L203' name='L203'></a>    "   Extensions:\n"
+<a id='L204' name='L204'></a>    "           Basic Constraints (critical):\n"
+<a id='L205' name='L205'></a>    "                   Certificate Authority (CA): TRUE\n"
+<a id='L206' name='L206'></a>    "           Subject Alternative Name (not critical):\n"
+<a id='L207' name='L207'></a>    "                   DNSname: www.example.org\n"
+<a id='L208' name='L208'></a>    "           Key Purpose (not critical):\n"
+<a id='L209' name='L209'></a>    "                   TLS WWW Server.\n"
+<a id='L210' name='L210'></a>    "           Subject Key Identifier (not critical):\n"
+<a id='L211' name='L211'></a>    "                   e93c1cfbad926ee606a4562ca2e1c05327c8f295\n"
+<a id='L212' name='L212'></a>    "   Signature Algorithm: RSA-SHA\n"
+<a id='L213' name='L213'></a>    "   Signature:\n"
+<a id='L214' name='L214'></a>    "           a1:30:bc:01:b3:0f:98:7f:8e:76:7d:23:87:34:15:7f\n"
+<a id='L215' name='L215'></a>    "           a6:ae:a1:fb:87:75:e3:e8:1a:e5:5e:03:5d:bf:44:75\n"
+<a id='L216' name='L216'></a>    "           46:4f:d2:a1:28:50:84:49:6d:3b:e0:bc:4e:de:79:85\n"
+<a id='L217' name='L217'></a>    "           fa:e1:07:b7:6e:0c:14:04:4a:82:b9:f3:22:6a:bc:99\n"
+<a id='L218' name='L218'></a>    "           14:20:3b:49:1f:e4:97:d9:ea:eb:73:9a:83:a6:cc:b8\n"
+<a id='L219' name='L219'></a>    "           55:fb:52:8e:5f:86:7c:9d:fa:af:03:76:ae:97:e0:64\n"
+<a id='L220' name='L220'></a>    "           50:59:73:22:99:55:cf:da:59:31:0a:e8:6d:a0:53:bc\n"
+<a id='L221' name='L221'></a>    "           39:63:2e:ac:92:4a:e9:8b:1e:d0:03:df:33:bb:4e:88\n"
+<a id='L222' name='L222'></a>    "Other Information:\n"
+<a id='L223' name='L223'></a>    "   MD5 fingerprint:\n"
+<a id='L224' name='L224'></a>    "           df3f57d00c8149bd826b177d6ea4f369\n"
+<a id='L225' name='L225'></a>    "   SHA-1 fingerprint:\n"
+<a id='L226' name='L226'></a>    "           e95e56e2acac305f72ea6f698c11624663a595bd\n"
+<a id='L227' name='L227'></a>    "   Public Key ID:\n"
+<a id='L228' name='L228'></a>    "           e93c1cfbad926ee606a4562ca2e1c05327c8f295\n"
+<a id='L229' name='L229'></a>    "\n"
+<a id='L230' name='L230'></a>    "-----BEGIN CERTIFICATE-----\n"
+<a id='L231' name='L231'></a>    "MIICIjCCAY2gAwIBAgIBADALBgkqhkiG9w0BAQUwKDEmMCQGA1UEChMdR251VExT\n"
+<a id='L232' name='L232'></a>    "IGhvc3RuYW1lIGNoZWNrIHRlc3QgQ0EwHhcNMDcwMjE2MTMzNjI3WhcNMDcwMzMw\n"
+<a id='L233' name='L233'></a>    "MTMzNjI5WjAoMSYwJAYDVQQKEx1HbnVUTFMgaG9zdG5hbWUgY2hlY2sgdGVzdCBD\n"
+<a id='L234' name='L234'></a>    "QTCBnDALBgkqhkiG9w0BAQEDgYwAMIGIAoGAvuyYeh1vfmslnuggeEKgZAVmQ5lt\n"
+<a id='L235' name='L235'></a>    "SdUY7H25WGSygKMUYZ0KT74v8C780qtcNt9T7EPH/N6RvB4BprdssgcQLsthR3XK\n"
+<a id='L236' name='L236'></a>    "A84jbjjxNCcaGs33lvOz8A1nf8p3hD+cKfRikfYSW2JazLrtCC4yRCas/SPOUxu7\n"
+<a id='L237' name='L237'></a>    "8of+3HiTfFm/oXUCAwEAAaNjMGEwDwYDVR0TAQH/BAUwAwEB/zAaBgNVHREEEzAR\n"
+<a id='L238' name='L238'></a>    "gg93d3cuZXhhbXBsZS5vcmcwEwYDVR0lBAwwCgYIKwYBBQUHAwEwHQYDVR0OBBYE\n"
+<a id='L239' name='L239'></a>    "FOk8HPutkm7mBqRWLKLhwFMnyPKVMAsGCSqGSIb3DQEBBQOBgQChMLwBsw+Yf452\n"
+<a id='L240' name='L240'></a>    "fSOHNBV/pq6h+4d14+ga5V4DXb9EdUZP0qEoUIRJbTvgvE7eeYX64Qe3bgwUBEqC\n"
+<a id='L241' name='L241'></a>    "ufMiaryZFCA7SR/kl9nq63Oag6bMuFX7Uo5fhnyd+q8Ddq6X4GRQWXMimVXP2lkx\n"
+<a id='L242' name='L242'></a>    "CuhtoFO8OWMurJJK6Yse0APfM7tOiA==\n" "-----END CERTIFICATE-----\n";
+<a id='L243' name='L243'></a>
+<a id='L244' name='L244'></a><em class='comment'>/* Certificate with wildcard SAN but no CN. */</em>
+<a id='L245' name='L245'></a><strong class='reserved'>char</strong> pem4[] =
+<a id='L246' name='L246'></a>    "X.509 Certificate Information:\n"
+<a id='L247' name='L247'></a>    "   Version: 3\n"
+<a id='L248' name='L248'></a>    "   Serial Number (hex): 00\n"
+<a id='L249' name='L249'></a>    "   Issuer:\n"
+<a id='L250' name='L250'></a>    "   Validity:\n"
+<a id='L251' name='L251'></a>    "           Not Before: Fri Feb 16 13:40:10 UTC 2007\n"
+<a id='L252' name='L252'></a>    "           Not After: Fri Mar 30 13:40:12 UTC 2007\n"
+<a id='L253' name='L253'></a>    "   Subject:\n"
+<a id='L254' name='L254'></a>    "   Subject Public Key Algorithm: RSA\n"
+<a id='L255' name='L255'></a>    "           Modulus (bits 1024):\n"
+<a id='L256' name='L256'></a>    "                   be:ec:98:7a:1d:6f:7e:6b:25:9e:e8:20:78:42:a0:64\n"
+<a id='L257' name='L257'></a>    "                   05:66:43:99:6d:49:d5:18:ec:7d:b9:58:64:b2:80:a3\n"
+<a id='L258' name='L258'></a>    "                   14:61:9d:0a:4f:be:2f:f0:2e:fc:d2:ab:5c:36:df:53\n"
+<a id='L259' name='L259'></a>    "                   ec:43:c7:fc:de:91:bc:1e:01:a6:b7:6c:b2:07:10:2e\n"
+<a id='L260' name='L260'></a>    "                   cb:61:47:75:ca:03:ce:23:6e:38:f1:34:27:1a:1a:cd\n"
+<a id='L261' name='L261'></a>    "                   f7:96:f3:b3:f0:0d:67:7f:ca:77:84:3f:9c:29:f4:62\n"
+<a id='L262' name='L262'></a>    "                   91:f6:12:5b:62:5a:cc:ba:ed:08:2e:32:44:26:ac:fd\n"
+<a id='L263' name='L263'></a>    "                   23:ce:53:1b:bb:f2:87:fe:dc:78:93:7c:59:bf:a1:75\n"
+<a id='L264' name='L264'></a>    "           Exponent:\n"
+<a id='L265' name='L265'></a>    "                   01:00:01\n"
+<a id='L266' name='L266'></a>    "   Extensions:\n"
+<a id='L267' name='L267'></a>    "           Basic Constraints (critical):\n"
+<a id='L268' name='L268'></a>    "                   Certificate Authority (CA): TRUE\n"
+<a id='L269' name='L269'></a>    "           Subject Alternative Name (not critical):\n"
+<a id='L270' name='L270'></a>    "                   DNSname: *.example.org\n"
+<a id='L271' name='L271'></a>    "           Key Purpose (not critical):\n"
+<a id='L272' name='L272'></a>    "                   TLS WWW Server.\n"
+<a id='L273' name='L273'></a>    "           Subject Key Identifier (not critical):\n"
+<a id='L274' name='L274'></a>    "                   e93c1cfbad926ee606a4562ca2e1c05327c8f295\n"
+<a id='L275' name='L275'></a>    "   Signature Algorithm: RSA-SHA\n"
+<a id='L276' name='L276'></a>    "   Signature:\n"
+<a id='L277' name='L277'></a>    "           b1:62:e5:e3:0b:a5:99:58:b0:1c:5c:f5:d1:3f:7c:bb\n"
+<a id='L278' name='L278'></a>    "           67:e1:43:c5:d7:a2:5c:db:f2:5a:f3:03:fc:76:e4:4d\n"
+<a id='L279' name='L279'></a>    "           c1:a0:89:36:24:82:a4:a1:ad:f5:83:e3:96:75:f4:c4\n"
+<a id='L280' name='L280'></a>    "           f3:eb:ff:3a:9b:da:d2:2c:58:d4:10:37:50:33:d1:39\n"
+<a id='L281' name='L281'></a>    "           53:71:9e:48:2d:b2:5b:27:ce:1e:d9:d5:36:59:ac:17\n"
+<a id='L282' name='L282'></a>    "           3a:83:cc:59:6b:8f:6a:24:b8:9f:f0:e6:14:03:23:5a\n"
+<a id='L283' name='L283'></a>    "           87:e7:33:10:32:11:58:a2:bb:f1:e5:5a:88:87:bb:80\n"
+<a id='L284' name='L284'></a>    "           1b:b6:bb:12:18:cb:15:d5:3a:fc:99:e4:42:5a:ba:45\n"
+<a id='L285' name='L285'></a>    "Other Information:\n"
+<a id='L286' name='L286'></a>    "   MD5 fingerprint:\n"
+<a id='L287' name='L287'></a>    "           a411da7b0fa064d214116d5f94e06c24\n"
+<a id='L288' name='L288'></a>    "   SHA-1 fingerprint:\n"
+<a id='L289' name='L289'></a>    "           3596e796c73ed096d762ab3d440a9ab55a386b3b\n"
+<a id='L290' name='L290'></a>    "   Public Key ID:\n"
+<a id='L291' name='L291'></a>    "           e93c1cfbad926ee606a4562ca2e1c05327c8f295\n"
+<a id='L292' name='L292'></a>    "\n"
+<a id='L293' name='L293'></a>    "-----BEGIN CERTIFICATE-----\n"
+<a id='L294' name='L294'></a>    "MIIB0DCCATugAwIBAgIBADALBgkqhkiG9w0BAQUwADAeFw0wNzAyMTYxMzQwMTBa\n"
+<a id='L295' name='L295'></a>    "Fw0wNzAzMzAxMzQwMTJaMAAwgZwwCwYJKoZIhvcNAQEBA4GMADCBiAKBgL7smHod\n"
+<a id='L296' name='L296'></a>    "b35rJZ7oIHhCoGQFZkOZbUnVGOx9uVhksoCjFGGdCk++L/Au/NKrXDbfU+xDx/ze\n"
+<a id='L297' name='L297'></a>    "kbweAaa3bLIHEC7LYUd1ygPOI2448TQnGhrN95bzs/ANZ3/Kd4Q/nCn0YpH2Elti\n"
+<a id='L298' name='L298'></a>    "Wsy67QguMkQmrP0jzlMbu/KH/tx4k3xZv6F1AgMBAAGjYTBfMA8GA1UdEwEB/wQF\n"
+<a id='L299' name='L299'></a>    "MAMBAf8wGAYDVR0RBBEwD4INKi5leGFtcGxlLm9yZzATBgNVHSUEDDAKBggrBgEF\n"
+<a id='L300' name='L300'></a>    "BQcDATAdBgNVHQ4EFgQU6Twc+62SbuYGpFYsouHAUyfI8pUwCwYJKoZIhvcNAQEF\n"
+<a id='L301' name='L301'></a>    "A4GBALFi5eMLpZlYsBxc9dE/fLtn4UPF16Jc2/Ja8wP8duRNwaCJNiSCpKGt9YPj\n"
+<a id='L302' name='L302'></a>    "lnX0xPPr/zqb2tIsWNQQN1Az0TlTcZ5ILbJbJ84e2dU2WawXOoPMWWuPaiS4n/Dm\n"
+<a id='L303' name='L303'></a>    "FAMjWofnMxAyEViiu/HlWoiHu4AbtrsSGMsV1Tr8meRCWrpF\n"
+<a id='L304' name='L304'></a>    "-----END CERTIFICATE-----\n";
+<a id='L305' name='L305'></a>
+<a id='L306' name='L306'></a><em class='sharp'>#ifdef</em> SUPPORT_COMPLEX_WILDCARDS
+<a id='L307' name='L307'></a><em class='comment'>/* Certificate with multiple wildcards SAN but no CN. */</em>
+<a id='L308' name='L308'></a><strong class='reserved'>char</strong> pem6[] =
+<a id='L309' name='L309'></a>    "X.509 Certificate Information:\n"
+<a id='L310' name='L310'></a>    "   Version: 3\n"
+<a id='L311' name='L311'></a>    "   Serial Number (hex): 00\n"
+<a id='L312' name='L312'></a>    "   Validity:\n"
+<a id='L313' name='L313'></a>    "           Not Before: Sat May  3 11:00:51 UTC 2008\n"
+<a id='L314' name='L314'></a>    "           Not After: Sat May 17 11:00:54 UTC 2008\n"
+<a id='L315' name='L315'></a>    "   Subject: O=GnuTLS hostname check test CA\n"
+<a id='L316' name='L316'></a>    "   Subject Public Key Algorithm: RSA\n"
+<a id='L317' name='L317'></a>    "           Modulus (bits 1024):\n"
+<a id='L318' name='L318'></a>    "                   d2:05:c1:65:cb:bd:1e:2e:eb:7b:87:07:94:4c:93:33\n"
+<a id='L319' name='L319'></a>    "                   f3:81:83:7d:32:1b:71:4e:4e:7f:c7:bc:bf:4b:2f:f2\n"
+<a id='L320' name='L320'></a>    "                   49:b5:cf:bf:c0:b8:e8:29:cc:f3:61:bd:2e:1d:e4:e8\n"
+<a id='L321' name='L321'></a>    "                   19:dd:c5:bd:2e:f0:35:b1:fd:30:d7:f5:a8:7c:83:9a\n"
+<a id='L322' name='L322'></a>    "                   13:9e:bf:25:ed:08:a6:05:9e:7b:4e:23:59:c3:0e:5a\n"
+<a id='L323' name='L323'></a>    "                   f3:bf:54:c7:dc:d4:13:57:a1:0f:a2:9e:c8:ab:75:66\n"
+<a id='L324' name='L324'></a>    "                   de:07:84:8d:68:ad:71:04:e0:9c:bd:cb:f6:08:7a:97\n"
+<a id='L325' name='L325'></a>    "                   42:f8:10:94:29:01:4a:7e:61:d7:04:21:05:4c:f1:07\n"
+<a id='L326' name='L326'></a>    "           Exponent:\n"
+<a id='L327' name='L327'></a>    "                   01:00:01\n"
+<a id='L328' name='L328'></a>    "   Extensions:\n"
+<a id='L329' name='L329'></a>    "           Basic Constraints (critical):\n"
+<a id='L330' name='L330'></a>    "                   Certificate Authority (CA): TRUE\n"
+<a id='L331' name='L331'></a>    "           Subject Alternative Name (not critical):\n"
+<a id='L332' name='L332'></a>    "                   DNSname: *.*.example.org\n"
+<a id='L333' name='L333'></a>    "           Key Purpose (not critical):\n"
+<a id='L334' name='L334'></a>    "                   TLS WWW Server.\n"
+<a id='L335' name='L335'></a>    "           Subject Key Identifier (not critical):\n"
+<a id='L336' name='L336'></a>    "                   5493e6599b283b4529378818aef9a4abbf4d9918\n"
+<a id='L337' name='L337'></a>    "Other Information:\n"
+<a id='L338' name='L338'></a>    "   Public Key ID:\n"
+<a id='L339' name='L339'></a>    "           5493e6599b283b4529378818aef9a4abbf4d9918\n"
+<a id='L340' name='L340'></a>    "\n"
+<a id='L341' name='L341'></a>    "-----BEGIN CERTIFICATE-----\n"
+<a id='L342' name='L342'></a>    "MIICIjCCAY2gAwIBAgIBADALBgkqhkiG9w0BAQUwKDEmMCQGA1UEChMdR251VExT\n"
+<a id='L343' name='L343'></a>    "IGhvc3RuYW1lIGNoZWNrIHRlc3QgQ0EwHhcNMDgwNTAzMTEwMDUxWhcNMDgwNTE3\n"
+<a id='L344' name='L344'></a>    "MTEwMDU0WjAoMSYwJAYDVQQKEx1HbnVUTFMgaG9zdG5hbWUgY2hlY2sgdGVzdCBD\n"
+<a id='L345' name='L345'></a>    "QTCBnDALBgkqhkiG9w0BAQEDgYwAMIGIAoGA0gXBZcu9Hi7re4cHlEyTM/OBg30y\n"
+<a id='L346' name='L346'></a>    "G3FOTn/HvL9LL/JJtc+/wLjoKczzYb0uHeToGd3FvS7wNbH9MNf1qHyDmhOevyXt\n"
+<a id='L347' name='L347'></a>    "CKYFnntOI1nDDlrzv1TH3NQTV6EPop7Iq3Vm3geEjWitcQTgnL3L9gh6l0L4EJQp\n"
+<a id='L348' name='L348'></a>    "AUp+YdcEIQVM8QcCAwEAAaNjMGEwDwYDVR0TAQH/BAUwAwEB/zAaBgNVHREEEzAR\n"
+<a id='L349' name='L349'></a>    "gg8qLiouZXhhbXBsZS5vcmcwEwYDVR0lBAwwCgYIKwYBBQUHAwEwHQYDVR0OBBYE\n"
+<a id='L350' name='L350'></a>    "FFST5lmbKDtFKTeIGK75pKu/TZkYMAsGCSqGSIb3DQEBBQOBgQAQ9PStleVvfmlK\n"
+<a id='L351' name='L351'></a>    "wRs8RE/oOO+ouC3qLdnumNEITMRFh8Q12/X4yMLD3CH0aQ/hvHcP26PxAWzpNutk\n"
+<a id='L352' name='L352'></a>    "swNx7AzsCu6pN1t1aI3jLgo8e4/zZi57e8QcRuXZPDJxtJxVhJZX/C4pSz802WhS\n"
+<a id='L353' name='L353'></a>    "64NgtpHEMu9JUHFhtRwPcvVGYqPUUA==\n" "-----END CERTIFICATE-----\n";
+<a id='L354' name='L354'></a>
+<a id='L355' name='L355'></a><em class='comment'>/* Certificate with prefixed and suffixed wildcard SAN but no CN. */</em>
+<a id='L356' name='L356'></a><strong class='reserved'>char</strong> pem7[] =
+<a id='L357' name='L357'></a>    "X.509 Certificate Information:\n"
+<a id='L358' name='L358'></a>    "   Version: 3\n"
+<a id='L359' name='L359'></a>    "   Serial Number (hex): 00\n"
+<a id='L360' name='L360'></a>    "   Validity:\n"
+<a id='L361' name='L361'></a>    "           Not Before: Sat May  3 11:02:43 UTC 2008\n"
+<a id='L362' name='L362'></a>    "           Not After: Sat May 17 11:02:45 UTC 2008\n"
+<a id='L363' name='L363'></a>    "   Subject: O=GnuTLS hostname check test CA\n"
+<a id='L364' name='L364'></a>    "   Subject Public Key Algorithm: RSA\n"
+<a id='L365' name='L365'></a>    "           Modulus (bits 1024):\n"
+<a id='L366' name='L366'></a>    "                   d2:05:c1:65:cb:bd:1e:2e:eb:7b:87:07:94:4c:93:33\n"
+<a id='L367' name='L367'></a>    "                   f3:81:83:7d:32:1b:71:4e:4e:7f:c7:bc:bf:4b:2f:f2\n"
+<a id='L368' name='L368'></a>    "                   49:b5:cf:bf:c0:b8:e8:29:cc:f3:61:bd:2e:1d:e4:e8\n"
+<a id='L369' name='L369'></a>    "                   19:dd:c5:bd:2e:f0:35:b1:fd:30:d7:f5:a8:7c:83:9a\n"
+<a id='L370' name='L370'></a>    "                   13:9e:bf:25:ed:08:a6:05:9e:7b:4e:23:59:c3:0e:5a\n"
+<a id='L371' name='L371'></a>    "                   f3:bf:54:c7:dc:d4:13:57:a1:0f:a2:9e:c8:ab:75:66\n"
+<a id='L372' name='L372'></a>    "                   de:07:84:8d:68:ad:71:04:e0:9c:bd:cb:f6:08:7a:97\n"
+<a id='L373' name='L373'></a>    "                   42:f8:10:94:29:01:4a:7e:61:d7:04:21:05:4c:f1:07\n"
+<a id='L374' name='L374'></a>    "           Exponent:\n"
+<a id='L375' name='L375'></a>    "                   01:00:01\n"
+<a id='L376' name='L376'></a>    "   Extensions:\n"
+<a id='L377' name='L377'></a>    "           Basic Constraints (critical):\n"
+<a id='L378' name='L378'></a>    "                   Certificate Authority (CA): TRUE\n"
+<a id='L379' name='L379'></a>    "           Subject Alternative Name (not critical):\n"
+<a id='L380' name='L380'></a>    "                   DNSname: foo*bar.example.org\n"
+<a id='L381' name='L381'></a>    "           Key Purpose (not critical):\n"
+<a id='L382' name='L382'></a>    "                   TLS WWW Server.\n"
+<a id='L383' name='L383'></a>    "           Subject Key Identifier (not critical):\n"
+<a id='L384' name='L384'></a>    "                   5493e6599b283b4529378818aef9a4abbf4d9918\n"
+<a id='L385' name='L385'></a>    "Other Information:\n"
+<a id='L386' name='L386'></a>    "   Public Key ID:\n"
+<a id='L387' name='L387'></a>    "           5493e6599b283b4529378818aef9a4abbf4d9918\n"
+<a id='L388' name='L388'></a>    "\n"
+<a id='L389' name='L389'></a>    "-----BEGIN CERTIFICATE-----\n"
+<a id='L390' name='L390'></a>    "MIICJjCCAZGgAwIBAgIBADALBgkqhkiG9w0BAQUwKDEmMCQGA1UEChMdR251VExT\n"
+<a id='L391' name='L391'></a>    "IGhvc3RuYW1lIGNoZWNrIHRlc3QgQ0EwHhcNMDgwNTAzMTEwMjQzWhcNMDgwNTE3\n"
+<a id='L392' name='L392'></a>    "MTEwMjQ1WjAoMSYwJAYDVQQKEx1HbnVUTFMgaG9zdG5hbWUgY2hlY2sgdGVzdCBD\n"
+<a id='L393' name='L393'></a>    "QTCBnDALBgkqhkiG9w0BAQEDgYwAMIGIAoGA0gXBZcu9Hi7re4cHlEyTM/OBg30y\n"
+<a id='L394' name='L394'></a>    "G3FOTn/HvL9LL/JJtc+/wLjoKczzYb0uHeToGd3FvS7wNbH9MNf1qHyDmhOevyXt\n"
+<a id='L395' name='L395'></a>    "CKYFnntOI1nDDlrzv1TH3NQTV6EPop7Iq3Vm3geEjWitcQTgnL3L9gh6l0L4EJQp\n"
+<a id='L396' name='L396'></a>    "AUp+YdcEIQVM8QcCAwEAAaNnMGUwDwYDVR0TAQH/BAUwAwEB/zAeBgNVHREEFzAV\n"
+<a id='L397' name='L397'></a>    "ghNmb28qYmFyLmV4YW1wbGUub3JnMBMGA1UdJQQMMAoGCCsGAQUFBwMBMB0GA1Ud\n"
+<a id='L398' name='L398'></a>    "DgQWBBRUk+ZZmyg7RSk3iBiu+aSrv02ZGDALBgkqhkiG9w0BAQUDgYEAPPNe38jc\n"
+<a id='L399' name='L399'></a>    "8NsZQVKKLYc1Y4y8LRPhvnxkSnlcGa1RzYZY1s12BZ6OVIfyxD1Z9BcNdqRSq7bQ\n"
+<a id='L400' name='L400'></a>    "kEicsGp5ugGQTNq6aSlzYOUD9/fUP3jDsH7HVb36aCF3waGCQWj+pLqK0LYcW2p/\n"
+<a id='L401' name='L401'></a>    "xnr5+z4YevFBhn7l/fMhg8TzKejxYm7TECg=\n" "-----END CERTIFICATE-----\n";
+<a id='L402' name='L402'></a><em class='sharp'>#endif</em>
+<a id='L403' name='L403'></a>
+<a id='L404' name='L404'></a><em class='comment'>/* Certificate with ending wildcard SAN but no CN. */</em>
+<a id='L405' name='L405'></a><strong class='reserved'>char</strong> pem8[] =
+<a id='L406' name='L406'></a>    "X.509 Certificate Information:\n"
+<a id='L407' name='L407'></a>    "   Version: 3\n"
+<a id='L408' name='L408'></a>    "   Serial Number (hex): 00\n"
+<a id='L409' name='L409'></a>    "   Validity:\n"
+<a id='L410' name='L410'></a>    "           Not Before: Sat May  3 11:24:38 UTC 2008\n"
+<a id='L411' name='L411'></a>    "           Not After: Sat May 17 11:24:40 UTC 2008\n"
+<a id='L412' name='L412'></a>    "   Subject: O=GnuTLS hostname check test CA\n"
+<a id='L413' name='L413'></a>    "   Subject Public Key Algorithm: RSA\n"
+<a id='L414' name='L414'></a>    "           Modulus (bits 1024):\n"
+<a id='L415' name='L415'></a>    "                   d2:05:c1:65:cb:bd:1e:2e:eb:7b:87:07:94:4c:93:33\n"
+<a id='L416' name='L416'></a>    "                   f3:81:83:7d:32:1b:71:4e:4e:7f:c7:bc:bf:4b:2f:f2\n"
+<a id='L417' name='L417'></a>    "                   49:b5:cf:bf:c0:b8:e8:29:cc:f3:61:bd:2e:1d:e4:e8\n"
+<a id='L418' name='L418'></a>    "                   19:dd:c5:bd:2e:f0:35:b1:fd:30:d7:f5:a8:7c:83:9a\n"
+<a id='L419' name='L419'></a>    "                   13:9e:bf:25:ed:08:a6:05:9e:7b:4e:23:59:c3:0e:5a\n"
+<a id='L420' name='L420'></a>    "                   f3:bf:54:c7:dc:d4:13:57:a1:0f:a2:9e:c8:ab:75:66\n"
+<a id='L421' name='L421'></a>    "                   de:07:84:8d:68:ad:71:04:e0:9c:bd:cb:f6:08:7a:97\n"
+<a id='L422' name='L422'></a>    "                   42:f8:10:94:29:01:4a:7e:61:d7:04:21:05:4c:f1:07\n"
+<a id='L423' name='L423'></a>    "           Exponent:\n"
+<a id='L424' name='L424'></a>    "                   01:00:01\n"
+<a id='L425' name='L425'></a>    "   Extensions:\n"
+<a id='L426' name='L426'></a>    "           Basic Constraints (critical):\n"
+<a id='L427' name='L427'></a>    "                   Certificate Authority (CA): TRUE\n"
+<a id='L428' name='L428'></a>    "           Subject Alternative Name (not critical):\n"
+<a id='L429' name='L429'></a>    "                   DNSname: www.example.*\n"
+<a id='L430' name='L430'></a>    "           Key Purpose (not critical):\n"
+<a id='L431' name='L431'></a>    "                   TLS WWW Server.\n"
+<a id='L432' name='L432'></a>    "           Subject Key Identifier (not critical):\n"
+<a id='L433' name='L433'></a>    "                   5493e6599b283b4529378818aef9a4abbf4d9918\n"
+<a id='L434' name='L434'></a>    "Other Information:\n"
+<a id='L435' name='L435'></a>    "   Public Key ID:\n"
+<a id='L436' name='L436'></a>    "           5493e6599b283b4529378818aef9a4abbf4d9918\n"
+<a id='L437' name='L437'></a>    "\n"
+<a id='L438' name='L438'></a>    "-----BEGIN CERTIFICATE-----\n"
+<a id='L439' name='L439'></a>    "MIICIDCCAYugAwIBAgIBADALBgkqhkiG9w0BAQUwKDEmMCQGA1UEChMdR251VExT\n"
+<a id='L440' name='L440'></a>    "IGhvc3RuYW1lIGNoZWNrIHRlc3QgQ0EwHhcNMDgwNTAzMTEyNDM4WhcNMDgwNTE3\n"
+<a id='L441' name='L441'></a>    "MTEyNDQwWjAoMSYwJAYDVQQKEx1HbnVUTFMgaG9zdG5hbWUgY2hlY2sgdGVzdCBD\n"
+<a id='L442' name='L442'></a>    "QTCBnDALBgkqhkiG9w0BAQEDgYwAMIGIAoGA0gXBZcu9Hi7re4cHlEyTM/OBg30y\n"
+<a id='L443' name='L443'></a>    "G3FOTn/HvL9LL/JJtc+/wLjoKczzYb0uHeToGd3FvS7wNbH9MNf1qHyDmhOevyXt\n"
+<a id='L444' name='L444'></a>    "CKYFnntOI1nDDlrzv1TH3NQTV6EPop7Iq3Vm3geEjWitcQTgnL3L9gh6l0L4EJQp\n"
+<a id='L445' name='L445'></a>    "AUp+YdcEIQVM8QcCAwEAAaNhMF8wDwYDVR0TAQH/BAUwAwEB/zAYBgNVHREEETAP\n"
+<a id='L446' name='L446'></a>    "gg13d3cuZXhhbXBsZS4qMBMGA1UdJQQMMAoGCCsGAQUFBwMBMB0GA1UdDgQWBBRU\n"
+<a id='L447' name='L447'></a>    "k+ZZmyg7RSk3iBiu+aSrv02ZGDALBgkqhkiG9w0BAQUDgYEAZ7gLXtXwFW61dSAM\n"
+<a id='L448' name='L448'></a>    "0Qt6IN68WBH7LCzetSF8ofG1WVUImCUU3pqXhXYtPGTrswOh2AavWTRbzVTtrFvf\n"
+<a id='L449' name='L449'></a>    "WJg09Z7H6I70RPvAYGsK9t9qJ/4TPoYTGYQgsTbVpkv13O54O6jzemd8Zws/xMH5\n"
+<a id='L450' name='L450'></a>    "7/q6C7P5OUmGOtfVe7UVDY0taQM=\n" "-----END CERTIFICATE-----\n";
+<a id='L451' name='L451'></a>
+<a id='L452' name='L452'></a><em class='comment'>/* Certificate with SAN and CN but for different names. */</em>
+<a id='L453' name='L453'></a><strong class='reserved'>char</strong> pem9[] =
+<a id='L454' name='L454'></a>    "X.509 Certificate Information:\n"
+<a id='L455' name='L455'></a>    "   Version: 3\n"
+<a id='L456' name='L456'></a>    "   Serial Number (hex): 4a827d5c\n"
+<a id='L457' name='L457'></a>    "   Issuer: O=GnuTLS hostname check test CA,CN=foo.example.org\n"
+<a id='L458' name='L458'></a>    "   Validity:\n"
+<a id='L459' name='L459'></a>    "           Not Before: Wed Aug 12 08:29:17 UTC 2009\n"
+<a id='L460' name='L460'></a>    "           Not After: Thu Aug 13 08:29:23 UTC 2009\n"
+<a id='L461' name='L461'></a>    "   Subject: O=GnuTLS hostname check test CA,CN=foo.example.org\n"
+<a id='L462' name='L462'></a>    "   Subject Public Key Algorithm: RSA\n"
+<a id='L463' name='L463'></a>    "           Modulus (bits 1024):\n"
+<a id='L464' name='L464'></a>    "                   bb:66:43:f5:f2:c5:d7:b6:8c:cc:c5:df:f5:88:3b:b1\n"
+<a id='L465' name='L465'></a>    "                   c9:4b:6a:0e:a1:ad:20:50:40:08:80:a1:4f:5c:a3:d0\n"
+<a id='L466' name='L466'></a>    "                   f8:6c:cf:e6:3c:f7:ec:04:76:13:17:8b:64:89:22:5b\n"
+<a id='L467' name='L467'></a>    "                   c0:dd:53:7c:3b:ed:7c:04:bb:80:b9:28:be:8e:9b:c6\n"
+<a id='L468' name='L468'></a>    "                   8e:a0:a5:12:cb:f5:57:1e:a2:e7:bb:b7:33:49:9f:e3\n"
+<a id='L469' name='L469'></a>    "                   bb:4a:ae:6a:4d:68:ff:c9:11:e2:32:8d:ce:3d:80:0b\n"
+<a id='L470' name='L470'></a>    "                   8d:75:ef:d8:00:81:8f:28:04:03:a0:22:8d:61:04:07\n"
+<a id='L471' name='L471'></a>    "                   fa:b6:37:7d:21:07:49:d2:09:61:69:98:90:a3:58:a9\n"
+<a id='L472' name='L472'></a>    "           Exponent (bits 24):\n"
+<a id='L473' name='L473'></a>    "                   01:00:01\n"
+<a id='L474' name='L474'></a>    "   Extensions:\n"
+<a id='L475' name='L475'></a>    "           Basic Constraints (critical):\n"
+<a id='L476' name='L476'></a>    "                   Certificate Authority (CA): TRUE\n"
+<a id='L477' name='L477'></a>    "           Subject Alternative Name (not critical):\n"
+<a id='L478' name='L478'></a>    "                   DNSname: bar.example.org\n"
+<a id='L479' name='L479'></a>    "           Key Purpose (not critical):\n"
+<a id='L480' name='L480'></a>    "                   TLS WWW Server.\n"
+<a id='L481' name='L481'></a>    "           Subject Key Identifier (not critical):\n"
+<a id='L482' name='L482'></a>    "                   4cb90a9bfa1d34e37edecbd20715fea1dacb6891\n"
+<a id='L483' name='L483'></a>    "   Signature Algorithm: RSA-SHA\n"
+<a id='L484' name='L484'></a>    "   Signature:\n"
+<a id='L485' name='L485'></a>    "           a2:1f:d2:90:5f:c9:1c:6f:92:1d:c5:0b:ac:b0:17:23\n"
+<a id='L486' name='L486'></a>    "           c5:67:46:94:6f:0f:62:7d:66:4c:28:ff:b7:10:73:60\n"
+<a id='L487' name='L487'></a>    "           ae:0e:a2:47:82:83:bb:89:0d:f1:16:5e:f9:5b:35:4b\n"
+<a id='L488' name='L488'></a>    "           ce:ee:5e:d0:ad:b5:8b:cc:37:b3:ac:4d:1b:58:c2:4f\n"
+<a id='L489' name='L489'></a>    "           1c:7f:c6:ac:3d:25:18:67:37:f0:27:11:9b:2c:20:b6\n"
+<a id='L490' name='L490'></a>    "           78:24:21:a6:77:44:e7:1a:e5:f6:bf:45:84:32:81:67\n"
+<a id='L491' name='L491'></a>    "           af:8d:96:26:f7:39:31:6b:63:c5:15:9d:e0:a0:9a:1e\n"
+<a id='L492' name='L492'></a>    "           96:12:cb:ad:85:cb:a7:d4:86:ac:d8:f5:e9:a4:2b:20\n"
+<a id='L493' name='L493'></a>    "Other Information:\n"
+<a id='L494' name='L494'></a>    "   MD5 fingerprint:\n"
+<a id='L495' name='L495'></a>    "           f27b18092c7497f206e70f504eee0f8e\n"
+<a id='L496' name='L496'></a>    "   SHA-1 fingerprint:\n"
+<a id='L497' name='L497'></a>    "           bebdac9d0dd54e8f044642e0f065fae5d75ca6e5\n"
+<a id='L498' name='L498'></a>    "   Public Key ID:\n"
+<a id='L499' name='L499'></a>    "           4cb90a9bfa1d34e37edecbd20715fea1dacb6891\n"
+<a id='L500' name='L500'></a>    "\n"
+<a id='L501' name='L501'></a>    "-----BEGIN CERTIFICATE-----\n"
+<a id='L502' name='L502'></a>    "MIICWTCCAcSgAwIBAgIESoJ9XDALBgkqhkiG9w0BAQUwQjEmMCQGA1UEChMdR251\n"
+<a id='L503' name='L503'></a>    "VExTIGhvc3RuYW1lIGNoZWNrIHRlc3QgQ0ExGDAWBgNVBAMTD2Zvby5leGFtcGxl\n"
+<a id='L504' name='L504'></a>    "Lm9yZzAeFw0wOTA4MTIwODI5MTdaFw0wOTA4MTMwODI5MjNaMEIxJjAkBgNVBAoT\n"
+<a id='L505' name='L505'></a>    "HUdudVRMUyBob3N0bmFtZSBjaGVjayB0ZXN0IENBMRgwFgYDVQQDEw9mb28uZXhh\n"
+<a id='L506' name='L506'></a>    "bXBsZS5vcmcwgZwwCwYJKoZIhvcNAQEBA4GMADCBiAKBgLtmQ/Xyxde2jMzF3/WI\n"
+<a id='L507' name='L507'></a>    "O7HJS2oOoa0gUEAIgKFPXKPQ+GzP5jz37AR2ExeLZIkiW8DdU3w77XwEu4C5KL6O\n"
+<a id='L508' name='L508'></a>    "m8aOoKUSy/VXHqLnu7czSZ/ju0quak1o/8kR4jKNzj2AC41179gAgY8oBAOgIo1h\n"
+<a id='L509' name='L509'></a>    "BAf6tjd9IQdJ0glhaZiQo1ipAgMBAAGjYzBhMA8GA1UdEwEB/wQFMAMBAf8wGgYD\n"
+<a id='L510' name='L510'></a>    "VR0RBBMwEYIPYmFyLmV4YW1wbGUub3JnMBMGA1UdJQQMMAoGCCsGAQUFBwMBMB0G\n"
+<a id='L511' name='L511'></a>    "A1UdDgQWBBRMuQqb+h00437ey9IHFf6h2stokTALBgkqhkiG9w0BAQUDgYEAoh/S\n"
+<a id='L512' name='L512'></a>    "kF/JHG+SHcULrLAXI8VnRpRvD2J9Zkwo/7cQc2CuDqJHgoO7iQ3xFl75WzVLzu5e\n"
+<a id='L513' name='L513'></a>    "0K21i8w3s6xNG1jCTxx/xqw9JRhnN/AnEZssILZ4JCGmd0TnGuX2v0WEMoFnr42W\n"
+<a id='L514' name='L514'></a>    "Jvc5MWtjxRWd4KCaHpYSy62Fy6fUhqzY9emkKyA=\n"
+<a id='L515' name='L515'></a>    "-----END CERTIFICATE-----\n";
+<a id='L516' name='L516'></a>
+<a id='L517' name='L517'></a><em class='comment'>/* Certificate with SAN and CN that match iff you truncate the SAN to</em>
+<a id='L518' name='L518'></a><em class='comment'>   the embedded NUL.</em>
+<a id='L519' name='L519'></a><em class='comment'>   See &lt;http://thread.gmane.org/gmane.network.gnutls.general/1735&gt;. */</em>
+<a id='L520' name='L520'></a><strong class='reserved'>char</strong> pem10[] =
+<a id='L521' name='L521'></a>    "X.509 Certificate Information:\n"
+<a id='L522' name='L522'></a>    "   Version: 3\n"
+<a id='L523' name='L523'></a>    "   Serial Number (hex): 0b5d0a870d09\n"
+<a id='L524' name='L524'></a>    "   Issuer: C=NN,O=Edel Curl Arctic Illudium Research Cloud,CN=Nothern Nowhere Trust Anchor\n"
+<a id='L525' name='L525'></a>    "   Validity:\n"
+<a id='L526' name='L526'></a>    "           Not Before: Tue Aug 04 22:07:33 UTC 2009\n"
+<a id='L527' name='L527'></a>    "           Not After: Sat Oct 21 22:07:33 UTC 2017\n"
+<a id='L528' name='L528'></a>    "   Subject: C=NN,O=Edel Curl Arctic Illudium Research Cloud,CN=localhost\n"
+<a id='L529' name='L529'></a>    "   Subject Public Key Algorithm: RSA\n"
+<a id='L530' name='L530'></a>    "           Modulus (bits 1024):\n"
+<a id='L531' name='L531'></a>    "                   be:67:3b:b4:ea:c0:85:b4:c3:56:c1:a4:96:23:36:f5\n"
+<a id='L532' name='L532'></a>    "                   c6:77:aa:ad:e5:c1:dd:ce:c1:9a:97:07:dd:16:90:eb\n"
+<a id='L533' name='L533'></a>    "                   f0:38:b5:95:6b:a6:0f:b9:73:4e:7d:82:57:ab:5f:b5\n"
+<a id='L534' name='L534'></a>    "                   ba:5c:a0:48:8c:82:77:fd:67:d8:53:44:61:86:a5:06\n"
+<a id='L535' name='L535'></a>    "                   19:bf:73:51:68:2e:1a:0a:c5:05:39:ca:3d:ca:83:ed\n"
+<a id='L536' name='L536'></a>    "                   07:fe:ae:b7:73:1d:60:dd:ab:9e:0e:7e:02:f3:68:42\n"
+<a id='L537' name='L537'></a>    "                   93:27:c8:5f:c5:fa:cb:a9:84:06:2f:f3:66:bd:de:7d\n"
+<a id='L538' name='L538'></a>    "                   29:82:57:47:e4:a9:df:bf:8b:bc:c0:46:33:5a:7b:87\n"
+<a id='L539' name='L539'></a>    "           Exponent (bits 24):\n"
+<a id='L540' name='L540'></a>    "                   01:00:01\n"
+<a id='L541' name='L541'></a>    "   Extensions:\n"
+<a id='L542' name='L542'></a>    "           Subject Alternative Name (not critical):\n"
+<a id='L543' name='L543'></a>    "warning: SAN contains an embedded NUL, replacing with '!'\n"
+<a id='L544' name='L544'></a>    "                   DNSname: localhost!h\n"
+<a id='L545' name='L545'></a>    "           Key Usage (not critical):\n"
+<a id='L546' name='L546'></a>    "                   Key encipherment.\n"
+<a id='L547' name='L547'></a>    "           Key Purpose (not critical):\n"
+<a id='L548' name='L548'></a>    "                   TLS WWW Server.\n"
+<a id='L549' name='L549'></a>    "           Subject Key Identifier (not critical):\n"
+<a id='L550' name='L550'></a>    "                   0c37a3db0f73b3388a69d36eb3a7d6d8774eda67\n"
+<a id='L551' name='L551'></a>    "           Authority Key Identifier (not critical):\n"
+<a id='L552' name='L552'></a>    "                   126b24d24a68b7a1b01ccdbfd64ccc405b7fe040\n"
+<a id='L553' name='L553'></a>    "           Basic Constraints (critical):\n"
+<a id='L554' name='L554'></a>    "                   Certificate Authority (CA): FALSE\n"
+<a id='L555' name='L555'></a>    "   Signature Algorithm: RSA-SHA\n"
+<a id='L556' name='L556'></a>    "   Signature:\n"
+<a id='L557' name='L557'></a>    "           88:a0:17:77:77:bf:c1:8a:18:4e:a3:94:6e:45:18:31\n"
+<a id='L558' name='L558'></a>    "           fa:2f:7b:1f:ee:95:20:d1:cd:40:df:ee:f0:45:2e:e9\n"
+<a id='L559' name='L559'></a>    "           e6:cf:c8:77:bd:85:16:d7:9f:18:52:78:3f:ea:9c:86\n"
+<a id='L560' name='L560'></a>    "           62:6e:db:90:b0:cd:f1:c1:6f:2d:87:4a:a0:be:b3:dc\n"
+<a id='L561' name='L561'></a>    "           6d:e4:6b:d1:da:b9:10:25:7e:35:1f:1b:aa:a7:09:2f\n"
+<a id='L562' name='L562'></a>    "           84:77:27:b0:48:a8:6d:54:57:38:35:22:34:03:0f:d4\n"
+<a id='L563' name='L563'></a>    "           5d:ab:1c:72:15:b1:d9:89:56:10:12:fb:7d:0d:18:12\n"
+<a id='L564' name='L564'></a>    "           a9:0a:38:dc:93:cf:69:ff:75:86:9e:e3:6b:eb:92:6c\n"
+<a id='L565' name='L565'></a>    "           55:16:d5:65:8b:d7:9c:5e:4b:82:c8:92:6c:8b:e6:18\n"
+<a id='L566' name='L566'></a>    "           a2:f8:8c:65:aa:b6:eb:23:ed:cb:99:db:fc:8b:8e:1d\n"
+<a id='L567' name='L567'></a>    "           7a:39:c9:f5:7b:7f:58:7b:ed:01:6c:3c:40:ec:e3:a9\n"
+<a id='L568' name='L568'></a>    "           5f:c4:3d:cb:81:17:03:6d:2d:d7:bd:00:5f:c4:79:f2\n"
+<a id='L569' name='L569'></a>    "           fb:ab:c6:0e:a2:01:8b:a1:42:73:de:96:29:3e:bf:d7\n"
+<a id='L570' name='L570'></a>    "           d9:51:a7:d4:98:07:7f:f0:f4:cd:00:a1:e1:ac:6c:05\n"
+<a id='L571' name='L571'></a>    "           ac:ab:93:1b:b0:5c:2c:13:ad:ff:27:dc:80:99:34:66\n"
+<a id='L572' name='L572'></a>    "           bd:e3:31:54:d5:b6:3f:ce:d4:08:a3:52:28:61:5e:bd\n"
+<a id='L573' name='L573'></a>    "Other Information:\n"
+<a id='L574' name='L574'></a>    "   MD5 fingerprint:\n"
+<a id='L575' name='L575'></a>    "           0b4d6d944200cdd1639008b24dc0fe0a\n"
+<a id='L576' name='L576'></a>    "   SHA-1 fingerprint:\n"
+<a id='L577' name='L577'></a>    "           ce85660f5451b0cc12f525577f0eb9411a20c76b\n"
+<a id='L578' name='L578'></a>    "   Public Key ID:\n"
+<a id='L579' name='L579'></a>    "           a1d18c15e65c7c4935512eeea7ca5d3e6baad4e1\n"
+<a id='L580' name='L580'></a>    "\n"
+<a id='L581' name='L581'></a>    "-----BEGIN CERTIFICATE-----\n"
+<a id='L582' name='L582'></a>    "MIIDQzCCAiugAwIBAgIGC10Khw0JMA0GCSqGSIb3DQEBBQUAMGcxCzAJBgNVBAYT\n"
+<a id='L583' name='L583'></a>    "Ak5OMTEwLwYDVQQKDChFZGVsIEN1cmwgQXJjdGljIElsbHVkaXVtIFJlc2VhcmNo\n"
+<a id='L584' name='L584'></a>    "IENsb3VkMSUwIwYDVQQDDBxOb3RoZXJuIE5vd2hlcmUgVHJ1c3QgQW5jaG9yMB4X\n"
+<a id='L585' name='L585'></a>    "DTA5MDgwNDIyMDczM1oXDTE3MTAyMTIyMDczM1owVDELMAkGA1UEBhMCTk4xMTAv\n"
+<a id='L586' name='L586'></a>    "BgNVBAoMKEVkZWwgQ3VybCBBcmN0aWMgSWxsdWRpdW0gUmVzZWFyY2ggQ2xvdWQx\n"
+<a id='L587' name='L587'></a>    "EjAQBgNVBAMMCWxvY2FsaG9zdDCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA\n"
+<a id='L588' name='L588'></a>    "vmc7tOrAhbTDVsGkliM29cZ3qq3lwd3OwZqXB90WkOvwOLWVa6YPuXNOfYJXq1+1\n"
+<a id='L589' name='L589'></a>    "ulygSIyCd/1n2FNEYYalBhm/c1FoLhoKxQU5yj3Kg+0H/q63cx1g3aueDn4C82hC\n"
+<a id='L590' name='L590'></a>    "kyfIX8X6y6mEBi/zZr3efSmCV0fkqd+/i7zARjNae4cCAwEAAaOBizCBiDAWBgNV\n"
+<a id='L591' name='L591'></a>    "HREEDzANggtsb2NhbGhvc3QAaDALBgNVHQ8EBAMCBSAwEwYDVR0lBAwwCgYIKwYB\n"
+<a id='L592' name='L592'></a>    "BQUHAwEwHQYDVR0OBBYEFAw3o9sPc7M4imnTbrOn1th3TtpnMB8GA1UdIwQYMBaA\n"
+<a id='L593' name='L593'></a>    "FBJrJNJKaLehsBzNv9ZMzEBbf+BAMAwGA1UdEwEB/wQCMAAwDQYJKoZIhvcNAQEF\n"
+<a id='L594' name='L594'></a>    "BQADggEBAIigF3d3v8GKGE6jlG5FGDH6L3sf7pUg0c1A3+7wRS7p5s/Id72FFtef\n"
+<a id='L595' name='L595'></a>    "GFJ4P+qchmJu25CwzfHBby2HSqC+s9xt5GvR2rkQJX41HxuqpwkvhHcnsEiobVRX\n"
+<a id='L596' name='L596'></a>    "ODUiNAMP1F2rHHIVsdmJVhAS+30NGBKpCjjck89p/3WGnuNr65JsVRbVZYvXnF5L\n"
+<a id='L597' name='L597'></a>    "gsiSbIvmGKL4jGWqtusj7cuZ2/yLjh16Ocn1e39Ye+0BbDxA7OOpX8Q9y4EXA20t\n"
+<a id='L598' name='L598'></a>    "170AX8R58vurxg6iAYuhQnPelik+v9fZUafUmAd/8PTNAKHhrGwFrKuTG7BcLBOt\n"
+<a id='L599' name='L599'></a>    "/yfcgJk0Zr3jMVTVtj/O1AijUihhXr0=\n" "-----END CERTIFICATE-----\n";
+<a id='L600' name='L600'></a>
+<a id='L601' name='L601'></a><strong class='reserved'>char</strong> pem_too_many[] = "\n"
+<a id='L602' name='L602'></a>    "      Subject: C=BE,CN=******************.gnutls.org\n"
+<a id='L603' name='L603'></a>    "\n"
+<a id='L604' name='L604'></a>    "-----BEGIN CERTIFICATE-----\n"
+<a id='L605' name='L605'></a>    "MIIDljCCAk6gAwIBAgIETcMNdjANBgkqhkiG9w0BAQsFADA6MQswCQYDVQQGEwJC\n"
+<a id='L606' name='L606'></a>    "RTErMCkGA1UEAxMiKioqKioqKioqKioqKioqKioqKioqKiouZ251dGxzLm9yZzAe\n"
+<a id='L607' name='L607'></a>    "Fw0xMTA1MDUyMDQ5NTlaFw02NDAxMTUyMDUwMDJaMDoxCzAJBgNVBAYTAkJFMSsw\n"
+<a id='L608' name='L608'></a>    "KQYDVQQDEyIqKioqKioqKioqKioqKioqKioqKioqKi5nbnV0bHMub3JnMIIBUjAN\n"
+<a id='L609' name='L609'></a>    "BgkqhkiG9w0BAQEFAAOCAT8AMIIBOgKCATEA3c+X0qUdld2GGNjEua2mDLSdttz6\n"
+<a id='L610' name='L610'></a>    "3CHhOmI0B+gzsuiX7ixB0hLxX+3kdv9lJh4Mx0EVaV8N+a2JFI3q1xZSmkfBuwAC\n"
+<a id='L611' name='L611'></a>    "5IhFc3ikrts4w8YH0mQOh+10jGvEwAJQfE6m0Vjp5RMJqdta6usPBoBcCe+UyOn7\n"
+<a id='L612' name='L612'></a>    "Ny514ayTrZs3E0tmOnYz2MTXTPthyJIhB/zfqYhU5KOpR9JsuOM5iRGIOC2i3D5e\n"
+<a id='L613' name='L613'></a>    "SqmkjtUfstDdQTzaEGieRxtlAqLFKHMCgwMJ/fUpfpfcKk5LqnlGRnCGG5u49oq+\n"
+<a id='L614' name='L614'></a>    "KYd9X9qll2vvyEMJQ+IfihZ+HVBd9doC7vLDKkjmazDqAtfvrIsMuMGF2L98hage\n"
+<a id='L615' name='L615'></a>    "g75cJi55e0f1Sj9mYpL9QSC2LADwUsomBi18z3pQfQ/L3ZcgyG/k4FD04wIDAQAB\n"
+<a id='L616' name='L616'></a>    "o0QwQjAMBgNVHRMBAf8EAjAAMBMGA1UdJQQMMAoGCCsGAQUFBwMBMB0GA1UdDgQW\n"
+<a id='L617' name='L617'></a>    "BBSSU9ZxufhoqrNT9o31OUVmnKflMTANBgkqhkiG9w0BAQsFAAOCATEAUMK435LP\n"
+<a id='L618' name='L618'></a>    "0XpmpWLBBuC6VLLIsAGmXRv7odw8sG9fOctalsbK3zd9pDOaoFI/128GOmlTp1aC\n"
+<a id='L619' name='L619'></a>    "n4a/pZ9G5wTKRvdxVqecdYkozDtAS35uwCSQPU/P12Oug6kA4NNJDxF3FGm5eov6\n"
+<a id='L620' name='L620'></a>    "SnZDL0Qlhat9y0yOakaOkVNwESAwgUEYClZeR45htvH5oP48XEgwqHQ9jPS2MXAe\n"
+<a id='L621' name='L621'></a>    "QLBjqqeYzIvWqwT4z14tIkN0VWWqqVo/dzV+lfNwQy0UL8iWVYnks8wKs2SBkVHx\n"
+<a id='L622' name='L622'></a>    "41wBR3uCgCDwlYGDLIG1cm0n7mXrnE7KNcrwQKXL8WGNRAVvx5MVO1vDoWPyQ1Y4\n"
+<a id='L623' name='L623'></a>    "sDdnQiVER9ee/KxO6IgCTGh+nCBTSSYgLX2E/m789quPvzyi9Hf/go28he6E3dSK\n"
+<a id='L624' name='L624'></a>    "q7/LRSxaZenB/Q==\n" "-----END CERTIFICATE-----\n";
+<a id='L625' name='L625'></a>
+<a id='L626' name='L626'></a><em class='sharp'>#ifdef</em> ENABLE_OPENPGP
+<a id='L627' name='L627'></a><em class='comment'>/* Check basic OpenPGP comparison too.</em>
+<a id='L628' name='L628'></a><em class='comment'>   &lt;http://thread.gmane.org/gmane.comp.encryption.gpg.gnutls.devel/3812&gt;. */</em>
+<a id='L629' name='L629'></a><strong class='reserved'>char</strong> pem11[] =
+<a id='L630' name='L630'></a>    "-----BEGIN PGP PUBLIC KEY BLOCK-----\n"
+<a id='L631' name='L631'></a>    "Version: GnuPG v1.4.6 (GNU/Linux)\n"
+<a id='L632' name='L632'></a>    "\n"
+<a id='L633' name='L633'></a>    "mQGiBEXInlgRBAD0teb6ohIlchkHcFlmmvtVW1KXexlDfXExf8T+fOz5z354GPOX\n"
+<a id='L634' name='L634'></a>    "sDq98ztCEE3hnPEOFj4NT0X3nEtrvLkhmZqrDHSbuJACB4qxeHwEbGFx7OIDW8+u\n"
+<a id='L635' name='L635'></a>    "4sKxpaza1GVf1NQ7VIaQiXaGHy8Esn9SW7oNhK6z5l4TIRlm3OBt3cxU3wCgjnnO\n"
+<a id='L636' name='L636'></a>    "jpGJeeo0OnZzSH+xsNLJQEcEAOmUc+7N9OhpT/gqddIgzYRr/FD0Ad6HBfABol6Q\n"
+<a id='L637' name='L637'></a>    "wWCapzIxggnZJ9i+lHujpcA8idtrBU/DGhkGtW95QaHwQ8d5SvetM7Wc/xoHEP3o\n"
+<a id='L638' name='L638'></a>    "HGvSGoXtfqlofastcC7eso39EBD10cpIB+gUmhe1MpaXm7A6m+KJO+2CkqE1vMkc\n"
+<a id='L639' name='L639'></a>    "tmKHBACzDRrWgkV+AtGWKl3ge9RkYHKxAPc0FBrpzDrvmvvNMaIme2u/+WP/xa4T\n"
+<a id='L640' name='L640'></a>    "nTjgys+pfeplHVfCO/n6nKWrVepMPE0+ZeNWzY6CsfhL7VjSN99vm7qzNHswBiJS\n"
+<a id='L641' name='L641'></a>    "gCSwJXRmQcJcS9hxqLciUyVEB32zPqX24QHnsyPYaSCzEBgOnLQPdGVzdC5nbnV0\n"
+<a id='L642' name='L642'></a>    "bHMub3JniF8EExECACAFAkXInlgCGwMGCwkIBwMCBBUCCAMEFgIDAQIeAQIXgAAK\n"
+<a id='L643' name='L643'></a>    "CRCuX60+XR0U2FcfAJ9eZDmhk5a9k4K/zu+a5xFwb9SWsgCXTkDnOIQmueZPHg5U\n"
+<a id='L644' name='L644'></a>    "VgKnazckK7kCDQRFyJ51EAgAozi9Vk9R5I2AtRcqV4jLfpzh3eiBYSUt4U3ZLxff\n"
+<a id='L645' name='L645'></a>    "LAyvGMUXA7OATGGhuKphNQLux17AGpRN4nugnIWMLE9akyrxXqg/165UFKbwwVsl\n"
+<a id='L646' name='L646'></a>    "po7KzPvEXHmOYDgVEqS0sZNWmkJeMPdCVsD2wifPkocufUu2Ux8CmrvT1nEgoiVu\n"
+<a id='L647' name='L647'></a>    "kUjplJOralQBdsPkIEk8LMVtF3IW2aHCEET0yrJ2Y2q0i/u1K4bxSUi5ESrN0UNa\n"
+<a id='L648' name='L648'></a>    "WT7wtCegdwWlObwJEgwcu/8YtjMnfBI855gXVdJiRLdOJvkU+65I/jnPQG5QEIQM\n"
+<a id='L649' name='L649'></a>    "weLty/+GHkXVN2xw5OGUIryIPUHi8+EDGOGqoxqNUMTzvwADBQf/bTPc0z3oHp+X\n"
+<a id='L650' name='L650'></a>    "hsj3JP/AMCSQV87peKqFYEnRIubsN4Y4tTwVjEkRA3s5u+qTNvdypE1tvAEmdspa\n"
+<a id='L651' name='L651'></a>    "CL/EKfMCEltcW3WUwqUIULQ2Z0t9tBuVfMEH1Z1jjb68IOVwTJYz+iBtmbq5Wxoq\n"
+<a id='L652' name='L652'></a>    "lc5woOCDVL9qaKR6hOuAukTl6L3wQL+5zGBE4k5UfLf8UVJEa4ZTqsoMi3iyQAFO\n"
+<a id='L653' name='L653'></a>    "/h7WzqUATH3aQSz9tpilJ760wadDhc+Sdt2a0W6cC+SBmJaU/ym9seTd26nyWHG+\n"
+<a id='L654' name='L654'></a>    "03G+ynCHf5pBAXHhfCNhA0lMv5h3eJECNElcCh0sYGmo19jOzbnlRSGKRqrflOtO\n"
+<a id='L655' name='L655'></a>    "YwhQXK9y/ohJBBgRAgAJBQJFyJ51AhsMAAoJEK5frT5dHRTYDDgAn2bLaS5n3Xy8\n"
+<a id='L656' name='L656'></a>    "Z/V2Me1st/9pqPfZAJ4+9YBnyjCq/0vosIoZabi+s92m7g==\n"
+<a id='L657' name='L657'></a>    "=NkXV\n" "-----END PGP PUBLIC KEY BLOCK-----\n";
+<a id='L658' name='L658'></a><em class='sharp'>#endif</em>
+<a id='L659' name='L659'></a>
+<a id='L660' name='L660'></a><strong class='reserved'>char</strong> pem_ips[] = "\n"
+<a id='L661' name='L661'></a>        "X.509 Certificate Information:\n"
+<a id='L662' name='L662'></a>        "       Version: 3\n"
+<a id='L663' name='L663'></a>        "       Serial Number (hex): 00\n"
+<a id='L664' name='L664'></a>        "       Issuer: CN=server-0\n"
+<a id='L665' name='L665'></a>        "       Validity:\n"
+<a id='L666' name='L666'></a>        "               Not Before: Fri Jun 27 09:14:36 UTC 2014\n"
+<a id='L667' name='L667'></a>        "               Not After: Fri Dec 31 23:59:59 UTC 9999\n"
+<a id='L668' name='L668'></a>        "       Subject: CN=server-0\n"
+<a id='L669' name='L669'></a>        "       Subject Public Key Algorithm: RSA\n"
+<a id='L670' name='L670'></a>        "       Algorithm Security Level: Medium (2048 bits)\n"
+<a id='L671' name='L671'></a>        "               Modulus (bits 2048):\n"
+<a id='L672' name='L672'></a>        "                       00:c1:56:12:f6:c3:c7:e3:4c:7e:ff:04:4e:88:1d:67\n"
+<a id='L673' name='L673'></a>        "                       a7:f3:4d:64:cc:12:a7:ff:50:aa:5c:31:b9:3c:d1:d1\n"
+<a id='L674' name='L674'></a>        "                       ba:78:2c:7d:dd:54:4a:cd:5a:f2:38:8b:b2:c5:26:7e\n"
+<a id='L675' name='L675'></a>        "                       25:05:36:b6:92:e6:1d:c3:00:39:a0:c5:1c:b5:63:3d\n"
+<a id='L676' name='L676'></a>        "                       00:e9:b4:b5:75:a7:14:b1:ff:a0:03:9d:ba:77:da:e5\n"
+<a id='L677' name='L677'></a>        "                       de:21:fb:56:da:06:9d:84:57:53:3d:08:45:45:20:fd\n"
+<a id='L678' name='L678'></a>        "                       e7:60:65:2e:55:60:db:d3:91:da:64:ff:c4:42:42:54\n"
+<a id='L679' name='L679'></a>        "                       77:cb:47:54:68:1e:b4:62:ad:8a:3c:0a:28:89:cb:d3\n"
+<a id='L680' name='L680'></a>        "                       81:d3:15:9a:1d:67:90:51:83:90:6d:fb:a1:0e:54:6b\n"
+<a id='L681' name='L681'></a>        "                       29:d7:ef:79:19:14:f6:0d:82:73:8f:79:58:0e:af:0e\n"
+<a id='L682' name='L682'></a>        "                       cc:bd:17:ab:b5:a2:1f:76:a1:9f:4b:7b:e8:f9:7b:28\n"
+<a id='L683' name='L683'></a>        "                       56:cc:f1:5b:0e:93:c9:e5:44:2f:2d:0a:22:7d:0b:2b\n"
+<a id='L684' name='L684'></a>        "                       30:84:c3:1e:d6:4d:63:5b:41:51:83:d4:b5:09:f4:cc\n"
+<a id='L685' name='L685'></a>        "                       ab:ad:51:1b:8e:a1:f6:b1:27:5b:43:3c:bc:ae:10:93\n"
+<a id='L686' name='L686'></a>        "                       d4:ce:3b:10:ca:3f:22:dd:9e:a8:3f:4a:a6:a8:cd:8f\n"
+<a id='L687' name='L687'></a>        "                       d0:6a:e0:40:26:28:0f:af:0e:13:e1:ac:b9:ac:41:cc\n"
+<a id='L688' name='L688'></a>        "                       5d\n"
+<a id='L689' name='L689'></a>        "               Exponent (bits 24):\n"
+<a id='L690' name='L690'></a>        "                       01:00:01\n"
+<a id='L691' name='L691'></a>        "       Extensions:\n"
+<a id='L692' name='L692'></a>        "               Basic Constraints (critical):\n"
+<a id='L693' name='L693'></a>        "                       Certificate Authority (CA): TRUE\n"
+<a id='L694' name='L694'></a>        "               Subject Alternative Name (not critical):\n"
+<a id='L695' name='L695'></a>        "                       IPAddress: 127.0.0.1\n"
+<a id='L696' name='L696'></a>        "                       IPAddress: 192.168.5.1\n"
+<a id='L697' name='L697'></a>        "                       IPAddress: 10.100.2.5\n"
+<a id='L698' name='L698'></a>        "                       IPAddress: 0:0:0:0:0:0:0:1\n"
+<a id='L699' name='L699'></a>        "                       IPAddress: fe80:0:0:0:3e97:eff:fe18:359a\n"
+<a id='L700' name='L700'></a>        "               Key Usage (critical):\n"
+<a id='L701' name='L701'></a>        "                       Certificate signing.\n"
+<a id='L702' name='L702'></a>        "               Subject Key Identifier (not critical):\n"
+<a id='L703' name='L703'></a>        "                       bd3d0b6cab6b33d8a8e1ed15b7ab17587cc2a09f\n"
+<a id='L704' name='L704'></a>        "       Signature Algorithm: RSA-SHA256\n"
+<a id='L705' name='L705'></a>        "       Signature:\n"
+<a id='L706' name='L706'></a>        "               02:22:52:4b:69:e5:4f:f8:17:0a:46:34:d1:ec:6b:f5\n"
+<a id='L707' name='L707'></a>        "               ae:5b:fc:e2:00:ca:1f:f0:1d:74:91:9c:85:0a:a7:06\n"
+<a id='L708' name='L708'></a>        "               3d:fa:93:0d:35:85:ea:3e:01:9f:9e:bc:52:72:95:b2\n"
+<a id='L709' name='L709'></a>        "               8a:3a:78:6e:d2:5d:4d:60:88:2b:be:6f:68:75:c7:19\n"
+<a id='L710' name='L710'></a>        "               ac:c9:ea:ab:74:f6:62:4d:30:1e:87:e4:70:1e:96:f4\n"
+<a id='L711' name='L711'></a>        "               0b:48:ef:c9:28:14:6f:fa:c1:7b:d3:ef:b3:d8:52:90\n"
+<a id='L712' name='L712'></a>        "               5d:20:d0:aa:8b:10:ab:74:86:46:be:cb:6c:93:54:60\n"
+<a id='L713' name='L713'></a>        "               bc:6e:d6:4d:b2:1e:25:65:38:52:5b:6c:b4:57:8f:0f\n"
+<a id='L714' name='L714'></a>        "               26:4f:36:ea:42:eb:71:68:93:f3:a9:7a:66:5c:b6:07\n"
+<a id='L715' name='L715'></a>        "               7d:15:b5:f4:b8:5c:7c:e0:cd:d0:fa:5b:2a:6b:fd:4c\n"
+<a id='L716' name='L716'></a>        "               71:12:45:d0:37:9e:cf:90:59:6e:fd:ba:3a:8b:ca:37\n"
+<a id='L717' name='L717'></a>        "               01:cc:6f:e0:32:c7:9e:a4:ea:61:2c:e5:ad:66:73:80\n"
+<a id='L718' name='L718'></a>        "               5c:5e:0c:44:ec:c2:74:b8:fe:6e:66:af:76:cc:30:10\n"
+<a id='L719' name='L719'></a>        "               1f:3a:ac:34:36:e6:5b:72:f3:ee:5a:68:c3:43:37:56\n"
+<a id='L720' name='L720'></a>        "               c3:08:02:3c:96:1c:27:18:d0:38:fa:d7:51:4e:82:7d\n"
+<a id='L721' name='L721'></a>        "               fc:81:a2:23:c5:05:80:0e:b4:ba:d3:19:39:74:9c:74\n"
+<a id='L722' name='L722'></a>        "Other Information:\n"
+<a id='L723' name='L723'></a>        "       SHA1 fingerprint:\n"
+<a id='L724' name='L724'></a>        "               43536dd4198f6064c117c3825020b14c108f9a34\n"
+<a id='L725' name='L725'></a>        "       SHA256 fingerprint:\n"
+<a id='L726' name='L726'></a>        "               5ab6626aa069da15650edcfff7305767ff5b8d338289f851a624ea89b50ff06a\n"
+<a id='L727' name='L727'></a>        "       Public Key ID:\n"
+<a id='L728' name='L728'></a>        "               bd3d0b6cab6b33d8a8e1ed15b7ab17587cc2a09f\n"
+<a id='L729' name='L729'></a>        "       Public key's random art:\n"
+<a id='L730' name='L730'></a>        "               +--[ RSA 2048]----+\n"
+<a id='L731' name='L731'></a>        "               |                |\n"
+<a id='L732' name='L732'></a>        "               |       .       |\n"
+<a id='L733' name='L733'></a>        "               |       . +     |\n"
+<a id='L734' name='L734'></a>        "               |      .  .= .    |\n"
+<a id='L735' name='L735'></a>        "               |       .S+oo     |\n"
+<a id='L736' name='L736'></a>        "               |       E+.+     |\n"
+<a id='L737' name='L737'></a>        "               |    .  +. *.o    |\n"
+<a id='L738' name='L738'></a>        "               |   . oo.=..+ o   |\n"
+<a id='L739' name='L739'></a>        "               |    ooo.+Bo .    |\n"
+<a id='L740' name='L740'></a>        "               +-----------------+\n"
+<a id='L741' name='L741'></a>        "\n"
+<a id='L742' name='L742'></a>        "-----BEGIN CERTIFICATE-----\n"
+<a id='L743' name='L743'></a>        "MIIDKzCCAhOgAwIBAgIBADANBgkqhkiG9w0BAQsFADATMREwDwYDVQQDEwhzZXJ2\n"
+<a id='L744' name='L744'></a>        "ZXItMDAiGA8yMDE0MDYyNzA5MTQzNloYDzk5OTkxMjMxMjM1OTU5WjATMREwDwYD\n"
+<a id='L745' name='L745'></a>        "VQQDEwhzZXJ2ZXItMDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMFW\n"
+<a id='L746' name='L746'></a>        "EvbDx+NMfv8ETogdZ6fzTWTMEqf/UKpcMbk80dG6eCx93VRKzVryOIuyxSZ+JQU2\n"
+<a id='L747' name='L747'></a>        "tpLmHcMAOaDFHLVjPQDptLV1pxSx/6ADnbp32uXeIftW2gadhFdTPQhFRSD952Bl\n"
+<a id='L748' name='L748'></a>        "LlVg29OR2mT/xEJCVHfLR1RoHrRirYo8CiiJy9OB0xWaHWeQUYOQbfuhDlRrKdfv\n"
+<a id='L749' name='L749'></a>        "eRkU9g2Cc495WA6vDsy9F6u1oh92oZ9Le+j5eyhWzPFbDpPJ5UQvLQoifQsrMITD\n"
+<a id='L750' name='L750'></a>        "HtZNY1tBUYPUtQn0zKutURuOofaxJ1tDPLyuEJPUzjsQyj8i3Z6oP0qmqM2P0Grg\n"
+<a id='L751' name='L751'></a>        "QCYoD68OE+GsuaxBzF0CAwEAAaOBhTCBgjAPBgNVHRMBAf8EBTADAQH/MD8GA1Ud\n"
+<a id='L752' name='L752'></a>        "EQQ4MDaHBH8AAAGHBMCoBQGHBApkAgWHEAAAAAAAAAAAAAAAAAAAAAGHEP6AAAAA\n"
+<a id='L753' name='L753'></a>        "AAAAPpcO//4YNZowDwYDVR0PAQH/BAUDAwcEADAdBgNVHQ4EFgQUvT0LbKtrM9io\n"
+<a id='L754' name='L754'></a>        "4e0Vt6sXWHzCoJ8wDQYJKoZIhvcNAQELBQADggEBAAIiUktp5U/4FwpGNNHsa/Wu\n"
+<a id='L755' name='L755'></a>        "W/ziAMof8B10kZyFCqcGPfqTDTWF6j4Bn568UnKVsoo6eG7SXU1giCu+b2h1xxms\n"
+<a id='L756' name='L756'></a>        "yeqrdPZiTTAeh+RwHpb0C0jvySgUb/rBe9Pvs9hSkF0g0KqLEKt0hka+y2yTVGC8\n"
+<a id='L757' name='L757'></a>        "btZNsh4lZThSW2y0V48PJk826kLrcWiT86l6Zly2B30VtfS4XHzgzdD6Wypr/Uxx\n"
+<a id='L758' name='L758'></a>        "EkXQN57PkFlu/bo6i8o3Acxv4DLHnqTqYSzlrWZzgFxeDETswnS4/m5mr3bMMBAf\n"
+<a id='L759' name='L759'></a>        "Oqw0NuZbcvPuWmjDQzdWwwgCPJYcJxjQOPrXUU6CffyBoiPFBYAOtLrTGTl0nHQ=\n"
+<a id='L760' name='L760'></a>        "-----END CERTIFICATE-----\n"
+<a id='L761' name='L761'></a>        "";
+<a id='L762' name='L762'></a>
+<a id='L763' name='L763'></a><strong class='reserved'>char</strong> multi_cns[] = "\n"
+<a id='L764' name='L764'></a>        "Subject: CN=www.example.com,CN=www.example2.com,CN=www.example3.com\n"
+<a id='L765' name='L765'></a>        "\n"
+<a id='L766' name='L766'></a>        "-----BEGIN CERTIFICATE-----\n"
+<a id='L767' name='L767'></a>        "MIIDXzCCAkegAwIBAgIMU+p6uAg2JlqRhAbAMA0GCSqGSIb3DQEBCwUAMA8xDTAL\n"
+<a id='L768' name='L768'></a>        "BgNVBAMTBENBLTAwIhgPMjAxNDA4MTIyMDM2MDhaGA85OTk5MTIzMTIzNTk1OVow\n"
+<a id='L769' name='L769'></a>        "UDEYMBYGA1UEAxMPd3d3LmV4YW1wbGUuY29tMRkwFwYDVQQDExB3d3cuZXhhbXBs\n"
+<a id='L770' name='L770'></a>        "ZTIuY29tMRkwFwYDVQQDExB3d3cuZXhhbXBsZTMuY29tMIIBIjANBgkqhkiG9w0B\n"
+<a id='L771' name='L771'></a>        "AQEFAAOCAQ8AMIIBCgKCAQEAqP5QQUqIS2lquM8hYbDHljqHBDWlGtr167DDPwix\n"
+<a id='L772' name='L772'></a>        "oIlnq84Xr1zI5zpJ2t/3U5kGTbRJiVroQCh3cVhiQyGTPSJPK+CJGi3diw5Vc2rK\n"
+<a id='L773' name='L773'></a>        "oAPxaFtaxvE36mLLH2SSuc49b6hhlRpXdWE0TgnsvJojL5V20/CZI23T27fl+DjT\n"
+<a id='L774' name='L774'></a>        "MduU92qH8wdCgp7q3sHZvtvTZuFM+edYvKZjhUz8P7JwiamG0A2UH+NiyicdAOxc\n"
+<a id='L775' name='L775'></a>        "+lfwfoyetJdTHLfwxdCXT4X91xGd9eOW9lIL5BqLuAArODTcmHDmiXpXEO/sEyHq\n"
+<a id='L776' name='L776'></a>        "L96Eawjon0Gz4IRNq7/kwDjSPJOIN0GHq6DtNmXl6J0C5wIDAQABo3YwdDAMBgNV\n"
+<a id='L777' name='L777'></a>        "HRMBAf8EAjAAMBMGA1UdJQQMMAoGCCsGAQUFBwMBMA8GA1UdDwEB/wQFAwMHoAAw\n"
+<a id='L778' name='L778'></a>        "HQYDVR0OBBYEFH6NTStc4XH/M74Meat1sT2o53fUMB8GA1UdIwQYMBaAFK8aMLKE\n"
+<a id='L779' name='L779'></a>        "hAwWmkzQxRkQ1/efnumUMA0GCSqGSIb3DQEBCwUAA4IBAQBdHknM+rddB0ET+UI2\n"
+<a id='L780' name='L780'></a>        "Or8qSNjkqBHwsZqb4hJozXFS35a1CJPQuxPzY13eHpiIfmdWL2EpKnLOU8vtAW9e\n"
+<a id='L781' name='L781'></a>        "qpozMGDyrAuZhxsXUtInbF15C+Yuw9/sqCPK44b5DCtDf6J/N8m8FvdwqO803z1D\n"
+<a id='L782' name='L782'></a>        "MGcSpES5I68+N3dwSRFYNpSLA1ul5MSlnmoffml959kx9hZNcI4N/UqkO1LMCKXX\n"
+<a id='L783' name='L783'></a>        "Nf8kGFyLdPjANcIwL5sqP+Dp4HP3wdf7Ny+KFCZ6zDbpa53gb3G0naMdllK8BMfI\n"
+<a id='L784' name='L784'></a>        "AQ4Y07zSA4K1QMdxeqaMgPIcCDLoKiMXAXNa42+K04F6SOkTjsVx9b5m0oynLt0u\n"
+<a id='L785' name='L785'></a>        "MUjE\n"
+<a id='L786' name='L786'></a>        "-----END CERTIFICATE-----\n";
+<a id='L787' name='L787'></a>
+<a id='L788' name='L788'></a><strong class='reserved'>char</strong> txt_ip_in_names[] = 
+<a id='L789' name='L789'></a>        "Subject: CN=172.15.1.1\n"
+<a id='L790' name='L790'></a>        "Subject Alternative Name (not critical):\n"
+<a id='L791' name='L791'></a>        "       DNSname: 172.15.2.1\n"
+<a id='L792' name='L792'></a>        "-----BEGIN CERTIFICATE-----\n"
+<a id='L793' name='L793'></a>        "MIIEJDCCAoygAwIBAgIMWQXA/TIEZUXpwL2dMA0GCSqGSIb3DQEBCwUAMA8xDTAL\n"
+<a id='L794' name='L794'></a>        "BgNVBAMTBENBLTEwIBcNMTcwNDMwMTA0ODI5WhgPOTk5OTEyMzEyMzU5NTlaMBUx\n"
+<a id='L795' name='L795'></a>        "EzARBgNVBAMTCjE3Mi4xNS4xLjEwggGiMA0GCSqGSIb3DQEBAQUAA4IBjwAwggGK\n"
+<a id='L796' name='L796'></a>        "AoIBgQDP3DsT65aY+fHi6FivWbypF71T9UjAGYcho7XXPUCvBr6xQbyERZjb08qn\n"
+<a id='L797' name='L797'></a>        "RPvVDaiLeDfVve44gSho70t+fxMsCYZqkf9HN4aUzuxx2fHgMBCwyrhgm9zZ/zgA\n"
+<a id='L798' name='L798'></a>        "D92oXOPem2mKNjPavXtthqvgvwu6HmpJDd+YYR7FFbkgZswrqjd+lg0z+PGt5Xee\n"
+<a id='L799' name='L799'></a>        "LW3amPZINyc5Rai+LMlYIU29YK9G+CM3XVPQ8ygsQva+4/YoU1DVQRXFYTO1ERdn\n"
+<a id='L800' name='L800'></a>        "QDV9kmJKvQOxbjchNkLLMdBWee/WpJtBDE4KcidAsbd/6eUIINVAD7Nm5uE39mDv\n"
+<a id='L801' name='L801'></a>        "2ld4vup4j4A5dQNVhUd6iIYfkkwp9NnGMNGpgvSudPSHH8sFlfxXD8ysbD2wHeXL\n"
+<a id='L802' name='L802'></a>        "S0Q4Ejypij7tEzy5KdUWqft1QqClHawc2hZ9KKnCHW3xoUsAWxcTIlsgqUUJOkXR\n"
+<a id='L803' name='L803'></a>        "Qij2N+0SKrn6M6DSOiklCCunLUCUCceM7fiwYndhNFm5YvZq+m+Afnvxk5V7RnBu\n"
+<a id='L804' name='L804'></a>        "DLoxPxkCAwEAAaN4MHYwDAYDVR0TAQH/BAIwADAVBgNVHREEDjAMggoxNzIuMTUu\n"
+<a id='L805' name='L805'></a>        "Mi4xMA8GA1UdDwEB/wQFAwMHoAAwHQYDVR0OBBYEFFqnqgPcjDWmHm0PJNxKNeEx\n"
+<a id='L806' name='L806'></a>        "Msk1MB8GA1UdIwQYMBaAFOnh1ZODb8QbrqHBHpWyyrEVTpanMA0GCSqGSIb3DQEB\n"
+<a id='L807' name='L807'></a>        "CwUAA4IBgQArsZSxJdZ1W+y3m+y6f1Me3FB/XUscpHQ9cS0wlaikeqBvIru5zp7U\n"
+<a id='L808' name='L808'></a>        "tLT8qRS7Q8fxsL6LWiOmW5Izi4A51DYJQ9bUEqSIbp9SIV78u5v0oO1bnb7d5SV+\n"
+<a id='L809' name='L809'></a>        "BZm/zYuox2uTT9PSoB+iqQXUJ7brWdKe0NdPAzRpM928CqWJLPw0gn41GOIPN6wS\n"
+<a id='L810' name='L810'></a>        "IH29CvqRABkxzIsI8IcxHb3/F+DxTnq6aICoWe2XPeL+RqB7moP6YAC9W/r+hds2\n"
+<a id='L811' name='L811'></a>        "m8Gok+rGuG3VXk2vc/j1LRnGZfpCQV2L7e7b5eLyQ2Ce46fnxkQSTt4tc0//FTfr\n"
+<a id='L812' name='L812'></a>        "6X9624hAOV6MSlkPHNBwVE42z8KsxJfPxeHX+YzFBXqBiQ/r/TvOHDt5Tsny6lXh\n"
+<a id='L813' name='L813'></a>        "TDqlJ3NwdS/K9PAlLqhDiZwwakUS9lEY6IC7biP7mxNM8npzlqogfS07XTJgGxgb\n"
+<a id='L814' name='L814'></a>        "FtcITJKW0NPA8cnyEAt9jcgaDWw/xbVV+pIytFuGL8pjHEQ4H9Ymu6ifLNlkyu/e\n"
+<a id='L815' name='L815'></a>        "3XYCeqo17QE=\n"
+<a id='L816' name='L816'></a>        "-----END CERTIFICATE-----\n";
+<a id='L817' name='L817'></a>
+<a id='L818' name='L818'></a><strong class='reserved'>char</strong> txt_ip_in_cn[] =
+<a id='L819' name='L819'></a>        "CN=172.15.1.1\n"
+<a id='L820' name='L820'></a>        "-----BEGIN CERTIFICATE-----\n"
+<a id='L821' name='L821'></a>        "MIICCDCCAXGgAwIBAgIMWQXCYQfV3T9BXL4hMA0GCSqGSIb3DQEBCwUAMA8xDTAL\n"
+<a id='L822' name='L822'></a>        "BgNVBAMTBENBLTEwIBcNMTcwNDMwMTA1NDI1WhgPOTk5OTEyMzEyMzU5NTlaMBUx\n"
+<a id='L823' name='L823'></a>        "EzARBgNVBAMTCjE3Mi4xNS4xLjEwgZ8wDQYJKoZIhvcNAQEBBQADgY0AMIGJAoGB\n"
+<a id='L824' name='L824'></a>        "AM5hibrtVPezTZ018YR3DG+r71pTmfxVD1hWMAywQTMdut11Cg16dBtU/WJ6X3YF\n"
+<a id='L825' name='L825'></a>        "b3MAtrJf7eHnaxPneY7j590eOcqiDmb0skUATuZrX4Su0QMP4ygTcXlzMAxOFYwQ\n"
+<a id='L826' name='L826'></a>        "pd3d9LQiUxCVlg7fPI7BiqyWA1igBB34OaVbV0GHuJBVAgMBAAGjYTBfMAwGA1Ud\n"
+<a id='L827' name='L827'></a>        "EwEB/wQCMAAwDwYDVR0PAQH/BAUDAwegADAdBgNVHQ4EFgQUSXWLgTdjnYj1kv1g\n"
+<a id='L828' name='L828'></a>        "TEGZep6b0MMwHwYDVR0jBBgwFoAU3rLZPebH2OG+u4iAlJ+zbDif4GYwDQYJKoZI\n"
+<a id='L829' name='L829'></a>        "hvcNAQELBQADgYEAifPWTjcErYbxCqRZW5JhwaosOFHCJVboPsLrIM8W0HEJgqet\n"
+<a id='L830' name='L830'></a>        "TwarBBiE0mzQKU3GtjGj1ZSxUI/jBg9bzC+fs25VtdlC9nIxi5tSDI/HOoBBgXNr\n"
+<a id='L831' name='L831'></a>        "f0+Un2eHAxFcRZPWdPy1/mn83NUMnjquuA/HHcju+pcoZrEwAI3PPQHgsGQ=\n"
+<a id='L832' name='L832'></a>        "-----END CERTIFICATE-----\n";
+<a id='L833' name='L833'></a>
+<a id='L834' name='L834'></a>
+<a id='L835' name='L835'></a><strong class='reserved'>void</strong> <a href='../R/6687.html' title='Multiple referred from 5 places.'>doit</a>(<strong class='reserved'>void</strong>)
+<a id='L836' name='L836'></a><em class='brace'>{</em>
+<a id='L837' name='L837'></a>        gnutls_x509_crt_t x509;
+<a id='L838' name='L838'></a><em class='sharp'>#ifdef</em> ENABLE_OPENPGP
+<a id='L839' name='L839'></a>        gnutls_openpgp_crt_t pgp;
+<a id='L840' name='L840'></a><em class='sharp'>#endif</em>
+<a id='L841' name='L841'></a>        gnutls_datum_t data;
+<a id='L842' name='L842'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L843' name='L843'></a>
+<a id='L844' name='L844'></a>        ret = <a href='../S/4443.html#L55' title='Defined at 55 in tests/utils.h.'>global_init</a>();
+<a id='L845' name='L845'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L846' name='L846'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("global_init: %d\n", ret);
+<a id='L847' name='L847'></a>
+<a id='L848' name='L848'></a>        ret = <a href='../S/5349.html#L199' title='Defined at 199 in lib/x509/x509.c.'>gnutls_x509_crt_init</a>(&amp;x509);
+<a id='L849' name='L849'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L850' name='L850'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("gnutls_x509_crt_init: %d\n", ret);
+<a id='L851' name='L851'></a>
+<a id='L852' name='L852'></a><em class='sharp'>#ifdef</em> ENABLE_OPENPGP
+<a id='L853' name='L853'></a>        ret = <a href='../S/5621.html#L31' title='Defined at 31 in lib/openpgp_compat.c.'>gnutls_openpgp_crt_init</a>(&amp;pgp);
+<a id='L854' name='L854'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L855' name='L855'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("gnutls_openpgp_crt_init: %d\n", ret);
+<a id='L856' name='L856'></a><em class='sharp'>#endif</em>
+<a id='L857' name='L857'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L858' name='L858'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing wildcards...\n");
+<a id='L859' name='L859'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) wildcards;
+<a id='L860' name='L860'></a>        data.size = strlen(wildcards);
+<a id='L861' name='L861'></a>
+<a id='L862' name='L862'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(x509, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L863' name='L863'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L864' name='L864'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_x509_crt_import: %d\n", __LINE__, ret);
+<a id='L865' name='L865'></a>
+<a id='L866' name='L866'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "example.com");
+<a id='L867' name='L867'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L868' name='L868'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L869' name='L869'></a>
+<a id='L870' name='L870'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "example.org");
+<a id='L871' name='L871'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L872' name='L872'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L873' name='L873'></a>
+<a id='L874' name='L874'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "www.example.net");
+<a id='L875' name='L875'></a>        <strong class='reserved'>if</strong> (ret==0)
+<a id='L876' name='L876'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly does not match (%d)\n", __LINE__, ret);
+<a id='L877' name='L877'></a>
+<a id='L878' name='L878'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L879' name='L879'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing pem1...\n");
+<a id='L880' name='L880'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) pem1;
+<a id='L881' name='L881'></a>        data.size = strlen(pem1);
+<a id='L882' name='L882'></a>
+<a id='L883' name='L883'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(x509, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L884' name='L884'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L885' name='L885'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_x509_crt_import: %d\n", __LINE__, ret);
+<a id='L886' name='L886'></a>
+<a id='L887' name='L887'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "foo");
+<a id='L888' name='L888'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L889' name='L889'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L890' name='L890'></a>
+<a id='L891' name='L891'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L892' name='L892'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing pem2...\n");
+<a id='L893' name='L893'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) pem2;
+<a id='L894' name='L894'></a>        data.size = strlen(pem2);
+<a id='L895' name='L895'></a>
+<a id='L896' name='L896'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(x509, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L897' name='L897'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L898' name='L898'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_x509_crt_import: %d\n", __LINE__, ret);
+<a id='L899' name='L899'></a>
+<a id='L900' name='L900'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "foo");
+<a id='L901' name='L901'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L902' name='L902'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L903' name='L903'></a>
+<a id='L904' name='L904'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "www.example.org");
+<a id='L905' name='L905'></a>        <strong class='reserved'>if</strong> (!ret)
+<a id='L906' name='L906'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly does not match (%d)\n", __LINE__, ret);
+<a id='L907' name='L907'></a>
+<a id='L908' name='L908'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "*.example.org");
+<a id='L909' name='L909'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L910' name='L910'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L911' name='L911'></a>
+<a id='L912' name='L912'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L913' name='L913'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing pem3...\n");
+<a id='L914' name='L914'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) pem3;
+<a id='L915' name='L915'></a>        data.size = strlen(pem3);
+<a id='L916' name='L916'></a>
+<a id='L917' name='L917'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(x509, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L918' name='L918'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L919' name='L919'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_x509_crt_import: %d\n", __LINE__, ret);
+<a id='L920' name='L920'></a>
+<a id='L921' name='L921'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "foo");
+<a id='L922' name='L922'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L923' name='L923'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L924' name='L924'></a>
+<a id='L925' name='L925'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "www.example.org");
+<a id='L926' name='L926'></a>        <strong class='reserved'>if</strong> (!ret)
+<a id='L927' name='L927'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly does not match (%d)\n", __LINE__, ret);
+<a id='L928' name='L928'></a>
+<a id='L929' name='L929'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "*.example.org");
+<a id='L930' name='L930'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L931' name='L931'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L932' name='L932'></a>
+<a id='L933' name='L933'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L934' name='L934'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing pem4...\n");
+<a id='L935' name='L935'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) pem4;
+<a id='L936' name='L936'></a>        data.size = strlen(pem4);
+<a id='L937' name='L937'></a>
+<a id='L938' name='L938'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(x509, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L939' name='L939'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L940' name='L940'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_x509_crt_import: %d\n", __LINE__, ret);
+<a id='L941' name='L941'></a>
+<a id='L942' name='L942'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "foo");
+<a id='L943' name='L943'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L944' name='L944'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L945' name='L945'></a>
+<a id='L946' name='L946'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "www.example.org");
+<a id='L947' name='L947'></a>        <strong class='reserved'>if</strong> (!ret)
+<a id='L948' name='L948'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly does not match (%d)\n", __LINE__, ret);
+<a id='L949' name='L949'></a>
+<a id='L950' name='L950'></a>        ret = <a href='../S/5355.html#L152' title='Defined at 152 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname2</a>(x509, "www.example.org", <a href='../S/6011.html#L980' title='Defined at 980 in lib/includes/gnutls/x509.h.'>GNUTLS_VERIFY_DO_NOT_ALLOW_WILDCARDS</a>);
+<a id='L951' name='L951'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L952' name='L952'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L953' name='L953'></a>
+<a id='L954' name='L954'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "foo.example.org");
+<a id='L955' name='L955'></a>        <strong class='reserved'>if</strong> (!ret)
+<a id='L956' name='L956'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly does not match (%d)\n", __LINE__, ret);
+<a id='L957' name='L957'></a>
+<a id='L958' name='L958'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "foo.example.com");
+<a id='L959' name='L959'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L960' name='L960'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L961' name='L961'></a>
+<a id='L962' name='L962'></a><em class='sharp'>#ifdef</em> SUPPORT_COMPLEX_WILDCARDS
+<a id='L963' name='L963'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L964' name='L964'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing pem6...\n");
+<a id='L965' name='L965'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) pem6;
+<a id='L966' name='L966'></a>        data.size = strlen(pem6);
+<a id='L967' name='L967'></a>
+<a id='L968' name='L968'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(x509, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L969' name='L969'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L970' name='L970'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_x509_crt_import: %d\n", __LINE__, ret);
+<a id='L971' name='L971'></a>
+<a id='L972' name='L972'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "foo.example.org");
+<a id='L973' name='L973'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L974' name='L974'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L975' name='L975'></a>
+<a id='L976' name='L976'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "bar.foo.example.org");
+<a id='L977' name='L977'></a>        <strong class='reserved'>if</strong> (!ret)
+<a id='L978' name='L978'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly does not match (%d)\n", __LINE__, ret);
+<a id='L979' name='L979'></a>
+<a id='L980' name='L980'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L981' name='L981'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing pem7...\n");
+<a id='L982' name='L982'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) pem7;
+<a id='L983' name='L983'></a>        data.size = strlen(pem7);
+<a id='L984' name='L984'></a>
+<a id='L985' name='L985'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(x509, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L986' name='L986'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L987' name='L987'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_x509_crt_import: %d\n", __LINE__, ret);
+<a id='L988' name='L988'></a>
+<a id='L989' name='L989'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "foo.bar.example.org");
+<a id='L990' name='L990'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L991' name='L991'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L992' name='L992'></a>
+<a id='L993' name='L993'></a>        ret =
+<a id='L994' name='L994'></a>            <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "foobar.bar.example.org");
+<a id='L995' name='L995'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L996' name='L996'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L997' name='L997'></a>
+<a id='L998' name='L998'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "foobar.example.org");
+<a id='L999' name='L999'></a>        <strong class='reserved'>if</strong> (!ret)
+<a id='L1000' name='L1000'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly does not match (%d)\n", __LINE__, ret);
+<a id='L1001' name='L1001'></a>
+<a id='L1002' name='L1002'></a>        ret =
+<a id='L1003' name='L1003'></a>            <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "foobazbar.example.org");
+<a id='L1004' name='L1004'></a>        <strong class='reserved'>if</strong> (!ret)
+<a id='L1005' name='L1005'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly does not match (%d)\n", __LINE__, ret);
+<a id='L1006' name='L1006'></a><em class='sharp'>#endif</em>
+<a id='L1007' name='L1007'></a>
+<a id='L1008' name='L1008'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L1009' name='L1009'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing pem8...\n");
+<a id='L1010' name='L1010'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) pem8;
+<a id='L1011' name='L1011'></a>        data.size = strlen(pem8);
+<a id='L1012' name='L1012'></a>
+<a id='L1013' name='L1013'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(x509, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L1014' name='L1014'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1015' name='L1015'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_x509_crt_import: %d\n", __LINE__, ret);
+<a id='L1016' name='L1016'></a>
+<a id='L1017' name='L1017'></a>        <em class='comment'>/* this was passing in old gnutls versions, but that was not a</em>
+<a id='L1018' name='L1018'></a><em class='comment'>         * good idea. See http://permalink.gmane.org/gmane.comp.encryption.gpg.gnutls.devel/7380</em>
+<a id='L1019' name='L1019'></a><em class='comment'>         * for a discussion. */</em>
+<a id='L1020' name='L1020'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "www.example.org");
+<a id='L1021' name='L1021'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1022' name='L1022'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1023' name='L1023'></a>
+<a id='L1024' name='L1024'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "www.example.");
+<a id='L1025' name='L1025'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1026' name='L1026'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1027' name='L1027'></a>
+<a id='L1028' name='L1028'></a>        <em class='comment'>/* this was passing in old gnutls versions, but that was not a</em>
+<a id='L1029' name='L1029'></a><em class='comment'>         * good idea. See http://permalink.gmane.org/gmane.comp.encryption.gpg.gnutls.devel/7380</em>
+<a id='L1030' name='L1030'></a><em class='comment'>         * for a discussion. */</em>
+<a id='L1031' name='L1031'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "www.example.com");
+<a id='L1032' name='L1032'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1033' name='L1033'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1034' name='L1034'></a>
+<a id='L1035' name='L1035'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "www.example.foo.com");
+<a id='L1036' name='L1036'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1037' name='L1037'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1038' name='L1038'></a>
+<a id='L1039' name='L1039'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L1040' name='L1040'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing pem9...\n");
+<a id='L1041' name='L1041'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) pem9;
+<a id='L1042' name='L1042'></a>        data.size = strlen(pem9);
+<a id='L1043' name='L1043'></a>
+<a id='L1044' name='L1044'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(x509, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L1045' name='L1045'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1046' name='L1046'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_x509_crt_import: %d\n", __LINE__, ret);
+<a id='L1047' name='L1047'></a>
+<a id='L1048' name='L1048'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "foo.example.org");
+<a id='L1049' name='L1049'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1050' name='L1050'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1051' name='L1051'></a>
+<a id='L1052' name='L1052'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "bar.example.org");
+<a id='L1053' name='L1053'></a>        <strong class='reserved'>if</strong> (!ret)
+<a id='L1054' name='L1054'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly does not match (%d)\n", __LINE__, ret);
+<a id='L1055' name='L1055'></a>
+<a id='L1056' name='L1056'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L1057' name='L1057'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing pem10...\n");
+<a id='L1058' name='L1058'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) pem10;
+<a id='L1059' name='L1059'></a>        data.size = strlen(pem10);
+<a id='L1060' name='L1060'></a>
+<a id='L1061' name='L1061'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(x509, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L1062' name='L1062'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1063' name='L1063'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_x509_crt_import: %d\n", __LINE__, ret);
+<a id='L1064' name='L1064'></a>
+<a id='L1065' name='L1065'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "localhost");
+<a id='L1066' name='L1066'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1067' name='L1067'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1068' name='L1068'></a>
+<a id='L1069' name='L1069'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L1070' name='L1070'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing pem_too_many...\n");
+<a id='L1071' name='L1071'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) pem_too_many;
+<a id='L1072' name='L1072'></a>        data.size = strlen(pem_too_many);
+<a id='L1073' name='L1073'></a>
+<a id='L1074' name='L1074'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(x509, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L1075' name='L1075'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1076' name='L1076'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_x509_crt_import: %d\n", __LINE__, ret);
+<a id='L1077' name='L1077'></a>
+<a id='L1078' name='L1078'></a>        ret =
+<a id='L1079' name='L1079'></a>            <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509,
+<a id='L1080' name='L1080'></a>                                           "localhost.gnutls.gnutls.org");
+<a id='L1081' name='L1081'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1082' name='L1082'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname verification should have failed (too many wildcards)\n", __LINE__);
+<a id='L1083' name='L1083'></a>
+<a id='L1084' name='L1084'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L1085' name='L1085'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing pem-ips...\n");
+<a id='L1086' name='L1086'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) pem_ips;
+<a id='L1087' name='L1087'></a>        data.size = strlen(pem_ips);
+<a id='L1088' name='L1088'></a>
+<a id='L1089' name='L1089'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(x509, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L1090' name='L1090'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1091' name='L1091'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_x509_crt_import: %d\n", __LINE__, ret);
+<a id='L1092' name='L1092'></a>
+<a id='L1093' name='L1093'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "127.0.0.2");
+<a id='L1094' name='L1094'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1095' name='L1095'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1096' name='L1096'></a>
+<a id='L1097' name='L1097'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "example.com");
+<a id='L1098' name='L1098'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1099' name='L1099'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1100' name='L1100'></a>
+<a id='L1101' name='L1101'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "127.0.0.1");
+<a id='L1102' name='L1102'></a>        <strong class='reserved'>if</strong> (!ret)
+<a id='L1103' name='L1103'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly does not match (%d)\n", __LINE__, ret);
+<a id='L1104' name='L1104'></a>
+<a id='L1105' name='L1105'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "192.168.5.1");
+<a id='L1106' name='L1106'></a>        <strong class='reserved'>if</strong> (!ret)
+<a id='L1107' name='L1107'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly does not match (%d)\n", __LINE__, ret);
+<a id='L1108' name='L1108'></a>
+<a id='L1109' name='L1109'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "::1");
+<a id='L1110' name='L1110'></a>        <strong class='reserved'>if</strong> (!ret)
+<a id='L1111' name='L1111'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly does not match (%d)\n", __LINE__, ret);
+<a id='L1112' name='L1112'></a>
+<a id='L1113' name='L1113'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "fe80::3e97:eff:fe18:359a");
+<a id='L1114' name='L1114'></a>        <strong class='reserved'>if</strong> (!ret)
+<a id='L1115' name='L1115'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly does not match (%d)\n", __LINE__, ret);
+<a id='L1116' name='L1116'></a>
+<a id='L1117' name='L1117'></a>        <em class='comment'>/* test that we don't fallback to CN matching if a supported SAN (IP addresses</em>
+<a id='L1118' name='L1118'></a><em class='comment'>         * in that case) is found. */</em>
+<a id='L1119' name='L1119'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "server-0");
+<a id='L1120' name='L1120'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1121' name='L1121'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1122' name='L1122'></a>
+<a id='L1123' name='L1123'></a>        <em class='comment'>/* test flag GNUTLS_VERIFY_DO_NOT_ALLOW_IP_MATCHES */</em>
+<a id='L1124' name='L1124'></a>        ret = <a href='../S/5355.html#L152' title='Defined at 152 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname2</a>(x509, "127.0.0.1", <a href='../S/6011.html#L969' title='Defined at 969 in lib/includes/gnutls/x509.h.'>GNUTLS_VERIFY_DO_NOT_ALLOW_IP_MATCHES</a>);
+<a id='L1125' name='L1125'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1126' name='L1126'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1127' name='L1127'></a>
+<a id='L1128' name='L1128'></a>        ret = <a href='../S/5355.html#L152' title='Defined at 152 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname2</a>(x509, "::1", <a href='../S/6011.html#L969' title='Defined at 969 in lib/includes/gnutls/x509.h.'>GNUTLS_VERIFY_DO_NOT_ALLOW_IP_MATCHES</a>);
+<a id='L1129' name='L1129'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1130' name='L1130'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1131' name='L1131'></a>
+<a id='L1132' name='L1132'></a>        ret = <a href='../S/5355.html#L152' title='Defined at 152 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname2</a>(x509, "127.0.0.2", <a href='../S/6011.html#L969' title='Defined at 969 in lib/includes/gnutls/x509.h.'>GNUTLS_VERIFY_DO_NOT_ALLOW_IP_MATCHES</a>);
+<a id='L1133' name='L1133'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1134' name='L1134'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1135' name='L1135'></a>
+<a id='L1136' name='L1136'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L1137' name='L1137'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing multi-cns...\n");
+<a id='L1138' name='L1138'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) multi_cns;
+<a id='L1139' name='L1139'></a>        data.size = strlen(multi_cns);
+<a id='L1140' name='L1140'></a>
+<a id='L1141' name='L1141'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(x509, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L1142' name='L1142'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1143' name='L1143'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_x509_crt_import: %d\n", __LINE__, ret);
+<a id='L1144' name='L1144'></a>
+<a id='L1145' name='L1145'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "example.com");
+<a id='L1146' name='L1146'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1147' name='L1147'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1148' name='L1148'></a>
+<a id='L1149' name='L1149'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "www.example.com");
+<a id='L1150' name='L1150'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1151' name='L1151'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1152' name='L1152'></a>
+<a id='L1153' name='L1153'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "www.example2.com");
+<a id='L1154' name='L1154'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1155' name='L1155'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1156' name='L1156'></a>
+<a id='L1157' name='L1157'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "www.example3.com");
+<a id='L1158' name='L1158'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1159' name='L1159'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1160' name='L1160'></a>
+<a id='L1161' name='L1161'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L1162' name='L1162'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing textual IPs...\n");
+<a id='L1163' name='L1163'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) txt_ip_in_names;
+<a id='L1164' name='L1164'></a>        data.size = strlen(txt_ip_in_names);
+<a id='L1165' name='L1165'></a>
+<a id='L1166' name='L1166'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(x509, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L1167' name='L1167'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1168' name='L1168'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_x509_crt_import: %d\n", __LINE__, ret);
+<a id='L1169' name='L1169'></a>
+<a id='L1170' name='L1170'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "example.com");
+<a id='L1171' name='L1171'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1172' name='L1172'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1173' name='L1173'></a>
+<a id='L1174' name='L1174'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "172.15.1.1");
+<a id='L1175' name='L1175'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1176' name='L1176'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1177' name='L1177'></a>
+<a id='L1178' name='L1178'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "172.15.2.1");
+<a id='L1179' name='L1179'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1180' name='L1180'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1181' name='L1181'></a>
+<a id='L1182' name='L1182'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L1183' name='L1183'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing textual IPs (CN)...\n");
+<a id='L1184' name='L1184'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) txt_ip_in_cn;
+<a id='L1185' name='L1185'></a>        data.size = strlen(txt_ip_in_cn);
+<a id='L1186' name='L1186'></a>
+<a id='L1187' name='L1187'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(x509, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L1188' name='L1188'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1189' name='L1189'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_x509_crt_import: %d\n", __LINE__, ret);
+<a id='L1190' name='L1190'></a>
+<a id='L1191' name='L1191'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "example.com");
+<a id='L1192' name='L1192'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1193' name='L1193'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1194' name='L1194'></a>
+<a id='L1195' name='L1195'></a>        ret = <a href='../S/5355.html#L47' title='Defined at 47 in lib/x509/hostname-verify.c.'>gnutls_x509_crt_check_hostname</a>(x509, "172.15.1.1");
+<a id='L1196' name='L1196'></a>        <strong class='reserved'>if</strong> (ret)
+<a id='L1197' name='L1197'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly matches (%d)\n", __LINE__, ret);
+<a id='L1198' name='L1198'></a>
+<a id='L1199' name='L1199'></a><em class='sharp'>#ifdef</em> ENABLE_OPENPGP
+<a id='L1200' name='L1200'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L1201' name='L1201'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("Testing pem11...\n");
+<a id='L1202' name='L1202'></a>        data.data = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> *) pem11;
+<a id='L1203' name='L1203'></a>        data.size = strlen(pem11);
+<a id='L1204' name='L1204'></a>
+<a id='L1205' name='L1205'></a>        ret =
+<a id='L1206' name='L1206'></a>            <a href='../S/5621.html#L41' title='Defined at 41 in lib/openpgp_compat.c.'>gnutls_openpgp_crt_import</a>(pgp, &amp;data,
+<a id='L1207' name='L1207'></a>                                      <a href='../S/6013.html#L51' title='Defined at 51 in lib/includes/gnutls/openpgp.h.'>GNUTLS_OPENPGP_FMT_BASE64</a>);
+<a id='L1208' name='L1208'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1209' name='L1209'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: gnutls_openpgp_crt_import: %d\n", __LINE__, ret);
+<a id='L1210' name='L1210'></a>
+<a id='L1211' name='L1211'></a>        ret = <a href='../S/5621.html#L132' title='Defined at 132 in lib/openpgp_compat.c.'>gnutls_openpgp_crt_check_hostname</a>(pgp, "test.gnutls.org");
+<a id='L1212' name='L1212'></a>        <strong class='reserved'>if</strong> (!ret)
+<a id='L1213' name='L1213'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: Hostname incorrectly does not match (%d)\n", __LINE__, ret);
+<a id='L1214' name='L1214'></a>
+<a id='L1215' name='L1215'></a>        <a href='../S/5621.html#L36' title='Defined at 36 in lib/openpgp_compat.c.'>gnutls_openpgp_crt_deinit</a>(pgp);
+<a id='L1216' name='L1216'></a><em class='sharp'>#endif</em>
+<a id='L1217' name='L1217'></a>        <a href='../S/5349.html#L291' title='Defined at 291 in lib/x509/x509.c.'>gnutls_x509_crt_deinit</a>(x509);
+<a id='L1218' name='L1218'></a>
+<a id='L1219' name='L1219'></a>        <a href='../S/6039.html#L467' title='Defined at 467 in lib/global.c.'>gnutls_global_deinit</a>();
+<a id='L1220' name='L1220'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;][^]<a href='#L835'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

@@ -1,0 +1,209 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>mpn/generic/hgcd.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/2101.html'>mpn</a>/<a href='../files/2124.html'>generic</a>/hgcd.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L60'>[^]</a><a href='#L82'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L60' title='Defined at 60.'>mpn_hgcd_itch</a></li>
+<li><a href='#L82' title='Defined at 82.'>mpn_hgcd</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* hgcd.c.</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   THE FUNCTIONS IN THIS FILE ARE INTERNAL WITH MUTABLE INTERFACES.  IT IS ONLY</em>
+<a id='L4' name='L4'></a><em class='comment'>   SAFE TO REACH THEM THROUGH DOCUMENTED INTERFACES.  IN FACT, IT IS ALMOST</em>
+<a id='L5' name='L5'></a><em class='comment'>   GUARANTEED THAT THEY'LL CHANGE OR DISAPPEAR IN A FUTURE GNU MP RELEASE.</em>
+<a id='L6' name='L6'></a><em class='comment'></em>
+<a id='L7' name='L7'></a><em class='comment'>Copyright 2003-2005, 2008, 2011, 2012 Free Software Foundation, Inc.</em>
+<a id='L8' name='L8'></a><em class='comment'></em>
+<a id='L9' name='L9'></a><em class='comment'>This file is part of the GNU MP Library.</em>
+<a id='L10' name='L10'></a><em class='comment'></em>
+<a id='L11' name='L11'></a><em class='comment'>The GNU MP Library is free software; you can redistribute it and/or modify</em>
+<a id='L12' name='L12'></a><em class='comment'>it under the terms of either:</em>
+<a id='L13' name='L13'></a><em class='comment'></em>
+<a id='L14' name='L14'></a><em class='comment'>  * the GNU Lesser General Public License as published by the Free</em>
+<a id='L15' name='L15'></a><em class='comment'>    Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L16' name='L16'></a><em class='comment'>    option) any later version.</em>
+<a id='L17' name='L17'></a><em class='comment'></em>
+<a id='L18' name='L18'></a><em class='comment'>or</em>
+<a id='L19' name='L19'></a><em class='comment'></em>
+<a id='L20' name='L20'></a><em class='comment'>  * the GNU General Public License as published by the Free Software</em>
+<a id='L21' name='L21'></a><em class='comment'>    Foundation; either version 2 of the License, or (at your option) any</em>
+<a id='L22' name='L22'></a><em class='comment'>    later version.</em>
+<a id='L23' name='L23'></a><em class='comment'></em>
+<a id='L24' name='L24'></a><em class='comment'>or both in parallel, as here.</em>
+<a id='L25' name='L25'></a><em class='comment'></em>
+<a id='L26' name='L26'></a><em class='comment'>The GNU MP Library is distributed in the hope that it will be useful, but</em>
+<a id='L27' name='L27'></a><em class='comment'>WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY</em>
+<a id='L28' name='L28'></a><em class='comment'>or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License</em>
+<a id='L29' name='L29'></a><em class='comment'>for more details.</em>
+<a id='L30' name='L30'></a><em class='comment'></em>
+<a id='L31' name='L31'></a><em class='comment'>You should have received copies of the GNU General Public License and the</em>
+<a id='L32' name='L32'></a><em class='comment'>GNU Lesser General Public License along with the GNU MP Library.  If not,</em>
+<a id='L33' name='L33'></a><em class='comment'>see https://www.gnu.org/licenses/.  */</em>
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> "<a href='146.html'>gmp-impl.h</a>"
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> "<a href='150.html'>longlong.h</a>"
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a><em class='comment'>/* Size analysis for hgcd:</em>
+<a id='L40' name='L40'></a><em class='comment'></em>
+<a id='L41' name='L41'></a><em class='comment'>   For the recursive calls, we have n1 &lt;= ceil(n / 2). Then the</em>
+<a id='L42' name='L42'></a><em class='comment'>   storage need is determined by the storage for the recursive call</em>
+<a id='L43' name='L43'></a><em class='comment'>   computing M1, and hgcd_matrix_adjust and hgcd_matrix_mul calls that use M1</em>
+<a id='L44' name='L44'></a><em class='comment'>   (after this, the storage needed for M1 can be recycled).</em>
+<a id='L45' name='L45'></a><em class='comment'></em>
+<a id='L46' name='L46'></a><em class='comment'>   Let S(r) denote the required storage. For M1 we need 4 * (ceil(n1/2) + 1)</em>
+<a id='L47' name='L47'></a><em class='comment'>   = 4 * (ceil(n/4) + 1), for the hgcd_matrix_adjust call, we need n + 2,</em>
+<a id='L48' name='L48'></a><em class='comment'>   and for the hgcd_matrix_mul, we may need 3 ceil(n/2) + 8. In total,</em>
+<a id='L49' name='L49'></a><em class='comment'>   4 * ceil(n/4) + 3 ceil(n/2) + 12 &lt;= 10 ceil(n/4) + 12.</em>
+<a id='L50' name='L50'></a><em class='comment'></em>
+<a id='L51' name='L51'></a><em class='comment'>   For the recursive call, we need S(n1) = S(ceil(n/2)).</em>
+<a id='L52' name='L52'></a><em class='comment'></em>
+<a id='L53' name='L53'></a><em class='comment'>   S(n) &lt;= 10*ceil(n/4) + 12 + S(ceil(n/2))</em>
+<a id='L54' name='L54'></a><em class='comment'>        &lt;= 10*(ceil(n/4) + ... + ceil(n/2^(1+k))) + 12k + S(ceil(n/2^k))</em>
+<a id='L55' name='L55'></a><em class='comment'>        &lt;= 10*(2 ceil(n/4) + k) + 12k + S(ceil(n/2^k))</em>
+<a id='L56' name='L56'></a><em class='comment'>        &lt;= 20 ceil(n/4) + 22k + S(ceil(n/2^k))</em>
+<a id='L57' name='L57'></a><em class='comment'>*/</em>
+<a id='L58' name='L58'></a>
+<a id='L59' name='L59'></a><a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a>
+<a id='L60' name='L60'></a><a href='../R/2759.html' title='Multiple referred from 9 places.'>mpn_hgcd_itch</a> (<a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> n)
+<a id='L61' name='L61'></a><em class='brace'>{</em>
+<a id='L62' name='L62'></a>  <strong class='reserved'>unsigned</strong> k;
+<a id='L63' name='L63'></a>  <strong class='reserved'>int</strong> count;
+<a id='L64' name='L64'></a>  <a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> nscaled;
+<a id='L65' name='L65'></a>
+<a id='L66' name='L66'></a>  <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/510.html' title='Multiple defined in 110 places.'>HGCD_THRESHOLD</a>))
+<a id='L67' name='L67'></a>    <strong class='reserved'>return</strong> n;
+<a id='L68' name='L68'></a>
+<a id='L69' name='L69'></a>  <em class='comment'>/* Get the recursion depth. */</em>
+<a id='L70' name='L70'></a>  nscaled = (n - 1) / (<a href='../D/510.html' title='Multiple defined in 110 places.'>HGCD_THRESHOLD</a> - 1);
+<a id='L71' name='L71'></a>  <a href='../D/2366.html' title='Multiple defined in 27 places.'>count_leading_zeros</a> (count, nscaled);
+<a id='L72' name='L72'></a>  k = <a href='../D/425.html' title='Multiple defined in 116 places.'>GMP_LIMB_BITS</a> - count;
+<a id='L73' name='L73'></a>
+<a id='L74' name='L74'></a>  <strong class='reserved'>return</strong> 20 * ((n+3) / 4) + 22 * k + <a href='../D/510.html' title='Multiple defined in 110 places.'>HGCD_THRESHOLD</a>;
+<a id='L75' name='L75'></a><em class='brace'>}</em>
+<a id='L76' name='L76'></a>
+<a id='L77' name='L77'></a><em class='comment'>/* Reduces a,b until |a-b| fits in n/2 + 1 limbs. Constructs matrix M</em>
+<a id='L78' name='L78'></a><em class='comment'>   with elements of size at most (n+1)/2 - 1. Returns new size of a,</em>
+<a id='L79' name='L79'></a><em class='comment'>   b, or zero if no reduction is possible. */</em>
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a><a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a>
+<a id='L82' name='L82'></a><a href='../R/2754.html' title='Multiple referred from 8 places.'>mpn_hgcd</a> (<a href='../S/18.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> ap, <a href='../S/18.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a>, <a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> n,
+<a id='L83' name='L83'></a>          <strong class='reserved'>struct</strong> <a href='../S/146.html#L4243' title='Defined at 4243 in gmp-impl.h.'>hgcd_matrix</a> *<a href='../D/628.html' title='Multiple defined in 8 places.'>M</a>, <a href='../S/18.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>)
+<a id='L84' name='L84'></a><em class='brace'>{</em>
+<a id='L85' name='L85'></a>  <a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> <a href='../S/1163.html#L83' title='Defined at 83 in mpn/generic/toom42_mulmid.c.'>s</a> = n/2 + 1;
+<a id='L86' name='L86'></a>
+<a id='L87' name='L87'></a>  <a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> nn;
+<a id='L88' name='L88'></a>  <strong class='reserved'>int</strong> success = 0;
+<a id='L89' name='L89'></a>
+<a id='L90' name='L90'></a>  <strong class='reserved'>if</strong> (n &lt;= <a href='../S/1163.html#L83' title='Defined at 83 in mpn/generic/toom42_mulmid.c.'>s</a>)
+<a id='L91' name='L91'></a>    <em class='comment'>/* Happens when n &lt;= 2, a fairly uninteresting case but exercised</em>
+<a id='L92' name='L92'></a><em class='comment'>       by the random inputs of the testsuite. */</em>
+<a id='L93' name='L93'></a>    <strong class='reserved'>return</strong> 0;
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a>  <a href='../D/34.html' title='Multiple defined in 3 places.'>ASSERT</a> ((ap[n-1] | <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a>[n-1]) &gt; 0);
+<a id='L96' name='L96'></a>
+<a id='L97' name='L97'></a>  <a href='../D/34.html' title='Multiple defined in 3 places.'>ASSERT</a> ((n+1)/2 - 1 &lt; <a href='../D/628.html' title='Multiple defined in 8 places.'>M</a>-&gt;alloc);
+<a id='L98' name='L98'></a>
+<a id='L99' name='L99'></a>  <strong class='reserved'>if</strong> (<a href='../D/2.html' title='Multiple defined in 2 places.'>ABOVE_THRESHOLD</a> (n, <a href='../D/510.html' title='Multiple defined in 110 places.'>HGCD_THRESHOLD</a>))
+<a id='L100' name='L100'></a>    <em class='brace'>{</em>
+<a id='L101' name='L101'></a>      <a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> n2 = (3*n)/4 + 1;
+<a id='L102' name='L102'></a>      <a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> p = n/2;
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a>      nn = <a href='../D/3029.html' title='Multiple defined in 2 places.'>mpn_hgcd_reduce</a> (<a href='../D/628.html' title='Multiple defined in 8 places.'>M</a>, ap, <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a>, n, p, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>);
+<a id='L105' name='L105'></a>      <strong class='reserved'>if</strong> (nn)
+<a id='L106' name='L106'></a>        <em class='brace'>{</em>
+<a id='L107' name='L107'></a>          n = nn;
+<a id='L108' name='L108'></a>          success = 1;
+<a id='L109' name='L109'></a>        <em class='brace'>}</em>
+<a id='L110' name='L110'></a>
+<a id='L111' name='L111'></a>      <em class='comment'>/* NOTE: It appears this loop never runs more than once (at</em>
+<a id='L112' name='L112'></a><em class='comment'>         least when not recursing to hgcd_appr). */</em>
+<a id='L113' name='L113'></a>      <strong class='reserved'>while</strong> (n &gt; n2)
+<a id='L114' name='L114'></a>        <em class='brace'>{</em>
+<a id='L115' name='L115'></a>          <em class='comment'>/* Needs n + 1 storage */</em>
+<a id='L116' name='L116'></a>          nn = <a href='../D/3031.html' title='Multiple defined in 2 places.'>mpn_hgcd_step</a> (n, ap, <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a>, <a href='../S/1163.html#L83' title='Defined at 83 in mpn/generic/toom42_mulmid.c.'>s</a>, <a href='../D/628.html' title='Multiple defined in 8 places.'>M</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>);
+<a id='L117' name='L117'></a>          <strong class='reserved'>if</strong> (!nn)
+<a id='L118' name='L118'></a>            <strong class='reserved'>return</strong> success ? n : 0;
+<a id='L119' name='L119'></a>
+<a id='L120' name='L120'></a>          n = nn;
+<a id='L121' name='L121'></a>          success = 1;
+<a id='L122' name='L122'></a>        <em class='brace'>}</em>
+<a id='L123' name='L123'></a>
+<a id='L124' name='L124'></a>      <strong class='reserved'>if</strong> (n &gt; <a href='../S/1163.html#L83' title='Defined at 83 in mpn/generic/toom42_mulmid.c.'>s</a> + 2)
+<a id='L125' name='L125'></a>        <em class='brace'>{</em>
+<a id='L126' name='L126'></a>          <strong class='reserved'>struct</strong> <a href='../S/146.html#L4243' title='Defined at 4243 in gmp-impl.h.'>hgcd_matrix</a> <a href='../S/1236.html#L72' title='Defined at 72 in mpn/generic/mod_34lsub1.c.'>M1</a>;
+<a id='L127' name='L127'></a>          <a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> scratch;
+<a id='L128' name='L128'></a>
+<a id='L129' name='L129'></a>          p = 2*<a href='../S/1163.html#L83' title='Defined at 83 in mpn/generic/toom42_mulmid.c.'>s</a> - n + 1;
+<a id='L130' name='L130'></a>          scratch = <a href='../S/146.html#L4250' title='Defined at 4250 in gmp-impl.h.'>MPN_HGCD_MATRIX_INIT_ITCH</a> (n-p);
+<a id='L131' name='L131'></a>
+<a id='L132' name='L132'></a>          <a href='../D/3024.html' title='Multiple defined in 2 places.'>mpn_hgcd_matrix_init</a>(&amp;<a href='../S/1236.html#L72' title='Defined at 72 in mpn/generic/mod_34lsub1.c.'>M1</a>, n - p, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>);
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a>          <em class='comment'>/* FIXME: Should use hgcd_reduce, but that may require more</em>
+<a id='L135' name='L135'></a><em class='comment'>             scratch space, which requires review. */</em>
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a>          nn = <a href='../D/3016.html' title='Multiple defined in 2 places.'>mpn_hgcd</a> (ap + p, <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a> + p, n - p, &amp;<a href='../S/1236.html#L72' title='Defined at 72 in mpn/generic/mod_34lsub1.c.'>M1</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a> + scratch);
+<a id='L138' name='L138'></a>          <strong class='reserved'>if</strong> (nn &gt; 0)
+<a id='L139' name='L139'></a>            <em class='brace'>{</em>
+<a id='L140' name='L140'></a>              <em class='comment'>/* We always have max(M) &gt; 2^{-(GMP_NUMB_BITS + 1)} max(M1) */</em>
+<a id='L141' name='L141'></a>              <a href='../D/34.html' title='Multiple defined in 3 places.'>ASSERT</a> (<a href='../D/628.html' title='Multiple defined in 8 places.'>M</a>-&gt;n + 2 &gt;= <a href='../S/1236.html#L72' title='Defined at 72 in mpn/generic/mod_34lsub1.c.'>M1</a>.n);
+<a id='L142' name='L142'></a>
+<a id='L143' name='L143'></a>              <em class='comment'>/* Furthermore, assume M ends with a quotient (1, q; 0, 1),</em>
+<a id='L144' name='L144'></a><em class='comment'>                 then either q or q + 1 is a correct quotient, and M1 will</em>
+<a id='L145' name='L145'></a><em class='comment'>                 start with either (1, 0; 1, 1) or (2, 1; 1, 1). This</em>
+<a id='L146' name='L146'></a><em class='comment'>                 rules out the case that the size of M * M1 is much</em>
+<a id='L147' name='L147'></a><em class='comment'>                 smaller than the expected M-&gt;n + M1-&gt;n. */</em>
+<a id='L148' name='L148'></a>
+<a id='L149' name='L149'></a>              <a href='../D/34.html' title='Multiple defined in 3 places.'>ASSERT</a> (<a href='../D/628.html' title='Multiple defined in 8 places.'>M</a>-&gt;n + <a href='../S/1236.html#L72' title='Defined at 72 in mpn/generic/mod_34lsub1.c.'>M1</a>.n &lt; <a href='../D/628.html' title='Multiple defined in 8 places.'>M</a>-&gt;alloc);
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a>              <em class='comment'>/* Needs 2 (p + M-&gt;n) &lt;= 2 (2*s - n2 + 1 + n2 - s - 1)</em>
+<a id='L152' name='L152'></a><em class='comment'>                 = 2*s &lt;= 2*(floor(n/2) + 1) &lt;= n + 2. */</em>
+<a id='L153' name='L153'></a>              n = <a href='../D/3023.html' title='Multiple defined in 2 places.'>mpn_hgcd_matrix_adjust</a> (&amp;<a href='../S/1236.html#L72' title='Defined at 72 in mpn/generic/mod_34lsub1.c.'>M1</a>, p + nn, ap, <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a>, p, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a> + scratch);
+<a id='L154' name='L154'></a>
+<a id='L155' name='L155'></a>              <em class='comment'>/* We need a bound for of M-&gt;n + M1.n. Let n be the original</em>
+<a id='L156' name='L156'></a><em class='comment'>                 input size. Then</em>
+<a id='L157' name='L157'></a><em class='comment'></em>
+<a id='L158' name='L158'></a><em class='comment'>                 ceil(n/2) - 1 &gt;= size of product &gt;= M.n + M1.n - 2</em>
+<a id='L159' name='L159'></a><em class='comment'></em>
+<a id='L160' name='L160'></a><em class='comment'>                 and it follows that</em>
+<a id='L161' name='L161'></a><em class='comment'></em>
+<a id='L162' name='L162'></a><em class='comment'>                 M.n + M1.n &lt;= ceil(n/2) + 1</em>
+<a id='L163' name='L163'></a><em class='comment'></em>
+<a id='L164' name='L164'></a><em class='comment'>                 Then 3*(M.n + M1.n) + 5 &lt;= 3 * ceil(n/2) + 8 is the</em>
+<a id='L165' name='L165'></a><em class='comment'>                 amount of needed scratch space. */</em>
+<a id='L166' name='L166'></a>              <a href='../D/3025.html' title='Multiple defined in 2 places.'>mpn_hgcd_matrix_mul</a> (<a href='../D/628.html' title='Multiple defined in 8 places.'>M</a>, &amp;<a href='../S/1236.html#L72' title='Defined at 72 in mpn/generic/mod_34lsub1.c.'>M1</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a> + scratch);
+<a id='L167' name='L167'></a>              success = 1;
+<a id='L168' name='L168'></a>            <em class='brace'>}</em>
+<a id='L169' name='L169'></a>        <em class='brace'>}</em>
+<a id='L170' name='L170'></a>    <em class='brace'>}</em>
+<a id='L171' name='L171'></a>
+<a id='L172' name='L172'></a>  <strong class='reserved'>for</strong> (;;)
+<a id='L173' name='L173'></a>    <em class='brace'>{</em>
+<a id='L174' name='L174'></a>      <em class='comment'>/* Needs s+3 &lt; n */</em>
+<a id='L175' name='L175'></a>      nn = <a href='../D/3031.html' title='Multiple defined in 2 places.'>mpn_hgcd_step</a> (n, ap, <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a>, <a href='../S/1163.html#L83' title='Defined at 83 in mpn/generic/toom42_mulmid.c.'>s</a>, <a href='../D/628.html' title='Multiple defined in 8 places.'>M</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>);
+<a id='L176' name='L176'></a>      <strong class='reserved'>if</strong> (!nn)
+<a id='L177' name='L177'></a>        <strong class='reserved'>return</strong> success ? n : 0;
+<a id='L178' name='L178'></a>
+<a id='L179' name='L179'></a>      n = nn;
+<a id='L180' name='L180'></a>      success = 1;
+<a id='L181' name='L181'></a>    <em class='brace'>}</em>
+<a id='L182' name='L182'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L60'>[^]</a><a href='#L82'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

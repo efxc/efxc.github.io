@@ -1,0 +1,253 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/x509/pkcs12_encr.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6492.html'>x509</a>/pkcs12_encr.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L41'>[^]</a>[v][top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L41' title='Defined at 41.'>_gnutls_pkcs12_string_to_key</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* minip12.c - A mini pkcs-12 implementation (modified for gnutls)</em>
+<a id='L2' name='L2'></a><em class='comment'> *</em>
+<a id='L3' name='L3'></a><em class='comment'> * Copyright (C) 2002-2012 Free Software Foundation, Inc.</em>
+<a id='L4' name='L4'></a><em class='comment'> * Copyright (C) 2017 Red Hat, Inc.</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L9' name='L9'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L10' name='L10'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L11' name='L11'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L24' name='L24'></a>
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> &lt;<a href='6026.html'>mpi.h</a>&gt;
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;<a href='5336.html'>x509_int.h</a>&gt;
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> &lt;<a href='6029.html'>algorithms.h</a>&gt;
+<a id='L29' name='L29'></a>
+<a id='L30' name='L30'></a><em class='sharp'>#define</em> <a href='../R/2403.html' title='Multiple referred from 2 places.'>MAX_PASS_LEN</a> 256
+<a id='L31' name='L31'></a><em class='sharp'>#define</em> <a href='../R/2449.html' title='Multiple referred from 4 places.'>MAX_V_SIZE</a> 128
+<a id='L32' name='L32'></a><em class='comment'>/* ID should be:</em>
+<a id='L33' name='L33'></a><em class='comment'> * 3 for MAC</em>
+<a id='L34' name='L34'></a><em class='comment'> * 2 for IV</em>
+<a id='L35' name='L35'></a><em class='comment'> * 1 for encryption key</em>
+<a id='L36' name='L36'></a><em class='comment'> *</em>
+<a id='L37' name='L37'></a><em class='comment'> * Note that this function produces different key for the</em>
+<a id='L38' name='L38'></a><em class='comment'> * NULL password, and for the password with zero length.</em>
+<a id='L39' name='L39'></a><em class='comment'> */</em>
+<a id='L40' name='L40'></a><strong class='reserved'>int</strong>
+<a id='L41' name='L41'></a><a href='../R/5337.html' title='Multiple referred from 9 places.'>_gnutls_pkcs12_string_to_key</a>(<strong class='reserved'>const</strong> <a href='../D/10225.html' title='Multiple defined in 2 places.'>mac_entry_st</a> * me,
+<a id='L42' name='L42'></a>                             <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> id, <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * salt,
+<a id='L43' name='L43'></a>                             <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> salt_size, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> iter,
+<a id='L44' name='L44'></a>                             <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *pw, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> req_keylen,
+<a id='L45' name='L45'></a>                             <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * keybuf)
+<a id='L46' name='L46'></a><em class='brace'>{</em>
+<a id='L47' name='L47'></a>        <strong class='reserved'>int</strong> rc;
+<a id='L48' name='L48'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> i, <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>;
+<a id='L49' name='L49'></a>        <a href='../S/5756.html#L57' title='Defined at 57 in lib/hash_int.h.'>digest_hd_st</a> md;
+<a id='L50' name='L50'></a>        <a href='../S/5825.html#L102' title='Defined at 102 in lib/crypto-backend.h.'>bigint_t</a> num_b1 = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, num_ij = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L51' name='L51'></a>        <a href='../S/5825.html#L102' title='Defined at 102 in lib/crypto-backend.h.'>bigint_t</a> v_mpi = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L52' name='L52'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> pwlen;
+<a id='L53' name='L53'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> <a href='../D/9874.html' title='Multiple defined in 5 places.'>hash</a>[<a href='../D/2741.html' title='Multiple defined in 2 places.'>MAX_HASH_SIZE</a>], buf_b[<a href='../S/5366.html#L31' title='Defined at 31 in lib/x509/pkcs12_encr.c.'>MAX_V_SIZE</a>], buf_i[<a href='../S/5366.html#L30' title='Defined at 30 in lib/x509/pkcs12_encr.c.'>MAX_PASS_LEN</a> + <a href='../S/5366.html#L31' title='Defined at 31 in lib/x509/pkcs12_encr.c.'>MAX_V_SIZE</a>], *p;
+<a id='L54' name='L54'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> <a href='../D/7382.html' title='Multiple defined in 2 places.'>d</a>[<a href='../S/5366.html#L31' title='Defined at 31 in lib/x509/pkcs12_encr.c.'>MAX_V_SIZE</a>];
+<a id='L55' name='L55'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> cur_keylen;
+<a id='L56' name='L56'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> n, <a href='../S/6094.html#L79' title='Defined at 79 in gl/tests/test-stdbool.c.'>m</a>, plen, i_size;
+<a id='L57' name='L57'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> slen;
+<a id='L58' name='L58'></a>        gnutls_datum_t ucs2 = <em class='brace'>{</em><a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0<em class='brace'>}</em>;
+<a id='L59' name='L59'></a>        <strong class='reserved'>unsigned</strong> mac_len;
+<a id='L60' name='L60'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> v_val[<a href='../S/5366.html#L31' title='Defined at 31 in lib/x509/pkcs12_encr.c.'>MAX_V_SIZE</a>+1];
+<a id='L61' name='L61'></a>        <strong class='reserved'>unsigned</strong> v_size = 0;
+<a id='L62' name='L62'></a>
+<a id='L63' name='L63'></a>        <strong class='reserved'>switch</strong> (me-&gt;id) <em class='brace'>{</em>
+<a id='L64' name='L64'></a>                <strong class='reserved'>case</strong> GNUTLS_DIG_GOSTR_94:
+<a id='L65' name='L65'></a>                        v_size = 32;
+<a id='L66' name='L66'></a>                        <strong class='reserved'>break</strong>;
+<a id='L67' name='L67'></a>                <strong class='reserved'>case</strong> GNUTLS_DIG_SHA1:
+<a id='L68' name='L68'></a>                <strong class='reserved'>case</strong> GNUTLS_DIG_SHA224:
+<a id='L69' name='L69'></a>                <strong class='reserved'>case</strong> GNUTLS_DIG_SHA256:
+<a id='L70' name='L70'></a>                <strong class='reserved'>case</strong> GNUTLS_DIG_STREEBOG_256:
+<a id='L71' name='L71'></a>                <strong class='reserved'>case</strong> GNUTLS_DIG_STREEBOG_512:
+<a id='L72' name='L72'></a>                        v_size = 64;
+<a id='L73' name='L73'></a>                        <strong class='reserved'>break</strong>;
+<a id='L74' name='L74'></a>                <strong class='reserved'>case</strong> GNUTLS_DIG_SHA384:
+<a id='L75' name='L75'></a>                <strong class='reserved'>case</strong> GNUTLS_DIG_SHA512:
+<a id='L76' name='L76'></a>                        v_size = 128;
+<a id='L77' name='L77'></a>                        <strong class='reserved'>break</strong>;
+<a id='L78' name='L78'></a>                <strong class='reserved'>default</strong>:
+<a id='L79' name='L79'></a>                        <strong class='reserved'>break</strong>;
+<a id='L80' name='L80'></a>        <em class='brace'>}</em>
+<a id='L81' name='L81'></a>
+<a id='L82' name='L82'></a>        <strong class='reserved'>if</strong> (v_size == 0 || v_size &gt; <a href='../S/5366.html#L31' title='Defined at 31 in lib/x509/pkcs12_encr.c.'>MAX_V_SIZE</a>)
+<a id='L83' name='L83'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_UNIMPLEMENTED_FEATURE);
+<a id='L84' name='L84'></a>
+<a id='L85' name='L85'></a>        memset(v_val, 0, <strong class='reserved'>sizeof</strong>(v_val));
+<a id='L86' name='L86'></a>        v_val[0] = 0x01; <em class='comment'>/* make it be 2^64 or 2^128 */</em>
+<a id='L87' name='L87'></a>
+<a id='L88' name='L88'></a>        cur_keylen = 0;
+<a id='L89' name='L89'></a>
+<a id='L90' name='L90'></a>        <strong class='reserved'>if</strong> (pw) <em class='brace'>{</em>
+<a id='L91' name='L91'></a>                pwlen = strlen(pw);
+<a id='L92' name='L92'></a>
+<a id='L93' name='L93'></a>                <strong class='reserved'>if</strong> (pwlen == 0) <em class='brace'>{</em>
+<a id='L94' name='L94'></a>                        ucs2.data = gnutls_calloc(1, 2);
+<a id='L95' name='L95'></a>                        <strong class='reserved'>if</strong> (ucs2.data == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L96' name='L96'></a>                                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_MEMORY_ERROR);
+<a id='L97' name='L97'></a>                        ucs2.size = 2;
+<a id='L98' name='L98'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L99' name='L99'></a>                        rc = <a href='../S/5458.html#L120' title='Defined at 120 in lib/str-iconv.c.'>_gnutls_utf8_to_ucs2</a>(pw, pwlen, &amp;ucs2, 1);
+<a id='L100' name='L100'></a>                        <strong class='reserved'>if</strong> (rc &lt; 0)
+<a id='L101' name='L101'></a>                                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(rc);
+<a id='L102' name='L102'></a>
+<a id='L103' name='L103'></a>                        <em class='comment'>/* include terminating zero */</em>
+<a id='L104' name='L104'></a>                        ucs2.size+=2;
+<a id='L105' name='L105'></a>                <em class='brace'>}</em>
+<a id='L106' name='L106'></a>                pwlen = ucs2.size;
+<a id='L107' name='L107'></a>                pw = (<strong class='reserved'>char</strong>*)ucs2.data;
+<a id='L108' name='L108'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L109' name='L109'></a>                pwlen = 0;
+<a id='L110' name='L110'></a>        <em class='brace'>}</em>
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a>        <strong class='reserved'>if</strong> (pwlen &gt; <a href='../S/5366.html#L30' title='Defined at 30 in lib/x509/pkcs12_encr.c.'>MAX_PASS_LEN</a>) <em class='brace'>{</em>
+<a id='L113' name='L113'></a>                rc = <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L114' name='L114'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L115' name='L115'></a>        <em class='brace'>}</em>
+<a id='L116' name='L116'></a>
+<a id='L117' name='L117'></a>        rc = <a href='../S/5759.html#L112' title='Defined at 112 in lib/mpi.c.'>_gnutls_mpi_init_scan</a>(&amp;v_mpi, v_val, v_size+1);
+<a id='L118' name='L118'></a>        <strong class='reserved'>if</strong> (rc &lt; 0) <em class='brace'>{</em>
+<a id='L119' name='L119'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L120' name='L120'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L121' name='L121'></a>        <em class='brace'>}</em>
+<a id='L122' name='L122'></a>
+<a id='L123' name='L123'></a>        <em class='comment'>/* Store salt and password in BUF_I */</em>
+<a id='L124' name='L124'></a>        slen = ((salt_size+v_size-1)/v_size) * v_size;
+<a id='L125' name='L125'></a>        plen = ((pwlen+v_size-1)/v_size) * v_size;
+<a id='L126' name='L126'></a>        i_size = slen + plen;
+<a id='L127' name='L127'></a>
+<a id='L128' name='L128'></a>        <strong class='reserved'>if</strong> (i_size &gt; <strong class='reserved'>sizeof</strong>(buf_i)) <em class='brace'>{</em>
+<a id='L129' name='L129'></a>                rc = <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L130' name='L130'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L131' name='L131'></a>        <em class='brace'>}</em>
+<a id='L132' name='L132'></a>
+<a id='L133' name='L133'></a>        p = buf_i;
+<a id='L134' name='L134'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; slen; i++)
+<a id='L135' name='L135'></a>                *p++ = salt[i % salt_size];
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a>        <strong class='reserved'>if</strong> (pw) <em class='brace'>{</em>
+<a id='L138' name='L138'></a>                <strong class='reserved'>for</strong> (i = <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> = 0; i &lt; plen; i += 2) <em class='brace'>{</em>
+<a id='L139' name='L139'></a>                        *p++ = pw[<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>];
+<a id='L140' name='L140'></a>                        *p++ = pw[<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>+1];
+<a id='L141' name='L141'></a>                        <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>+=2;
+<a id='L142' name='L142'></a>                        <strong class='reserved'>if</strong> (<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> &gt;= pwlen)
+<a id='L143' name='L143'></a>                                <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> = 0;
+<a id='L144' name='L144'></a>                <em class='brace'>}</em>
+<a id='L145' name='L145'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L146' name='L146'></a>                memset(p, 0, plen);
+<a id='L147' name='L147'></a>        <em class='brace'>}</em>
+<a id='L148' name='L148'></a>
+<a id='L149' name='L149'></a>        mac_len = <a href='../S/6029.html#L137' title='Defined at 137 in lib/algorithms.h.'>_gnutls_mac_get_algo_len</a>(me);
+<a id='L150' name='L150'></a>        assert(mac_len != 0);
+<a id='L151' name='L151'></a>
+<a id='L152' name='L152'></a>        <strong class='reserved'>for</strong> (;;) <em class='brace'>{</em>
+<a id='L153' name='L153'></a>                rc = <a href='../S/5790.html#L33' title='Defined at 33 in lib/hash_int.c.'>_gnutls_hash_init</a>(&amp;md, me);
+<a id='L154' name='L154'></a>                <strong class='reserved'>if</strong> (rc &lt; 0) <em class='brace'>{</em>
+<a id='L155' name='L155'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L156' name='L156'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L157' name='L157'></a>                <em class='brace'>}</em>
+<a id='L158' name='L158'></a>                memset(<a href='../D/7382.html' title='Multiple defined in 2 places.'>d</a>, id &amp; 0xff, v_size);
+<a id='L159' name='L159'></a>                <a href='../S/5756.html#L115' title='Defined at 115 in lib/hash_int.h.'>_gnutls_hash</a>(&amp;md, <a href='../D/7382.html' title='Multiple defined in 2 places.'>d</a>, v_size);
+<a id='L160' name='L160'></a>                <a href='../S/5756.html#L115' title='Defined at 115 in lib/hash_int.h.'>_gnutls_hash</a>(&amp;md, buf_i, i_size);
+<a id='L161' name='L161'></a>                <a href='../S/5790.html#L107' title='Defined at 107 in lib/hash_int.c.'>_gnutls_hash_deinit</a>(&amp;md, <a href='../D/9874.html' title='Multiple defined in 5 places.'>hash</a>);
+<a id='L162' name='L162'></a>                <strong class='reserved'>for</strong> (i = 1; i &lt; iter; i++) <em class='brace'>{</em>
+<a id='L163' name='L163'></a>                        rc = <a href='../S/5790.html#L121' title='Defined at 121 in lib/hash_int.c.'>_gnutls_hash_fast</a>((gnutls_digest_algorithm_t)me-&gt;id,
+<a id='L164' name='L164'></a>                                               <a href='../D/9874.html' title='Multiple defined in 5 places.'>hash</a>, mac_len, <a href='../D/9874.html' title='Multiple defined in 5 places.'>hash</a>);
+<a id='L165' name='L165'></a>                        <strong class='reserved'>if</strong> (rc &lt; 0) <em class='brace'>{</em>
+<a id='L166' name='L166'></a>                                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L167' name='L167'></a>                                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L168' name='L168'></a>                        <em class='brace'>}</em>
+<a id='L169' name='L169'></a>                <em class='brace'>}</em>
+<a id='L170' name='L170'></a>                <strong class='reserved'>for</strong> (i = 0; i &lt; mac_len &amp;&amp; cur_keylen &lt; req_keylen; i++)
+<a id='L171' name='L171'></a>                        keybuf[cur_keylen++] = <a href='../D/9874.html' title='Multiple defined in 5 places.'>hash</a>[i];
+<a id='L172' name='L172'></a>                <strong class='reserved'>if</strong> (cur_keylen == req_keylen) <em class='brace'>{</em>
+<a id='L173' name='L173'></a>                        rc = 0; <em class='comment'>/* ready */</em>
+<a id='L174' name='L174'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L175' name='L175'></a>                <em class='brace'>}</em>
+<a id='L176' name='L176'></a>
+<a id='L177' name='L177'></a>                <em class='comment'>/* need more bytes. */</em>
+<a id='L178' name='L178'></a>                <strong class='reserved'>for</strong> (i = 0; i &lt; v_size; i++)
+<a id='L179' name='L179'></a>                        buf_b[i] = <a href='../D/9874.html' title='Multiple defined in 5 places.'>hash</a>[i % mac_len];
+<a id='L180' name='L180'></a>                n = v_size;
+<a id='L181' name='L181'></a>                rc = <a href='../S/5759.html#L112' title='Defined at 112 in lib/mpi.c.'>_gnutls_mpi_init_scan</a>(&amp;num_b1, buf_b, n);
+<a id='L182' name='L182'></a>                <strong class='reserved'>if</strong> (rc &lt; 0) <em class='brace'>{</em>
+<a id='L183' name='L183'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L184' name='L184'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L185' name='L185'></a>                <em class='brace'>}</em>
+<a id='L186' name='L186'></a>
+<a id='L187' name='L187'></a>                rc = <a href='../S/6026.html#L54' title='Defined at 54 in lib/mpi.h.'>_gnutls_mpi_add_ui</a>(num_b1, num_b1, 1);
+<a id='L188' name='L188'></a>                <strong class='reserved'>if</strong> (rc &lt; 0) <em class='brace'>{</em>
+<a id='L189' name='L189'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L190' name='L190'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L191' name='L191'></a>                <em class='brace'>}</em>
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a>                <strong class='reserved'>for</strong> (i = 0; i &lt; i_size; i += v_size) <em class='brace'>{</em>
+<a id='L194' name='L194'></a>                        n = v_size;
+<a id='L195' name='L195'></a>                        rc = <a href='../S/5759.html#L112' title='Defined at 112 in lib/mpi.c.'>_gnutls_mpi_init_scan</a>(&amp;num_ij, buf_i + i, n);
+<a id='L196' name='L196'></a>                        <strong class='reserved'>if</strong> (rc &lt; 0) <em class='brace'>{</em>
+<a id='L197' name='L197'></a>                                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L198' name='L198'></a>                                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L199' name='L199'></a>                        <em class='brace'>}</em>
+<a id='L200' name='L200'></a>
+<a id='L201' name='L201'></a>                        rc = <a href='../S/6026.html#L47' title='Defined at 47 in lib/mpi.h.'>_gnutls_mpi_addm</a>(num_ij, num_ij, num_b1, v_mpi);
+<a id='L202' name='L202'></a>                        <strong class='reserved'>if</strong> (rc &lt; 0) <em class='brace'>{</em>
+<a id='L203' name='L203'></a>                                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L204' name='L204'></a>                                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L205' name='L205'></a>                        <em class='brace'>}</em>
+<a id='L206' name='L206'></a>
+<a id='L207' name='L207'></a>                        n = v_size;
+<a id='L208' name='L208'></a>                        <a href='../S/6094.html#L79' title='Defined at 79 in gl/tests/test-stdbool.c.'>m</a> = (<a href='../S/6026.html#L45' title='Defined at 45 in lib/mpi.h.'>_gnutls_mpi_get_nbits</a>(num_ij) + 7) / 8;
+<a id='L209' name='L209'></a>
+<a id='L210' name='L210'></a>                        memset(buf_i + i, 0, n - <a href='../S/6094.html#L79' title='Defined at 79 in gl/tests/test-stdbool.c.'>m</a>);
+<a id='L211' name='L211'></a>                        rc = <a href='../S/6026.html#L58' title='Defined at 58 in lib/mpi.h.'>_gnutls_mpi_print</a>(num_ij, buf_i + i + n - <a href='../S/6094.html#L79' title='Defined at 79 in gl/tests/test-stdbool.c.'>m</a>,
+<a id='L212' name='L212'></a>                                               &amp;n);
+<a id='L213' name='L213'></a>                        <strong class='reserved'>if</strong> (rc &lt; 0) <em class='brace'>{</em>
+<a id='L214' name='L214'></a>                                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L215' name='L215'></a>                                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L216' name='L216'></a>                        <em class='brace'>}</em>
+<a id='L217' name='L217'></a>                        <a href='../S/6026.html#L66' title='Defined at 66 in lib/mpi.h.'>_gnutls_mpi_release</a>(&amp;num_ij);
+<a id='L218' name='L218'></a>                <em class='brace'>}</em>
+<a id='L219' name='L219'></a>        <em class='brace'>}</em>
+<a id='L220' name='L220'></a>      <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>:
+<a id='L221' name='L221'></a>        <a href='../S/6026.html#L66' title='Defined at 66 in lib/mpi.h.'>_gnutls_mpi_release</a>(&amp;num_ij);
+<a id='L222' name='L222'></a>        <a href='../S/6026.html#L66' title='Defined at 66 in lib/mpi.h.'>_gnutls_mpi_release</a>(&amp;num_b1);
+<a id='L223' name='L223'></a>        <a href='../S/6026.html#L66' title='Defined at 66 in lib/mpi.h.'>_gnutls_mpi_release</a>(&amp;v_mpi);
+<a id='L224' name='L224'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(ucs2.data);
+<a id='L225' name='L225'></a>
+<a id='L226' name='L226'></a>        <strong class='reserved'>return</strong> rc;
+<a id='L227' name='L227'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;][^]<a href='#L41'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

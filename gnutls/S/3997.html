@@ -1,0 +1,414 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src/cli-debug.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6496.html'>src</a>/cli-debug.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L64'>[^]</a><a href='#L353'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L64' title='Defined at 64.'>tls_log_func</a></li>
+<li><a href='#L215' title='Defined at 215.'>init_tls_session</a></li>
+<li><a href='#L228' title='Defined at 228.'>do_handshake</a></li>
+<li><a href='#L233' title='Defined at 233.'>main</a></li>
+<li><a href='#L353' title='Defined at 353.'>cmd_parser</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2000-2012 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> * Copyright (C) 2017 Red Hat, Inc.</em>
+<a id='L4' name='L4'></a><em class='comment'> *</em>
+<a id='L5' name='L5'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> * GnuTLS is free software: you can redistribute it and/or modify it</em>
+<a id='L8' name='L8'></a><em class='comment'> * under the terms of the GNU General Public License as published by</em>
+<a id='L9' name='L9'></a><em class='comment'> * the Free Software Foundation, either version 3 of the License, or</em>
+<a id='L10' name='L10'></a><em class='comment'> * (at your option) any later version.</em>
+<a id='L11' name='L11'></a><em class='comment'> *</em>
+<a id='L12' name='L12'></a><em class='comment'> * GnuTLS is distributed in the hope that it will be useful, but</em>
+<a id='L13' name='L13'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L14' name='L14'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L15' name='L15'></a><em class='comment'> * General Public License for more details.</em>
+<a id='L16' name='L16'></a><em class='comment'> *</em>
+<a id='L17' name='L17'></a><em class='comment'> * You should have received a copy of the GNU General Public License</em>
+<a id='L18' name='L18'></a><em class='comment'> * along with this program.  If not, see</em>
+<a id='L19' name='L19'></a><em class='comment'> * &lt;https://www.gnu.org/licenses/&gt;.</em>
+<a id='L20' name='L20'></a><em class='comment'> */</em>
+<a id='L21' name='L21'></a>
+<a id='L22' name='L22'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> &lt;sys/types.h&gt;
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> &lt;gnutls/gnutls.h&gt;
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;sys/time.h&gt;
+<a id='L30' name='L30'></a><em class='sharp'>#if</em> HAVE_SYS_SOCKET_H
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;<a href='../I/687.html'>sys/socket.h</a>&gt;
+<a id='L32' name='L32'></a><em class='sharp'>#elif</em> HAVE_WS2TCPIP_H
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;ws2tcpip.h&gt;
+<a id='L34' name='L34'></a><em class='sharp'>#endif</em>
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> &lt;<a href='3990.html'>tests.h</a>&gt;
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> &lt;<a href='../I/3.html'>common.h</a>&gt;
+<a id='L37' name='L37'></a><em class='sharp'>#include</em> &lt;ctype.h&gt;
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> &lt;cli-debug-args.h&gt;
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> &lt;<a href='../I/687.html'>socket.h</a>&gt;
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a><em class='comment'>/* Gnulib portability files. */</em>
+<a id='L42' name='L42'></a><em class='sharp'>#include</em> "<a href='../I/247.html'>sockets.h</a>"
+<a id='L43' name='L43'></a>
+<a id='L44' name='L44'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../D/7270.html' title='Multiple defined in 8 places.'>cmd_parser</a>(<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv);
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a><em class='comment'>/* global stuff here */</em>
+<a id='L47' name='L47'></a><strong class='reserved'>int</strong> resume;
+<a id='L48' name='L48'></a><strong class='reserved'>char</strong> *hostname = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L49' name='L49'></a><strong class='reserved'>int</strong> port;
+<a id='L50' name='L50'></a><strong class='reserved'>int</strong> record_max_size;
+<a id='L51' name='L51'></a><strong class='reserved'>int</strong> fingerprint;
+<a id='L52' name='L52'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> debug = 0;
+<a id='L53' name='L53'></a>
+<a id='L54' name='L54'></a>gnutls_srp_client_credentials_t srp_cred;
+<a id='L55' name='L55'></a>gnutls_anon_client_credentials_t anon_cred;
+<a id='L56' name='L56'></a>gnutls_certificate_credentials_t xcred;
+<a id='L57' name='L57'></a>
+<a id='L58' name='L58'></a><em class='comment'>/* end of global stuff */</em>
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a><strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> verbose = 0;
+<a id='L61' name='L61'></a>
+<a id='L62' name='L62'></a><strong class='reserved'>extern</strong> <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *ext_text;
+<a id='L63' name='L63'></a>
+<a id='L64' name='L64'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/10917.html' title='Multiple referred from 309 places.'>tls_log_func</a>(<strong class='reserved'>int</strong> level, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str)
+<a id='L65' name='L65'></a><em class='brace'>{</em>
+<a id='L66' name='L66'></a>        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "|&lt;%d&gt;| %s", level, str);
+<a id='L67' name='L67'></a><em class='brace'>}</em>
+<a id='L68' name='L68'></a>
+<a id='L69' name='L69'></a><strong class='reserved'>typedef</strong> <a href='../S/3990.html#L26' title='Defined at 26 in src/tests.h.'>test_code_t</a>(*TEST_FUNC) (gnutls_session_t);
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>struct</strong> <em class='brace'>{</em>
+<a id='L72' name='L72'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *test_name;
+<a id='L73' name='L73'></a>        TEST_FUNC func;
+<a id='L74' name='L74'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *suc_str;
+<a id='L75' name='L75'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *fail_str;
+<a id='L76' name='L76'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *unsure_str;
+<a id='L77' name='L77'></a>        <strong class='reserved'>unsigned</strong> https_only;
+<a id='L78' name='L78'></a>        <strong class='reserved'>unsigned</strong> fatal_failure;
+<a id='L79' name='L79'></a><em class='brace'>}</em> <a href='../S/3997.html#L81' title='Referred from 81 in src/cli-debug.c.'>TLS_TEST</a>;
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <a href='../S/3997.html#L79' title='Defined at 79 in src/cli-debug.c.'>TLS_TEST</a> tls_tests[] = <em class='brace'>{</em>
+<a id='L82' name='L82'></a>        <em class='brace'>{</em>"whether the server accepts default record size (512 bytes)",
+<a id='L83' name='L83'></a>         <a href='../S/4004.html#L1718' title='Defined at 1718 in src/tests.c.'>test_send_record</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L84' name='L84'></a>        <em class='brace'>{</em>"whether %ALLOW_SMALL_RECORDS is required",
+<a id='L85' name='L85'></a>         <a href='../S/4004.html#L1734' title='Defined at 1734 in src/tests.c.'>test_send_record_with_allow_small_records</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L86' name='L86'></a><em class='sharp'>#ifdef</em> ENABLE_SSL3
+<a id='L87' name='L87'></a>        <em class='brace'>{</em>"for SSL 3.0 (RFC6101) support", <a href='../S/4004.html#L610' title='Defined at 610 in src/tests.c.'>test_ssl3</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L88' name='L88'></a>        <em class='comment'>/* The following test will disable extensions if the server</em>
+<a id='L89' name='L89'></a><em class='comment'>         * does support SSL 3.0, but only incompletely and without</em>
+<a id='L90' name='L90'></a><em class='comment'>         * extensions. */</em>
+<a id='L91' name='L91'></a>        <em class='brace'>{</em>"for SSL 3.0 with extensions", <a href='../S/4004.html#L627' title='Defined at 627 in src/tests.c.'>test_ssl3_with_extensions</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L92' name='L92'></a>        <em class='brace'>{</em>"for SSL 3.0 with cipher suites not in SSL 3.0 spec",
+<a id='L93' name='L93'></a>         <a href='../S/4004.html#L652' title='Defined at 652 in src/tests.c.'>test_ssl3_unknown_ciphersuites</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L94' name='L94'></a><em class='sharp'>#endif</em>
+<a id='L95' name='L95'></a>        <em class='comment'>/* The following tests will disable TLS 1.x if the server is</em>
+<a id='L96' name='L96'></a><em class='comment'>         * buggy */</em>
+<a id='L97' name='L97'></a>        <em class='brace'>{</em>"whether we need to disable TLS 1.2", <a href='../S/4004.html#L1261' title='Defined at 1261 in src/tests.c.'>test_tls_disable2</a>, "no",
+<a id='L98' name='L98'></a>         "yes", "dunno"<em class='brace'>}</em>,
+<a id='L99' name='L99'></a>        <em class='brace'>{</em>"whether we need to disable TLS 1.1", <a href='../S/4004.html#L1239' title='Defined at 1239 in src/tests.c.'>test_tls_disable1</a>, "no",
+<a id='L100' name='L100'></a>         "yes", "dunno"<em class='brace'>}</em>,
+<a id='L101' name='L101'></a>        <em class='brace'>{</em>"whether we need to disable TLS 1.0", <a href='../S/4004.html#L1215' title='Defined at 1215 in src/tests.c.'>test_tls_disable0</a>, "no",
+<a id='L102' name='L102'></a>         "yes", "dunno"<em class='brace'>}</em>,
+<a id='L103' name='L103'></a>        <em class='comment'>/* The following test will disable extensions if the server</em>
+<a id='L104' name='L104'></a><em class='comment'>         * is buggy */</em>
+<a id='L105' name='L105'></a>        <em class='brace'>{</em>"whether %NO_EXTENSIONS is required", <a href='../S/4004.html#L1058' title='Defined at 1058 in src/tests.c.'>test_no_extensions</a>, "no", "yes",
+<a id='L106' name='L106'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L107' name='L107'></a>        <em class='brace'>{</em>"whether %COMPAT is required", <a href='../S/4004.html#L1027' title='Defined at 1027 in src/tests.c.'>test_record_padding</a>, "no", "yes",
+<a id='L108' name='L108'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L109' name='L109'></a>        <em class='brace'>{</em>"for TLS 1.0 (RFC2246) support", <a href='../S/4004.html#L984' title='Defined at 984 in src/tests.c.'>test_tls1</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L110' name='L110'></a>        <em class='brace'>{</em>"for TLS 1.0 (RFC2246) support with TLS 1.0 record version", <a href='../S/4004.html#L1003' title='Defined at 1003 in src/tests.c.'>test_tls1_nossl3</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L111' name='L111'></a>        <em class='brace'>{</em>"for TLS 1.1 (RFC4346) support", <a href='../S/4004.html#L1143' title='Defined at 1143 in src/tests.c.'>test_tls1_1</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L112' name='L112'></a>        <em class='brace'>{</em>"fallback from TLS 1.1 to", <a href='../S/4004.html#L1162' title='Defined at 1162 in src/tests.c.'>test_tls1_1_fallback</a>, "TLS 1.0",
+<a id='L113' name='L113'></a>         "failed",
+<a id='L114' name='L114'></a>         "SSL 3.0"<em class='brace'>}</em>,
+<a id='L115' name='L115'></a>        <em class='brace'>{</em>"for TLS 1.2 (RFC5246) support", <a href='../S/4004.html#L1105' title='Defined at 1105 in src/tests.c.'>test_tls1_2</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L116' name='L116'></a>        <em class='brace'>{</em>"for TLS 1.3 (RFC8446) support", <a href='../S/4004.html#L1124' title='Defined at 1124 in src/tests.c.'>test_tls1_3</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L117' name='L117'></a>        <em class='brace'>{</em>"for known TLS or SSL protocols support", <a href='../S/4004.html#L1096' title='Defined at 1096 in src/tests.c.'>test_known_protocols</a>, "yes", "no", "dunno", 0, 1<em class='brace'>}</em>,
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a>        <em class='brace'>{</em>"TLS1.2 neg fallback from TLS 1.6 to", <a href='../S/4004.html#L1189' title='Defined at 1189 in src/tests.c.'>test_tls1_6_fallback</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L120' name='L120'></a>         "failed (server requires fallback dance)", "dunno"<em class='brace'>}</em>,
+<a id='L121' name='L121'></a>        <em class='brace'>{</em>"for inappropriate fallback (RFC7507) support", <a href='../S/4004.html#L374' title='Defined at 374 in src/tests.c.'>test_rfc7507</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L122' name='L122'></a>        <em class='brace'>{</em>"for HTTPS server name", <a href='../S/4004.html#L167' title='Defined at 167 in src/tests.c.'>test_server</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, "failed", "not checked", 1<em class='brace'>}</em>,
+<a id='L123' name='L123'></a>        <em class='brace'>{</em>"for certificate information", <a href='../S/4004.html#L1513' title='Defined at 1513 in src/tests.c.'>test_certificate</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, "", ""<em class='brace'>}</em>,
+<a id='L124' name='L124'></a>        <em class='brace'>{</em>"for certificate chain order", <a href='../S/4004.html#L1545' title='Defined at 1545 in src/tests.c.'>test_chain_order</a>, "sorted", "unsorted", "unknown"<em class='brace'>}</em>,
+<a id='L125' name='L125'></a>        <em class='brace'>{</em>"for trusted CAs", <a href='../S/4004.html#L1666' title='Defined at 1666 in src/tests.c.'>test_server_cas</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, "", ""<em class='brace'>}</em>,
+<a id='L126' name='L126'></a>        <em class='brace'>{</em>"for safe renegotiation (RFC5746) support", <a href='../S/4004.html#L408' title='Defined at 408 in src/tests.c.'>test_safe_renegotiation</a>, "yes",
+<a id='L127' name='L127'></a>         "no", "dunno"<em class='brace'>}</em>,
+<a id='L128' name='L128'></a>        <em class='brace'>{</em>"for Safe renegotiation support (SCSV)",
+<a id='L129' name='L129'></a>         <a href='../S/4004.html#L510' title='Defined at 510 in src/tests.c.'>test_safe_renegotiation_scsv</a>,
+<a id='L130' name='L130'></a>         "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L131' name='L131'></a>        <em class='brace'>{</em>"for encrypt-then-MAC (RFC7366) support", <a href='../S/4004.html#L485' title='Defined at 485 in src/tests.c.'>test_etm</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L132' name='L132'></a>        <em class='brace'>{</em>"for ext master secret (RFC7627) support", <a href='../S/4004.html#L460' title='Defined at 460 in src/tests.c.'>test_ext_master_secret</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L133' name='L133'></a>        <em class='brace'>{</em>"for heartbeat (RFC6520) support", <a href='../S/4004.html#L1333' title='Defined at 1333 in src/tests.c.'>test_heartbeat_extension</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L134' name='L134'></a>        <em class='brace'>{</em>"for version rollback bug in RSA PMS", <a href='../S/4004.html#L1284' title='Defined at 1284 in src/tests.c.'>test_rsa_pms</a>, "no", "yes",
+<a id='L135' name='L135'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L136' name='L136'></a>        <em class='brace'>{</em>"for version rollback bug in Client Hello", <a href='../S/4004.html#L1371' title='Defined at 1371 in src/tests.c.'>test_version_rollback</a>,
+<a id='L137' name='L137'></a>         "no", "yes", "dunno"<em class='brace'>}</em>,
+<a id='L138' name='L138'></a>        <em class='brace'>{</em>"whether the server ignores the RSA PMS version",
+<a id='L139' name='L139'></a>         <a href='../S/4004.html#L1426' title='Defined at 1426 in src/tests.c.'>test_rsa_pms_version_check</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L140' name='L140'></a>        <em class='brace'>{</em>"whether small records (512 bytes) are tolerated on handshake",
+<a id='L141' name='L141'></a>         <a href='../S/4004.html#L1356' title='Defined at 1356 in src/tests.c.'>test_small_records</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L142' name='L142'></a>        <em class='brace'>{</em>"whether cipher suites not in SSL 3.0 spec are accepted",
+<a id='L143' name='L143'></a>         <a href='../S/4004.html#L832' title='Defined at 832 in src/tests.c.'>test_unknown_ciphersuites</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L144' name='L144'></a>        <em class='brace'>{</em>"whether a bogus TLS record version in the client hello is accepted", <a href='../S/4004.html#L1406' title='Defined at 1406 in src/tests.c.'>test_version_oob</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L145' name='L145'></a>        <em class='brace'>{</em>"whether the server understands TLS closure alerts", <a href='../S/4004.html#L675' title='Defined at 675 in src/tests.c.'>test_bye</a>,
+<a id='L146' name='L146'></a>         "yes", "no", "partially"<em class='brace'>}</em>,
+<a id='L147' name='L147'></a>        <em class='comment'>/* the fact that is after the closure alert test does matter.</em>
+<a id='L148' name='L148'></a><em class='comment'>         */</em>
+<a id='L149' name='L149'></a>        <em class='brace'>{</em>"whether the server supports session resumption",
+<a id='L150' name='L150'></a>         <a href='../S/4004.html#L1467' title='Defined at 1467 in src/tests.c.'>test_session_resume2</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L151' name='L151'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L152' name='L152'></a>        <em class='brace'>{</em>"for anonymous authentication support", <a href='../S/4004.html#L1447' title='Defined at 1447 in src/tests.c.'>test_anonymous</a>, "yes",
+<a id='L153' name='L153'></a>         "no",
+<a id='L154' name='L154'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L155' name='L155'></a>        <em class='brace'>{</em>"anonymous Diffie-Hellman group info", <a href='../S/4004.html#L529' title='Defined at 529 in src/tests.c.'>test_dhe_group</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, "N/A",
+<a id='L156' name='L156'></a>         "N/A"<em class='brace'>}</em>,
+<a id='L157' name='L157'></a><em class='sharp'>#endif</em>
+<a id='L158' name='L158'></a>        <em class='brace'>{</em>"for RSA key exchange support", <a href='../S/4004.html#L303' title='Defined at 303 in src/tests.c.'>test_rsa</a>, "yes",
+<a id='L159' name='L159'></a>         "no",
+<a id='L160' name='L160'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L161' name='L161'></a>        <em class='brace'>{</em>"for ephemeral Diffie-Hellman support", <a href='../S/4004.html#L212' title='Defined at 212 in src/tests.c.'>test_dhe</a>, "yes", "no",
+<a id='L162' name='L162'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L163' name='L163'></a>        <em class='brace'>{</em>"for RFC7919 Diffie-Hellman support", <a href='../S/4004.html#L233' title='Defined at 233 in src/tests.c.'>test_rfc7919</a>, "yes", "no",
+<a id='L164' name='L164'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L165' name='L165'></a>        <em class='brace'>{</em>"ephemeral Diffie-Hellman group info", <a href='../S/4004.html#L529' title='Defined at 529 in src/tests.c.'>test_dhe_group</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, "N/A",
+<a id='L166' name='L166'></a>         "N/A"<em class='brace'>}</em>,
+<a id='L167' name='L167'></a>        <em class='brace'>{</em>"for ephemeral EC Diffie-Hellman support", <a href='../S/4004.html#L255' title='Defined at 255 in src/tests.c.'>test_ecdhe</a>, "yes",
+<a id='L168' name='L168'></a>         "no",
+<a id='L169' name='L169'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L170' name='L170'></a><em class='sharp'>#ifdef</em> ENABLE_GOST
+<a id='L171' name='L171'></a>        <em class='brace'>{</em>"for VKO GOST-2012 (draft-smyshlyaev-tls12-gost-suites) support", <a href='../S/4004.html#L279' title='Defined at 279 in src/tests.c.'>test_vko_gost_12</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L172' name='L172'></a><em class='sharp'>#endif</em>
+<a id='L173' name='L173'></a>        <em class='brace'>{</em>"for curve SECP256r1 (RFC4492)", <a href='../S/4004.html#L354' title='Defined at 354 in src/tests.c.'>test_ecdhe_secp256r1</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L174' name='L174'></a>        <em class='brace'>{</em>"for curve SECP384r1 (RFC4492)", <a href='../S/4004.html#L359' title='Defined at 359 in src/tests.c.'>test_ecdhe_secp384r1</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L175' name='L175'></a>        <em class='brace'>{</em>"for curve SECP521r1 (RFC4492)", <a href='../S/4004.html#L364' title='Defined at 364 in src/tests.c.'>test_ecdhe_secp521r1</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L176' name='L176'></a>        <em class='brace'>{</em>"for curve X25519 (RFC8422)", <a href='../S/4004.html#L369' title='Defined at 369 in src/tests.c.'>test_ecdhe_x25519</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L177' name='L177'></a>        <em class='brace'>{</em>"for AES-GCM cipher (RFC5288) support", <a href='../S/4004.html#L747' title='Defined at 747 in src/tests.c.'>test_aes_gcm</a>, "yes", "no",
+<a id='L178' name='L178'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L179' name='L179'></a>        <em class='brace'>{</em>"for AES-CCM cipher (RFC6655) support", <a href='../S/4004.html#L763' title='Defined at 763 in src/tests.c.'>test_aes_ccm</a>, "yes", "no",
+<a id='L180' name='L180'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L181' name='L181'></a>        <em class='brace'>{</em>"for AES-CCM-8 cipher (RFC6655) support", <a href='../S/4004.html#L779' title='Defined at 779 in src/tests.c.'>test_aes_ccm_8</a>, "yes", "no",
+<a id='L182' name='L182'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L183' name='L183'></a>        <em class='brace'>{</em>"for AES-CBC cipher (RFC3268) support", <a href='../S/4004.html#L732' title='Defined at 732 in src/tests.c.'>test_aes</a>, "yes", "no",
+<a id='L184' name='L184'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L185' name='L185'></a>        <em class='brace'>{</em>"for CAMELLIA-GCM cipher (RFC6367) support", <a href='../S/4004.html#L814' title='Defined at 814 in src/tests.c.'>test_camellia_gcm</a>, "yes", "no",
+<a id='L186' name='L186'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L187' name='L187'></a>        <em class='brace'>{</em>"for CAMELLIA-CBC cipher (RFC5932) support", <a href='../S/4004.html#L795' title='Defined at 795 in src/tests.c.'>test_camellia_cbc</a>, "yes", "no",
+<a id='L188' name='L188'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L189' name='L189'></a>        <em class='brace'>{</em>"for 3DES-CBC cipher (RFC2246) support", <a href='../S/4004.html#L917' title='Defined at 917 in src/tests.c.'>test_3des</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L190' name='L190'></a>        <em class='brace'>{</em>"for ARCFOUR 128 cipher (RFC2246) support", <a href='../S/4004.html#L931' title='Defined at 931 in src/tests.c.'>test_arcfour</a>, "yes", "no",
+<a id='L191' name='L191'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L192' name='L192'></a>        <em class='brace'>{</em>"for CHACHA20-POLY1305 cipher (RFC7905) support", <a href='../S/4004.html#L948' title='Defined at 948 in src/tests.c.'>test_chacha20</a>, "yes", "no",
+<a id='L193' name='L193'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L194' name='L194'></a><em class='sharp'>#ifdef</em> ENABLE_GOST
+<a id='L195' name='L195'></a>        <em class='brace'>{</em>"for GOST28147-CNT cipher (draft-smyshlyaev-tls12-gost-suites) support", <a href='../S/4004.html#L966' title='Defined at 966 in src/tests.c.'>test_gost_cnt</a>, "yes", "no",
+<a id='L196' name='L196'></a>         "dunno"<em class='brace'>}</em>,
+<a id='L197' name='L197'></a><em class='sharp'>#endif</em>
+<a id='L198' name='L198'></a>        <em class='brace'>{</em>"for MD5 MAC support", <a href='../S/4004.html#L848' title='Defined at 848 in src/tests.c.'>test_md5</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L199' name='L199'></a>        <em class='brace'>{</em>"for SHA1 MAC support", <a href='../S/4004.html#L867' title='Defined at 867 in src/tests.c.'>test_sha</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L200' name='L200'></a>        <em class='brace'>{</em>"for SHA256 MAC support", <a href='../S/4004.html#L882' title='Defined at 882 in src/tests.c.'>test_sha256</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L201' name='L201'></a><em class='sharp'>#ifdef</em> ENABLE_GOST
+<a id='L202' name='L202'></a>        <em class='brace'>{</em>"for GOST28147-IMIT MAC (draft-smyshlyaev-tls12-gost-suites) support", <a href='../S/4004.html#L898' title='Defined at 898 in src/tests.c.'>test_gost_imit</a>, "yes", "no", "dunno"<em class='brace'>}</em>,
+<a id='L203' name='L203'></a><em class='sharp'>#endif</em>
+<a id='L204' name='L204'></a>        <em class='brace'>{</em>"for max record size (RFC6066) support", <a href='../S/4004.html#L1308' title='Defined at 1308 in src/tests.c.'>test_max_record_size</a>, "yes",
+<a id='L205' name='L205'></a>         "no", "dunno"<em class='brace'>}</em>,
+<a id='L206' name='L206'></a><em class='sharp'>#ifdef</em> ENABLE_OCSP
+<a id='L207' name='L207'></a>        <em class='brace'>{</em>"for OCSP status response (RFC6066) support", <a href='../S/4004.html#L428' title='Defined at 428 in src/tests.c.'>test_ocsp_status</a>, "yes",
+<a id='L208' name='L208'></a>         "no", "dunno"<em class='brace'>}</em>,
+<a id='L209' name='L209'></a><em class='sharp'>#endif</em>
+<a id='L210' name='L210'></a>        <em class='brace'>{</em><a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a><em class='brace'>}</em>
+<a id='L211' name='L211'></a><em class='brace'>}</em>;
+<a id='L212' name='L212'></a>
+<a id='L213' name='L213'></a><strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *ip;
+<a id='L214' name='L214'></a>
+<a id='L215' name='L215'></a>gnutls_session_t <a href='../R/9037.html' title='Multiple referred from 2 places.'>init_tls_session</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *host)
+<a id='L216' name='L216'></a><em class='brace'>{</em>
+<a id='L217' name='L217'></a>        gnutls_session_t state = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L218' name='L218'></a>        <a href='../S/5625.html#L475' title='Defined at 475 in lib/state.c.'>gnutls_init</a>(&amp;state, GNUTLS_CLIENT);
+<a id='L219' name='L219'></a>
+<a id='L220' name='L220'></a>        <a href='../D/11388.html' title='Multiple defined in 2 places.'>set_read_funcs</a>(state);
+<a id='L221' name='L221'></a>        <strong class='reserved'>if</strong> (host &amp;&amp; <a href='../S/4260.html#L90' title='Defined at 90 in src/common.h.'>is_ip</a>(host) == 0)
+<a id='L222' name='L222'></a>                <a href='../S/5432.html#L316' title='Defined at 316 in lib/ext/server_name.c.'>gnutls_server_name_set</a>(state, GNUTLS_NAME_DNS,
+<a id='L223' name='L223'></a>                                       host, strlen(host));
+<a id='L224' name='L224'></a>
+<a id='L225' name='L225'></a>        <strong class='reserved'>return</strong> state;
+<a id='L226' name='L226'></a><em class='brace'>}</em>
+<a id='L227' name='L227'></a>
+<a id='L228' name='L228'></a><strong class='reserved'>int</strong> <a href='../R/6670.html' title='Multiple referred from 6 places.'>do_handshake</a>(<a href='../S/4182.html#L39' title='Defined at 39 in src/socket.h.'>socket_st</a> * <a href='../D/11512.html' title='Multiple defined in 22 places.'>socket</a>)
+<a id='L229' name='L229'></a><em class='brace'>{</em>
+<a id='L230' name='L230'></a>        <strong class='reserved'>return</strong> 0; <em class='comment'>/* we do it locally */</em>
+<a id='L231' name='L231'></a><em class='brace'>}</em>
+<a id='L232' name='L232'></a>
+<a id='L233' name='L233'></a><strong class='reserved'>int</strong> main(<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv)
+<a id='L234' name='L234'></a><em class='brace'>{</em>
+<a id='L235' name='L235'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L236' name='L236'></a>        <strong class='reserved'>int</strong> i;
+<a id='L237' name='L237'></a>        <strong class='reserved'>char</strong> portname[6];
+<a id='L238' name='L238'></a>        <a href='../S/4182.html#L39' title='Defined at 39 in src/socket.h.'>socket_st</a> hd;
+<a id='L239' name='L239'></a>        <a href='../D/6941.html' title='Multiple defined in 8 places.'>bool</a> socket_opened = <a href='../D/7809.html' title='Multiple defined in 16 places.'>false</a>;
+<a id='L240' name='L240'></a>        <strong class='reserved'>char</strong> app_proto[32] = "";
+<a id='L241' name='L241'></a>
+<a id='L242' name='L242'></a>        <a href='../D/7270.html' title='Multiple defined in 8 places.'>cmd_parser</a>(argc, argv);
+<a id='L243' name='L243'></a>
+<a id='L244' name='L244'></a><em class='sharp'>#ifndef</em> _WIN32
+<a id='L245' name='L245'></a>        <a href='../D/11480.html' title='Multiple defined in 6 places.'>signal</a>(<a href='../D/3815.html' title='Multiple defined in 2 places.'>SIGPIPE</a>, SIG_IGN);
+<a id='L246' name='L246'></a><em class='sharp'>#endif</em>
+<a id='L247' name='L247'></a>
+<a id='L248' name='L248'></a>        <a href='../S/4179.html#L1224' title='Defined at 1224 in src/common.c.'>sockets_init</a>();
+<a id='L249' name='L249'></a>
+<a id='L250' name='L250'></a>        <strong class='reserved'>if</strong> (<a href='../S/6039.html#L222' title='Defined at 222 in lib/global.c.'>gnutls_global_init</a>() &lt; 0) <em class='brace'>{</em>
+<a id='L251' name='L251'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "global state initialization error\n");
+<a id='L252' name='L252'></a>                exit(1);
+<a id='L253' name='L253'></a>        <em class='brace'>}</em>
+<a id='L254' name='L254'></a>
+<a id='L255' name='L255'></a>        <a href='../S/6039.html#L104' title='Defined at 104 in lib/global.c.'>gnutls_global_set_log_function</a>(<a href='../D/11934.html' title='Multiple defined in 223 places.'>tls_log_func</a>);
+<a id='L256' name='L256'></a>        <a href='../S/6039.html#L155' title='Defined at 155 in lib/global.c.'>gnutls_global_set_log_level</a>(debug);
+<a id='L257' name='L257'></a>
+<a id='L258' name='L258'></a>        <em class='comment'>/* get server name */</em>
+<a id='L259' name='L259'></a>        <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(portname, <strong class='reserved'>sizeof</strong>(portname), "%d", port);
+<a id='L260' name='L260'></a>
+<a id='L261' name='L261'></a>        <em class='comment'>/* X509 stuff */</em>
+<a id='L262' name='L262'></a>        <strong class='reserved'>if</strong> (<a href='../S/5463.html#L418' title='Defined at 418 in lib/cert-cred.c.'>gnutls_certificate_allocate_credentials</a>(&amp;xcred) &lt; 0) <em class='brace'>{</em>      <em class='comment'>/* space for 2 certificates */</em>
+<a id='L263' name='L263'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "memory error\n");
+<a id='L264' name='L264'></a>                exit(1);
+<a id='L265' name='L265'></a>        <em class='brace'>}</em>
+<a id='L266' name='L266'></a>
+<a id='L267' name='L267'></a>        <em class='comment'>/* SRP stuff */</em>
+<a id='L268' name='L268'></a><em class='sharp'>#ifdef</em> ENABLE_SRP
+<a id='L269' name='L269'></a>        <strong class='reserved'>if</strong> (<a href='../S/5454.html#L443' title='Defined at 443 in lib/srp.c.'>gnutls_srp_allocate_client_credentials</a>(&amp;srp_cred) &lt; 0) <em class='brace'>{</em>
+<a id='L270' name='L270'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "memory error\n");
+<a id='L271' name='L271'></a>                exit(1);
+<a id='L272' name='L272'></a>        <em class='brace'>}</em>
+<a id='L273' name='L273'></a><em class='sharp'>#endif</em>
+<a id='L274' name='L274'></a>
+<a id='L275' name='L275'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L276' name='L276'></a>        <em class='comment'>/* ANON stuff */</em>
+<a id='L277' name='L277'></a>        <strong class='reserved'>if</strong> (<a href='../S/5394.html#L92' title='Defined at 92 in lib/anon_cred.c.'>gnutls_anon_allocate_client_credentials</a>(&amp;anon_cred) &lt; 0) <em class='brace'>{</em>
+<a id='L278' name='L278'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "memory error\n");
+<a id='L279' name='L279'></a>                exit(1);
+<a id='L280' name='L280'></a>        <em class='brace'>}</em>
+<a id='L281' name='L281'></a><em class='sharp'>#endif</em>
+<a id='L282' name='L282'></a>
+<a id='L283' name='L283'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(STARTTLS_PROTO)) <em class='brace'>{</em>
+<a id='L284' name='L284'></a>                <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(app_proto, <strong class='reserved'>sizeof</strong>(app_proto), "%s", OPT_ARG(STARTTLS_PROTO));
+<a id='L285' name='L285'></a>        <em class='brace'>}</em>
+<a id='L286' name='L286'></a>
+<a id='L287' name='L287'></a>        <strong class='reserved'>if</strong> (app_proto[0] == 0) <em class='brace'>{</em>
+<a id='L288' name='L288'></a>                <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(app_proto, <strong class='reserved'>sizeof</strong>(app_proto), "%s", <a href='../S/3995.html#L646' title='Defined at 646 in src/socket.c.'>port_to_service</a>(portname, "tcp"));
+<a id='L289' name='L289'></a>        <em class='brace'>}</em>
+<a id='L290' name='L290'></a>
+<a id='L291' name='L291'></a>        <a href='../S/4179.html#L1224' title='Defined at 1224 in src/common.c.'>sockets_init</a>();
+<a id='L292' name='L292'></a>
+<a id='L293' name='L293'></a>        <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("GnuTLS debug client %s\n", <a href='../S/6039.html#L488' title='Defined at 488 in lib/global.c.'>gnutls_check_version</a>(<a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>));
+<a id='L294' name='L294'></a>
+<a id='L295' name='L295'></a>        <a href='../S/3995.html#L402' title='Defined at 402 in src/socket.c.'>canonicalize_host</a>(hostname, portname, <strong class='reserved'>sizeof</strong>(portname));
+<a id='L296' name='L296'></a>        <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("Checking %s:%s\n", hostname, portname);
+<a id='L297' name='L297'></a>
+<a id='L298' name='L298'></a>        <strong class='reserved'>for</strong> (i = 0;
+<a id='L299' name='L299'></a>             tls_tests[i].test_name != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L300' name='L300'></a>             i++) <em class='brace'>{</em>
+<a id='L301' name='L301'></a>
+<a id='L302' name='L302'></a>                <strong class='reserved'>if</strong> (strcmp(app_proto, "https") != 0 &amp;&amp; tls_tests[i].https_only != 0) <em class='brace'>{</em>
+<a id='L303' name='L303'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L304' name='L304'></a>                <em class='brace'>}</em>
+<a id='L305' name='L305'></a>
+<a id='L306' name='L306'></a>                <strong class='reserved'>if</strong> (!socket_opened) <em class='brace'>{</em>
+<a id='L307' name='L307'></a>                        <a href='../S/4182.html#L58' title='Defined at 58 in src/socket.h.'>socket_open</a>(&amp;hd, hostname, portname, app_proto, <a href='../S/4182.html#L9' title='Defined at 9 in src/socket.h.'>SOCKET_FLAG_STARTTLS</a>|<a href='../S/4182.html#L10' title='Defined at 10 in src/socket.h.'>SOCKET_FLAG_RAW</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L308' name='L308'></a>                        hd.verbose = verbose;
+<a id='L309' name='L309'></a>                        socket_opened = <a href='../D/11987.html' title='Multiple defined in 16 places.'>true</a>;
+<a id='L310' name='L310'></a>                <em class='brace'>}</em>
+<a id='L311' name='L311'></a>
+<a id='L312' name='L312'></a>                ret = tls_tests[i].func(hd.<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L313' name='L313'></a>
+<a id='L314' name='L314'></a>                <strong class='reserved'>if</strong> ((ret != <a href='../S/3990.html#L25' title='Defined at 25 in src/tests.h.'>TEST_IGNORE</a> &amp;&amp; ret != <a href='../S/3990.html#L25' title='Defined at 25 in src/tests.h.'>TEST_IGNORE2</a>) || verbose) <em class='brace'>{</em>
+<a id='L315' name='L315'></a>                        <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("%58s...", tls_tests[i].test_name);
+<a id='L316' name='L316'></a>                        <a href='../D/7820.html' title='Multiple defined in 4 places.'>fflush</a>(stdout);
+<a id='L317' name='L317'></a>                <em class='brace'>}</em>
+<a id='L318' name='L318'></a>
+<a id='L319' name='L319'></a>                <strong class='reserved'>if</strong> (ret == <a href='../S/3990.html#L25' title='Defined at 25 in src/tests.h.'>TEST_SUCCEED</a>) <em class='brace'>{</em>
+<a id='L320' name='L320'></a>                        <strong class='reserved'>if</strong> (tls_tests[i].suc_str == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L321' name='L321'></a>                                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>(" %s\n", ext_text);
+<a id='L322' name='L322'></a>                        <strong class='reserved'>else</strong>
+<a id='L323' name='L323'></a>                                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>(" %s\n", tls_tests[i].suc_str);
+<a id='L324' name='L324'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (ret == <a href='../S/3990.html#L25' title='Defined at 25 in src/tests.h.'>TEST_FAILED</a>)
+<a id='L325' name='L325'></a>                        <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>(" %s\n", tls_tests[i].fail_str);
+<a id='L326' name='L326'></a>                <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (ret == <a href='../S/3990.html#L25' title='Defined at 25 in src/tests.h.'>TEST_UNSURE</a>)
+<a id='L327' name='L327'></a>                        <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>(" %s\n", tls_tests[i].unsure_str);
+<a id='L328' name='L328'></a>                <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> ((ret == <a href='../S/3990.html#L25' title='Defined at 25 in src/tests.h.'>TEST_IGNORE</a> || ret == <a href='../S/3990.html#L25' title='Defined at 25 in src/tests.h.'>TEST_IGNORE2</a>) &amp;&amp; verbose) <em class='brace'>{</em>
+<a id='L329' name='L329'></a>                        <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>(" skipped\n");
+<a id='L330' name='L330'></a>                <em class='brace'>}</em>
+<a id='L331' name='L331'></a>
+<a id='L332' name='L332'></a>                <strong class='reserved'>if</strong> (ret != <a href='../S/3990.html#L25' title='Defined at 25 in src/tests.h.'>TEST_IGNORE</a>) <em class='brace'>{</em>
+<a id='L333' name='L333'></a>                        <a href='../S/3995.html#L356' title='Defined at 356 in src/socket.c.'>socket_bye</a>(&amp;hd, 1);
+<a id='L334' name='L334'></a>                        socket_opened = <a href='../D/7809.html' title='Multiple defined in 16 places.'>false</a>;
+<a id='L335' name='L335'></a>                <em class='brace'>}</em>
+<a id='L336' name='L336'></a>
+<a id='L337' name='L337'></a>                <strong class='reserved'>if</strong> (ret == <a href='../S/3990.html#L25' title='Defined at 25 in src/tests.h.'>TEST_FAILED</a> &amp;&amp; tls_tests[i].fatal_failure)
+<a id='L338' name='L338'></a>                        <strong class='reserved'>break</strong>;
+<a id='L339' name='L339'></a>        <em class='brace'>}</em>
+<a id='L340' name='L340'></a>
+<a id='L341' name='L341'></a><em class='sharp'>#ifdef</em> ENABLE_SRP
+<a id='L342' name='L342'></a>        <a href='../S/5454.html#L426' title='Defined at 426 in lib/srp.c.'>gnutls_srp_free_client_credentials</a>(srp_cred);
+<a id='L343' name='L343'></a><em class='sharp'>#endif</em>
+<a id='L344' name='L344'></a>        <a href='../S/5463.html#L391' title='Defined at 391 in lib/cert-cred.c.'>gnutls_certificate_free_credentials</a>(xcred);
+<a id='L345' name='L345'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L346' name='L346'></a>        <a href='../S/5394.html#L75' title='Defined at 75 in lib/anon_cred.c.'>gnutls_anon_free_client_credentials</a>(anon_cred);
+<a id='L347' name='L347'></a><em class='sharp'>#endif</em>
+<a id='L348' name='L348'></a>        <a href='../S/6039.html#L467' title='Defined at 467 in lib/global.c.'>gnutls_global_deinit</a>();
+<a id='L349' name='L349'></a>
+<a id='L350' name='L350'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L351' name='L351'></a><em class='brace'>}</em>
+<a id='L352' name='L352'></a>
+<a id='L353' name='L353'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/6432.html' title='Multiple referred from 16 places.'>cmd_parser</a>(<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv)
+<a id='L354' name='L354'></a><em class='brace'>{</em>
+<a id='L355' name='L355'></a>        <strong class='reserved'>char</strong> *rest = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L356' name='L356'></a>        <strong class='reserved'>static</strong> <strong class='reserved'>char</strong> lh[] = "localhost";
+<a id='L357' name='L357'></a>        <strong class='reserved'>int</strong> optct = <a href='../S/4187.html#L327' title='Defined at 327 in src/libopts/autoopts.c.'>optionProcess</a>(&amp;gnutls_cli_debugOptions, argc, argv);
+<a id='L358' name='L358'></a>        argc -= optct;
+<a id='L359' name='L359'></a>        argv += optct;
+<a id='L360' name='L360'></a>
+<a id='L361' name='L361'></a>        <strong class='reserved'>if</strong> (rest == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> &amp;&amp; argc &gt; 0)
+<a id='L362' name='L362'></a>                rest = argv[0];
+<a id='L363' name='L363'></a>
+<a id='L364' name='L364'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(<a href='../D/3300.html' title='Multiple defined in 5 places.'>PORT</a>))
+<a id='L365' name='L365'></a>                port = OPT_VALUE_PORT;
+<a id='L366' name='L366'></a>        <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L367' name='L367'></a>                <strong class='reserved'>if</strong> (HAVE_OPT(STARTTLS_PROTO))
+<a id='L368' name='L368'></a>                        port = <a href='../S/3995.html#L325' title='Defined at 325 in src/socket.c.'>starttls_proto_to_port</a>(OPT_ARG(STARTTLS_PROTO));
+<a id='L369' name='L369'></a>                <strong class='reserved'>else</strong>
+<a id='L370' name='L370'></a>                        port = 443;
+<a id='L371' name='L371'></a>        <em class='brace'>}</em>
+<a id='L372' name='L372'></a>
+<a id='L373' name='L373'></a>        <strong class='reserved'>if</strong> (rest == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L374' name='L374'></a>                hostname = lh;
+<a id='L375' name='L375'></a>        <strong class='reserved'>else</strong>
+<a id='L376' name='L376'></a>                hostname = rest;
+<a id='L377' name='L377'></a>
+<a id='L378' name='L378'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(<a href='../D/700.html' title='Multiple defined in 3 places.'>DEBUG</a>))
+<a id='L379' name='L379'></a>                debug = OPT_VALUE_DEBUG;
+<a id='L380' name='L380'></a>
+<a id='L381' name='L381'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(VERBOSE))
+<a id='L382' name='L382'></a>                verbose++;
+<a id='L383' name='L383'></a>
+<a id='L384' name='L384'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L64'>[^]</a><a href='#L353'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

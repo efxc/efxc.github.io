@@ -1,0 +1,194 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>siv-cmac.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/siv-cmac.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L53'>[^]</a><a href='#L141'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L53' title='Defined at 53.'>_siv_s2v</a></li>
+<li><a href='#L106' title='Defined at 106.'>siv_cmac_set_key</a></li>
+<li><a href='#L115' title='Defined at 115.'>siv_cmac_encrypt_message</a></li>
+<li><a href='#L141' title='Defined at 141.'>siv_cmac_decrypt_message</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* siv-cmac.c</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   SIV-CMAC, RFC5297</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   Copyright (C) 2017 Nikos Mavrogiannopoulos</em>
+<a id='L6' name='L6'></a><em class='comment'></em>
+<a id='L7' name='L7'></a><em class='comment'>   This file is part of GNU Nettle.</em>
+<a id='L8' name='L8'></a><em class='comment'></em>
+<a id='L9' name='L9'></a><em class='comment'>   GNU Nettle is free software: you can redistribute it and/or</em>
+<a id='L10' name='L10'></a><em class='comment'>   modify it under the terms of either:</em>
+<a id='L11' name='L11'></a><em class='comment'></em>
+<a id='L12' name='L12'></a><em class='comment'>     * the GNU Lesser General Public License as published by the Free</em>
+<a id='L13' name='L13'></a><em class='comment'>       Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L14' name='L14'></a><em class='comment'>       option) any later version.</em>
+<a id='L15' name='L15'></a><em class='comment'></em>
+<a id='L16' name='L16'></a><em class='comment'>   or</em>
+<a id='L17' name='L17'></a><em class='comment'></em>
+<a id='L18' name='L18'></a><em class='comment'>     * the GNU General Public License as published by the Free</em>
+<a id='L19' name='L19'></a><em class='comment'>       Software Foundation; either version 2 of the License, or (at your</em>
+<a id='L20' name='L20'></a><em class='comment'>       option) any later version.</em>
+<a id='L21' name='L21'></a><em class='comment'></em>
+<a id='L22' name='L22'></a><em class='comment'>   or both in parallel, as here.</em>
+<a id='L23' name='L23'></a><em class='comment'></em>
+<a id='L24' name='L24'></a><em class='comment'>   GNU Nettle is distributed in the hope that it will be useful,</em>
+<a id='L25' name='L25'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L26' name='L26'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L27' name='L27'></a><em class='comment'>   General Public License for more details.</em>
+<a id='L28' name='L28'></a><em class='comment'></em>
+<a id='L29' name='L29'></a><em class='comment'>   You should have received copies of the GNU General Public License and</em>
+<a id='L30' name='L30'></a><em class='comment'>   the GNU Lesser General Public License along with this program.  If</em>
+<a id='L31' name='L31'></a><em class='comment'>   not, see http://www.gnu.org/licenses/.</em>
+<a id='L32' name='L32'></a><em class='comment'>*/</em>
+<a id='L33' name='L33'></a>
+<a id='L34' name='L34'></a><em class='sharp'>#if</em> HAVE_CONFIG_H
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> "config.h"
+<a id='L36' name='L36'></a><em class='sharp'>#endif</em>
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> &lt;assert.h&gt;
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> "<a href='237.html'>aes.h</a>"
+<a id='L42' name='L42'></a><em class='sharp'>#include</em> "<a href='722.html'>siv-cmac.h</a>"
+<a id='L43' name='L43'></a><em class='sharp'>#include</em> "<a href='544.html'>cmac.h</a>"
+<a id='L44' name='L44'></a><em class='sharp'>#include</em> "<a href='685.html'>ctr.h</a>"
+<a id='L45' name='L45'></a><em class='sharp'>#include</em> "<a href='193.html'>memxor.h</a>"
+<a id='L46' name='L46'></a><em class='sharp'>#include</em> "<a href='307.html'>memops.h</a>"
+<a id='L47' name='L47'></a><em class='sharp'>#include</em> "<a href='88.html'>nettle-internal.h</a>"
+<a id='L48' name='L48'></a><em class='sharp'>#include</em> "<a href='120.html'>block-internal.h</a>"
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a><em class='comment'>/* This is an implementation of S2V for the AEAD case where</em>
+<a id='L51' name='L51'></a><em class='comment'> * vectors if zero, are considered as S empty components */</em>
+<a id='L52' name='L52'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L53' name='L53'></a><a href='../R/914.html' title='Multiple referred from 2 places.'>_siv_s2v</a> (<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/55.html#L44' title='Defined at 44 in nettle-meta.h.'>nettle_cipher</a> *nc,
+<a id='L54' name='L54'></a>          <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/544.html#L69' title='Defined at 69 in cmac.h.'>cmac128_key</a> *cmac_key,
+<a id='L55' name='L55'></a>          <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *cmac_cipher,
+<a id='L56' name='L56'></a>          size_t alength, <strong class='reserved'>const</strong> uint8_t * adata,
+<a id='L57' name='L57'></a>          size_t nlength, <strong class='reserved'>const</strong> uint8_t * nonce,
+<a id='L58' name='L58'></a>          size_t plength, <strong class='reserved'>const</strong> uint8_t * pdata, uint8_t * <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>)
+<a id='L59' name='L59'></a><em class='brace'>{</em>
+<a id='L60' name='L60'></a>  <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> <a href='../D/189.html' title='Multiple defined in 9 places.'>D</a>, <a href='../D/743.html' title='Multiple defined in 3 places.'>S</a>, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>;
+<a id='L61' name='L61'></a>  <strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> const_zero = <em class='brace'>{</em>.b = 0 <em class='brace'>}</em>;
+<a id='L62' name='L62'></a>  <strong class='reserved'>struct</strong> <a href='../S/544.html#L75' title='Defined at 75 in cmac.h.'>cmac128_ctx</a> cmac_ctx;
+<a id='L63' name='L63'></a>  assert (nlength &gt;= <a href='../S/722.html#L60' title='Defined at 60 in siv-cmac.h.'>SIV_MIN_NONCE_SIZE</a>);
+<a id='L64' name='L64'></a>
+<a id='L65' name='L65'></a>  <a href='../D/1378.html' title='Multiple defined in 2 places.'>cmac128_init</a>(&amp;cmac_ctx);
+<a id='L66' name='L66'></a>  <a href='../D/1381.html' title='Multiple defined in 2 places.'>cmac128_update</a> (&amp;cmac_ctx, cmac_cipher, nc-&gt;encrypt, 16, const_zero.b);
+<a id='L67' name='L67'></a>  <a href='../D/1377.html' title='Multiple defined in 2 places.'>cmac128_digest</a> (&amp;cmac_ctx, cmac_key, cmac_cipher, nc-&gt;encrypt, 16, <a href='../D/189.html' title='Multiple defined in 9 places.'>D</a>.b);
+<a id='L68' name='L68'></a>
+<a id='L69' name='L69'></a>  <a href='../D/1267.html' title='Multiple defined in 2 places.'>block16_mulx_be</a> (&amp;<a href='../D/189.html' title='Multiple defined in 9 places.'>D</a>, &amp;<a href='../D/189.html' title='Multiple defined in 9 places.'>D</a>);
+<a id='L70' name='L70'></a>  <a href='../D/1381.html' title='Multiple defined in 2 places.'>cmac128_update</a> (&amp;cmac_ctx, cmac_cipher, nc-&gt;encrypt, alength, adata);
+<a id='L71' name='L71'></a>  <a href='../D/1377.html' title='Multiple defined in 2 places.'>cmac128_digest</a> (&amp;cmac_ctx, cmac_key, cmac_cipher, nc-&gt;encrypt, 16, <a href='../D/743.html' title='Multiple defined in 3 places.'>S</a>.b);
+<a id='L72' name='L72'></a>  <a href='../S/120.html#L46' title='Defined at 46 in block-internal.h.'>block16_xor</a> (&amp;<a href='../D/189.html' title='Multiple defined in 9 places.'>D</a>, &amp;<a href='../D/743.html' title='Multiple defined in 3 places.'>S</a>);
+<a id='L73' name='L73'></a>
+<a id='L74' name='L74'></a>  <a href='../D/1267.html' title='Multiple defined in 2 places.'>block16_mulx_be</a> (&amp;<a href='../D/189.html' title='Multiple defined in 9 places.'>D</a>, &amp;<a href='../D/189.html' title='Multiple defined in 9 places.'>D</a>);
+<a id='L75' name='L75'></a>  <a href='../D/1381.html' title='Multiple defined in 2 places.'>cmac128_update</a> (&amp;cmac_ctx, cmac_cipher, nc-&gt;encrypt, nlength, nonce);
+<a id='L76' name='L76'></a>  <a href='../D/1377.html' title='Multiple defined in 2 places.'>cmac128_digest</a> (&amp;cmac_ctx, cmac_key, cmac_cipher, nc-&gt;encrypt, 16, <a href='../D/743.html' title='Multiple defined in 3 places.'>S</a>.b);
+<a id='L77' name='L77'></a>  <a href='../S/120.html#L46' title='Defined at 46 in block-internal.h.'>block16_xor</a> (&amp;<a href='../D/189.html' title='Multiple defined in 9 places.'>D</a>, &amp;<a href='../D/743.html' title='Multiple defined in 3 places.'>S</a>);
+<a id='L78' name='L78'></a>
+<a id='L79' name='L79'></a>  <em class='comment'>/* Sn */</em>
+<a id='L80' name='L80'></a>  <strong class='reserved'>if</strong> (plength &gt;= 16)
+<a id='L81' name='L81'></a>    <em class='brace'>{</em>
+<a id='L82' name='L82'></a>      <a href='../D/1381.html' title='Multiple defined in 2 places.'>cmac128_update</a> (&amp;cmac_ctx, cmac_cipher, nc-&gt;encrypt, plength - 16, pdata);
+<a id='L83' name='L83'></a>
+<a id='L84' name='L84'></a>      pdata += plength - 16;
+<a id='L85' name='L85'></a>
+<a id='L86' name='L86'></a>      <a href='../S/120.html#L63' title='Defined at 63 in block-internal.h.'>block16_xor_bytes</a> (&amp;<a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>, &amp;<a href='../D/189.html' title='Multiple defined in 9 places.'>D</a>, pdata);
+<a id='L87' name='L87'></a>    <em class='brace'>}</em>
+<a id='L88' name='L88'></a>  <strong class='reserved'>else</strong>
+<a id='L89' name='L89'></a>    <em class='brace'>{</em>
+<a id='L90' name='L90'></a>      <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> pad;
+<a id='L91' name='L91'></a>
+<a id='L92' name='L92'></a>      <a href='../D/1267.html' title='Multiple defined in 2 places.'>block16_mulx_be</a> (&amp;<a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>, &amp;<a href='../D/189.html' title='Multiple defined in 9 places.'>D</a>);
+<a id='L93' name='L93'></a>      memcpy (pad.b, pdata, plength);
+<a id='L94' name='L94'></a>      pad.b[plength] = 0x80;
+<a id='L95' name='L95'></a>      <strong class='reserved'>if</strong> (plength + 1 &lt; 16)
+<a id='L96' name='L96'></a>        memset (&amp;pad.b[plength + 1], 0, 16 - plength - 1);
+<a id='L97' name='L97'></a>
+<a id='L98' name='L98'></a>      <a href='../S/120.html#L46' title='Defined at 46 in block-internal.h.'>block16_xor</a> (&amp;<a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>, &amp;pad);
+<a id='L99' name='L99'></a>    <em class='brace'>}</em>
+<a id='L100' name='L100'></a>
+<a id='L101' name='L101'></a>  <a href='../D/1381.html' title='Multiple defined in 2 places.'>cmac128_update</a> (&amp;cmac_ctx, cmac_cipher, nc-&gt;encrypt, 16, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>.b);
+<a id='L102' name='L102'></a>  <a href='../D/1377.html' title='Multiple defined in 2 places.'>cmac128_digest</a> (&amp;cmac_ctx, cmac_key, cmac_cipher, nc-&gt;encrypt, 16, <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>);
+<a id='L103' name='L103'></a><em class='brace'>}</em>
+<a id='L104' name='L104'></a>
+<a id='L105' name='L105'></a><strong class='reserved'>void</strong>
+<a id='L106' name='L106'></a><a href='../R/2344.html' title='Multiple referred from 3 places.'>siv_cmac_set_key</a> (<strong class='reserved'>struct</strong> <a href='../S/544.html#L69' title='Defined at 69 in cmac.h.'>cmac128_key</a> *cmac_key, <strong class='reserved'>void</strong> *cmac_cipher, <strong class='reserved'>void</strong> *siv_cipher,
+<a id='L107' name='L107'></a>                  <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/55.html#L44' title='Defined at 44 in nettle-meta.h.'>nettle_cipher</a> *nc, <strong class='reserved'>const</strong> uint8_t * key)
+<a id='L108' name='L108'></a><em class='brace'>{</em>
+<a id='L109' name='L109'></a>  nc-&gt;set_encrypt_key (cmac_cipher, key);
+<a id='L110' name='L110'></a>  <a href='../D/1380.html' title='Multiple defined in 2 places.'>cmac128_set_key</a> (cmac_key, cmac_cipher, nc-&gt;encrypt);
+<a id='L111' name='L111'></a>  nc-&gt;set_encrypt_key (siv_cipher, key + nc-&gt;key_size);
+<a id='L112' name='L112'></a><em class='brace'>}</em>
+<a id='L113' name='L113'></a>
+<a id='L114' name='L114'></a><strong class='reserved'>void</strong>
+<a id='L115' name='L115'></a><a href='../R/2343.html' title='Multiple referred from 3 places.'>siv_cmac_encrypt_message</a> (<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/544.html#L69' title='Defined at 69 in cmac.h.'>cmac128_key</a> *cmac_key,
+<a id='L116' name='L116'></a>                          <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *cmac_cipher,
+<a id='L117' name='L117'></a>                          <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/55.html#L44' title='Defined at 44 in nettle-meta.h.'>nettle_cipher</a> *nc,
+<a id='L118' name='L118'></a>                          <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *ctr_cipher,
+<a id='L119' name='L119'></a>                          size_t nlength, <strong class='reserved'>const</strong> uint8_t * nonce,
+<a id='L120' name='L120'></a>                          size_t alength, <strong class='reserved'>const</strong> uint8_t * adata,
+<a id='L121' name='L121'></a>                          size_t clength, uint8_t * dst, <strong class='reserved'>const</strong> uint8_t * src)
+<a id='L122' name='L122'></a><em class='brace'>{</em>
+<a id='L123' name='L123'></a>  <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> siv;
+<a id='L124' name='L124'></a>  size_t slength;
+<a id='L125' name='L125'></a>
+<a id='L126' name='L126'></a>  assert (clength &gt;= <a href='../S/722.html#L59' title='Defined at 59 in siv-cmac.h.'>SIV_DIGEST_SIZE</a>);
+<a id='L127' name='L127'></a>  slength = clength - <a href='../S/722.html#L59' title='Defined at 59 in siv-cmac.h.'>SIV_DIGEST_SIZE</a>;
+<a id='L128' name='L128'></a>
+<a id='L129' name='L129'></a>  <em class='comment'>/* create CTR nonce */</em>
+<a id='L130' name='L130'></a>  <a href='../S/562.html#L53' title='Defined at 53 in siv-cmac.c.'>_siv_s2v</a> (nc, cmac_key, cmac_cipher, alength, adata, nlength, nonce, slength, src, siv.b);
+<a id='L131' name='L131'></a>
+<a id='L132' name='L132'></a>  memcpy (dst, siv.b, <a href='../S/722.html#L59' title='Defined at 59 in siv-cmac.h.'>SIV_DIGEST_SIZE</a>);
+<a id='L133' name='L133'></a>  siv.b[8] &amp;= ~0x80;
+<a id='L134' name='L134'></a>  siv.b[12] &amp;= ~0x80;
+<a id='L135' name='L135'></a>
+<a id='L136' name='L136'></a>  <a href='../D/1416.html' title='Multiple defined in 2 places.'>ctr_crypt</a> (ctr_cipher, nc-&gt;encrypt, <a href='../S/237.html#L65' title='Defined at 65 in aes.h.'>AES_BLOCK_SIZE</a>, siv.b, slength,
+<a id='L137' name='L137'></a>             dst + <a href='../S/722.html#L59' title='Defined at 59 in siv-cmac.h.'>SIV_DIGEST_SIZE</a>, src);
+<a id='L138' name='L138'></a><em class='brace'>}</em>
+<a id='L139' name='L139'></a>
+<a id='L140' name='L140'></a><strong class='reserved'>int</strong>
+<a id='L141' name='L141'></a><a href='../R/2342.html' title='Multiple referred from 3 places.'>siv_cmac_decrypt_message</a> (<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/544.html#L69' title='Defined at 69 in cmac.h.'>cmac128_key</a> *cmac_key,
+<a id='L142' name='L142'></a>                          <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *cmac_cipher,
+<a id='L143' name='L143'></a>                          <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/55.html#L44' title='Defined at 44 in nettle-meta.h.'>nettle_cipher</a> *nc,
+<a id='L144' name='L144'></a>                          <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *ctr_cipher,
+<a id='L145' name='L145'></a>                          size_t nlength, <strong class='reserved'>const</strong> uint8_t * nonce,
+<a id='L146' name='L146'></a>                          size_t alength, <strong class='reserved'>const</strong> uint8_t * adata,
+<a id='L147' name='L147'></a>                          size_t mlength, uint8_t * dst, <strong class='reserved'>const</strong> uint8_t * src)
+<a id='L148' name='L148'></a><em class='brace'>{</em>
+<a id='L149' name='L149'></a>  <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> siv;
+<a id='L150' name='L150'></a>  <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> ctr;
+<a id='L151' name='L151'></a>
+<a id='L152' name='L152'></a>  memcpy (ctr.b, src, <a href='../S/722.html#L59' title='Defined at 59 in siv-cmac.h.'>SIV_DIGEST_SIZE</a>);
+<a id='L153' name='L153'></a>  ctr.b[8] &amp;= ~0x80;
+<a id='L154' name='L154'></a>  ctr.b[12] &amp;= ~0x80;
+<a id='L155' name='L155'></a>
+<a id='L156' name='L156'></a>  <a href='../D/1416.html' title='Multiple defined in 2 places.'>ctr_crypt</a> (ctr_cipher, nc-&gt;encrypt, <a href='../S/237.html#L65' title='Defined at 65 in aes.h.'>AES_BLOCK_SIZE</a>, ctr.b,
+<a id='L157' name='L157'></a>             mlength, dst, src + <a href='../S/722.html#L59' title='Defined at 59 in siv-cmac.h.'>SIV_DIGEST_SIZE</a>);
+<a id='L158' name='L158'></a>
+<a id='L159' name='L159'></a>  <em class='comment'>/* create CTR nonce */</em>
+<a id='L160' name='L160'></a>  <a href='../S/562.html#L53' title='Defined at 53 in siv-cmac.c.'>_siv_s2v</a> (nc,
+<a id='L161' name='L161'></a>            cmac_key, cmac_cipher, alength, adata,
+<a id='L162' name='L162'></a>            nlength, nonce, mlength, dst, siv.b);
+<a id='L163' name='L163'></a>
+<a id='L164' name='L164'></a>  <strong class='reserved'>return</strong> <a href='../D/1875.html' title='Multiple defined in 2 places.'>memeql_sec</a> (siv.b, src, <a href='../S/722.html#L59' title='Defined at 59 in siv-cmac.h.'>SIV_DIGEST_SIZE</a>);
+<a id='L165' name='L165'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L53'>[^]</a><a href='#L141'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

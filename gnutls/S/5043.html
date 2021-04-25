@@ -1,0 +1,268 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>tests/dtls1-2-mtu-check.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6501.html'>tests</a>/dtls1-2-mtu-check.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L44'>[^]</a><a href='#L173'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L44' title='Defined at 44.'>tls_log_func</a></li>
+<li><a href='#L49' title='Defined at 49.'>dtls_mtu_try</a></li>
+<li><a href='#L173' title='Defined at 173.'>doit</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2016 Red Hat, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * GnuTLS is free software; you can redistribute it and/or modify it</em>
+<a id='L9' name='L9'></a><em class='comment'> * under the terms of the GNU General Public License as published by</em>
+<a id='L10' name='L10'></a><em class='comment'> * the Free Software Foundation; either version 3 of the License, or</em>
+<a id='L11' name='L11'></a><em class='comment'> * (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * GnuTLS is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with GnuTLS; if not, write to the Free Software Foundation,</em>
+<a id='L20' name='L20'></a><em class='comment'> * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#ifdef</em> HAVE_CONFIG_H
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L25' name='L25'></a><em class='sharp'>#endif</em>
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a><em class='comment'>/* This program tests the MTU calculation in various cipher/mac algorithm combinations</em>
+<a id='L28' name='L28'></a><em class='comment'> * in gnutls */</em>
+<a id='L29' name='L29'></a>
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L34' name='L34'></a><em class='sharp'>#include</em> &lt;gnutls/gnutls.h&gt;
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> &lt;<a href='../I/592.html'>gnutls/dtls.h</a>&gt;
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> "<a href='4981.html'>eagain-common.h</a>"
+<a id='L37' name='L37'></a><em class='sharp'>#include</em> "<a href='5039.html'>cert-common.h</a>"
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> "<a href='../I/424.html'>utils.h</a>"
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> &lt;assert.h&gt;
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a><em class='sharp'>#define</em> <a href='../R/9380.html' title='Multiple referred from 57 places.'>myfail</a>(fmt, ...) \
+<a id='L42' name='L42'></a>        <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%s: "fmt, <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, ##__VA_ARGS__)
+<a id='L43' name='L43'></a>
+<a id='L44' name='L44'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/10917.html' title='Multiple referred from 309 places.'>tls_log_func</a>(<strong class='reserved'>int</strong> level, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str)
+<a id='L45' name='L45'></a><em class='brace'>{</em>
+<a id='L46' name='L46'></a>        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "|&lt;%d&gt;| %s", level, str);
+<a id='L47' name='L47'></a><em class='brace'>}</em>
+<a id='L48' name='L48'></a>
+<a id='L49' name='L49'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/6708.html' title='Multiple referred from 53 places.'>dtls_mtu_try</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *client_prio,
+<a id='L50' name='L50'></a>                <strong class='reserved'>unsigned</strong> link_mtu, <strong class='reserved'>unsigned</strong> tunnel_mtu)
+<a id='L51' name='L51'></a><em class='brace'>{</em>
+<a id='L52' name='L52'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L53' name='L53'></a>        <em class='comment'>/* Server stuff. */</em>
+<a id='L54' name='L54'></a>        gnutls_certificate_credentials_t serverx509cred;
+<a id='L55' name='L55'></a>        gnutls_session_t <a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>;
+<a id='L56' name='L56'></a>        <strong class='reserved'>int</strong> sret = GNUTLS_E_AGAIN;
+<a id='L57' name='L57'></a>        <em class='comment'>/* Client stuff. */</em>
+<a id='L58' name='L58'></a>        gnutls_certificate_credentials_t clientx509cred;
+<a id='L59' name='L59'></a>        gnutls_session_t <a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>;
+<a id='L60' name='L60'></a>        <strong class='reserved'>int</strong> cret = GNUTLS_E_AGAIN;
+<a id='L61' name='L61'></a>        <strong class='reserved'>unsigned</strong> dmtu;
+<a id='L62' name='L62'></a>        <strong class='reserved'>unsigned</strong> i;
+<a id='L63' name='L63'></a>
+<a id='L64' name='L64'></a>        <em class='comment'>/* General init. */</em>
+<a id='L65' name='L65'></a>        <a href='../S/6039.html#L104' title='Defined at 104 in lib/global.c.'>gnutls_global_set_log_function</a>(<a href='../D/11934.html' title='Multiple defined in 223 places.'>tls_log_func</a>);
+<a id='L66' name='L66'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L67' name='L67'></a>                <a href='../S/6039.html#L155' title='Defined at 155 in lib/global.c.'>gnutls_global_set_log_level</a>(6);
+<a id='L68' name='L68'></a>
+<a id='L69' name='L69'></a>        <a href='../D/11121.html' title='Multiple defined in 2 places.'>reset_buffers</a>();
+<a id='L70' name='L70'></a>        <em class='comment'>/* Init server */</em>
+<a id='L71' name='L71'></a>        assert(<a href='../S/5463.html#L418' title='Defined at 418 in lib/cert-cred.c.'>gnutls_certificate_allocate_credentials</a>(&amp;serverx509cred)&gt;=0);
+<a id='L72' name='L72'></a>
+<a id='L73' name='L73'></a>        assert(<a href='../S/5456.html#L635' title='Defined at 635 in lib/cert-cred-x509.c.'>gnutls_certificate_set_x509_key_mem</a>(serverx509cred,
+<a id='L74' name='L74'></a>                                            &amp;server_cert, &amp;server_key,
+<a id='L75' name='L75'></a>                                            GNUTLS_X509_FMT_PEM) &gt;= 0);
+<a id='L76' name='L76'></a>
+<a id='L77' name='L77'></a>        assert(<a href='../S/5625.html#L475' title='Defined at 475 in lib/state.c.'>gnutls_init</a>(&amp;<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, GNUTLS_SERVER|GNUTLS_DATAGRAM|GNUTLS_NONBLOCK) &gt;= 0);
+<a id='L78' name='L78'></a>        <a href='../S/5749.html#L94' title='Defined at 94 in lib/auth.c.'>gnutls_credentials_set</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, GNUTLS_CRD_CERTIFICATE,
+<a id='L79' name='L79'></a>                                serverx509cred);
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a>        assert(<a href='../S/5260.html#L2335' title='Defined at 2335 in lib/priority.c.'>gnutls_priority_set_direct</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>,
+<a id='L82' name='L82'></a>                                   "NORMAL:+ANON-ECDH:+ANON-DH:+3DES-CBC:+ECDHE-RSA:+DHE-RSA:+RSA:+ECDHE-ECDSA:+SHA256:+CURVE-X25519",
+<a id='L83' name='L83'></a>                                   <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) &gt;= 0);
+<a id='L84' name='L84'></a>        <a href='../S/5813.html#L147' title='Defined at 147 in lib/system_override.c.'>gnutls_transport_set_push_function</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, <a href='../D/11326.html' title='Multiple defined in 3 places.'>server_push</a>);
+<a id='L85' name='L85'></a>        <a href='../S/5813.html#L82' title='Defined at 82 in lib/system_override.c.'>gnutls_transport_set_pull_function</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, <a href='../D/11323.html' title='Multiple defined in 2 places.'>server_pull</a>);
+<a id='L86' name='L86'></a>        <a href='../S/5813.html#L123' title='Defined at 123 in lib/system_override.c.'>gnutls_transport_set_pull_timeout_function</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, <a href='../S/4981.html#L298' title='Defined at 298 in tests/eagain-common.h.'>server_pull_timeout_func</a>);
+<a id='L87' name='L87'></a>        <a href='../S/5258.html#L101' title='Defined at 101 in lib/record.c.'>gnutls_transport_set_ptr</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, <a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>);
+<a id='L88' name='L88'></a>
+<a id='L89' name='L89'></a>        <em class='comment'>/* Init client */</em>
+<a id='L90' name='L90'></a>
+<a id='L91' name='L91'></a>        ret = <a href='../S/5625.html#L475' title='Defined at 475 in lib/state.c.'>gnutls_init</a>(&amp;<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, GNUTLS_CLIENT|GNUTLS_DATAGRAM|GNUTLS_NONBLOCK);
+<a id='L92' name='L92'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L93' name='L93'></a>                exit(1);
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a>        assert(<a href='../S/5463.html#L418' title='Defined at 418 in lib/cert-cred.c.'>gnutls_certificate_allocate_credentials</a>(&amp;clientx509cred) &gt;= 0);
+<a id='L96' name='L96'></a>        assert(<a href='../S/5456.html#L1101' title='Defined at 1101 in lib/cert-cred-x509.c.'>gnutls_certificate_set_x509_trust_mem</a>(clientx509cred, &amp;ca_cert, GNUTLS_X509_FMT_PEM)&gt;=0);
+<a id='L97' name='L97'></a>
+<a id='L98' name='L98'></a>        assert(<a href='../S/5749.html#L94' title='Defined at 94 in lib/auth.c.'>gnutls_credentials_set</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, GNUTLS_CRD_CERTIFICATE,
+<a id='L99' name='L99'></a>                                clientx509cred) &gt;= 0);
+<a id='L100' name='L100'></a>
+<a id='L101' name='L101'></a>        <a href='../S/5813.html#L147' title='Defined at 147 in lib/system_override.c.'>gnutls_transport_set_push_function</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, <a href='../D/7237.html' title='Multiple defined in 3 places.'>client_push</a>);
+<a id='L102' name='L102'></a>        <a href='../S/5813.html#L82' title='Defined at 82 in lib/system_override.c.'>gnutls_transport_set_pull_function</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, <a href='../D/7234.html' title='Multiple defined in 3 places.'>client_pull</a>);
+<a id='L103' name='L103'></a>        <a href='../S/5813.html#L123' title='Defined at 123 in lib/system_override.c.'>gnutls_transport_set_pull_timeout_function</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, <a href='../S/4981.html#L317' title='Defined at 317 in tests/eagain-common.h.'>client_pull_timeout_func</a>);
+<a id='L104' name='L104'></a>        
+<a id='L105' name='L105'></a>        <a href='../S/5258.html#L101' title='Defined at 101 in lib/record.c.'>gnutls_transport_set_ptr</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, <a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>);
+<a id='L106' name='L106'></a>
+<a id='L107' name='L107'></a>        ret = <a href='../S/5260.html#L2335' title='Defined at 2335 in lib/priority.c.'>gnutls_priority_set_direct</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, client_prio, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L108' name='L108'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L109' name='L109'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%s: error in priority setting\n", <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>);
+<a id='L110' name='L110'></a>                exit(1);
+<a id='L111' name='L111'></a>        <em class='brace'>}</em>
+<a id='L112' name='L112'></a>        <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("negotiating %s\n", <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>);
+<a id='L113' name='L113'></a>        <a href='../S/4981.html#L85' title='Defined at 85 in tests/eagain-common.h.'>HANDSHAKE_DTLS</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, <a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>);
+<a id='L114' name='L114'></a>
+<a id='L115' name='L115'></a>        <a href='../S/6022.html#L491' title='Defined at 491 in lib/dtls.c.'>gnutls_dtls_set_mtu</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, link_mtu);
+<a id='L116' name='L116'></a>        dmtu = <a href='../S/6022.html#L662' title='Defined at 662 in lib/dtls.c.'>gnutls_dtls_get_data_mtu</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>);
+<a id='L117' name='L117'></a>        <strong class='reserved'>if</strong> (dmtu != tunnel_mtu) <em class='brace'>{</em>
+<a id='L118' name='L118'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%s: Calculated MTU (%d) does not match expected (%d)\n", <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, dmtu, tunnel_mtu);
+<a id='L119' name='L119'></a>        <em class='brace'>}</em>
+<a id='L120' name='L120'></a>
+<a id='L121' name='L121'></a>        <em class='brace'>{</em>
+<a id='L122' name='L122'></a>                <strong class='reserved'>char</strong> *msg = <a href='../S/5460.html#L95' title='Defined at 95 in lib/mem.c.'>gnutls_malloc</a>(dmtu+1);
+<a id='L123' name='L123'></a>                assert(msg);
+<a id='L124' name='L124'></a>                memset(msg, 1, dmtu+1);
+<a id='L125' name='L125'></a>                ret = <a href='../S/5258.html#L1958' title='Defined at 1958 in lib/record.c.'>gnutls_record_send</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, msg, dmtu+1);
+<a id='L126' name='L126'></a>                <strong class='reserved'>if</strong> (ret != (<strong class='reserved'>int</strong>)GNUTLS_E_LARGE_PACKET) <em class='brace'>{</em>
+<a id='L127' name='L127'></a>                        <a href='../D/10365.html' title='Multiple defined in 8 places.'>myfail</a>("could send larger packet than MTU (%d), ret: %d\n", dmtu, ret);
+<a id='L128' name='L128'></a>                <em class='brace'>}</em>
+<a id='L129' name='L129'></a>
+<a id='L130' name='L130'></a>                ret = <a href='../S/5258.html#L1958' title='Defined at 1958 in lib/record.c.'>gnutls_record_send</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, msg, dmtu);
+<a id='L131' name='L131'></a>                <strong class='reserved'>if</strong> (ret != (<strong class='reserved'>int</strong>)dmtu) <em class='brace'>{</em>
+<a id='L132' name='L132'></a>                        <a href='../D/10365.html' title='Multiple defined in 8 places.'>myfail</a>("could not send %d bytes (sent %d)\n", dmtu, ret);
+<a id='L133' name='L133'></a>                <em class='brace'>}</em>
+<a id='L134' name='L134'></a>
+<a id='L135' name='L135'></a>                memset(msg, 2, dmtu);
+<a id='L136' name='L136'></a>                ret = <a href='../S/5258.html#L2278' title='Defined at 2278 in lib/record.c.'>gnutls_record_recv</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, msg, dmtu);
+<a id='L137' name='L137'></a>                <strong class='reserved'>if</strong> (ret != (<strong class='reserved'>int</strong>)dmtu) <em class='brace'>{</em>
+<a id='L138' name='L138'></a>                        <a href='../D/10365.html' title='Multiple defined in 8 places.'>myfail</a>("could not receive %d bytes (received %d)\n", dmtu, ret);
+<a id='L139' name='L139'></a>                <em class='brace'>}</em>
+<a id='L140' name='L140'></a>
+<a id='L141' name='L141'></a>                <strong class='reserved'>for</strong> (i=0;i&lt;dmtu;i++)
+<a id='L142' name='L142'></a>                        assert(msg[i]==1);
+<a id='L143' name='L143'></a>
+<a id='L144' name='L144'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(msg);
+<a id='L145' name='L145'></a>        <em class='brace'>}</em>
+<a id='L146' name='L146'></a>
+<a id='L147' name='L147'></a>        <a href='../S/6022.html#L735' title='Defined at 735 in lib/dtls.c.'>gnutls_dtls_set_data_mtu</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, link_mtu);
+<a id='L148' name='L148'></a>        dmtu = <a href='../S/6022.html#L662' title='Defined at 662 in lib/dtls.c.'>gnutls_dtls_get_data_mtu</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>);
+<a id='L149' name='L149'></a>        <strong class='reserved'>if</strong> (dmtu != link_mtu) <em class='brace'>{</em>
+<a id='L150' name='L150'></a>                <strong class='reserved'>if</strong> (<a href='../S/5625.html#L208' title='Defined at 208 in lib/state.c.'>gnutls_mac_get</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>) == GNUTLS_MAC_AEAD)
+<a id='L151' name='L151'></a>                        <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%s: got MTU (%d) which does not match expected (%d)\n", <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, dmtu, link_mtu);
+<a id='L152' name='L152'></a>                <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (dmtu &lt; link_mtu)
+<a id='L153' name='L153'></a>                        <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%s: got MTU (%d) smaller than expected (%d)\n", <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, dmtu, link_mtu);
+<a id='L154' name='L154'></a>        <em class='brace'>}</em>
+<a id='L155' name='L155'></a>
+<a id='L156' name='L156'></a>        <a href='../S/6022.html#L491' title='Defined at 491 in lib/dtls.c.'>gnutls_dtls_set_mtu</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, link_mtu);
+<a id='L157' name='L157'></a>        dmtu = <a href='../S/6022.html#L768' title='Defined at 768 in lib/dtls.c.'>gnutls_dtls_get_mtu</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>);
+<a id='L158' name='L158'></a>        <strong class='reserved'>if</strong> (dmtu != link_mtu) <em class='brace'>{</em>
+<a id='L159' name='L159'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%s: got MTU (%d) which does not match expected (%d)\n", <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, dmtu, link_mtu);
+<a id='L160' name='L160'></a>        <em class='brace'>}</em>
+<a id='L161' name='L161'></a>
+<a id='L162' name='L162'></a>        <a href='../S/5258.html#L285' title='Defined at 285 in lib/record.c.'>gnutls_bye</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, GNUTLS_SHUT_RDWR);
+<a id='L163' name='L163'></a>        <a href='../S/5258.html#L285' title='Defined at 285 in lib/record.c.'>gnutls_bye</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, GNUTLS_SHUT_RDWR);
+<a id='L164' name='L164'></a>
+<a id='L165' name='L165'></a>        <a href='../S/5625.html#L659' title='Defined at 659 in lib/state.c.'>gnutls_deinit</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>);
+<a id='L166' name='L166'></a>        <a href='../S/5625.html#L659' title='Defined at 659 in lib/state.c.'>gnutls_deinit</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>);
+<a id='L167' name='L167'></a>
+<a id='L168' name='L168'></a>        <a href='../S/5463.html#L391' title='Defined at 391 in lib/cert-cred.c.'>gnutls_certificate_free_credentials</a>(serverx509cred);
+<a id='L169' name='L169'></a>        <a href='../S/5463.html#L391' title='Defined at 391 in lib/cert-cred.c.'>gnutls_certificate_free_credentials</a>(clientx509cred);
+<a id='L170' name='L170'></a><em class='brace'>}</em>
+<a id='L171' name='L171'></a>
+<a id='L172' name='L172'></a>
+<a id='L173' name='L173'></a><strong class='reserved'>void</strong> <a href='../R/6687.html' title='Multiple referred from 5 places.'>doit</a>(<strong class='reserved'>void</strong>)
+<a id='L174' name='L174'></a><em class='brace'>{</em>
+<a id='L175' name='L175'></a>        <a href='../S/4443.html#L55' title='Defined at 55 in tests/utils.h.'>global_init</a>();
+<a id='L176' name='L176'></a>
+<a id='L177' name='L177'></a>        <em class='comment'>/* check padding in CBC */</em>
+<a id='L178' name='L178'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1500, 1435);
+<a id='L179' name='L179'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1501", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1501, 1451);
+<a id='L180' name='L180'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1502", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1502, 1451);
+<a id='L181' name='L181'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1503", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1503, 1451);
+<a id='L182' name='L182'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1504", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1504, 1451);
+<a id='L183' name='L183'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1505", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1505, 1451);
+<a id='L184' name='L184'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1506", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1506, 1451);
+<a id='L185' name='L185'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1507", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1507, 1451);
+<a id='L186' name='L186'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1508", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1508, 1451);
+<a id='L187' name='L187'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1509", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1509, 1451);
+<a id='L188' name='L188'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1510", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1510, 1451);
+<a id='L189' name='L189'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1511", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1511, 1451);
+<a id='L190' name='L190'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1512", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1512, 1451);
+<a id='L191' name='L191'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1513", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1513, 1451);
+<a id='L192' name='L192'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1514", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1514, 1451);
+<a id='L193' name='L193'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1515", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1515, 1451);
+<a id='L194' name='L194'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1516", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1516, 1451);
+<a id='L195' name='L195'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1517", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1517, 1467);
+<a id='L196' name='L196'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1518", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1518, 1467);
+<a id='L197' name='L197'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1519", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1519, 1467);
+<a id='L198' name='L198'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1520", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1520, 1467);
+<a id='L199' name='L199'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1521", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1521, 1467);
+<a id='L200' name='L200'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1522", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1522, 1467);
+<a id='L201' name='L201'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1523", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1523, 1467);
+<a id='L202' name='L202'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1524", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1524, 1467);
+<a id='L203' name='L203'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1525", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1525, 1467);
+<a id='L204' name='L204'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1526", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1526, 1467);
+<a id='L205' name='L205'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1536", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1536, 1483);
+<a id='L206' name='L206'></a>
+<a id='L207' name='L207'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA256", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA256", 1500, 1423);
+<a id='L208' name='L208'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with 3DES-CBC-HMAC-SHA1", "NORMAL:%NO_ETM:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+3DES-CBC:-MAC-ALL:+SHA1", 1500, 1451);
+<a id='L209' name='L209'></a>
+<a id='L210' name='L210'></a>        <em class='comment'>/* check non-CBC ciphers */</em>
+<a id='L211' name='L211'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-GCM", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-GCM", 1500, 1463);
+<a id='L212' name='L212'></a>        <strong class='reserved'>if</strong> (!<a href='../S/5746.html#L489' title='Defined at 489 in lib/fips.c.'>gnutls_fips140_mode_enabled</a>())
+<a id='L213' name='L213'></a>                <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with CHACHA20-POLY1305", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+CHACHA20-POLY1305", 1500, 1471);
+<a id='L214' name='L214'></a>
+<a id='L215' name='L215'></a>        <em class='comment'>/* check EtM CBC */</em>
+<a id='L216' name='L216'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2/EtM with AES-128-CBC-HMAC-SHA1", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1500, 1439);
+<a id='L217' name='L217'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1501", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1501, 1439);
+<a id='L218' name='L218'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1502", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1502, 1439);
+<a id='L219' name='L219'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1503", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1503, 1439);
+<a id='L220' name='L220'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1504", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1504, 1439);
+<a id='L221' name='L221'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1505", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1505, 1455);
+<a id='L222' name='L222'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1506", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1506, 1455);
+<a id='L223' name='L223'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1507", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1507, 1455);
+<a id='L224' name='L224'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1508", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1508, 1455);
+<a id='L225' name='L225'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1509", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1509, 1455);
+<a id='L226' name='L226'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1510", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1510, 1455);
+<a id='L227' name='L227'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1511", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1511, 1455);
+<a id='L228' name='L228'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1512", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1512, 1455);
+<a id='L229' name='L229'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1513", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1513, 1455);
+<a id='L230' name='L230'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1514", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1514, 1455);
+<a id='L231' name='L231'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1515", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1515, 1455);
+<a id='L232' name='L232'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1516", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1516, 1455);
+<a id='L233' name='L233'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1517", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1517, 1455);
+<a id='L234' name='L234'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2 with AES-128-CBC-HMAC-SHA1 - mtu:1518", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA1", 1518, 1455);
+<a id='L235' name='L235'></a>
+<a id='L236' name='L236'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2/EtM with AES-128-CBC-HMAC-SHA256", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+AES-128-CBC:-MAC-ALL:+SHA256", 1500, 1423);
+<a id='L237' name='L237'></a>        <a href='../S/5043.html#L49' title='Defined at 49 in tests/dtls1-2-mtu-check.c.'>dtls_mtu_try</a>("DTLS 1.2/EtM with 3DES-CBC-HMAC-SHA1", "NORMAL:-VERS-ALL:+VERS-DTLS1.2:-CIPHER-ALL:+3DES-CBC:-MAC-ALL:+SHA1", 1500, 1455);
+<a id='L238' name='L238'></a>
+<a id='L239' name='L239'></a>        <a href='../S/6039.html#L467' title='Defined at 467 in lib/global.c.'>gnutls_global_deinit</a>();
+<a id='L240' name='L240'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L44'>[^]</a><a href='#L173'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

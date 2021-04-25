@@ -1,0 +1,118 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/nettle/sysrng-windows.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6481.html'>nettle</a>/sysrng-windows.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L56'>[^]</a><a href='#L86'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L56' title='Defined at 56.'>_rnd_get_system_entropy_win32</a></li>
+<li><a href='#L67' title='Defined at 67.'>_rnd_system_entropy_check</a></li>
+<li><a href='#L72' title='Defined at 72.'>_rnd_system_entropy_init</a></li>
+<li><a href='#L86' title='Defined at 86.'>_rnd_system_entropy_deinit</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2010-2016 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> * Copyright (C) 2015-2016 Red Hat, Inc.</em>
+<a id='L4' name='L4'></a><em class='comment'> * Copyright (C) 2000, 2001, 2008 Niels Möller</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * This file is part of GNUTLS.</em>
+<a id='L9' name='L9'></a><em class='comment'> *</em>
+<a id='L10' name='L10'></a><em class='comment'> * The GNUTLS library is free software; you can redistribute it and/or</em>
+<a id='L11' name='L11'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L12' name='L12'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L13' name='L13'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L14' name='L14'></a><em class='comment'> *</em>
+<a id='L15' name='L15'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L16' name='L16'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L17' name='L17'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L18' name='L18'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L19' name='L19'></a><em class='comment'> *</em>
+<a id='L20' name='L20'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L21' name='L21'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L22' name='L22'></a><em class='comment'> *</em>
+<a id='L23' name='L23'></a><em class='comment'> */</em>
+<a id='L24' name='L24'></a>
+<a id='L25' name='L25'></a><em class='comment'>/* Here are the common parts of the random generator layer. </em>
+<a id='L26' name='L26'></a><em class='comment'> * Some of this code was based on the LSH </em>
+<a id='L27' name='L27'></a><em class='comment'> * random generator (the trivia and device source functions for POSIX)</em>
+<a id='L28' name='L28'></a><em class='comment'> * and modified to fit gnutls' needs. Relicenced with permission. </em>
+<a id='L29' name='L29'></a><em class='comment'> * Original author Niels Möller.</em>
+<a id='L30' name='L30'></a><em class='comment'> */</em>
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L34' name='L34'></a><em class='sharp'>#include</em> &lt;<a href='6025.html'>locks.h</a>&gt;
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> &lt;<a href='5268.html'>num.h</a>&gt;
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> &lt;nettle/yarrow.h&gt;
+<a id='L37' name='L37'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> &lt;<a href='5474.html'>rnd-common.h</a>&gt;
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> &lt;<a href='6371.html'>hash-pjw-bare.h</a>&gt;
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> &lt;sys/types.h&gt;
+<a id='L42' name='L42'></a><em class='sharp'>#include</em> &lt;sys/stat.h&gt;
+<a id='L43' name='L43'></a><em class='sharp'>#include</em> &lt;unistd.h&gt;
+<a id='L44' name='L44'></a>
+<a id='L45' name='L45'></a><em class='comment'>/* The windows randomness gatherer.</em>
+<a id='L46' name='L46'></a><em class='comment'> */</em>
+<a id='L47' name='L47'></a>
+<a id='L48' name='L48'></a><em class='sharp'>#include</em> &lt;windows.h&gt;
+<a id='L49' name='L49'></a><em class='sharp'>#include</em> &lt;wincrypt.h&gt;
+<a id='L50' name='L50'></a>
+<a id='L51' name='L51'></a>get_entropy_func _rnd_get_system_entropy = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L52' name='L52'></a>
+<a id='L53' name='L53'></a><strong class='reserved'>static</strong> HCRYPTPROV device_fd = 0;
+<a id='L54' name='L54'></a>
+<a id='L55' name='L55'></a><strong class='reserved'>static</strong>
+<a id='L56' name='L56'></a><strong class='reserved'>int</strong> <a href='../R/5767.html' title='Multiple referred from 2 places.'>_rnd_get_system_entropy_win32</a>(<strong class='reserved'>void</strong>* rnd, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> size)
+<a id='L57' name='L57'></a><em class='brace'>{</em>
+<a id='L58' name='L58'></a>        <strong class='reserved'>if</strong> (!CryptGenRandom(device_fd, (DWORD) size, rnd)) <em class='brace'>{</em>
+<a id='L59' name='L59'></a>                <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>("Error in CryptGenRandom: %d\n",
+<a id='L60' name='L60'></a>                                        (<strong class='reserved'>int</strong>)GetLastError());
+<a id='L61' name='L61'></a>                <strong class='reserved'>return</strong> GNUTLS_E_RANDOM_DEVICE_ERROR;
+<a id='L62' name='L62'></a>        <em class='brace'>}</em>
+<a id='L63' name='L63'></a>
+<a id='L64' name='L64'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L65' name='L65'></a><em class='brace'>}</em>
+<a id='L66' name='L66'></a>
+<a id='L67' name='L67'></a><strong class='reserved'>int</strong> <a href='../R/5768.html' title='Multiple referred from 3 places.'>_rnd_system_entropy_check</a>(<strong class='reserved'>void</strong>)
+<a id='L68' name='L68'></a><em class='brace'>{</em>
+<a id='L69' name='L69'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L70' name='L70'></a><em class='brace'>}</em>
+<a id='L71' name='L71'></a>
+<a id='L72' name='L72'></a><strong class='reserved'>int</strong> <a href='../R/5770.html' title='Multiple referred from 5 places.'>_rnd_system_entropy_init</a>(<strong class='reserved'>void</strong>)
+<a id='L73' name='L73'></a><em class='brace'>{</em>
+<a id='L74' name='L74'></a>        <strong class='reserved'>if</strong> (!CryptAcquireContext
+<a id='L75' name='L75'></a>                (&amp;device_fd, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, PROV_RSA_FULL,
+<a id='L76' name='L76'></a>                 CRYPT_SILENT | CRYPT_VERIFYCONTEXT)) <em class='brace'>{</em>
+<a id='L77' name='L77'></a>                <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>
+<a id='L78' name='L78'></a>                        ("error in CryptAcquireContext!\n");
+<a id='L79' name='L79'></a>                <strong class='reserved'>return</strong> GNUTLS_E_RANDOM_DEVICE_ERROR;
+<a id='L80' name='L80'></a>        <em class='brace'>}</em>
+<a id='L81' name='L81'></a>
+<a id='L82' name='L82'></a>        _rnd_get_system_entropy = <a href='../D/6579.html' title='Multiple defined in 2 places.'>_rnd_get_system_entropy_win32</a>;
+<a id='L83' name='L83'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L84' name='L84'></a><em class='brace'>}</em>
+<a id='L85' name='L85'></a>
+<a id='L86' name='L86'></a><strong class='reserved'>void</strong> <a href='../R/5769.html' title='Multiple referred from 4 places.'>_rnd_system_entropy_deinit</a>(<strong class='reserved'>void</strong>)
+<a id='L87' name='L87'></a><em class='brace'>{</em>
+<a id='L88' name='L88'></a>        CryptReleaseContext(device_fd, 0);
+<a id='L89' name='L89'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L56'>[^]</a><a href='#L86'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

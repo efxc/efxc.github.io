@@ -1,0 +1,238 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>tests/slow/cipher-openssl-compat.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6501.html'>tests</a>/<a href='../files/6505.html'>slow</a>/cipher-openssl-compat.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L24'>[^]</a><a href='#L187'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L24' title='Defined at 24.'>cipher_test</a></li>
+<li><a href='#L182' title='Defined at 182.'>tls_log_func</a></li>
+<li><a href='#L187' title='Defined at 187.'>doit</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L2' name='L2'></a><em class='sharp'>#include</em> &lt;stdint.h&gt;
+<a id='L3' name='L3'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L4' name='L4'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L5' name='L5'></a><em class='sharp'>#include</em> &lt;<a href='../I/424.html'>utils.h</a>&gt;
+<a id='L6' name='L6'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L7' name='L7'></a><em class='sharp'>#include</em> &lt;assert.h&gt;
+<a id='L8' name='L8'></a><em class='sharp'>#include</em> &lt;gnutls/gnutls.h&gt;
+<a id='L9' name='L9'></a><em class='sharp'>#include</em> &lt;<a href='../I/579.html'>gnutls/crypto.h</a>&gt;
+<a id='L10' name='L10'></a><em class='sharp'>#include</em> &lt;openssl/evp.h&gt;
+<a id='L11' name='L11'></a><em class='sharp'>#include</em> &lt;openssl/opensslv.h&gt;
+<a id='L12' name='L12'></a>
+<a id='L13' name='L13'></a><em class='comment'>/* This does check the AES and CHACHA20 implementations for compatibility</em>
+<a id='L14' name='L14'></a><em class='comment'> * with openssl.</em>
+<a id='L15' name='L15'></a><em class='comment'> */</em>
+<a id='L16' name='L16'></a>
+<a id='L17' name='L17'></a><em class='sharp'>#define</em> <a href='../R/266.html' title='Multiple referred from 3 places.'>BSIZE</a> (64*1024+12)
+<a id='L18' name='L18'></a><em class='sharp'>#define</em> <a href='../S/5081.html#L19' title='Referred from 19 in tests/slow/cipher-openssl-compat.c.'>B2SIZE</a> (1024+7)
+<a id='L19' name='L19'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> buffer_auth[<a href='../S/5081.html#L18' title='Defined at 18 in tests/slow/cipher-openssl-compat.c.'>B2SIZE</a>];
+<a id='L20' name='L20'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> orig_plain_data[<a href='../S/5081.html#L17' title='Defined at 17 in tests/slow/cipher-openssl-compat.c.'>BSIZE</a>];
+<a id='L21' name='L21'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> enc_data[<a href='../S/5081.html#L17' title='Defined at 17 in tests/slow/cipher-openssl-compat.c.'>BSIZE</a> + 32];      <em class='comment'>/* allow for tag */</em>
+<a id='L22' name='L22'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> dec_data[<a href='../S/5081.html#L17' title='Defined at 17 in tests/slow/cipher-openssl-compat.c.'>BSIZE</a>];
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../R/6367.html' title='Multiple referred from 6 places.'>cipher_test</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *ocipher, gnutls_cipher_algorithm_t gcipher,
+<a id='L25' name='L25'></a>                       <strong class='reserved'>unsigned</strong> tag_size)
+<a id='L26' name='L26'></a><em class='brace'>{</em>
+<a id='L27' name='L27'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L28' name='L28'></a>        gnutls_aead_cipher_hd_t hd;
+<a id='L29' name='L29'></a>        gnutls_datum_t dkey, dnonce;
+<a id='L30' name='L30'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> key[32];
+<a id='L31' name='L31'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> nonce[32];
+<a id='L32' name='L32'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> enc_data_size, dec_data_size;
+<a id='L33' name='L33'></a>        <strong class='reserved'>int</strong> dec_data_size2;
+<a id='L34' name='L34'></a>        EVP_CIPHER_CTX *ctx;
+<a id='L35' name='L35'></a>        <strong class='reserved'>const</strong> EVP_CIPHER *evp_cipher;
+<a id='L36' name='L36'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> tag[64];
+<a id='L37' name='L37'></a>        <strong class='reserved'>unsigned</strong> i;
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a>        <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("cipher: %s\n", ocipher);
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a>        <em class='comment'>/* decrypt with openssl */</em>
+<a id='L42' name='L42'></a>        evp_cipher = EVP_get_cipherbyname(ocipher);
+<a id='L43' name='L43'></a>        <strong class='reserved'>if</strong> (!evp_cipher) <em class='brace'>{</em>
+<a id='L44' name='L44'></a>                <em class='comment'>/* XXX: fix version check later when LibreSSL fixes support for aes-ccm and chacha20-poly1305 */</em>
+<a id='L45' name='L45'></a><em class='sharp'>#ifdef</em> LIBRESSL_VERSION_NUMBER
+<a id='L46' name='L46'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "EVP_get_cipherbyname failed for %s\n", ocipher);
+<a id='L47' name='L47'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L48' name='L48'></a><em class='sharp'>#else</em>
+<a id='L49' name='L49'></a>                <em class='comment'>/* OpenSSL should always work! */</em>
+<a id='L50' name='L50'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("EVP_get_cipherbyname failed for %s\n", ocipher);
+<a id='L51' name='L51'></a><em class='sharp'>#endif</em>
+<a id='L52' name='L52'></a>        <em class='brace'>}</em>
+<a id='L53' name='L53'></a>
+<a id='L54' name='L54'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; 32; i++) <em class='brace'>{</em>      <em class='comment'>/* try with multiple keys and nonces */</em>
+<a id='L55' name='L55'></a>                assert(<a href='../D/9220.html' title='Multiple defined in 6 places.'>gnutls_rnd</a>
+<a id='L56' name='L56'></a>                       (GNUTLS_RND_NONCE, orig_plain_data,
+<a id='L57' name='L57'></a>                        <strong class='reserved'>sizeof</strong>(orig_plain_data)) &gt;= 0);
+<a id='L58' name='L58'></a>                assert(<a href='../D/9220.html' title='Multiple defined in 6 places.'>gnutls_rnd</a>
+<a id='L59' name='L59'></a>                       (GNUTLS_RND_NONCE, buffer_auth,
+<a id='L60' name='L60'></a>                        <strong class='reserved'>sizeof</strong>(buffer_auth)) &gt;= 0);
+<a id='L61' name='L61'></a>                assert(<a href='../D/9220.html' title='Multiple defined in 6 places.'>gnutls_rnd</a>(GNUTLS_RND_NONCE, key, <strong class='reserved'>sizeof</strong>(key)) &gt;= 0);
+<a id='L62' name='L62'></a>                assert(<a href='../D/9220.html' title='Multiple defined in 6 places.'>gnutls_rnd</a>(GNUTLS_RND_NONCE, nonce, <strong class='reserved'>sizeof</strong>(nonce)) &gt;= 0);
+<a id='L63' name='L63'></a>
+<a id='L64' name='L64'></a>                dkey.data = (<strong class='reserved'>void</strong> *)key;
+<a id='L65' name='L65'></a>                dkey.size = <a href='../S/5256.html#L432' title='Defined at 432 in lib/algorithms/ciphers.c.'>gnutls_cipher_get_key_size</a>(gcipher);
+<a id='L66' name='L66'></a>                assert(<a href='../S/5805.html#L762' title='Defined at 762 in lib/crypto-api.c.'>gnutls_aead_cipher_init</a>(&amp;hd, gcipher, &amp;dkey) &gt;= 0);
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a>                dnonce.data = (<strong class='reserved'>void</strong> *)nonce;
+<a id='L69' name='L69'></a>                dnonce.size = <a href='../S/5256.html#L416' title='Defined at 416 in lib/algorithms/ciphers.c.'>gnutls_cipher_get_iv_size</a>(gcipher);
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a>                enc_data_size = <strong class='reserved'>sizeof</strong>(enc_data);
+<a id='L72' name='L72'></a>                assert(<a href='../S/5805.html#L875' title='Defined at 875 in lib/crypto-api.c.'>gnutls_aead_cipher_encrypt</a>(hd, dnonce.data, dnonce.size,
+<a id='L73' name='L73'></a>                                                  buffer_auth,
+<a id='L74' name='L74'></a>                                                  <strong class='reserved'>sizeof</strong>(buffer_auth), tag_size,
+<a id='L75' name='L75'></a>                                                  orig_plain_data,
+<a id='L76' name='L76'></a>                                                  <strong class='reserved'>sizeof</strong>(orig_plain_data),
+<a id='L77' name='L77'></a>                                                  enc_data,
+<a id='L78' name='L78'></a>                                                  &amp;enc_data_size) &gt;= 0);
+<a id='L79' name='L79'></a>
+<a id='L80' name='L80'></a>                <strong class='reserved'>if</strong> (debug)
+<a id='L81' name='L81'></a>                        <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("encrypted %d bytes, to %d\n",
+<a id='L82' name='L82'></a>                                (<strong class='reserved'>int</strong>)<strong class='reserved'>sizeof</strong>(orig_plain_data),
+<a id='L83' name='L83'></a>                                (<strong class='reserved'>int</strong>)enc_data_size);
+<a id='L84' name='L84'></a>
+<a id='L85' name='L85'></a>                dec_data_size = <strong class='reserved'>sizeof</strong>(dec_data);
+<a id='L86' name='L86'></a>                ret = <a href='../S/5805.html#L819' title='Defined at 819 in lib/crypto-api.c.'>gnutls_aead_cipher_decrypt</a>(hd, dnonce.data, dnonce.size,
+<a id='L87' name='L87'></a>                                                 buffer_auth,
+<a id='L88' name='L88'></a>                                                 <strong class='reserved'>sizeof</strong>(buffer_auth), tag_size,
+<a id='L89' name='L89'></a>                                                 enc_data, enc_data_size,
+<a id='L90' name='L90'></a>                                                 dec_data, &amp;dec_data_size);
+<a id='L91' name='L91'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L92' name='L92'></a>                        <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("error in gnutls_aead_cipher_decrypt for %s: %s\n",
+<a id='L93' name='L93'></a>                             ocipher, <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L94' name='L94'></a>                <em class='brace'>}</em>
+<a id='L95' name='L95'></a>
+<a id='L96' name='L96'></a>                <strong class='reserved'>if</strong> (dec_data_size != <strong class='reserved'>sizeof</strong>(orig_plain_data)
+<a id='L97' name='L97'></a>                    || memcmp(dec_data, orig_plain_data,
+<a id='L98' name='L98'></a>                              <strong class='reserved'>sizeof</strong>(orig_plain_data)) != 0) <em class='brace'>{</em>
+<a id='L99' name='L99'></a>                        <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("gnutls encrypt-decrypt failed (got: %d, expected: %d)\n", (<strong class='reserved'>int</strong>)dec_data_size, (<strong class='reserved'>int</strong>)<strong class='reserved'>sizeof</strong>(orig_plain_data));
+<a id='L100' name='L100'></a>                <em class='brace'>}</em>
+<a id='L101' name='L101'></a>
+<a id='L102' name='L102'></a>                <a href='../S/5805.html#L1402' title='Defined at 1402 in lib/crypto-api.c.'>gnutls_aead_cipher_deinit</a>(hd);
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a>                ctx = EVP_CIPHER_CTX_new();
+<a id='L105' name='L105'></a>
+<a id='L106' name='L106'></a><em class='sharp'>#if</em> <a href='../S/3977.html#L64' title='Defined at 64 in extra/includes/gnutls/openssl.h.'>OPENSSL_VERSION_NUMBER</a> &gt;= 0x10100000L
+<a id='L107' name='L107'></a>                <strong class='reserved'>if</strong> (gcipher == GNUTLS_CIPHER_AES_128_CCM
+<a id='L108' name='L108'></a>                    || gcipher == GNUTLS_CIPHER_AES_256_CCM) <em class='brace'>{</em>
+<a id='L109' name='L109'></a>                        assert(EVP_CipherInit_ex(ctx, evp_cipher, 0, 0, 0, 0) &gt;
+<a id='L110' name='L110'></a>                               0);
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a>                        assert(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_IVLEN, dnonce.size, 0)==1);
+<a id='L113' name='L113'></a>                        assert(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_TAG, tag_size,
+<a id='L114' name='L114'></a>                                            enc_data + enc_data_size - tag_size) == 1);
+<a id='L115' name='L115'></a>
+<a id='L116' name='L116'></a>                        assert(EVP_CipherInit_ex(ctx, 0, 0, key, nonce, 0) &gt;
+<a id='L117' name='L117'></a>                               0);
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a>                        dec_data_size2 = <strong class='reserved'>sizeof</strong>(dec_data);
+<a id='L120' name='L120'></a>                        <em class='comment'>/* Add plain size */</em>
+<a id='L121' name='L121'></a>                        assert(EVP_CipherUpdate
+<a id='L122' name='L122'></a>                               (ctx, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, &amp;dec_data_size2, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L123' name='L123'></a>                                enc_data_size - tag_size) &gt; 0);
+<a id='L124' name='L124'></a>
+<a id='L125' name='L125'></a>                        <em class='comment'>/* Add AAD */</em>
+<a id='L126' name='L126'></a>                        assert(EVP_CipherUpdate
+<a id='L127' name='L127'></a>                               (ctx, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, &amp;dec_data_size2, buffer_auth,
+<a id='L128' name='L128'></a>                                <strong class='reserved'>sizeof</strong>(buffer_auth)) &gt; 0);
+<a id='L129' name='L129'></a>
+<a id='L130' name='L130'></a>                        <em class='comment'>/* Decrypt */</em>
+<a id='L131' name='L131'></a>                        assert(EVP_CipherUpdate
+<a id='L132' name='L132'></a>                               (ctx, dec_data, &amp;dec_data_size2, enc_data,
+<a id='L133' name='L133'></a>                                enc_data_size - tag_size) &gt; 0);
+<a id='L134' name='L134'></a>
+<a id='L135' name='L135'></a>                        dec_data_size = dec_data_size2;
+<a id='L136' name='L136'></a>                        dec_data_size2 = tag_size;
+<a id='L137' name='L137'></a>
+<a id='L138' name='L138'></a>                        <strong class='reserved'>if</strong> (dec_data_size != <strong class='reserved'>sizeof</strong>(orig_plain_data)
+<a id='L139' name='L139'></a>                            || memcmp(dec_data, orig_plain_data,
+<a id='L140' name='L140'></a>                                      <strong class='reserved'>sizeof</strong>(orig_plain_data)) != 0) <em class='brace'>{</em>
+<a id='L141' name='L141'></a>                                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("openssl decrypt failed for %s\n", ocipher);
+<a id='L142' name='L142'></a>                        <em class='brace'>}</em>
+<a id='L143' name='L143'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong>
+<a id='L144' name='L144'></a><em class='sharp'>#endif</em>
+<a id='L145' name='L145'></a>                <em class='brace'>{</em>
+<a id='L146' name='L146'></a>                        assert(EVP_CipherInit_ex(ctx, evp_cipher, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, key, nonce, 0) &gt;
+<a id='L147' name='L147'></a>                               0);
+<a id='L148' name='L148'></a>
+<a id='L149' name='L149'></a>                        EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, tag_size,
+<a id='L150' name='L150'></a>                                            enc_data + enc_data_size - tag_size);
+<a id='L151' name='L151'></a>
+<a id='L152' name='L152'></a>                        dec_data_size2 = <strong class='reserved'>sizeof</strong>(dec_data);
+<a id='L153' name='L153'></a>
+<a id='L154' name='L154'></a>                        <em class='comment'>/* Add AAD */</em>
+<a id='L155' name='L155'></a>                        assert(EVP_CipherUpdate
+<a id='L156' name='L156'></a>                               (ctx, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, &amp;dec_data_size2, buffer_auth,
+<a id='L157' name='L157'></a>                                <strong class='reserved'>sizeof</strong>(buffer_auth)) &gt; 0);
+<a id='L158' name='L158'></a>
+<a id='L159' name='L159'></a>                        <em class='comment'>/* Decrypt */</em>
+<a id='L160' name='L160'></a>                        assert(EVP_CipherUpdate
+<a id='L161' name='L161'></a>                               (ctx, dec_data, &amp;dec_data_size2, enc_data,
+<a id='L162' name='L162'></a>                                enc_data_size - tag_size) &gt; 0);
+<a id='L163' name='L163'></a>
+<a id='L164' name='L164'></a>                        dec_data_size = dec_data_size2;
+<a id='L165' name='L165'></a>                        dec_data_size2 = tag_size;
+<a id='L166' name='L166'></a>                        assert(EVP_CipherFinal_ex(ctx, tag, &amp;dec_data_size2) &gt; 0);
+<a id='L167' name='L167'></a>
+<a id='L168' name='L168'></a>                        <strong class='reserved'>if</strong> (dec_data_size != <strong class='reserved'>sizeof</strong>(orig_plain_data)
+<a id='L169' name='L169'></a>                            || memcmp(dec_data, orig_plain_data,
+<a id='L170' name='L170'></a>                                      <strong class='reserved'>sizeof</strong>(orig_plain_data)) != 0) <em class='brace'>{</em>
+<a id='L171' name='L171'></a>                                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("openssl decrypt failed for %s\n", ocipher);
+<a id='L172' name='L172'></a>                        <em class='brace'>}</em>
+<a id='L173' name='L173'></a>
+<a id='L174' name='L174'></a>                <em class='brace'>}</em>
+<a id='L175' name='L175'></a>                EVP_CIPHER_CTX_free(ctx);
+<a id='L176' name='L176'></a>
+<a id='L177' name='L177'></a>        <em class='brace'>}</em>
+<a id='L178' name='L178'></a>
+<a id='L179' name='L179'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L180' name='L180'></a><em class='brace'>}</em>
+<a id='L181' name='L181'></a>
+<a id='L182' name='L182'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/10917.html' title='Multiple referred from 309 places.'>tls_log_func</a>(<strong class='reserved'>int</strong> level, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str)
+<a id='L183' name='L183'></a><em class='brace'>{</em>
+<a id='L184' name='L184'></a>        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "&lt;%d&gt;| %s", level, str);
+<a id='L185' name='L185'></a><em class='brace'>}</em>
+<a id='L186' name='L186'></a>
+<a id='L187' name='L187'></a><strong class='reserved'>void</strong> <a href='../R/6687.html' title='Multiple referred from 5 places.'>doit</a>(<strong class='reserved'>void</strong>)
+<a id='L188' name='L188'></a><em class='brace'>{</em>
+<a id='L189' name='L189'></a>        <a href='../S/6039.html#L104' title='Defined at 104 in lib/global.c.'>gnutls_global_set_log_function</a>(<a href='../D/11934.html' title='Multiple defined in 223 places.'>tls_log_func</a>);
+<a id='L190' name='L190'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L191' name='L191'></a>                <a href='../S/6039.html#L155' title='Defined at 155 in lib/global.c.'>gnutls_global_set_log_level</a>(4711);
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a>        <a href='../S/4443.html#L55' title='Defined at 55 in tests/utils.h.'>global_init</a>();
+<a id='L194' name='L194'></a>        <a href='../S/3972.html#L61' title='Defined at 61 in extra/gnutls_openssl.c.'>OpenSSL_add_all_algorithms</a>();
+<a id='L195' name='L195'></a>
+<a id='L196' name='L196'></a>        <em class='comment'>/* ciphers */</em>
+<a id='L197' name='L197'></a>        <a href='../S/5081.html#L24' title='Defined at 24 in tests/slow/cipher-openssl-compat.c.'>cipher_test</a>("aes-128-gcm", GNUTLS_CIPHER_AES_128_GCM, 16);
+<a id='L198' name='L198'></a>        <a href='../S/5081.html#L24' title='Defined at 24 in tests/slow/cipher-openssl-compat.c.'>cipher_test</a>("aes-192-gcm", GNUTLS_CIPHER_AES_192_GCM, 16);
+<a id='L199' name='L199'></a>        <a href='../S/5081.html#L24' title='Defined at 24 in tests/slow/cipher-openssl-compat.c.'>cipher_test</a>("aes-256-gcm", GNUTLS_CIPHER_AES_256_GCM, 16);
+<a id='L200' name='L200'></a><em class='sharp'>#if</em> <a href='../S/3977.html#L64' title='Defined at 64 in extra/includes/gnutls/openssl.h.'>OPENSSL_VERSION_NUMBER</a> &gt;= 0x10100000L
+<a id='L201' name='L201'></a>        <strong class='reserved'>if</strong> (!<a href='../S/5746.html#L489' title='Defined at 489 in lib/fips.c.'>gnutls_fips140_mode_enabled</a>()) <em class='brace'>{</em>
+<a id='L202' name='L202'></a>                <a href='../S/5081.html#L24' title='Defined at 24 in tests/slow/cipher-openssl-compat.c.'>cipher_test</a>("chacha20-poly1305", GNUTLS_CIPHER_CHACHA20_POLY1305, 16);
+<a id='L203' name='L203'></a>        <em class='brace'>}</em>
+<a id='L204' name='L204'></a>        <a href='../S/5081.html#L24' title='Defined at 24 in tests/slow/cipher-openssl-compat.c.'>cipher_test</a>("aes-128-ccm", GNUTLS_CIPHER_AES_128_CCM, 16);
+<a id='L205' name='L205'></a>        <a href='../S/5081.html#L24' title='Defined at 24 in tests/slow/cipher-openssl-compat.c.'>cipher_test</a>("aes-256-ccm", GNUTLS_CIPHER_AES_256_CCM, 16);
+<a id='L206' name='L206'></a><em class='sharp'>#endif</em>
+<a id='L207' name='L207'></a>
+<a id='L208' name='L208'></a>        <a href='../S/6039.html#L467' title='Defined at 467 in lib/global.c.'>gnutls_global_deinit</a>();
+<a id='L209' name='L209'></a>        <strong class='reserved'>return</strong>;
+<a id='L210' name='L210'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L24'>[^]</a><a href='#L187'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

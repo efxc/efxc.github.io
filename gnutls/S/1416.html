@@ -1,0 +1,348 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>doc/examples/ex-ocsp-client.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6451.html'>doc</a>/<a href='../files/6452.html'>examples</a>/ex-ocsp-client.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L37'>[^]</a><a href='#L301'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L37' title='Defined at 37.'>main</a></li>
+<li><a href='#L151' title='Defined at 151.'>_response_info</a></li>
+<li><a href='#L175' title='Defined at 175.'>load_cert</a></li>
+<li><a href='#L206' title='Defined at 206.'>_generate_request</a></li>
+<li><a href='#L235' title='Defined at 235.'>_verify_response</a></li>
+<li><a href='#L301' title='Defined at 301.'>get_data</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* This example code is placed in the public domain. */</em>
+<a id='L2' name='L2'></a>
+<a id='L3' name='L3'></a><em class='sharp'>#ifdef</em> HAVE_CONFIG_H
+<a id='L4' name='L4'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L5' name='L5'></a><em class='sharp'>#endif</em>
+<a id='L6' name='L6'></a>
+<a id='L7' name='L7'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L8' name='L8'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L9' name='L9'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L10' name='L10'></a><em class='sharp'>#include</em> &lt;gnutls/gnutls.h&gt;
+<a id='L11' name='L11'></a><em class='sharp'>#include</em> &lt;<a href='../I/579.html'>gnutls/crypto.h</a>&gt;
+<a id='L12' name='L12'></a><em class='sharp'>#include</em> &lt;<a href='../I/681.html'>gnutls/ocsp.h</a>&gt;
+<a id='L13' name='L13'></a><em class='sharp'>#ifndef</em> NO_LIBCURL
+<a id='L14' name='L14'></a><em class='sharp'>#include</em> &lt;curl/curl.h&gt;
+<a id='L15' name='L15'></a><em class='sharp'>#endif</em>
+<a id='L16' name='L16'></a><em class='sharp'>#include</em> "<a href='../I/149.html'>read-file.h</a>"
+<a id='L17' name='L17'></a>
+<a id='L18' name='L18'></a><a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../D/8028.html' title='Multiple defined in 4 places.'>get_data</a>(<strong class='reserved'>void</strong> *<a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> size, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> nmemb, <strong class='reserved'>void</strong> *userp);
+<a id='L19' name='L19'></a><strong class='reserved'>static</strong> gnutls_x509_crt_t <a href='../D/10154.html' title='Multiple defined in 4 places.'>load_cert</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *cert_file);
+<a id='L20' name='L20'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../D/6574.html' title='Multiple defined in 2 places.'>_response_info</a>(<strong class='reserved'>const</strong> gnutls_datum_t * data);
+<a id='L21' name='L21'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L22' name='L22'></a><a href='../D/5567.html' title='Multiple defined in 2 places.'>_generate_request</a>(gnutls_datum_t * rdata, gnutls_x509_crt_t cert,
+<a id='L23' name='L23'></a>                  gnutls_x509_crt_t issuer, gnutls_datum_t *nonce);
+<a id='L24' name='L24'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L25' name='L25'></a><a href='../D/6643.html' title='Multiple defined in 2 places.'>_verify_response</a>(gnutls_datum_t * data, gnutls_x509_crt_t cert,
+<a id='L26' name='L26'></a>                 gnutls_x509_crt_t signer, gnutls_datum_t *nonce);
+<a id='L27' name='L27'></a>
+<a id='L28' name='L28'></a><em class='comment'>/* This program queries an OCSP server.</em>
+<a id='L29' name='L29'></a><em class='comment'>   It expects three files. argv[1] containing the certificate to</em>
+<a id='L30' name='L30'></a><em class='comment'>   be checked, argv[2] holding the issuer for this certificate,</em>
+<a id='L31' name='L31'></a><em class='comment'>   and argv[3] holding a trusted certificate to verify OCSP's response.</em>
+<a id='L32' name='L32'></a><em class='comment'>   argv[4] is optional and should hold the server host name.</em>
+<a id='L33' name='L33'></a><em class='comment'>   </em>
+<a id='L34' name='L34'></a><em class='comment'>   For simplicity the libcurl library is used.</em>
+<a id='L35' name='L35'></a><em class='comment'> */</em>
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a><strong class='reserved'>int</strong> main(<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> *argv[])
+<a id='L38' name='L38'></a><em class='brace'>{</em>
+<a id='L39' name='L39'></a>        gnutls_datum_t ud, tmp;
+<a id='L40' name='L40'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L41' name='L41'></a>        gnutls_datum_t req;
+<a id='L42' name='L42'></a>        gnutls_x509_crt_t cert, issuer, signer;
+<a id='L43' name='L43'></a><em class='sharp'>#ifndef</em> NO_LIBCURL
+<a id='L44' name='L44'></a>        CURL *handle;
+<a id='L45' name='L45'></a>        <strong class='reserved'>struct</strong> curl_slist *headers = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L46' name='L46'></a><em class='sharp'>#endif</em>
+<a id='L47' name='L47'></a>        <strong class='reserved'>int</strong> <a href='../S/5549.html#L79' title='Defined at 79 in lib/nettle/ecc/ecc-add-jja.c.'>v</a>, seq;
+<a id='L48' name='L48'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *cert_file = argv[1];
+<a id='L49' name='L49'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *issuer_file = argv[2];
+<a id='L50' name='L50'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *signer_file = argv[3];
+<a id='L51' name='L51'></a>        <strong class='reserved'>char</strong> *hostname = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L52' name='L52'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> noncebuf[23];
+<a id='L53' name='L53'></a>        gnutls_datum_t nonce = <em class='brace'>{</em> noncebuf, <strong class='reserved'>sizeof</strong>(noncebuf) <em class='brace'>}</em>;
+<a id='L54' name='L54'></a>
+<a id='L55' name='L55'></a>        <a href='../S/6039.html#L222' title='Defined at 222 in lib/global.c.'>gnutls_global_init</a>();
+<a id='L56' name='L56'></a>
+<a id='L57' name='L57'></a>        <strong class='reserved'>if</strong> (argc &gt; 4)
+<a id='L58' name='L58'></a>                hostname = argv[4];
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a>        ret = <a href='../D/9220.html' title='Multiple defined in 6 places.'>gnutls_rnd</a>(GNUTLS_RND_NONCE, nonce.data, nonce.size);
+<a id='L61' name='L61'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L62' name='L62'></a>                exit(1);
+<a id='L63' name='L63'></a>
+<a id='L64' name='L64'></a>        cert = <a href='../D/10154.html' title='Multiple defined in 4 places.'>load_cert</a>(cert_file);
+<a id='L65' name='L65'></a>        issuer = <a href='../D/10154.html' title='Multiple defined in 4 places.'>load_cert</a>(issuer_file);
+<a id='L66' name='L66'></a>        signer = <a href='../D/10154.html' title='Multiple defined in 4 places.'>load_cert</a>(signer_file);
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a>        <strong class='reserved'>if</strong> (hostname == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L69' name='L69'></a>
+<a id='L70' name='L70'></a>                <strong class='reserved'>for</strong> (seq = 0;; seq++) <em class='brace'>{</em>
+<a id='L71' name='L71'></a>                        ret =
+<a id='L72' name='L72'></a>                            <a href='../S/5349.html#L4174' title='Defined at 4174 in lib/x509/x509.c.'>gnutls_x509_crt_get_authority_info_access</a>(cert,
+<a id='L73' name='L73'></a>                                                                      seq,
+<a id='L74' name='L74'></a>                                                                      <a href='../S/6011.html#L316' title='Defined at 316 in lib/includes/gnutls/x509.h.'>GNUTLS_IA_OCSP_URI</a>,
+<a id='L75' name='L75'></a>                                                                      &amp;tmp,
+<a id='L76' name='L76'></a>                                                                      <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L77' name='L77'></a>                        <strong class='reserved'>if</strong> (ret == GNUTLS_E_UNKNOWN_ALGORITHM)
+<a id='L78' name='L78'></a>                                <strong class='reserved'>continue</strong>;
+<a id='L79' name='L79'></a>                        <strong class='reserved'>if</strong> (ret == GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE) <em class='brace'>{</em>
+<a id='L80' name='L80'></a>                                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr,
+<a id='L81' name='L81'></a>                                        "No URI was found in the certificate.\n");
+<a id='L82' name='L82'></a>                                exit(1);
+<a id='L83' name='L83'></a>                        <em class='brace'>}</em>
+<a id='L84' name='L84'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L85' name='L85'></a>                                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "error: %s\n",
+<a id='L86' name='L86'></a>                                        <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L87' name='L87'></a>                                exit(1);
+<a id='L88' name='L88'></a>                        <em class='brace'>}</em>
+<a id='L89' name='L89'></a>
+<a id='L90' name='L90'></a>                        <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("CA issuers URI: %.*s\n", tmp.size,
+<a id='L91' name='L91'></a>                               tmp.data);
+<a id='L92' name='L92'></a>
+<a id='L93' name='L93'></a>                        hostname = <a href='../D/10239.html' title='Multiple defined in 8 places.'>malloc</a>(tmp.size + 1);
+<a id='L94' name='L94'></a>                        memcpy(hostname, tmp.data, tmp.size);
+<a id='L95' name='L95'></a>                        hostname[tmp.size] = 0;
+<a id='L96' name='L96'></a>
+<a id='L97' name='L97'></a>                        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(tmp.data);
+<a id='L98' name='L98'></a>                        <strong class='reserved'>break</strong>;
+<a id='L99' name='L99'></a>                <em class='brace'>}</em>
+<a id='L100' name='L100'></a>
+<a id='L101' name='L101'></a>        <em class='brace'>}</em>
+<a id='L102' name='L102'></a>
+<a id='L103' name='L103'></a>        <em class='comment'>/* Note that the OCSP servers hostname might be available</em>
+<a id='L104' name='L104'></a><em class='comment'>         * using gnutls_x509_crt_get_authority_info_access() in the issuer's</em>
+<a id='L105' name='L105'></a><em class='comment'>         * certificate */</em>
+<a id='L106' name='L106'></a>
+<a id='L107' name='L107'></a>        memset(&amp;ud, 0, <strong class='reserved'>sizeof</strong>(ud));
+<a id='L108' name='L108'></a>        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Connecting to %s\n", hostname);
+<a id='L109' name='L109'></a>
+<a id='L110' name='L110'></a>        <a href='../D/5567.html' title='Multiple defined in 2 places.'>_generate_request</a>(&amp;req, cert, issuer, &amp;nonce);
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a><em class='sharp'>#ifndef</em> NO_LIBCURL
+<a id='L113' name='L113'></a>        curl_global_init(CURL_GLOBAL_ALL);
+<a id='L114' name='L114'></a>
+<a id='L115' name='L115'></a>        handle = curl_easy_init();
+<a id='L116' name='L116'></a>        <strong class='reserved'>if</strong> (handle == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L117' name='L117'></a>                exit(1);
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a>        headers =
+<a id='L120' name='L120'></a>            curl_slist_append(headers,
+<a id='L121' name='L121'></a>                              "Content-Type: application/ocsp-request");
+<a id='L122' name='L122'></a>
+<a id='L123' name='L123'></a>        curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headers);
+<a id='L124' name='L124'></a>        curl_easy_setopt(handle, CURLOPT_POSTFIELDS, (<strong class='reserved'>void</strong> *) req.data);
+<a id='L125' name='L125'></a>        curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE, req.size);
+<a id='L126' name='L126'></a>        curl_easy_setopt(handle, CURLOPT_URL, hostname);
+<a id='L127' name='L127'></a>        curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, <a href='../D/8028.html' title='Multiple defined in 4 places.'>get_data</a>);
+<a id='L128' name='L128'></a>        curl_easy_setopt(handle, CURLOPT_WRITEDATA, &amp;ud);
+<a id='L129' name='L129'></a>
+<a id='L130' name='L130'></a>        ret = curl_easy_perform(handle);
+<a id='L131' name='L131'></a>        <strong class='reserved'>if</strong> (ret != 0) <em class='brace'>{</em>
+<a id='L132' name='L132'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "curl[%d] error %d\n", __LINE__, ret);
+<a id='L133' name='L133'></a>                exit(1);
+<a id='L134' name='L134'></a>        <em class='brace'>}</em>
+<a id='L135' name='L135'></a>
+<a id='L136' name='L136'></a>        curl_easy_cleanup(handle);
+<a id='L137' name='L137'></a><em class='sharp'>#endif</em>
+<a id='L138' name='L138'></a>
+<a id='L139' name='L139'></a>        <a href='../D/6574.html' title='Multiple defined in 2 places.'>_response_info</a>(&amp;ud);
+<a id='L140' name='L140'></a>
+<a id='L141' name='L141'></a>        <a href='../S/5549.html#L79' title='Defined at 79 in lib/nettle/ecc/ecc-add-jja.c.'>v</a> = <a href='../D/6643.html' title='Multiple defined in 2 places.'>_verify_response</a>(&amp;ud, cert, signer, &amp;nonce);
+<a id='L142' name='L142'></a>
+<a id='L143' name='L143'></a>        <a href='../S/5349.html#L291' title='Defined at 291 in lib/x509/x509.c.'>gnutls_x509_crt_deinit</a>(cert);
+<a id='L144' name='L144'></a>        <a href='../S/5349.html#L291' title='Defined at 291 in lib/x509/x509.c.'>gnutls_x509_crt_deinit</a>(issuer);
+<a id='L145' name='L145'></a>        <a href='../S/5349.html#L291' title='Defined at 291 in lib/x509/x509.c.'>gnutls_x509_crt_deinit</a>(signer);
+<a id='L146' name='L146'></a>        <a href='../S/6039.html#L467' title='Defined at 467 in lib/global.c.'>gnutls_global_deinit</a>();
+<a id='L147' name='L147'></a>
+<a id='L148' name='L148'></a>        <strong class='reserved'>return</strong> <a href='../S/5549.html#L79' title='Defined at 79 in lib/nettle/ecc/ecc-add-jja.c.'>v</a>;
+<a id='L149' name='L149'></a><em class='brace'>}</em>
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/5762.html' title='Multiple referred from 4 places.'>_response_info</a>(<strong class='reserved'>const</strong> gnutls_datum_t * data)
+<a id='L152' name='L152'></a><em class='brace'>{</em>
+<a id='L153' name='L153'></a>        <a href='../S/6010.html#L196' title='Defined at 196 in lib/includes/gnutls/ocsp.h.'>gnutls_ocsp_resp_t</a> resp;
+<a id='L154' name='L154'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L155' name='L155'></a>        gnutls_datum buf;
+<a id='L156' name='L156'></a>
+<a id='L157' name='L157'></a>        ret = <a href='../S/5343.html#L115' title='Defined at 115 in lib/x509/ocsp.c.'>gnutls_ocsp_resp_init</a>(&amp;resp);
+<a id='L158' name='L158'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L159' name='L159'></a>                exit(1);
+<a id='L160' name='L160'></a>
+<a id='L161' name='L161'></a>        ret = <a href='../S/5343.html#L230' title='Defined at 230 in lib/x509/ocsp.c.'>gnutls_ocsp_resp_import</a>(resp, data);
+<a id='L162' name='L162'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L163' name='L163'></a>                exit(1);
+<a id='L164' name='L164'></a>
+<a id='L165' name='L165'></a>        ret = <a href='../S/5365.html#L642' title='Defined at 642 in lib/x509/ocsp_output.c.'>gnutls_ocsp_resp_print</a>(resp, <a href='../S/6010.html#L48' title='Defined at 48 in lib/includes/gnutls/ocsp.h.'>GNUTLS_OCSP_PRINT_FULL</a>, &amp;buf);
+<a id='L166' name='L166'></a>        <strong class='reserved'>if</strong> (ret != 0)
+<a id='L167' name='L167'></a>                exit(1);
+<a id='L168' name='L168'></a>
+<a id='L169' name='L169'></a>        <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("%.*s", buf.size, buf.data);
+<a id='L170' name='L170'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(buf.data);
+<a id='L171' name='L171'></a>
+<a id='L172' name='L172'></a>        <a href='../S/5343.html#L153' title='Defined at 153 in lib/x509/ocsp.c.'>gnutls_ocsp_resp_deinit</a>(resp);
+<a id='L173' name='L173'></a><em class='brace'>}</em>
+<a id='L174' name='L174'></a>
+<a id='L175' name='L175'></a><strong class='reserved'>static</strong> gnutls_x509_crt_t <a href='../R/9180.html' title='Multiple referred from 28 places.'>load_cert</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *cert_file)
+<a id='L176' name='L176'></a><em class='brace'>{</em>
+<a id='L177' name='L177'></a>        gnutls_x509_crt_t crt;
+<a id='L178' name='L178'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L179' name='L179'></a>        gnutls_datum_t data;
+<a id='L180' name='L180'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> size;
+<a id='L181' name='L181'></a>
+<a id='L182' name='L182'></a>        ret = <a href='../S/5349.html#L199' title='Defined at 199 in lib/x509/x509.c.'>gnutls_x509_crt_init</a>(&amp;crt);
+<a id='L183' name='L183'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L184' name='L184'></a>                exit(1);
+<a id='L185' name='L185'></a>
+<a id='L186' name='L186'></a>        data.data = (<strong class='reserved'>void</strong> *) <a href='../D/11054.html' title='Multiple defined in 2 places.'>read_file</a>(cert_file, <a href='../D/3568.html' title='Multiple defined in 2 places.'>RF_BINARY</a>, &amp;size);
+<a id='L187' name='L187'></a>        data.size = size;
+<a id='L188' name='L188'></a>
+<a id='L189' name='L189'></a>        <strong class='reserved'>if</strong> (!data.data) <em class='brace'>{</em>
+<a id='L190' name='L190'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot open file: %s\n", cert_file);
+<a id='L191' name='L191'></a>                exit(1);
+<a id='L192' name='L192'></a>        <em class='brace'>}</em>
+<a id='L193' name='L193'></a>
+<a id='L194' name='L194'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(crt, &amp;data, GNUTLS_X509_FMT_PEM);
+<a id='L195' name='L195'></a>        <a href='../D/7914.html' title='Multiple defined in 4 places.'>free</a>(data.data);
+<a id='L196' name='L196'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L197' name='L197'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Cannot import certificate in %s: %s\n",
+<a id='L198' name='L198'></a>                        cert_file, <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L199' name='L199'></a>                exit(1);
+<a id='L200' name='L200'></a>        <em class='brace'>}</em>
+<a id='L201' name='L201'></a>
+<a id='L202' name='L202'></a>        <strong class='reserved'>return</strong> crt;
+<a id='L203' name='L203'></a><em class='brace'>}</em>
+<a id='L204' name='L204'></a>
+<a id='L205' name='L205'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L206' name='L206'></a><a href='../R/4778.html' title='Multiple referred from 5 places.'>_generate_request</a>(gnutls_datum_t * rdata, gnutls_x509_crt_t cert,
+<a id='L207' name='L207'></a>                  gnutls_x509_crt_t issuer, gnutls_datum_t *nonce)
+<a id='L208' name='L208'></a><em class='brace'>{</em>
+<a id='L209' name='L209'></a>        <a href='../S/6010.html#L144' title='Defined at 144 in lib/includes/gnutls/ocsp.h.'>gnutls_ocsp_req_t</a> req;
+<a id='L210' name='L210'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L211' name='L211'></a>
+<a id='L212' name='L212'></a>        ret = <a href='../S/5343.html#L66' title='Defined at 66 in lib/x509/ocsp.c.'>gnutls_ocsp_req_init</a>(&amp;req);
+<a id='L213' name='L213'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L214' name='L214'></a>                exit(1);
+<a id='L215' name='L215'></a>
+<a id='L216' name='L216'></a>        ret = <a href='../S/5343.html#L712' title='Defined at 712 in lib/x509/ocsp.c.'>gnutls_ocsp_req_add_cert</a>(req, GNUTLS_DIG_SHA1, issuer, cert);
+<a id='L217' name='L217'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L218' name='L218'></a>                exit(1);
+<a id='L219' name='L219'></a>
+<a id='L220' name='L220'></a>
+<a id='L221' name='L221'></a>        ret = <a href='../S/5343.html#L955' title='Defined at 955 in lib/x509/ocsp.c.'>gnutls_ocsp_req_set_nonce</a>(req, 0, nonce);
+<a id='L222' name='L222'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L223' name='L223'></a>                exit(1);
+<a id='L224' name='L224'></a>
+<a id='L225' name='L225'></a>        ret = <a href='../S/5343.html#L369' title='Defined at 369 in lib/x509/ocsp.c.'>gnutls_ocsp_req_export</a>(req, rdata);
+<a id='L226' name='L226'></a>        <strong class='reserved'>if</strong> (ret != 0)
+<a id='L227' name='L227'></a>                exit(1);
+<a id='L228' name='L228'></a>
+<a id='L229' name='L229'></a>        <a href='../S/5343.html#L94' title='Defined at 94 in lib/x509/ocsp.c.'>gnutls_ocsp_req_deinit</a>(req);
+<a id='L230' name='L230'></a>
+<a id='L231' name='L231'></a>        <strong class='reserved'>return</strong>;
+<a id='L232' name='L232'></a><em class='brace'>}</em>
+<a id='L233' name='L233'></a>
+<a id='L234' name='L234'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L235' name='L235'></a><a href='../R/5825.html' title='Multiple referred from 8 places.'>_verify_response</a>(gnutls_datum_t * data, gnutls_x509_crt_t cert,
+<a id='L236' name='L236'></a>                 gnutls_x509_crt_t signer, gnutls_datum_t *nonce)
+<a id='L237' name='L237'></a><em class='brace'>{</em>
+<a id='L238' name='L238'></a>        <a href='../S/6010.html#L196' title='Defined at 196 in lib/includes/gnutls/ocsp.h.'>gnutls_ocsp_resp_t</a> resp;
+<a id='L239' name='L239'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L240' name='L240'></a>        <strong class='reserved'>unsigned</strong> <a href='../D/12154.html' title='Multiple defined in 5 places.'>verify</a>;
+<a id='L241' name='L241'></a>        gnutls_datum_t rnonce;
+<a id='L242' name='L242'></a>
+<a id='L243' name='L243'></a>        ret = <a href='../S/5343.html#L115' title='Defined at 115 in lib/x509/ocsp.c.'>gnutls_ocsp_resp_init</a>(&amp;resp);
+<a id='L244' name='L244'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L245' name='L245'></a>                exit(1);
+<a id='L246' name='L246'></a>
+<a id='L247' name='L247'></a>        ret = <a href='../S/5343.html#L230' title='Defined at 230 in lib/x509/ocsp.c.'>gnutls_ocsp_resp_import</a>(resp, data);
+<a id='L248' name='L248'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L249' name='L249'></a>                exit(1);
+<a id='L250' name='L250'></a>
+<a id='L251' name='L251'></a>        ret = <a href='../S/5343.html#L1357' title='Defined at 1357 in lib/x509/ocsp.c.'>gnutls_ocsp_resp_check_crt</a>(resp, 0, cert);
+<a id='L252' name='L252'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L253' name='L253'></a>                exit(1);
+<a id='L254' name='L254'></a>
+<a id='L255' name='L255'></a>        ret = <a href='../S/5343.html#L1756' title='Defined at 1756 in lib/x509/ocsp.c.'>gnutls_ocsp_resp_get_nonce</a>(resp, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, &amp;rnonce);
+<a id='L256' name='L256'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L257' name='L257'></a>                exit(1);
+<a id='L258' name='L258'></a>
+<a id='L259' name='L259'></a>        <strong class='reserved'>if</strong> (rnonce.size != nonce-&gt;size || memcmp(nonce-&gt;data, rnonce.data,
+<a id='L260' name='L260'></a>                nonce-&gt;size) != 0) <em class='brace'>{</em>
+<a id='L261' name='L261'></a>                exit(1);
+<a id='L262' name='L262'></a>        <em class='brace'>}</em>
+<a id='L263' name='L263'></a>
+<a id='L264' name='L264'></a>        ret = <a href='../S/5343.html#L2212' title='Defined at 2212 in lib/x509/ocsp.c.'>gnutls_ocsp_resp_verify_direct</a>(resp, signer, &amp;<a href='../D/12154.html' title='Multiple defined in 5 places.'>verify</a>, 0);
+<a id='L265' name='L265'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L266' name='L266'></a>                exit(1);
+<a id='L267' name='L267'></a>
+<a id='L268' name='L268'></a>        <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("Verifying OCSP Response: ");
+<a id='L269' name='L269'></a>        <strong class='reserved'>if</strong> (<a href='../D/12154.html' title='Multiple defined in 5 places.'>verify</a> == 0)
+<a id='L270' name='L270'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("Verification success!\n");
+<a id='L271' name='L271'></a>        <strong class='reserved'>else</strong>
+<a id='L272' name='L272'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("Verification error!\n");
+<a id='L273' name='L273'></a>
+<a id='L274' name='L274'></a>        <strong class='reserved'>if</strong> (<a href='../D/12154.html' title='Multiple defined in 5 places.'>verify</a> &amp; <a href='../S/6010.html#L134' title='Defined at 134 in lib/includes/gnutls/ocsp.h.'>GNUTLS_OCSP_VERIFY_SIGNER_NOT_FOUND</a>)
+<a id='L275' name='L275'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("Signer cert not found\n");
+<a id='L276' name='L276'></a>
+<a id='L277' name='L277'></a>        <strong class='reserved'>if</strong> (<a href='../D/12154.html' title='Multiple defined in 5 places.'>verify</a> &amp; <a href='../S/6010.html#L135' title='Defined at 135 in lib/includes/gnutls/ocsp.h.'>GNUTLS_OCSP_VERIFY_SIGNER_KEYUSAGE_ERROR</a>)
+<a id='L278' name='L278'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("Signer cert keyusage error\n");
+<a id='L279' name='L279'></a>
+<a id='L280' name='L280'></a>        <strong class='reserved'>if</strong> (<a href='../D/12154.html' title='Multiple defined in 5 places.'>verify</a> &amp; <a href='../S/6010.html#L136' title='Defined at 136 in lib/includes/gnutls/ocsp.h.'>GNUTLS_OCSP_VERIFY_UNTRUSTED_SIGNER</a>)
+<a id='L281' name='L281'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("Signer cert is not trusted\n");
+<a id='L282' name='L282'></a>
+<a id='L283' name='L283'></a>        <strong class='reserved'>if</strong> (<a href='../D/12154.html' title='Multiple defined in 5 places.'>verify</a> &amp; <a href='../S/6010.html#L137' title='Defined at 137 in lib/includes/gnutls/ocsp.h.'>GNUTLS_OCSP_VERIFY_INSECURE_ALGORITHM</a>)
+<a id='L284' name='L284'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("Insecure algorithm\n");
+<a id='L285' name='L285'></a>
+<a id='L286' name='L286'></a>        <strong class='reserved'>if</strong> (<a href='../D/12154.html' title='Multiple defined in 5 places.'>verify</a> &amp; <a href='../S/6010.html#L138' title='Defined at 138 in lib/includes/gnutls/ocsp.h.'>GNUTLS_OCSP_VERIFY_SIGNATURE_FAILURE</a>)
+<a id='L287' name='L287'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("Signature failure\n");
+<a id='L288' name='L288'></a>
+<a id='L289' name='L289'></a>        <strong class='reserved'>if</strong> (<a href='../D/12154.html' title='Multiple defined in 5 places.'>verify</a> &amp; <a href='../S/6010.html#L139' title='Defined at 139 in lib/includes/gnutls/ocsp.h.'>GNUTLS_OCSP_VERIFY_CERT_NOT_ACTIVATED</a>)
+<a id='L290' name='L290'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("Signer cert not yet activated\n");
+<a id='L291' name='L291'></a>
+<a id='L292' name='L292'></a>        <strong class='reserved'>if</strong> (<a href='../D/12154.html' title='Multiple defined in 5 places.'>verify</a> &amp; <a href='../S/6010.html#L140' title='Defined at 140 in lib/includes/gnutls/ocsp.h.'>GNUTLS_OCSP_VERIFY_CERT_EXPIRED</a>)
+<a id='L293' name='L293'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("Signer cert expired\n");
+<a id='L294' name='L294'></a>
+<a id='L295' name='L295'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(rnonce.data);
+<a id='L296' name='L296'></a>        <a href='../S/5343.html#L153' title='Defined at 153 in lib/x509/ocsp.c.'>gnutls_ocsp_resp_deinit</a>(resp);
+<a id='L297' name='L297'></a>
+<a id='L298' name='L298'></a>        <strong class='reserved'>return</strong> <a href='../D/12154.html' title='Multiple defined in 5 places.'>verify</a>;
+<a id='L299' name='L299'></a><em class='brace'>}</em>
+<a id='L300' name='L300'></a>
+<a id='L301' name='L301'></a><a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../R/7175.html' title='Multiple referred from 5 places.'>get_data</a>(<strong class='reserved'>void</strong> *<a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> size, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> nmemb, <strong class='reserved'>void</strong> *userp)
+<a id='L302' name='L302'></a><em class='brace'>{</em>
+<a id='L303' name='L303'></a>        gnutls_datum_t *ud = userp;
+<a id='L304' name='L304'></a>
+<a id='L305' name='L305'></a>        size *= nmemb;
+<a id='L306' name='L306'></a>
+<a id='L307' name='L307'></a>        ud-&gt;data = <a href='../D/11069.html' title='Multiple defined in 6 places.'>realloc</a>(ud-&gt;data, size + ud-&gt;size);
+<a id='L308' name='L308'></a>        <strong class='reserved'>if</strong> (ud-&gt;data == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L309' name='L309'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Not enough memory for the request\n");
+<a id='L310' name='L310'></a>                exit(1);
+<a id='L311' name='L311'></a>        <em class='brace'>}</em>
+<a id='L312' name='L312'></a>
+<a id='L313' name='L313'></a>        memcpy(&amp;ud-&gt;data[ud-&gt;size], <a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>, size);
+<a id='L314' name='L314'></a>        ud-&gt;size += size;
+<a id='L315' name='L315'></a>
+<a id='L316' name='L316'></a>        <strong class='reserved'>return</strong> size;
+<a id='L317' name='L317'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L37'>[^]</a><a href='#L301'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

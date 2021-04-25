@@ -1,0 +1,305 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>examples/rsa-encrypt.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/766.html'>examples</a>/rsa-encrypt.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L59'>[^]</a><a href='#L173'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L59' title='Defined at 59.'>rsa_session_set_encrypt_key</a></li>
+<li><a href='#L72' title='Defined at 72.'>write_uint32</a></li>
+<li><a href='#L81' title='Defined at 81.'>write_version</a></li>
+<li><a href='#L87' title='Defined at 87.'>write_bignum</a></li>
+<li><a href='#L107' title='Defined at 107.'>process_file</a></li>
+<li><a href='#L164' title='Defined at 164.'>usage</a></li>
+<li><a href='#L173' title='Defined at 173.'>main</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* rsa-encrypt.c</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Copyright (C) 2002 Niels Möller</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   This file is part of GNU Nettle.</em>
+<a id='L6' name='L6'></a><em class='comment'></em>
+<a id='L7' name='L7'></a><em class='comment'>   GNU Nettle is free software: you can redistribute it and/or</em>
+<a id='L8' name='L8'></a><em class='comment'>   modify it under the terms of either:</em>
+<a id='L9' name='L9'></a><em class='comment'></em>
+<a id='L10' name='L10'></a><em class='comment'>     * the GNU Lesser General Public License as published by the Free</em>
+<a id='L11' name='L11'></a><em class='comment'>       Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L12' name='L12'></a><em class='comment'>       option) any later version.</em>
+<a id='L13' name='L13'></a><em class='comment'></em>
+<a id='L14' name='L14'></a><em class='comment'>   or</em>
+<a id='L15' name='L15'></a><em class='comment'></em>
+<a id='L16' name='L16'></a><em class='comment'>     * the GNU General Public License as published by the Free</em>
+<a id='L17' name='L17'></a><em class='comment'>       Software Foundation; either version 2 of the License, or (at your</em>
+<a id='L18' name='L18'></a><em class='comment'>       option) any later version.</em>
+<a id='L19' name='L19'></a><em class='comment'></em>
+<a id='L20' name='L20'></a><em class='comment'>   or both in parallel, as here.</em>
+<a id='L21' name='L21'></a><em class='comment'></em>
+<a id='L22' name='L22'></a><em class='comment'>   GNU Nettle is distributed in the hope that it will be useful,</em>
+<a id='L23' name='L23'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L24' name='L24'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L25' name='L25'></a><em class='comment'>   General Public License for more details.</em>
+<a id='L26' name='L26'></a><em class='comment'></em>
+<a id='L27' name='L27'></a><em class='comment'>   You should have received copies of the GNU General Public License and</em>
+<a id='L28' name='L28'></a><em class='comment'>   the GNU Lesser General Public License along with this program.  If</em>
+<a id='L29' name='L29'></a><em class='comment'>   not, see http://www.gnu.org/licenses/.</em>
+<a id='L30' name='L30'></a><em class='comment'>*/</em>
+<a id='L31' name='L31'></a>   
+<a id='L32' name='L32'></a><em class='sharp'>#if</em> HAVE_CONFIG_H
+<a id='L33' name='L33'></a><em class='sharp'># include</em> "config.h"
+<a id='L34' name='L34'></a><em class='sharp'>#endif</em>
+<a id='L35' name='L35'></a>
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> &lt;assert.h&gt;
+<a id='L37' name='L37'></a><em class='sharp'>#include</em> &lt;ctype.h&gt;
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L40' name='L40'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L42' name='L42'></a><em class='sharp'>#ifdef</em> WIN32
+<a id='L43' name='L43'></a><em class='sharp'>#include</em> &lt;fcntl.h&gt;
+<a id='L44' name='L44'></a><em class='sharp'>#endif</em>
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a><em class='comment'>/* string.h must be included before gmp.h */</em>
+<a id='L47' name='L47'></a><em class='sharp'>#include</em> "<a href='257.html'>bignum.h</a>"
+<a id='L48' name='L48'></a><em class='sharp'>#include</em> "<a href='337.html'>buffer.h</a>"
+<a id='L49' name='L49'></a><em class='sharp'>#include</em> "<a href='251.html'>macros.h</a>"
+<a id='L50' name='L50'></a><em class='sharp'>#include</em> "<a href='743.html'>rsa.h</a>"
+<a id='L51' name='L51'></a><em class='sharp'>#include</em> "<a href='502.html'>yarrow.h</a>"
+<a id='L52' name='L52'></a>
+<a id='L53' name='L53'></a><em class='sharp'>#include</em> "<a href='222.html'>io.h</a>"
+<a id='L54' name='L54'></a><em class='sharp'>#include</em> "<a href='214.html'>rsa-session.h</a>"
+<a id='L55' name='L55'></a>
+<a id='L56' name='L56'></a><em class='sharp'>#include</em> "<a href='595.html'>getopt.h</a>"
+<a id='L57' name='L57'></a>
+<a id='L58' name='L58'></a><strong class='reserved'>void</strong>
+<a id='L59' name='L59'></a><a href='../R/2165.html' title='Multiple referred from 2 places.'>rsa_session_set_encrypt_key</a>(<strong class='reserved'>struct</strong> <a href='../S/214.html#L40' title='Defined at 40 in examples/rsa-session.h.'>rsa_session</a> *ctx,
+<a id='L60' name='L60'></a>                            <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/214.html#L47' title='Defined at 47 in examples/rsa-session.h.'>rsa_session_info</a> *key)
+<a id='L61' name='L61'></a><em class='brace'>{</em>
+<a id='L62' name='L62'></a>  <strong class='reserved'>const</strong> uint8_t *aes_key = <a href='../S/214.html#L54' title='Defined at 54 in examples/rsa-session.h.'>SESSION_AES_KEY</a>(key);
+<a id='L63' name='L63'></a>  <strong class='reserved'>const</strong> uint8_t *iv = <a href='../S/214.html#L55' title='Defined at 55 in examples/rsa-session.h.'>SESSION_IV</a>(key);
+<a id='L64' name='L64'></a>  <strong class='reserved'>const</strong> uint8_t *hmac_key = <a href='../S/214.html#L56' title='Defined at 56 in examples/rsa-session.h.'>SESSION_HMAC_KEY</a>(key);
+<a id='L65' name='L65'></a>  
+<a id='L66' name='L66'></a>  <a href='../D/1120.html' title='Multiple defined in 2 places.'>aes256_set_encrypt_key</a>(&amp;ctx-&gt;aes.ctx, aes_key);
+<a id='L67' name='L67'></a>  <a href='../S/751.html#L62' title='Defined at 62 in cbc.h.'>CBC_SET_IV</a>(&amp;ctx-&gt;aes, iv);
+<a id='L68' name='L68'></a>  <a href='../D/1800.html' title='Multiple defined in 2 places.'>hmac_sha1_set_key</a>(&amp;ctx-&gt;hmac, <a href='../S/70.html#L50' title='Defined at 50 in sha1.h.'>SHA1_DIGEST_SIZE</a>, hmac_key);
+<a id='L69' name='L69'></a><em class='brace'>}</em>
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L72' name='L72'></a><a href='../R/2543.html' title='Multiple referred from 2 places.'>write_uint32</a>(FILE *f, uint32_t n)
+<a id='L73' name='L73'></a><em class='brace'>{</em>
+<a id='L74' name='L74'></a>  uint8_t buffer[4];
+<a id='L75' name='L75'></a>  <a href='../S/251.html#L65' title='Defined at 65 in macros.h.'>WRITE_UINT32</a>(buffer, n);
+<a id='L76' name='L76'></a>
+<a id='L77' name='L77'></a>  <strong class='reserved'>return</strong> <a href='../S/220.html#L146' title='Defined at 146 in examples/io.c.'>write_data</a>(f, <strong class='reserved'>sizeof</strong>(buffer), buffer);
+<a id='L78' name='L78'></a><em class='brace'>}</em>
+<a id='L79' name='L79'></a>
+<a id='L80' name='L80'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L81' name='L81'></a><a href='../S/228.html#L249' title='Referred from 249 in examples/rsa-encrypt.c.'>write_version</a>(FILE *f)
+<a id='L82' name='L82'></a><em class='brace'>{</em>
+<a id='L83' name='L83'></a>  <strong class='reserved'>return</strong> <a href='../S/228.html#L72' title='Defined at 72 in examples/rsa-encrypt.c.'>write_uint32</a>(f, 1);
+<a id='L84' name='L84'></a><em class='brace'>}</em>
+<a id='L85' name='L85'></a>
+<a id='L86' name='L86'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L87' name='L87'></a><a href='../S/228.html#L262' title='Referred from 262 in examples/rsa-encrypt.c.'>write_bignum</a>(FILE *f, <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>)
+<a id='L88' name='L88'></a><em class='brace'>{</em>
+<a id='L89' name='L89'></a>  <strong class='reserved'>unsigned</strong> size = <a href='../S/469.html#L78' title='Defined at 78 in bignum.c.'>nettle_mpz_sizeinbase_256_u</a>(<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>);
+<a id='L90' name='L90'></a>  uint8_t *<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>;
+<a id='L91' name='L91'></a>  <strong class='reserved'>int</strong> res;
+<a id='L92' name='L92'></a>  
+<a id='L93' name='L93'></a>  <strong class='reserved'>if</strong> (!<a href='../S/228.html#L72' title='Defined at 72 in examples/rsa-encrypt.c.'>write_uint32</a>(f, size))
+<a id='L94' name='L94'></a>    <strong class='reserved'>return</strong> 0;
+<a id='L95' name='L95'></a>  
+<a id='L96' name='L96'></a>  <a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a> = <a href='../D/2771.html' title='Multiple defined in 6 places.'>xalloc</a>(size);
+<a id='L97' name='L97'></a>  <a href='../S/469.html#L109' title='Defined at 109 in bignum.c.'>nettle_mpz_get_str_256</a>(size, <a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>);
+<a id='L98' name='L98'></a>
+<a id='L99' name='L99'></a>  res = <a href='../S/220.html#L146' title='Defined at 146 in examples/io.c.'>write_data</a>(f, size, <a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>);
+<a id='L100' name='L100'></a>  free(<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>);
+<a id='L101' name='L101'></a>  <strong class='reserved'>return</strong> res;
+<a id='L102' name='L102'></a><em class='brace'>}</em>
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a><em class='sharp'>#define</em> <a href='../R/56.html' title='Multiple referred from 4 places.'>BLOCK_SIZE</a> (<a href='../S/237.html#L65' title='Defined at 65 in aes.h.'>AES_BLOCK_SIZE</a> * 100)
+<a id='L105' name='L105'></a>
+<a id='L106' name='L106'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L107' name='L107'></a><a href='../R/2081.html' title='Multiple referred from 2 places.'>process_file</a>(<strong class='reserved'>struct</strong> <a href='../S/214.html#L40' title='Defined at 40 in examples/rsa-session.h.'>rsa_session</a> *ctx,
+<a id='L108' name='L108'></a>             FILE *in, FILE *out)
+<a id='L109' name='L109'></a><em class='brace'>{</em>
+<a id='L110' name='L110'></a>  uint8_t buffer[<a href='../S/228.html#L104' title='Defined at 104 in examples/rsa-encrypt.c.'>BLOCK_SIZE</a> + <a href='../S/70.html#L50' title='Defined at 50 in sha1.h.'>SHA1_DIGEST_SIZE</a>];
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a>  <strong class='reserved'>for</strong> (;;)
+<a id='L113' name='L113'></a>    <em class='brace'>{</em>
+<a id='L114' name='L114'></a>      size_t size = fread(buffer, 1, <a href='../S/228.html#L104' title='Defined at 104 in examples/rsa-encrypt.c.'>BLOCK_SIZE</a>, in);
+<a id='L115' name='L115'></a>      <a href='../D/1802.html' title='Multiple defined in 2 places.'>hmac_sha1_update</a>(&amp;ctx-&gt;hmac, size, buffer);
+<a id='L116' name='L116'></a>
+<a id='L117' name='L117'></a>      <strong class='reserved'>if</strong> (size &lt; <a href='../S/228.html#L104' title='Defined at 104 in examples/rsa-encrypt.c.'>BLOCK_SIZE</a>)
+<a id='L118' name='L118'></a>        <em class='brace'>{</em>
+<a id='L119' name='L119'></a>          <strong class='reserved'>unsigned</strong> leftover;
+<a id='L120' name='L120'></a>          <strong class='reserved'>unsigned</strong> padding;
+<a id='L121' name='L121'></a>
+<a id='L122' name='L122'></a>          <strong class='reserved'>if</strong> (ferror(in))
+<a id='L123' name='L123'></a>            <em class='brace'>{</em>
+<a id='L124' name='L124'></a>              <a href='../D/2755.html' title='Multiple defined in 2 places.'>werror</a>("Reading input failed: %s\n", strerror(errno));
+<a id='L125' name='L125'></a>              <strong class='reserved'>return</strong> 0;
+<a id='L126' name='L126'></a>            <em class='brace'>}</em>
+<a id='L127' name='L127'></a>          
+<a id='L128' name='L128'></a>          leftover = size % <a href='../S/237.html#L65' title='Defined at 65 in aes.h.'>AES_BLOCK_SIZE</a>;
+<a id='L129' name='L129'></a>          padding = <a href='../S/237.html#L65' title='Defined at 65 in aes.h.'>AES_BLOCK_SIZE</a> - leftover;
+<a id='L130' name='L130'></a>
+<a id='L131' name='L131'></a>          assert (size + padding &lt;= <a href='../S/228.html#L104' title='Defined at 104 in examples/rsa-encrypt.c.'>BLOCK_SIZE</a>);
+<a id='L132' name='L132'></a>          
+<a id='L133' name='L133'></a>          <strong class='reserved'>if</strong> (padding &gt; 1)
+<a id='L134' name='L134'></a>            <a href='../D/2796.html' title='Multiple defined in 2 places.'>yarrow256_random</a>(&amp;ctx-&gt;yarrow, padding - 1, buffer + size);
+<a id='L135' name='L135'></a>
+<a id='L136' name='L136'></a>          size += padding;
+<a id='L137' name='L137'></a>
+<a id='L138' name='L138'></a>          buffer[size - 1] = padding;
+<a id='L139' name='L139'></a>          <a href='../S/751.html#L66' title='Defined at 66 in cbc.h.'>CBC_ENCRYPT</a>(&amp;ctx-&gt;aes, <a href='../D/1117.html' title='Multiple defined in 2 places.'>aes256_encrypt</a>, size, buffer, buffer);
+<a id='L140' name='L140'></a>
+<a id='L141' name='L141'></a>          assert (size + <a href='../S/70.html#L50' title='Defined at 50 in sha1.h.'>SHA1_DIGEST_SIZE</a> &lt;= <strong class='reserved'>sizeof</strong>(buffer));
+<a id='L142' name='L142'></a>
+<a id='L143' name='L143'></a>          <a href='../D/1799.html' title='Multiple defined in 2 places.'>hmac_sha1_digest</a>(&amp;ctx-&gt;hmac, <a href='../S/70.html#L50' title='Defined at 50 in sha1.h.'>SHA1_DIGEST_SIZE</a>, buffer + size);
+<a id='L144' name='L144'></a>          size += <a href='../S/70.html#L50' title='Defined at 50 in sha1.h.'>SHA1_DIGEST_SIZE</a>;
+<a id='L145' name='L145'></a>
+<a id='L146' name='L146'></a>          <strong class='reserved'>if</strong> (!<a href='../S/220.html#L146' title='Defined at 146 in examples/io.c.'>write_data</a>(out, size, buffer))
+<a id='L147' name='L147'></a>            <em class='brace'>{</em>
+<a id='L148' name='L148'></a>              <a href='../D/2755.html' title='Multiple defined in 2 places.'>werror</a>("Writing output failed: %s\n", strerror(errno));
+<a id='L149' name='L149'></a>              <strong class='reserved'>return</strong> 0;
+<a id='L150' name='L150'></a>            <em class='brace'>}</em>
+<a id='L151' name='L151'></a>          <strong class='reserved'>return</strong> 1;
+<a id='L152' name='L152'></a>        <em class='brace'>}</em>
+<a id='L153' name='L153'></a>
+<a id='L154' name='L154'></a>      <a href='../S/751.html#L66' title='Defined at 66 in cbc.h.'>CBC_ENCRYPT</a>(&amp;ctx-&gt;aes, <a href='../D/1117.html' title='Multiple defined in 2 places.'>aes256_encrypt</a>, size, buffer, buffer);
+<a id='L155' name='L155'></a>      <strong class='reserved'>if</strong> (!<a href='../S/220.html#L146' title='Defined at 146 in examples/io.c.'>write_data</a>(out, size, buffer))
+<a id='L156' name='L156'></a>        <em class='brace'>{</em>
+<a id='L157' name='L157'></a>          <a href='../D/2755.html' title='Multiple defined in 2 places.'>werror</a>("Writing output failed: %s\n", strerror(errno));
+<a id='L158' name='L158'></a>          <strong class='reserved'>return</strong> 0;
+<a id='L159' name='L159'></a>        <em class='brace'>}</em>
+<a id='L160' name='L160'></a>    <em class='brace'>}</em>
+<a id='L161' name='L161'></a><em class='brace'>}</em>
+<a id='L162' name='L162'></a>
+<a id='L163' name='L163'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L164' name='L164'></a><a href='../R/2523.html' title='Multiple referred from 11 places.'>usage</a> (FILE *out)
+<a id='L165' name='L165'></a><em class='brace'>{</em>
+<a id='L166' name='L166'></a>  fprintf (out, "Usage: rsa-encrypt [OPTIONS] PUBLIC-KEY &lt; cleartext\n"
+<a id='L167' name='L167'></a>           "Options:\n"
+<a id='L168' name='L168'></a>           "   -r, --random=FILE   seed file for randomness generator\n"
+<a id='L169' name='L169'></a>           "       --help          display this help\n");  
+<a id='L170' name='L170'></a><em class='brace'>}</em>
+<a id='L171' name='L171'></a>
+<a id='L172' name='L172'></a><strong class='reserved'>int</strong>
+<a id='L173' name='L173'></a>main(<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv)
+<a id='L174' name='L174'></a><em class='brace'>{</em>
+<a id='L175' name='L175'></a>  <strong class='reserved'>struct</strong> <a href='../S/214.html#L40' title='Defined at 40 in examples/rsa-session.h.'>rsa_session</a> ctx;
+<a id='L176' name='L176'></a>  <strong class='reserved'>struct</strong> <a href='../S/214.html#L47' title='Defined at 47 in examples/rsa-session.h.'>rsa_session_info</a> info;
+<a id='L177' name='L177'></a>  
+<a id='L178' name='L178'></a>  <strong class='reserved'>struct</strong> <a href='../S/743.html#L114' title='Defined at 114 in rsa.h.'>rsa_public_key</a> key;
+<a id='L179' name='L179'></a>  <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>;
+<a id='L180' name='L180'></a>  
+<a id='L181' name='L181'></a>  <strong class='reserved'>int</strong> c;
+<a id='L182' name='L182'></a>  <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *random_name = <a href='../S/765.html#L58' title='Defined at 58 in getopt1.c.'>NULL</a>;
+<a id='L183' name='L183'></a>
+<a id='L184' name='L184'></a>  <strong class='reserved'>enum</strong> <em class='brace'>{</em> <a href='../R/540.html' title='Multiple referred from 16 places.'>OPT_HELP</a> = 300 <em class='brace'>}</em>;
+<a id='L185' name='L185'></a>  
+<a id='L186' name='L186'></a>  <strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/595.html#L104' title='Defined at 104 in getopt.h.'>option</a> options[] =
+<a id='L187' name='L187'></a>    <em class='brace'>{</em>
+<a id='L188' name='L188'></a>      <em class='comment'>/* Name, args, flag, val */</em>
+<a id='L189' name='L189'></a>      <em class='brace'>{</em> "help", <a href='../S/595.html#L116' title='Defined at 116 in getopt.h.'>no_argument</a>, <a href='../S/765.html#L58' title='Defined at 58 in getopt1.c.'>NULL</a>, <a href='../D/594.html' title='Multiple defined in 8 places.'>OPT_HELP</a> <em class='brace'>}</em>,
+<a id='L190' name='L190'></a>      <em class='brace'>{</em> "random", <a href='../S/595.html#L117' title='Defined at 117 in getopt.h.'>required_argument</a>, <a href='../S/765.html#L58' title='Defined at 58 in getopt1.c.'>NULL</a>, 'r' <em class='brace'>}</em>,
+<a id='L191' name='L191'></a>      <em class='brace'>{</em> <a href='../S/765.html#L58' title='Defined at 58 in getopt1.c.'>NULL</a>, 0, <a href='../S/765.html#L58' title='Defined at 58 in getopt1.c.'>NULL</a>, 0<em class='brace'>}</em>
+<a id='L192' name='L192'></a>    <em class='brace'>}</em>;
+<a id='L193' name='L193'></a>  
+<a id='L194' name='L194'></a>  <strong class='reserved'>while</strong> ( (c = <a href='../S/765.html#L62' title='Defined at 62 in getopt1.c.'>getopt_long</a>(argc, argv, "o:r:", options, <a href='../S/765.html#L58' title='Defined at 58 in getopt1.c.'>NULL</a>)) != -1)
+<a id='L195' name='L195'></a>    <strong class='reserved'>switch</strong> (c)
+<a id='L196' name='L196'></a>      <em class='brace'>{</em>
+<a id='L197' name='L197'></a>      <strong class='reserved'>case</strong> 'r':
+<a id='L198' name='L198'></a>        random_name = optarg;
+<a id='L199' name='L199'></a>        <strong class='reserved'>break</strong>;
+<a id='L200' name='L200'></a>        
+<a id='L201' name='L201'></a>      <strong class='reserved'>case</strong> '?':
+<a id='L202' name='L202'></a>        <strong class='reserved'>return</strong> EXIT_FAILURE;
+<a id='L203' name='L203'></a>
+<a id='L204' name='L204'></a>      <strong class='reserved'>case</strong> <a href='../D/594.html' title='Multiple defined in 8 places.'>OPT_HELP</a>:
+<a id='L205' name='L205'></a>        <a href='../D/2743.html' title='Multiple defined in 5 places.'>usage</a>(stdout);
+<a id='L206' name='L206'></a>        <strong class='reserved'>return</strong> EXIT_SUCCESS;
+<a id='L207' name='L207'></a>      <strong class='reserved'>default</strong>:
+<a id='L208' name='L208'></a>        abort();
+<a id='L209' name='L209'></a>      <em class='brace'>}</em>
+<a id='L210' name='L210'></a>
+<a id='L211' name='L211'></a>  argv += optind;
+<a id='L212' name='L212'></a>  argc -= optind;
+<a id='L213' name='L213'></a>
+<a id='L214' name='L214'></a>  <strong class='reserved'>if</strong> (argc != 1)
+<a id='L215' name='L215'></a>    <em class='brace'>{</em>
+<a id='L216' name='L216'></a>      <a href='../D/2743.html' title='Multiple defined in 5 places.'>usage</a> (stderr);
+<a id='L217' name='L217'></a>      <strong class='reserved'>return</strong> EXIT_FAILURE;
+<a id='L218' name='L218'></a>    <em class='brace'>}</em>
+<a id='L219' name='L219'></a>
+<a id='L220' name='L220'></a>  <a href='../D/2367.html' title='Multiple defined in 2 places.'>rsa_public_key_init</a>(&amp;key);
+<a id='L221' name='L221'></a>  
+<a id='L222' name='L222'></a>  <strong class='reserved'>if</strong> (!<a href='../S/221.html#L45' title='Defined at 45 in examples/read_rsa_key.c.'>read_rsa_key</a>(argv[0], &amp;key, <a href='../S/765.html#L58' title='Defined at 58 in getopt1.c.'>NULL</a>))
+<a id='L223' name='L223'></a>    <em class='brace'>{</em>
+<a id='L224' name='L224'></a>      <a href='../D/2755.html' title='Multiple defined in 2 places.'>werror</a>("Invalid key\n");
+<a id='L225' name='L225'></a>      <strong class='reserved'>return</strong> EXIT_FAILURE;
+<a id='L226' name='L226'></a>    <em class='brace'>}</em>
+<a id='L227' name='L227'></a>
+<a id='L228' name='L228'></a>  <em class='comment'>/* NOTE: No sources */</em>
+<a id='L229' name='L229'></a>  <a href='../D/2793.html' title='Multiple defined in 2 places.'>yarrow256_init</a>(&amp;ctx.yarrow, 0, <a href='../S/765.html#L58' title='Defined at 58 in getopt1.c.'>NULL</a>);
+<a id='L230' name='L230'></a>  
+<a id='L231' name='L231'></a>  <em class='comment'>/* Read some data to seed the generator */</em>
+<a id='L232' name='L232'></a>  <strong class='reserved'>if</strong> (!<a href='../S/220.html#L167' title='Defined at 167 in examples/io.c.'>simple_random</a>(&amp;ctx.yarrow, random_name))
+<a id='L233' name='L233'></a>    <em class='brace'>{</em>
+<a id='L234' name='L234'></a>      <a href='../D/2755.html' title='Multiple defined in 2 places.'>werror</a>("Initialization of randomness generator failed.\n");
+<a id='L235' name='L235'></a>      <strong class='reserved'>return</strong> EXIT_FAILURE;
+<a id='L236' name='L236'></a>    <em class='brace'>}</em>
+<a id='L237' name='L237'></a>
+<a id='L238' name='L238'></a>  <a href='../S/251.html#L65' title='Defined at 65 in macros.h.'>WRITE_UINT32</a>(<a href='../S/214.html#L53' title='Defined at 53 in examples/rsa-session.h.'>SESSION_VERSION</a>(&amp;info), <a href='../S/214.html#L11' title='Defined at 11 in examples/rsa-session.h.'>RSA_VERSION</a>);
+<a id='L239' name='L239'></a>  
+<a id='L240' name='L240'></a>  <a href='../D/2796.html' title='Multiple defined in 2 places.'>yarrow256_random</a>(&amp;ctx.yarrow, <strong class='reserved'>sizeof</strong>(info.key) - 4, info.key + 4);
+<a id='L241' name='L241'></a>
+<a id='L242' name='L242'></a>  <a href='../S/228.html#L59' title='Defined at 59 in examples/rsa-encrypt.c.'>rsa_session_set_encrypt_key</a>(&amp;ctx, &amp;info);
+<a id='L243' name='L243'></a>  
+<a id='L244' name='L244'></a><em class='sharp'>#ifdef</em> WIN32
+<a id='L245' name='L245'></a>  _setmode(0, O_BINARY);
+<a id='L246' name='L246'></a>  _setmode(1, O_BINARY);
+<a id='L247' name='L247'></a><em class='sharp'>#endif</em>
+<a id='L248' name='L248'></a>
+<a id='L249' name='L249'></a>  <a href='../S/228.html#L81' title='Defined at 81 in examples/rsa-encrypt.c.'>write_version</a>(stdout);
+<a id='L250' name='L250'></a>  
+<a id='L251' name='L251'></a>  <a href='../S/263.html#L1410' title='Defined at 1410 in mini-gmp.c.'>mpz_init</a>(<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>);
+<a id='L252' name='L252'></a>
+<a id='L253' name='L253'></a>  <strong class='reserved'>if</strong> (!<a href='../D/2337.html' title='Multiple defined in 2 places.'>rsa_encrypt</a>(&amp;key,
+<a id='L254' name='L254'></a>                   &amp;ctx.yarrow, (<a href='../S/122.html#L75' title='Defined at 75 in nettle-types.h.'>nettle_random_func</a> *) <a href='../D/2796.html' title='Multiple defined in 2 places.'>yarrow256_random</a>,
+<a id='L255' name='L255'></a>                   <strong class='reserved'>sizeof</strong>(info.key), info.key, 
+<a id='L256' name='L256'></a>                   <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>))
+<a id='L257' name='L257'></a>    <em class='brace'>{</em>
+<a id='L258' name='L258'></a>      <a href='../D/2755.html' title='Multiple defined in 2 places.'>werror</a>("RSA encryption failed.\n");
+<a id='L259' name='L259'></a>      <strong class='reserved'>return</strong> EXIT_FAILURE;
+<a id='L260' name='L260'></a>    <em class='brace'>}</em>
+<a id='L261' name='L261'></a>
+<a id='L262' name='L262'></a>  <a href='../S/228.html#L87' title='Defined at 87 in examples/rsa-encrypt.c.'>write_bignum</a>(stdout, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>);
+<a id='L263' name='L263'></a>
+<a id='L264' name='L264'></a>  <a href='../S/263.html#L1435' title='Defined at 1435 in mini-gmp.c.'>mpz_clear</a> (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>);
+<a id='L265' name='L265'></a>
+<a id='L266' name='L266'></a>  <strong class='reserved'>if</strong> (!<a href='../D/2292.html' title='Multiple defined in 2 places.'>process_file</a>(&amp;ctx,
+<a id='L267' name='L267'></a>                    stdin, stdout))
+<a id='L268' name='L268'></a>    <strong class='reserved'>return</strong> EXIT_FAILURE;
+<a id='L269' name='L269'></a>
+<a id='L270' name='L270'></a>  <a href='../D/2365.html' title='Multiple defined in 2 places.'>rsa_public_key_clear</a>(&amp;key);
+<a id='L271' name='L271'></a>
+<a id='L272' name='L272'></a>  <strong class='reserved'>return</strong> EXIT_SUCCESS;
+<a id='L273' name='L273'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L59'>[^]</a><a href='#L173'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

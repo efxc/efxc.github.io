@@ -1,0 +1,419 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>gosthash94.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/gosthash94.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L53'>[^]</a><a href='#L380'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L53' title='Defined at 53.'>gosthash94_init</a></li>
+<li><a href='#L65' title='Defined at 65.'>gost_block_compress</a></li>
+<li><a href='#L266' title='Defined at 266.'>gost_compute_sum_and_hash</a></li>
+<li><a href='#L297' title='Defined at 297.'>gosthash94_update_int</a></li>
+<li><a href='#L313' title='Defined at 313.'>gosthash94_update</a></li>
+<li><a href='#L329' title='Defined at 329.'>gosthash94cp_update</a></li>
+<li><a href='#L343' title='Defined at 343.'>gosthash94_write_digest</a></li>
+<li><a href='#L372' title='Defined at 372.'>gosthash94_digest</a></li>
+<li><a href='#L380' title='Defined at 380.'>gosthash94cp_digest</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* gosthash94.c - an implementation of GOST Hash Function</em>
+<a id='L2' name='L2'></a><em class='comment'> *</em>
+<a id='L3' name='L3'></a><em class='comment'> * based on the Russian Standard GOST R 34.11-94.</em>
+<a id='L4' name='L4'></a><em class='comment'> * English description in RFC 5831.</em>
+<a id='L5' name='L5'></a><em class='comment'> * See also RFC 4357.</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> * Copyright: 2009-2012 Aleksey Kravchenko &lt;rhash.admin@gmail.com&gt;</em>
+<a id='L8' name='L8'></a><em class='comment'> * Copyright: 2019 Dmitry Eremin-Solenikov &lt;dbaryshkov@gmail.com&gt;</em>
+<a id='L9' name='L9'></a><em class='comment'> *</em>
+<a id='L10' name='L10'></a><em class='comment'> * Permission is hereby granted, free of charge, to any person obtaining a</em>
+<a id='L11' name='L11'></a><em class='comment'> * copy of this software and associated documentation files (the</em>
+<a id='L12' name='L12'></a><em class='comment'> * "Software"), to deal in the Software without restriction, including</em>
+<a id='L13' name='L13'></a><em class='comment'> * without limitation the rights to use, copy, modify, merge, publish,</em>
+<a id='L14' name='L14'></a><em class='comment'> * distribute, sublicense, and/or sell copies of the Software, and to</em>
+<a id='L15' name='L15'></a><em class='comment'> * permit persons to whom the Software is furnished to do so, subject to</em>
+<a id='L16' name='L16'></a><em class='comment'> * the following conditions:</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * The above copyright notice and this permission notice shall be included</em>
+<a id='L19' name='L19'></a><em class='comment'> * in all copies or substantial portions of the Software.</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS</em>
+<a id='L22' name='L22'></a><em class='comment'> * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF</em>
+<a id='L23' name='L23'></a><em class='comment'> * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.</em>
+<a id='L24' name='L24'></a><em class='comment'> * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY</em>
+<a id='L25' name='L25'></a><em class='comment'> * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,</em>
+<a id='L26' name='L26'></a><em class='comment'> * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE</em>
+<a id='L27' name='L27'></a><em class='comment'> * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</em>
+<a id='L28' name='L28'></a><em class='comment'> */</em>
+<a id='L29' name='L29'></a>
+<a id='L30' name='L30'></a><em class='comment'>/*</em>
+<a id='L31' name='L31'></a><em class='comment'> * Ported to nettle by Nikos Mavrogiannopoulos.</em>
+<a id='L32' name='L32'></a><em class='comment'> */</em>
+<a id='L33' name='L33'></a>
+<a id='L34' name='L34'></a><em class='sharp'>#if</em> HAVE_CONFIG_H
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> "config.h"
+<a id='L36' name='L36'></a><em class='sharp'>#endif</em>
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> &lt;assert.h&gt;
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> "<a href='251.html'>macros.h</a>"
+<a id='L42' name='L42'></a><em class='sharp'>#include</em> "<a href='739.html'>nettle-write.h</a>"
+<a id='L43' name='L43'></a><em class='sharp'>#include</em> "<a href='546.html'>gosthash94.h</a>"
+<a id='L44' name='L44'></a><em class='sharp'>#include</em> "<a href='239.html'>gost28147-internal.h</a>"
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a><em class='comment'>/**</em>
+<a id='L47' name='L47'></a><em class='comment'> * Initialize algorithm context before calculating hash</em>
+<a id='L48' name='L48'></a><em class='comment'> * with test parameters set.</em>
+<a id='L49' name='L49'></a><em class='comment'> *</em>
+<a id='L50' name='L50'></a><em class='comment'> * @param ctx context to initalize</em>
+<a id='L51' name='L51'></a><em class='comment'> */</em>
+<a id='L52' name='L52'></a><strong class='reserved'>void</strong>
+<a id='L53' name='L53'></a><a href='../R/1571.html' title='Multiple referred from 3 places.'>gosthash94_init</a> (<strong class='reserved'>struct</strong> <a href='../S/546.html#L86' title='Defined at 86 in gosthash94.h.'>gosthash94_ctx</a> *ctx)
+<a id='L54' name='L54'></a><em class='brace'>{</em>
+<a id='L55' name='L55'></a>    memset (ctx, 0, <strong class='reserved'>sizeof</strong> (<strong class='reserved'>struct</strong> <a href='../S/546.html#L86' title='Defined at 86 in gosthash94.h.'>gosthash94_ctx</a>));
+<a id='L56' name='L56'></a><em class='brace'>}</em>
+<a id='L57' name='L57'></a>
+<a id='L58' name='L58'></a><em class='comment'>/**</em>
+<a id='L59' name='L59'></a><em class='comment'> * The core transformation. Process a 512-bit block.</em>
+<a id='L60' name='L60'></a><em class='comment'> *</em>
+<a id='L61' name='L61'></a><em class='comment'> * @param hash intermediate message hash</em>
+<a id='L62' name='L62'></a><em class='comment'> * @param block the message block to process</em>
+<a id='L63' name='L63'></a><em class='comment'> */</em>
+<a id='L64' name='L64'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L65' name='L65'></a><a href='../R/1563.html' title='Multiple referred from 3 places.'>gost_block_compress</a> (<strong class='reserved'>struct</strong> <a href='../S/546.html#L86' title='Defined at 86 in gosthash94.h.'>gosthash94_ctx</a> *ctx, <strong class='reserved'>const</strong> uint32_t *block,
+<a id='L66' name='L66'></a>                     <strong class='reserved'>const</strong> uint32_t sbox[4][256])
+<a id='L67' name='L67'></a><em class='brace'>{</em>
+<a id='L68' name='L68'></a>    <strong class='reserved'>unsigned</strong> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L69' name='L69'></a>    uint32_t key[8], u[8], <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[8], <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[8], s[8];
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a>    <em class='comment'>/* u := hash, v := &lt;256-bit message block&gt; */</em>
+<a id='L72' name='L72'></a>    memcpy (u, ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>, <strong class='reserved'>sizeof</strong> (u));
+<a id='L73' name='L73'></a>    memcpy (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>, block, <strong class='reserved'>sizeof</strong> (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>));
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a>    <em class='comment'>/* w := u xor v */</em>
+<a id='L76' name='L76'></a>    <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[0] = u[0] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0], <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[1] = u[1] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1];
+<a id='L77' name='L77'></a>    <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[2] = u[2] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2], <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[3] = u[3] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3];
+<a id='L78' name='L78'></a>    <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[4] = u[4] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4], <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[5] = u[5] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5];
+<a id='L79' name='L79'></a>    <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[6] = u[6] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6], <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[7] = u[7] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7];
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a>    <em class='comment'>/* calculate keys, encrypt hash and store result to the s[] array */</em>
+<a id='L82' name='L82'></a>    <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 0;; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> += 2)
+<a id='L83' name='L83'></a>      <em class='brace'>{</em>
+<a id='L84' name='L84'></a>          <em class='comment'>/* key generation: key_i := P(w) */</em>
+<a id='L85' name='L85'></a>          key[0] =
+<a id='L86' name='L86'></a>              (<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[0] &amp; 0x000000ff) | ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[2] &amp; 0x000000ff) &lt;&lt; 8) |
+<a id='L87' name='L87'></a>              ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[4] &amp; 0x000000ff) &lt;&lt; 16) | ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[6] &amp; 0x000000ff) &lt;&lt; 24);
+<a id='L88' name='L88'></a>          key[1] =
+<a id='L89' name='L89'></a>              ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[0] &amp; 0x0000ff00) &gt;&gt; 8) | (<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[2] &amp; 0x0000ff00) |
+<a id='L90' name='L90'></a>              ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[4] &amp; 0x0000ff00) &lt;&lt; 8) | ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[6] &amp; 0x0000ff00) &lt;&lt; 16);
+<a id='L91' name='L91'></a>          key[2] =
+<a id='L92' name='L92'></a>              ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[0] &amp; 0x00ff0000) &gt;&gt; 16) | ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[2] &amp; 0x00ff0000) &gt;&gt; 8) |
+<a id='L93' name='L93'></a>              (<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[4] &amp; 0x00ff0000) | ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[6] &amp; 0x00ff0000) &lt;&lt; 8);
+<a id='L94' name='L94'></a>          key[3] =
+<a id='L95' name='L95'></a>              ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[0] &amp; 0xff000000) &gt;&gt; 24) | ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[2] &amp; 0xff000000) &gt;&gt; 16) |
+<a id='L96' name='L96'></a>              ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[4] &amp; 0xff000000) &gt;&gt; 8) | (<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[6] &amp; 0xff000000);
+<a id='L97' name='L97'></a>          key[4] =
+<a id='L98' name='L98'></a>              (<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[1] &amp; 0x000000ff) | ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[3] &amp; 0x000000ff) &lt;&lt; 8) |
+<a id='L99' name='L99'></a>              ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[5] &amp; 0x000000ff) &lt;&lt; 16) | ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[7] &amp; 0x000000ff) &lt;&lt; 24);
+<a id='L100' name='L100'></a>          key[5] =
+<a id='L101' name='L101'></a>              ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[1] &amp; 0x0000ff00) &gt;&gt; 8) | (<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[3] &amp; 0x0000ff00) |
+<a id='L102' name='L102'></a>              ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[5] &amp; 0x0000ff00) &lt;&lt; 8) | ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[7] &amp; 0x0000ff00) &lt;&lt; 16);
+<a id='L103' name='L103'></a>          key[6] =
+<a id='L104' name='L104'></a>              ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[1] &amp; 0x00ff0000) &gt;&gt; 16) | ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[3] &amp; 0x00ff0000) &gt;&gt; 8) |
+<a id='L105' name='L105'></a>              (<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[5] &amp; 0x00ff0000) | ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[7] &amp; 0x00ff0000) &lt;&lt; 8);
+<a id='L106' name='L106'></a>          key[7] =
+<a id='L107' name='L107'></a>              ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[1] &amp; 0xff000000) &gt;&gt; 24) | ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[3] &amp; 0xff000000) &gt;&gt; 16) |
+<a id='L108' name='L108'></a>              ((<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[5] &amp; 0xff000000) &gt;&gt; 8) | (<a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[7] &amp; 0xff000000);
+<a id='L109' name='L109'></a>
+<a id='L110' name='L110'></a>          <em class='comment'>/* encryption: s_i := E_{key_i} (h_i) */</em>
+<a id='L111' name='L111'></a>          <a href='../S/31.html#L594' title='Defined at 594 in gost28147.c.'>_nettle_gost28147_encrypt_block</a> (key, sbox, &amp;ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>], &amp;s[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>]);
+<a id='L112' name='L112'></a>
+<a id='L113' name='L113'></a>          <strong class='reserved'>if</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> == 0)
+<a id='L114' name='L114'></a>            <em class='brace'>{</em>
+<a id='L115' name='L115'></a>                <em class='comment'>/* w:= A(u) ^ A^2(v) */</em>
+<a id='L116' name='L116'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[0] = u[2] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4], <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[1] = u[3] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5];
+<a id='L117' name='L117'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[2] = u[4] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6], <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[3] = u[5] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7];
+<a id='L118' name='L118'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[4] = u[6] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] ^= <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2]);
+<a id='L119' name='L119'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[5] = u[7] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] ^= <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3]);
+<a id='L120' name='L120'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[6] = (u[0] ^= u[2]) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] ^= <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4]);
+<a id='L121' name='L121'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[7] = (u[1] ^= u[3]) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] ^= <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5]);
+<a id='L122' name='L122'></a>            <em class='brace'>}</em>
+<a id='L123' name='L123'></a>          <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> ((<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &amp; 2) != 0)
+<a id='L124' name='L124'></a>            <em class='brace'>{</em>
+<a id='L125' name='L125'></a>                <strong class='reserved'>if</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> == 6)
+<a id='L126' name='L126'></a>                    <strong class='reserved'>break</strong>;
+<a id='L127' name='L127'></a>
+<a id='L128' name='L128'></a>                <em class='comment'>/* w := A^2(u) xor A^4(v) xor C_3; u := A(u) xor C_3 */</em>
+<a id='L129' name='L129'></a>                <em class='comment'>/* C_3=0xff00ffff000000ffff0000ff00ffff0000ff00ff00ff00ffff00ff00ff00ff00 */</em>
+<a id='L130' name='L130'></a>                u[2] ^= u[4] ^ 0x000000ff;
+<a id='L131' name='L131'></a>                u[3] ^= u[5] ^ 0xff00ffff;
+<a id='L132' name='L132'></a>                u[4] ^= 0xff00ff00;
+<a id='L133' name='L133'></a>                u[5] ^= 0xff00ff00;
+<a id='L134' name='L134'></a>                u[6] ^= 0x00ff00ff;
+<a id='L135' name='L135'></a>                u[7] ^= 0x00ff00ff;
+<a id='L136' name='L136'></a>                u[0] ^= 0x00ffff00;
+<a id='L137' name='L137'></a>                u[1] ^= 0xff0000ff;
+<a id='L138' name='L138'></a>
+<a id='L139' name='L139'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[0] = u[4] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0];
+<a id='L140' name='L140'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[2] = u[6] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2];
+<a id='L141' name='L141'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[4] = u[0] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4] ^= <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6]);
+<a id='L142' name='L142'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[6] = u[2] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] ^= <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0]);
+<a id='L143' name='L143'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[1] = u[5] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1];
+<a id='L144' name='L144'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[3] = u[7] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3];
+<a id='L145' name='L145'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[5] = u[1] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5] ^= <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7]);
+<a id='L146' name='L146'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[7] = u[3] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] ^= <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1]);
+<a id='L147' name='L147'></a>            <em class='brace'>}</em>
+<a id='L148' name='L148'></a>          <strong class='reserved'>else</strong>
+<a id='L149' name='L149'></a>            <em class='brace'>{</em>
+<a id='L150' name='L150'></a>                <em class='comment'>/* i==4 here */</em>
+<a id='L151' name='L151'></a>                <em class='comment'>/* w:= A( A^2(u) xor C_3 ) xor A^6(v) */</em>
+<a id='L152' name='L152'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[0] = u[6] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4], <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[1] = u[7] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5];
+<a id='L153' name='L153'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[2] = u[0] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6], <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[3] = u[1] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7];
+<a id='L154' name='L154'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[4] = u[2] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] ^= <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2]);
+<a id='L155' name='L155'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[5] = u[3] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] ^= <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3]);
+<a id='L156' name='L156'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[6] = (u[4] ^= u[6]) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] ^= <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4]);
+<a id='L157' name='L157'></a>                <a href='../D/2754.html' title='Multiple defined in 2 places.'>w</a>[7] = (u[5] ^= u[7]) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] ^= <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5]);
+<a id='L158' name='L158'></a>            <em class='brace'>}</em>
+<a id='L159' name='L159'></a>      <em class='brace'>}</em>
+<a id='L160' name='L160'></a>
+<a id='L161' name='L161'></a>    <em class='comment'>/* step hash function: x(block, hash) := psi^61(hash xor psi(block xor psi^12(S))) */</em>
+<a id='L162' name='L162'></a>
+<a id='L163' name='L163'></a>    <em class='comment'>/* 12 rounds of the LFSR and xor in &lt;message block&gt; */</em>
+<a id='L164' name='L164'></a>    u[0] = block[0] ^ s[6];
+<a id='L165' name='L165'></a>    u[1] = block[1] ^ s[7];
+<a id='L166' name='L166'></a>    u[2] =
+<a id='L167' name='L167'></a>        block[2] ^ (s[0] &lt;&lt; 16) ^ (s[0] &gt;&gt; 16) ^ (s[0] &amp; 0xffff) ^ (s[1] &amp;
+<a id='L168' name='L168'></a>                                                                    0xffff)
+<a id='L169' name='L169'></a>        ^ (s[1] &gt;&gt; 16) ^ (s[2] &lt;&lt; 16) ^ s[6] ^ (s[6] &lt;&lt; 16) ^ (s[7] &amp;
+<a id='L170' name='L170'></a>                                                               0xffff0000)
+<a id='L171' name='L171'></a>        ^ (s[7] &gt;&gt; 16);
+<a id='L172' name='L172'></a>    u[3] =
+<a id='L173' name='L173'></a>        block[3] ^ (s[0] &amp; 0xffff) ^ (s[0] &lt;&lt; 16) ^ (s[1] &amp; 0xffff) ^ (s[1]
+<a id='L174' name='L174'></a>                                                                       &lt;&lt;
+<a id='L175' name='L175'></a>                                                                       16)
+<a id='L176' name='L176'></a>        ^ (s[1] &gt;&gt; 16) ^ (s[2] &lt;&lt; 16) ^ (s[2] &gt;&gt; 16) ^ (s[3] &lt;&lt; 16) ^ s[6]
+<a id='L177' name='L177'></a>        ^ (s[6] &lt;&lt; 16) ^ (s[6] &gt;&gt; 16) ^ (s[7] &amp; 0xffff) ^ (s[7] &lt;&lt; 16) ^
+<a id='L178' name='L178'></a>        (s[7] &gt;&gt; 16);
+<a id='L179' name='L179'></a>    u[4] =
+<a id='L180' name='L180'></a>        block[4] ^ (s[0] &amp; 0xffff0000) ^ (s[0] &lt;&lt; 16) ^ (s[0] &gt;&gt; 16) ^
+<a id='L181' name='L181'></a>        (s[1] &amp; 0xffff0000) ^ (s[1] &gt;&gt; 16) ^ (s[2] &lt;&lt; 16) ^ (s[2] &gt;&gt; 16) ^
+<a id='L182' name='L182'></a>        (s[3] &lt;&lt; 16) ^ (s[3] &gt;&gt; 16) ^ (s[4] &lt;&lt; 16) ^ (s[6] &lt;&lt; 16) ^ (s[6]
+<a id='L183' name='L183'></a>                                                                     &gt;&gt; 16)
+<a id='L184' name='L184'></a>        ^ (s[7] &amp; 0xffff) ^ (s[7] &lt;&lt; 16) ^ (s[7] &gt;&gt; 16);
+<a id='L185' name='L185'></a>    u[5] =
+<a id='L186' name='L186'></a>        block[5] ^ (s[0] &lt;&lt; 16) ^ (s[0] &gt;&gt; 16) ^ (s[0] &amp; 0xffff0000) ^
+<a id='L187' name='L187'></a>        (s[1] &amp; 0xffff) ^ s[2] ^ (s[2] &gt;&gt; 16) ^ (s[3] &lt;&lt; 16) ^ (s[3] &gt;&gt; 16)
+<a id='L188' name='L188'></a>        ^ (s[4] &lt;&lt; 16) ^ (s[4] &gt;&gt; 16) ^ (s[5] &lt;&lt; 16) ^ (s[6] &lt;&lt; 16) ^ (s[6]
+<a id='L189' name='L189'></a>                                                                       &gt;&gt;
+<a id='L190' name='L190'></a>                                                                       16)
+<a id='L191' name='L191'></a>        ^ (s[7] &amp; 0xffff0000) ^ (s[7] &lt;&lt; 16) ^ (s[7] &gt;&gt; 16);
+<a id='L192' name='L192'></a>    u[6] =
+<a id='L193' name='L193'></a>        block[6] ^ s[0] ^ (s[1] &gt;&gt; 16) ^ (s[2] &lt;&lt; 16) ^ s[3] ^ (s[3] &gt;&gt; 16)
+<a id='L194' name='L194'></a>        ^ (s[4] &lt;&lt; 16) ^ (s[4] &gt;&gt; 16) ^ (s[5] &lt;&lt; 16) ^ (s[5] &gt;&gt; 16) ^ s[6]
+<a id='L195' name='L195'></a>        ^ (s[6] &lt;&lt; 16) ^ (s[6] &gt;&gt; 16) ^ (s[7] &lt;&lt; 16);
+<a id='L196' name='L196'></a>    u[7] =
+<a id='L197' name='L197'></a>        block[7] ^ (s[0] &amp; 0xffff0000) ^ (s[0] &lt;&lt; 16) ^ (s[1] &amp; 0xffff) ^
+<a id='L198' name='L198'></a>        (s[1] &lt;&lt; 16) ^ (s[2] &gt;&gt; 16) ^ (s[3] &lt;&lt; 16) ^ s[4] ^ (s[4] &gt;&gt; 16) ^
+<a id='L199' name='L199'></a>        (s[5] &lt;&lt; 16) ^ (s[5] &gt;&gt; 16) ^ (s[6] &gt;&gt; 16) ^ (s[7] &amp; 0xffff) ^
+<a id='L200' name='L200'></a>        (s[7] &lt;&lt; 16) ^ (s[7] &gt;&gt; 16);
+<a id='L201' name='L201'></a>
+<a id='L202' name='L202'></a>    <em class='comment'>/* 1 round of the LFSR (a mixing transformation) and xor with &lt;hash&gt; */</em>
+<a id='L203' name='L203'></a>    <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] = ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[0] ^ (u[1] &lt;&lt; 16) ^ (u[0] &gt;&gt; 16);
+<a id='L204' name='L204'></a>    <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] = ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[1] ^ (u[2] &lt;&lt; 16) ^ (u[1] &gt;&gt; 16);
+<a id='L205' name='L205'></a>    <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] = ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[2] ^ (u[3] &lt;&lt; 16) ^ (u[2] &gt;&gt; 16);
+<a id='L206' name='L206'></a>    <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] = ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[3] ^ (u[4] &lt;&lt; 16) ^ (u[3] &gt;&gt; 16);
+<a id='L207' name='L207'></a>    <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4] = ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[4] ^ (u[5] &lt;&lt; 16) ^ (u[4] &gt;&gt; 16);
+<a id='L208' name='L208'></a>    <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5] = ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[5] ^ (u[6] &lt;&lt; 16) ^ (u[5] &gt;&gt; 16);
+<a id='L209' name='L209'></a>    <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] = ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[6] ^ (u[7] &lt;&lt; 16) ^ (u[6] &gt;&gt; 16);
+<a id='L210' name='L210'></a>    <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] =
+<a id='L211' name='L211'></a>        ctx-&gt;
+<a id='L212' name='L212'></a>        <a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[7] ^ (u[0] &amp; 0xffff0000) ^ (u[0] &lt;&lt; 16) ^ (u[1] &amp; 0xffff0000)
+<a id='L213' name='L213'></a>        ^ (u[1] &lt;&lt; 16) ^ (u[6] &lt;&lt; 16) ^ (u[7] &amp; 0xffff0000) ^ (u[7] &gt;&gt; 16);
+<a id='L214' name='L214'></a>
+<a id='L215' name='L215'></a>    <em class='comment'>/* 61 rounds of LFSR, mixing up hash */</em>
+<a id='L216' name='L216'></a>    ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[0] = (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] &amp; 0xffff0000) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] &gt;&gt; 16) ^
+<a id='L217' name='L217'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] &amp; 0xffff0000) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] &lt;&lt; 16) ^
+<a id='L218' name='L218'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5] &gt;&gt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5] ^
+<a id='L219' name='L219'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &amp; 0xffff);
+<a id='L220' name='L220'></a>    ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[1] = (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] &amp; 0xffff0000) ^
+<a id='L221' name='L221'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] &amp; 0xffff) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] &lt;&lt; 16) ^
+<a id='L222' name='L222'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] &lt;&lt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] ^
+<a id='L223' name='L223'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &amp; 0xffff0000) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &gt;&gt; 16);
+<a id='L224' name='L224'></a>    ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[2] = (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] &amp; 0xffff) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] &lt;&lt; 16) ^
+<a id='L225' name='L225'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] &amp; 0xffff0000) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] &gt;&gt; 16) ^
+<a id='L226' name='L226'></a>        <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5] &gt;&gt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] &gt;&gt; 16) ^
+<a id='L227' name='L227'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &amp; 0xffff) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &gt;&gt; 16);
+<a id='L228' name='L228'></a>    ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[3] = (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] &amp; 0xffff0000) ^
+<a id='L229' name='L229'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] &amp; 0xffff0000) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] &lt;&lt; 16) ^
+<a id='L230' name='L230'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] &gt;&gt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4] &gt;&gt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4] ^
+<a id='L231' name='L231'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &amp; 0xffff) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &gt;&gt; 16);
+<a id='L232' name='L232'></a>    ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[4] =
+<a id='L233' name='L233'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] &lt;&lt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] &gt;&gt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] &lt;&lt;
+<a id='L234' name='L234'></a>                                                                    16) ^
+<a id='L235' name='L235'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] &gt;&gt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5] &gt;&gt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] &lt;&lt;
+<a id='L236' name='L236'></a>                                                                    16) ^
+<a id='L237' name='L237'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &lt;&lt; 16);
+<a id='L238' name='L238'></a>    ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[5] =
+<a id='L239' name='L239'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] &amp; 0xffff0000) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] &gt;&gt; 16) ^
+<a id='L240' name='L240'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] &amp; 0xffff0000) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] &lt;&lt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] &gt;&gt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] ^
+<a id='L241' name='L241'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4] &gt;&gt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] &lt;&lt; 16) ^
+<a id='L242' name='L242'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] &gt;&gt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &amp;
+<a id='L243' name='L243'></a>                                                             0xffff0000);
+<a id='L244' name='L244'></a>    ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[6] =
+<a id='L245' name='L245'></a>        <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] &gt;&gt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] &lt;&lt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4] &gt;&gt;
+<a id='L246' name='L246'></a>                                                                   16) ^
+<a id='L247' name='L247'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5] &gt;&gt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] &gt;&gt; 16) ^
+<a id='L248' name='L248'></a>        <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &lt;&lt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7];
+<a id='L249' name='L249'></a>    ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>[7] =
+<a id='L250' name='L250'></a>        <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[0] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[1] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[2] &lt;&lt; 16) ^
+<a id='L251' name='L251'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] &gt;&gt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[3] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4] &lt;&lt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[4] ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5] &gt;&gt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[5] ^
+<a id='L252' name='L252'></a>        (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] &lt;&lt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[6] &gt;&gt; 16) ^ (<a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7] &lt;&lt; 16) ^ <a href='../D/2747.html' title='Multiple defined in 2 places.'>v</a>[7];
+<a id='L253' name='L253'></a><em class='brace'>}</em>
+<a id='L254' name='L254'></a>
+<a id='L255' name='L255'></a><em class='comment'>/**</em>
+<a id='L256' name='L256'></a><em class='comment'> * This function calculates hash value by 256-bit blocks.</em>
+<a id='L257' name='L257'></a><em class='comment'> * It updates 256-bit check sum as follows:</em>
+<a id='L258' name='L258'></a><em class='comment'> *    *(uint256_t)(ctx-&gt;sum) += *(uint256_t*)block;</em>
+<a id='L259' name='L259'></a><em class='comment'> * and then updates intermediate hash value ctx-&gt;hash </em>
+<a id='L260' name='L260'></a><em class='comment'> * by calling gost_block_compress().</em>
+<a id='L261' name='L261'></a><em class='comment'> *</em>
+<a id='L262' name='L262'></a><em class='comment'> * @param ctx algorithm context</em>
+<a id='L263' name='L263'></a><em class='comment'> * @param block the 256-bit message block to process</em>
+<a id='L264' name='L264'></a><em class='comment'> */</em>
+<a id='L265' name='L265'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L266' name='L266'></a><a href='../R/1564.html' title='Multiple referred from 2 places.'>gost_compute_sum_and_hash</a> (<strong class='reserved'>struct</strong> <a href='../S/546.html#L86' title='Defined at 86 in gosthash94.h.'>gosthash94_ctx</a> *ctx, <strong class='reserved'>const</strong> uint8_t *block,
+<a id='L267' name='L267'></a>                           <strong class='reserved'>const</strong> uint32_t sbox[4][256])
+<a id='L268' name='L268'></a><em class='brace'>{</em>
+<a id='L269' name='L269'></a>    uint32_t block_le[8];
+<a id='L270' name='L270'></a>    <strong class='reserved'>unsigned</strong> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>, carry;
+<a id='L271' name='L271'></a>
+<a id='L272' name='L272'></a>    <em class='comment'>/* compute the 256-bit sum */</em>
+<a id='L273' name='L273'></a>    <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = carry = 0; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &lt; 8; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++, block += 4)
+<a id='L274' name='L274'></a>      <em class='brace'>{</em>
+<a id='L275' name='L275'></a>          block_le[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>] = <a href='../S/251.html#L119' title='Defined at 119 in macros.h.'>LE_READ_UINT32</a>(block);
+<a id='L276' name='L276'></a>          ctx-&gt;<a href='../S/640.html#L76' title='Defined at 76 in ecc-dup-jj.c.'>sum</a>[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>] += carry;
+<a id='L277' name='L277'></a>          carry = (ctx-&gt;<a href='../S/640.html#L76' title='Defined at 76 in ecc-dup-jj.c.'>sum</a>[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>] &lt; carry);
+<a id='L278' name='L278'></a>          ctx-&gt;<a href='../S/640.html#L76' title='Defined at 76 in ecc-dup-jj.c.'>sum</a>[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>] += block_le[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>];
+<a id='L279' name='L279'></a>          carry += (ctx-&gt;<a href='../S/640.html#L76' title='Defined at 76 in ecc-dup-jj.c.'>sum</a>[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>] &lt; block_le[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>]);
+<a id='L280' name='L280'></a>      <em class='brace'>}</em>
+<a id='L281' name='L281'></a>
+<a id='L282' name='L282'></a>    <em class='comment'>/* update message hash */</em>
+<a id='L283' name='L283'></a>    <a href='../S/233.html#L65' title='Defined at 65 in gosthash94.c.'>gost_block_compress</a> (ctx, block_le, sbox);
+<a id='L284' name='L284'></a><em class='brace'>}</em>
+<a id='L285' name='L285'></a>
+<a id='L286' name='L286'></a><em class='sharp'>#define</em> <a href='../R/143.html' title='Multiple referred from 16 places.'>COMPRESS</a>(ctx, block) <a href='../S/233.html#L266' title='Defined at 266 in gosthash94.c.'>gost_compute_sum_and_hash</a>((ctx), (block), sbox);
+<a id='L287' name='L287'></a>
+<a id='L288' name='L288'></a><em class='comment'>/**</em>
+<a id='L289' name='L289'></a><em class='comment'> * Calculate message hash.</em>
+<a id='L290' name='L290'></a><em class='comment'> * Can be called repeatedly with chunks of the message to be hashed.</em>
+<a id='L291' name='L291'></a><em class='comment'> *</em>
+<a id='L292' name='L292'></a><em class='comment'> * @param ctx the algorithm context containing current hashing state</em>
+<a id='L293' name='L293'></a><em class='comment'> * @param msg message chunk</em>
+<a id='L294' name='L294'></a><em class='comment'> * @param size length of the message chunk</em>
+<a id='L295' name='L295'></a><em class='comment'> */</em>
+<a id='L296' name='L296'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L297' name='L297'></a><a href='../R/1573.html' title='Multiple referred from 2 places.'>gosthash94_update_int</a> (<strong class='reserved'>struct</strong> <a href='../S/546.html#L86' title='Defined at 86 in gosthash94.h.'>gosthash94_ctx</a> *ctx,
+<a id='L298' name='L298'></a>                       size_t length, <strong class='reserved'>const</strong> uint8_t *msg,
+<a id='L299' name='L299'></a>                       <strong class='reserved'>const</strong> uint32_t sbox[4][256])
+<a id='L300' name='L300'></a><em class='brace'>{</em>
+<a id='L301' name='L301'></a>    <a href='../S/251.html#L181' title='Defined at 181 in macros.h.'>MD_UPDATE</a>(ctx, length, msg, <a href='../D/174.html' title='Multiple defined in 9 places.'>COMPRESS</a>, ctx-&gt;count++);
+<a id='L302' name='L302'></a><em class='brace'>}</em>
+<a id='L303' name='L303'></a>
+<a id='L304' name='L304'></a><em class='comment'>/**</em>
+<a id='L305' name='L305'></a><em class='comment'> * Calculate message hash.</em>
+<a id='L306' name='L306'></a><em class='comment'> * Can be called repeatedly with chunks of the message to be hashed.</em>
+<a id='L307' name='L307'></a><em class='comment'> *</em>
+<a id='L308' name='L308'></a><em class='comment'> * @param ctx the algorithm context containing current hashing state</em>
+<a id='L309' name='L309'></a><em class='comment'> * @param msg message chunk</em>
+<a id='L310' name='L310'></a><em class='comment'> * @param size length of the message chunk</em>
+<a id='L311' name='L311'></a><em class='comment'> */</em>
+<a id='L312' name='L312'></a><strong class='reserved'>void</strong>
+<a id='L313' name='L313'></a><a href='../R/1572.html' title='Multiple referred from 2 places.'>gosthash94_update</a> (<strong class='reserved'>struct</strong> <a href='../S/546.html#L86' title='Defined at 86 in gosthash94.h.'>gosthash94_ctx</a> *ctx,
+<a id='L314' name='L314'></a>                   size_t length, <strong class='reserved'>const</strong> uint8_t *msg)
+<a id='L315' name='L315'></a><em class='brace'>{</em>
+<a id='L316' name='L316'></a>  <a href='../S/233.html#L297' title='Defined at 297 in gosthash94.c.'>gosthash94_update_int</a> (ctx, length, msg,
+<a id='L317' name='L317'></a>                         _nettle_gost28147_param_test_3411.sbox);
+<a id='L318' name='L318'></a><em class='brace'>}</em>
+<a id='L319' name='L319'></a>
+<a id='L320' name='L320'></a><em class='comment'>/**</em>
+<a id='L321' name='L321'></a><em class='comment'> * Calculate message hash.</em>
+<a id='L322' name='L322'></a><em class='comment'> * Can be called repeatedly with chunks of the message to be hashed.</em>
+<a id='L323' name='L323'></a><em class='comment'> *</em>
+<a id='L324' name='L324'></a><em class='comment'> * @param ctx the algorithm context containing current hashing state</em>
+<a id='L325' name='L325'></a><em class='comment'> * @param msg message chunk</em>
+<a id='L326' name='L326'></a><em class='comment'> * @param size length of the message chunk</em>
+<a id='L327' name='L327'></a><em class='comment'> */</em>
+<a id='L328' name='L328'></a><strong class='reserved'>void</strong>
+<a id='L329' name='L329'></a><a href='../R/1577.html' title='Multiple referred from 2 places.'>gosthash94cp_update</a> (<strong class='reserved'>struct</strong> <a href='../S/546.html#L86' title='Defined at 86 in gosthash94.h.'>gosthash94_ctx</a> *ctx,
+<a id='L330' name='L330'></a>                     size_t length, <strong class='reserved'>const</strong> uint8_t *msg)
+<a id='L331' name='L331'></a><em class='brace'>{</em>
+<a id='L332' name='L332'></a>  <a href='../S/233.html#L297' title='Defined at 297 in gosthash94.c.'>gosthash94_update_int</a> (ctx, length, msg,
+<a id='L333' name='L333'></a>                         _nettle_gost28147_param_CryptoPro_3411.sbox);
+<a id='L334' name='L334'></a><em class='brace'>}</em>
+<a id='L335' name='L335'></a>
+<a id='L336' name='L336'></a><em class='comment'>/**</em>
+<a id='L337' name='L337'></a><em class='comment'> * Finish hashing and store message digest into given array.</em>
+<a id='L338' name='L338'></a><em class='comment'> *</em>
+<a id='L339' name='L339'></a><em class='comment'> * @param ctx the algorithm context containing current hashing state</em>
+<a id='L340' name='L340'></a><em class='comment'> * @param result calculated hash in binary form</em>
+<a id='L341' name='L341'></a><em class='comment'> */</em>
+<a id='L342' name='L342'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L343' name='L343'></a><a href='../R/1574.html' title='Multiple referred from 2 places.'>gosthash94_write_digest</a> (<strong class='reserved'>struct</strong> <a href='../S/546.html#L86' title='Defined at 86 in gosthash94.h.'>gosthash94_ctx</a> *ctx,
+<a id='L344' name='L344'></a>                         size_t length, uint8_t *result,
+<a id='L345' name='L345'></a>                         <strong class='reserved'>const</strong> uint32_t sbox[4][256])
+<a id='L346' name='L346'></a><em class='brace'>{</em>
+<a id='L347' name='L347'></a>    uint32_t msg32[<a href='../S/546.html#L78' title='Defined at 78 in gosthash94.h.'>GOSTHASH94_BLOCK_SIZE</a> / 4];
+<a id='L348' name='L348'></a>
+<a id='L349' name='L349'></a>    assert(length &lt;= <a href='../S/546.html#L79' title='Defined at 79 in gosthash94.h.'>GOSTHASH94_DIGEST_SIZE</a>);
+<a id='L350' name='L350'></a>
+<a id='L351' name='L351'></a>    <em class='comment'>/* pad the last block with zeroes and hash it */</em>
+<a id='L352' name='L352'></a>    <strong class='reserved'>if</strong> (ctx-&gt;index &gt; 0)
+<a id='L353' name='L353'></a>      <em class='brace'>{</em>
+<a id='L354' name='L354'></a>          memset (ctx-&gt;block + ctx-&gt;index, 0, <a href='../S/546.html#L78' title='Defined at 78 in gosthash94.h.'>GOSTHASH94_BLOCK_SIZE</a> - ctx-&gt;index);
+<a id='L355' name='L355'></a>          <a href='../S/233.html#L266' title='Defined at 266 in gosthash94.c.'>gost_compute_sum_and_hash</a> (ctx, ctx-&gt;block, sbox);
+<a id='L356' name='L356'></a>      <em class='brace'>}</em>
+<a id='L357' name='L357'></a>
+<a id='L358' name='L358'></a>    <em class='comment'>/* hash the message length and the sum */</em>
+<a id='L359' name='L359'></a>    msg32[0] = (ctx-&gt;count &lt;&lt; 8) | (ctx-&gt;index &lt;&lt; 3);
+<a id='L360' name='L360'></a>    msg32[1] = ctx-&gt;count &gt;&gt; 24;
+<a id='L361' name='L361'></a>    memset (msg32 + 2, 0, <strong class='reserved'>sizeof</strong> (uint32_t) * 6);
+<a id='L362' name='L362'></a>
+<a id='L363' name='L363'></a>    <a href='../S/233.html#L65' title='Defined at 65 in gosthash94.c.'>gost_block_compress</a> (ctx, msg32, sbox);
+<a id='L364' name='L364'></a>    <a href='../S/233.html#L65' title='Defined at 65 in gosthash94.c.'>gost_block_compress</a> (ctx, ctx-&gt;<a href='../S/640.html#L76' title='Defined at 76 in ecc-dup-jj.c.'>sum</a>, sbox);
+<a id='L365' name='L365'></a>
+<a id='L366' name='L366'></a>    <em class='comment'>/* convert hash state to result bytes */</em>
+<a id='L367' name='L367'></a>    <a href='../S/247.html#L43' title='Defined at 43 in write-le32.c.'>_nettle_write_le32</a>(length, result, ctx-&gt;<a href='../D/1776.html' title='Multiple defined in 3 places.'>hash</a>);
+<a id='L368' name='L368'></a>    <a href='../D/1761.html' title='Multiple defined in 2 places.'>gosthash94_init</a> (ctx);
+<a id='L369' name='L369'></a><em class='brace'>}</em>
+<a id='L370' name='L370'></a>
+<a id='L371' name='L371'></a><strong class='reserved'>void</strong>
+<a id='L372' name='L372'></a><a href='../S/546.html#L99' title='Referred from 99 in gosthash94.h.'>gosthash94_digest</a> (<strong class='reserved'>struct</strong> <a href='../S/546.html#L86' title='Defined at 86 in gosthash94.h.'>gosthash94_ctx</a> *ctx,
+<a id='L373' name='L373'></a>                   size_t length, uint8_t *result)
+<a id='L374' name='L374'></a><em class='brace'>{</em>
+<a id='L375' name='L375'></a>  <a href='../S/233.html#L343' title='Defined at 343 in gosthash94.c.'>gosthash94_write_digest</a> (ctx, length, result,
+<a id='L376' name='L376'></a>                           _nettle_gost28147_param_test_3411.sbox);
+<a id='L377' name='L377'></a><em class='brace'>}</em>
+<a id='L378' name='L378'></a>
+<a id='L379' name='L379'></a><strong class='reserved'>void</strong>
+<a id='L380' name='L380'></a><a href='../S/546.html#L105' title='Referred from 105 in gosthash94.h.'>gosthash94cp_digest</a> (<strong class='reserved'>struct</strong> <a href='../S/546.html#L86' title='Defined at 86 in gosthash94.h.'>gosthash94_ctx</a> *ctx,
+<a id='L381' name='L381'></a>                     size_t length, uint8_t *result)
+<a id='L382' name='L382'></a><em class='brace'>{</em>
+<a id='L383' name='L383'></a>  <a href='../S/233.html#L343' title='Defined at 343 in gosthash94.c.'>gosthash94_write_digest</a> (ctx, length, result,
+<a id='L384' name='L384'></a>                           _nettle_gost28147_param_CryptoPro_3411.sbox);
+<a id='L385' name='L385'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L53'>[^]</a><a href='#L380'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

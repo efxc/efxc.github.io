@@ -1,0 +1,674 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/ocsp-api.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/ocsp-api.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L56'>[^]</a><a href='#L622'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L56' title='Defined at 56.'>gnutls_ocsp_status_request_get</a></li>
+<li><a href='#L85' title='Defined at 85.'>gnutls_ocsp_status_request_get2</a></li>
+<li><a href='#L192' title='Defined at 192.'>resp_matches_pcert</a></li>
+<li><a href='#L255' title='Defined at 255.'>gnutls_certificate_set_ocsp_status_request_file</a></li>
+<li><a href='#L269' title='Defined at 269.'>append_response</a></li>
+<li><a href='#L370' title='Defined at 370.'>gnutls_certificate_set_ocsp_status_request_file2</a></li>
+<li><a href='#L427' title='Defined at 427.'>gnutls_certificate_set_ocsp_status_request_mem</a></li>
+<li><a href='#L560' title='Defined at 560.'>gnutls_certificate_get_ocsp_expiration</a></li>
+<li><a href='#L622' title='Defined at 622.'>gnutls_ocsp_status_request_is_checked</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2012-2017 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> * Copyright (C) 2017 Red Hat, Inc.</em>
+<a id='L4' name='L4'></a><em class='comment'> *</em>
+<a id='L5' name='L5'></a><em class='comment'> * Author: Simon Josefsson, Nikos Mavrogiannopoulos</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L8' name='L8'></a><em class='comment'> *</em>
+<a id='L9' name='L9'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L10' name='L10'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L11' name='L11'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L12' name='L12'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L13' name='L13'></a><em class='comment'> *</em>
+<a id='L14' name='L14'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L15' name='L15'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L16' name='L16'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L17' name='L17'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L18' name='L18'></a><em class='comment'> *</em>
+<a id='L19' name='L19'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L20' name='L20'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L21' name='L21'></a><em class='comment'> *</em>
+<a id='L22' name='L22'></a><em class='comment'> */</em>
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><em class='comment'>/*</em>
+<a id='L25' name='L25'></a><em class='comment'> *  Status Request (OCSP) API.</em>
+<a id='L26' name='L26'></a><em class='comment'> */</em>
+<a id='L27' name='L27'></a>
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;<a href='5289.html'>auth.h</a>&gt;
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;<a href='5326.html'>auth/cert.h</a>&gt;
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> &lt;<a href='5744.html'>handshake.h</a>&gt;
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;<a href='../I/135.html'>minmax.h</a>&gt;
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='sharp'>#ifdef</em> ENABLE_OCSP
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a><em class='sharp'>#include</em> &lt;<a href='../I/681.html'>gnutls/ocsp.h</a>&gt;
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> "<a href='../I/681.html'>x509/ocsp.h</a>"
+<a id='L39' name='L39'></a>
+<a id='L40' name='L40'></a><em class='comment'>/**</em>
+<a id='L41' name='L41'></a><em class='comment'> * gnutls_ocsp_status_request_get:</em>
+<a id='L42' name='L42'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L43' name='L43'></a><em class='comment'> * @response: a #gnutls_datum_t with DER encoded OCSP response</em>
+<a id='L44' name='L44'></a><em class='comment'> *</em>
+<a id='L45' name='L45'></a><em class='comment'> * This function returns the OCSP status response received</em>
+<a id='L46' name='L46'></a><em class='comment'> * from the TLS server. The @response should be treated as</em>
+<a id='L47' name='L47'></a><em class='comment'> * constant. If no OCSP response is available then</em>
+<a id='L48' name='L48'></a><em class='comment'> * %GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE is returned.</em>
+<a id='L49' name='L49'></a><em class='comment'> *</em>
+<a id='L50' name='L50'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned,</em>
+<a id='L51' name='L51'></a><em class='comment'> *   otherwise a negative error code is returned.</em>
+<a id='L52' name='L52'></a><em class='comment'> *</em>
+<a id='L53' name='L53'></a><em class='comment'> * Since: 3.1.3</em>
+<a id='L54' name='L54'></a><em class='comment'> **/</em>
+<a id='L55' name='L55'></a><strong class='reserved'>int</strong>
+<a id='L56' name='L56'></a><a href='../R/7862.html' title='Multiple referred from 9 places.'>gnutls_ocsp_status_request_get</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L57' name='L57'></a>                               gnutls_datum_t * response)
+<a id='L58' name='L58'></a><em class='brace'>{</em>
+<a id='L59' name='L59'></a>        <strong class='reserved'>return</strong> <a href='../S/5296.html#L85' title='Defined at 85 in lib/ocsp-api.c.'>gnutls_ocsp_status_request_get2</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, 0, response);
+<a id='L60' name='L60'></a><em class='brace'>}</em>
+<a id='L61' name='L61'></a>
+<a id='L62' name='L62'></a><em class='comment'>/**</em>
+<a id='L63' name='L63'></a><em class='comment'> * gnutls_ocsp_status_request_get2:</em>
+<a id='L64' name='L64'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L65' name='L65'></a><em class='comment'> * @idx: the index of peer's certificate</em>
+<a id='L66' name='L66'></a><em class='comment'> * @response: a #gnutls_datum_t with DER encoded OCSP response</em>
+<a id='L67' name='L67'></a><em class='comment'> *</em>
+<a id='L68' name='L68'></a><em class='comment'> * This function returns the OCSP status response received</em>
+<a id='L69' name='L69'></a><em class='comment'> * from the TLS server for the certificate index provided.</em>
+<a id='L70' name='L70'></a><em class='comment'> * The index corresponds to certificates as returned by</em>
+<a id='L71' name='L71'></a><em class='comment'> * gnutls_certificate_get_peers. When index is zero this</em>
+<a id='L72' name='L72'></a><em class='comment'> * function operates identically to gnutls_ocsp_status_request_get().</em>
+<a id='L73' name='L73'></a><em class='comment'> *</em>
+<a id='L74' name='L74'></a><em class='comment'> * The returned @response should be treated as</em>
+<a id='L75' name='L75'></a><em class='comment'> * constant. If no OCSP response is available for the</em>
+<a id='L76' name='L76'></a><em class='comment'> * given index then %GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE</em>
+<a id='L77' name='L77'></a><em class='comment'> * is returned.</em>
+<a id='L78' name='L78'></a><em class='comment'> *</em>
+<a id='L79' name='L79'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned,</em>
+<a id='L80' name='L80'></a><em class='comment'> *   otherwise a negative error code is returned.</em>
+<a id='L81' name='L81'></a><em class='comment'> *</em>
+<a id='L82' name='L82'></a><em class='comment'> * Since: 3.6.3</em>
+<a id='L83' name='L83'></a><em class='comment'> **/</em>
+<a id='L84' name='L84'></a><strong class='reserved'>int</strong>
+<a id='L85' name='L85'></a><a href='../R/7863.html' title='Multiple referred from 11 places.'>gnutls_ocsp_status_request_get2</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L86' name='L86'></a>                                <strong class='reserved'>unsigned</strong> idx,
+<a id='L87' name='L87'></a>                                gnutls_datum_t * response)
+<a id='L88' name='L88'></a><em class='brace'>{</em>
+<a id='L89' name='L89'></a>        <strong class='reserved'>const</strong> <a href='../S/5822.html#L713' title='Defined at 713 in lib/gnutls_int.h.'>version_entry_st</a> *ver = <a href='../S/5822.html#L1524' title='Defined at 1524 in lib/gnutls_int.h.'>get_version</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L90' name='L90'></a>        <a href='../S/5326.html#L131' title='Defined at 131 in lib/auth/cert.h.'>cert_auth_info_t</a> info = <a href='../S/5289.html#L78' title='Defined at 78 in lib/auth.h.'>_gnutls_get_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_CERTIFICATE);
+<a id='L91' name='L91'></a>
+<a id='L92' name='L92'></a>        <strong class='reserved'>if</strong> (!ver-&gt;tls13_sem &amp;&amp; <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.entity == GNUTLS_SERVER)
+<a id='L93' name='L93'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE);
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a>        <strong class='reserved'>if</strong> (info == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> || info-&gt;raw_ocsp_list == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> ||
+<a id='L96' name='L96'></a>            info-&gt;nocsp &lt;= idx || info-&gt;raw_ocsp_list[idx].size == 0)
+<a id='L97' name='L97'></a>                <strong class='reserved'>return</strong>
+<a id='L98' name='L98'></a>                    <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>
+<a id='L99' name='L99'></a>                    (GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE);
+<a id='L100' name='L100'></a>
+<a id='L101' name='L101'></a>        response-&gt;data = info-&gt;raw_ocsp_list[idx].data;
+<a id='L102' name='L102'></a>        response-&gt;size = info-&gt;raw_ocsp_list[idx].size;
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L105' name='L105'></a><em class='brace'>}</em>
+<a id='L106' name='L106'></a>
+<a id='L107' name='L107'></a><em class='comment'>/**</em>
+<a id='L108' name='L108'></a><em class='comment'> * gnutls_certificate_set_ocsp_status_request_function:</em>
+<a id='L109' name='L109'></a><em class='comment'> * @sc: is a #gnutls_certificate_credentials_t type.</em>
+<a id='L110' name='L110'></a><em class='comment'> * @ocsp_func: function pointer to OCSP status request callback.</em>
+<a id='L111' name='L111'></a><em class='comment'> * @ptr: opaque pointer passed to callback function</em>
+<a id='L112' name='L112'></a><em class='comment'> *</em>
+<a id='L113' name='L113'></a><em class='comment'> * This function is to be used by server to register a callback to</em>
+<a id='L114' name='L114'></a><em class='comment'> * handle OCSP status requests from the client.  The callback will be</em>
+<a id='L115' name='L115'></a><em class='comment'> * invoked if the client supplied a status-request OCSP extension.</em>
+<a id='L116' name='L116'></a><em class='comment'> * The callback function prototype is:</em>
+<a id='L117' name='L117'></a><em class='comment'> *</em>
+<a id='L118' name='L118'></a><em class='comment'> * typedef int (*gnutls_status_request_ocsp_func)</em>
+<a id='L119' name='L119'></a><em class='comment'> *    (gnutls_session_t session, void *ptr, gnutls_datum_t *ocsp_response);</em>
+<a id='L120' name='L120'></a><em class='comment'> *</em>
+<a id='L121' name='L121'></a><em class='comment'> * The callback will be invoked if the client requests an OCSP certificate</em>
+<a id='L122' name='L122'></a><em class='comment'> * status.  The callback may return %GNUTLS_E_NO_CERTIFICATE_STATUS, if</em>
+<a id='L123' name='L123'></a><em class='comment'> * there is no recent OCSP response. If the callback returns %GNUTLS_E_SUCCESS,</em>
+<a id='L124' name='L124'></a><em class='comment'> * it is expected to have the @ocsp_response field set with a valid (DER-encoded)</em>
+<a id='L125' name='L125'></a><em class='comment'> * OCSP response. The response must be a value allocated using gnutls_malloc(),</em>
+<a id='L126' name='L126'></a><em class='comment'> * and will be deinitialized by the caller.</em>
+<a id='L127' name='L127'></a><em class='comment'> *</em>
+<a id='L128' name='L128'></a><em class='comment'> * It is possible to set a specific callback for each provided certificate</em>
+<a id='L129' name='L129'></a><em class='comment'> * using gnutls_certificate_set_ocsp_status_request_function2().</em>
+<a id='L130' name='L130'></a><em class='comment'> *</em>
+<a id='L131' name='L131'></a><em class='comment'> * Since: 3.1.3</em>
+<a id='L132' name='L132'></a><em class='comment'> **/</em>
+<a id='L133' name='L133'></a><strong class='reserved'>void</strong>
+<a id='L134' name='L134'></a><a href='../R/7566.html' title='Multiple referred from 4 places.'>gnutls_certificate_set_ocsp_status_request_function</a>
+<a id='L135' name='L135'></a>(gnutls_certificate_credentials_t sc,
+<a id='L136' name='L136'></a>gnutls_status_request_ocsp_func <a href='../S/5198.html#L88' title='Defined at 88 in tests/set_x509_key_file_ocsp_multi2.c.'>ocsp_func</a>, <strong class='reserved'>void</strong> *<a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a>)
+<a id='L137' name='L137'></a><em class='brace'>{</em>
+<a id='L138' name='L138'></a>
+<a id='L139' name='L139'></a>        sc-&gt;glob_ocsp_func = <a href='../S/5198.html#L88' title='Defined at 88 in tests/set_x509_key_file_ocsp_multi2.c.'>ocsp_func</a>;
+<a id='L140' name='L140'></a>        sc-&gt;glob_ocsp_func_ptr = <a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a>;
+<a id='L141' name='L141'></a><em class='brace'>}</em>
+<a id='L142' name='L142'></a>
+<a id='L143' name='L143'></a><em class='comment'>/**</em>
+<a id='L144' name='L144'></a><em class='comment'> * gnutls_certificate_set_ocsp_status_request_function2:</em>
+<a id='L145' name='L145'></a><em class='comment'> * @sc: is a #gnutls_certificate_credentials_t type.</em>
+<a id='L146' name='L146'></a><em class='comment'> * @idx: is a certificate index as returned by gnutls_certificate_set_key() and friends</em>
+<a id='L147' name='L147'></a><em class='comment'> * @ocsp_func: function pointer to OCSP status request callback.</em>
+<a id='L148' name='L148'></a><em class='comment'> * @ptr: opaque pointer passed to callback function</em>
+<a id='L149' name='L149'></a><em class='comment'> *</em>
+<a id='L150' name='L150'></a><em class='comment'> * This function is to be used by server to register a callback to</em>
+<a id='L151' name='L151'></a><em class='comment'> * provide OCSP status requests that correspond to the indexed certificate chain</em>
+<a id='L152' name='L152'></a><em class='comment'> * from the client.  The callback will be invoked if the client supplied a</em>
+<a id='L153' name='L153'></a><em class='comment'> * status-request OCSP extension.</em>
+<a id='L154' name='L154'></a><em class='comment'> *</em>
+<a id='L155' name='L155'></a><em class='comment'> * The callback function prototype is:</em>
+<a id='L156' name='L156'></a><em class='comment'> *</em>
+<a id='L157' name='L157'></a><em class='comment'> * typedef int (*gnutls_status_request_ocsp_func)</em>
+<a id='L158' name='L158'></a><em class='comment'> *    (gnutls_session_t session, void *ptr, gnutls_datum_t *ocsp_response);</em>
+<a id='L159' name='L159'></a><em class='comment'> *</em>
+<a id='L160' name='L160'></a><em class='comment'> * The callback will be invoked if the client requests an OCSP certificate</em>
+<a id='L161' name='L161'></a><em class='comment'> * status.  The callback may return %GNUTLS_E_NO_CERTIFICATE_STATUS, if</em>
+<a id='L162' name='L162'></a><em class='comment'> * there is no recent OCSP response. If the callback returns %GNUTLS_E_SUCCESS,</em>
+<a id='L163' name='L163'></a><em class='comment'> * it is expected to have the @ocsp_response field set with a valid (DER-encoded)</em>
+<a id='L164' name='L164'></a><em class='comment'> * OCSP response. The response must be a value allocated using gnutls_malloc(),</em>
+<a id='L165' name='L165'></a><em class='comment'> * and will be deinitialized by the caller.</em>
+<a id='L166' name='L166'></a><em class='comment'> *</em>
+<a id='L167' name='L167'></a><em class='comment'> * Note: the ability to set multiple OCSP responses per credential</em>
+<a id='L168' name='L168'></a><em class='comment'> * structure via the index @idx was added in version 3.5.6. To keep</em>
+<a id='L169' name='L169'></a><em class='comment'> * backwards compatibility, it requires using gnutls_certificate_set_flags()</em>
+<a id='L170' name='L170'></a><em class='comment'> * with the %GNUTLS_CERTIFICATE_API_V2 flag to make the set certificate</em>
+<a id='L171' name='L171'></a><em class='comment'> * functions return an index usable by this function.</em>
+<a id='L172' name='L172'></a><em class='comment'> *</em>
+<a id='L173' name='L173'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned,</em>
+<a id='L174' name='L174'></a><em class='comment'> *   otherwise a negative error code is returned.</em>
+<a id='L175' name='L175'></a><em class='comment'> *</em>
+<a id='L176' name='L176'></a><em class='comment'> * Since: 3.5.5</em>
+<a id='L177' name='L177'></a><em class='comment'> **/</em>
+<a id='L178' name='L178'></a><strong class='reserved'>int</strong>
+<a id='L179' name='L179'></a><a href='../R/7567.html' title='Multiple referred from 4 places.'>gnutls_certificate_set_ocsp_status_request_function2</a>
+<a id='L180' name='L180'></a>(gnutls_certificate_credentials_t sc, <strong class='reserved'>unsigned</strong> idx, gnutls_status_request_ocsp_func <a href='../S/5198.html#L88' title='Defined at 88 in tests/set_x509_key_file_ocsp_multi2.c.'>ocsp_func</a>, <strong class='reserved'>void</strong> *<a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a>)
+<a id='L181' name='L181'></a><em class='brace'>{</em>
+<a id='L182' name='L182'></a>        <strong class='reserved'>if</strong> (idx &gt;= sc-&gt;ncerts)
+<a id='L183' name='L183'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE);
+<a id='L184' name='L184'></a>
+<a id='L185' name='L185'></a>        sc-&gt;certs[idx].<a href='../S/5198.html#L88' title='Defined at 88 in tests/set_x509_key_file_ocsp_multi2.c.'>ocsp_func</a> = <a href='../S/5198.html#L88' title='Defined at 88 in tests/set_x509_key_file_ocsp_multi2.c.'>ocsp_func</a>;
+<a id='L186' name='L186'></a>        sc-&gt;certs[idx].ocsp_func_ptr = <a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a>;
+<a id='L187' name='L187'></a>
+<a id='L188' name='L188'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L189' name='L189'></a><em class='brace'>}</em>
+<a id='L190' name='L190'></a>
+<a id='L191' name='L191'></a><strong class='reserved'>static</strong>
+<a id='L192' name='L192'></a><strong class='reserved'>unsigned</strong> <a href='../S/5296.html#L286' title='Referred from 286 in lib/ocsp-api.c.'>resp_matches_pcert</a>(<a href='../S/6010.html#L196' title='Defined at 196 in lib/includes/gnutls/ocsp.h.'>gnutls_ocsp_resp_t</a> resp, <strong class='reserved'>const</strong> <a href='../D/8871.html' title='Multiple defined in 2 places.'>gnutls_pcert_st</a> *cert)
+<a id='L193' name='L193'></a><em class='brace'>{</em>
+<a id='L194' name='L194'></a>        gnutls_x509_crt_t crt;
+<a id='L195' name='L195'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L196' name='L196'></a>        <strong class='reserved'>unsigned</strong> retval;
+<a id='L197' name='L197'></a>
+<a id='L198' name='L198'></a>        ret = <a href='../S/5349.html#L199' title='Defined at 199 in lib/x509/x509.c.'>gnutls_x509_crt_init</a>(&amp;crt);
+<a id='L199' name='L199'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L200' name='L200'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L201' name='L201'></a>
+<a id='L202' name='L202'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(crt, &amp;cert-&gt;cert, GNUTLS_X509_FMT_DER);
+<a id='L203' name='L203'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L204' name='L204'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L205' name='L205'></a>                retval = 0;
+<a id='L206' name='L206'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L207' name='L207'></a>        <em class='brace'>}</em>
+<a id='L208' name='L208'></a>
+<a id='L209' name='L209'></a>        ret = <a href='../S/5343.html#L1357' title='Defined at 1357 in lib/x509/ocsp.c.'>gnutls_ocsp_resp_check_crt</a>(resp, 0, crt);
+<a id='L210' name='L210'></a>        <strong class='reserved'>if</strong> (ret == 0)
+<a id='L211' name='L211'></a>                retval = 1;
+<a id='L212' name='L212'></a>        <strong class='reserved'>else</strong>
+<a id='L213' name='L213'></a>                retval = 0;
+<a id='L214' name='L214'></a>
+<a id='L215' name='L215'></a> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>:
+<a id='L216' name='L216'></a>        <a href='../S/5349.html#L291' title='Defined at 291 in lib/x509/x509.c.'>gnutls_x509_crt_deinit</a>(crt);
+<a id='L217' name='L217'></a>        <strong class='reserved'>return</strong> retval;
+<a id='L218' name='L218'></a><em class='brace'>}</em>
+<a id='L219' name='L219'></a>
+<a id='L220' name='L220'></a><em class='comment'>/**</em>
+<a id='L221' name='L221'></a><em class='comment'> * gnutls_certificate_set_ocsp_status_request_file:</em>
+<a id='L222' name='L222'></a><em class='comment'> * @sc: is a credentials structure.</em>
+<a id='L223' name='L223'></a><em class='comment'> * @response_file: a filename of the OCSP response</em>
+<a id='L224' name='L224'></a><em class='comment'> * @idx: is a certificate index as returned by gnutls_certificate_set_key() and friends</em>
+<a id='L225' name='L225'></a><em class='comment'> *</em>
+<a id='L226' name='L226'></a><em class='comment'> * This function loads the provided OCSP response. It will be</em>
+<a id='L227' name='L227'></a><em class='comment'> * sent to the client if requests an OCSP certificate status for</em>
+<a id='L228' name='L228'></a><em class='comment'> * the certificate chain specified by @idx.</em>
+<a id='L229' name='L229'></a><em class='comment'> *</em>
+<a id='L230' name='L230'></a><em class='comment'> * Note: the ability to set multiple OCSP responses per credential</em>
+<a id='L231' name='L231'></a><em class='comment'> * structure via the index @idx was added in version 3.5.6. To keep</em>
+<a id='L232' name='L232'></a><em class='comment'> * backwards compatibility, it requires using gnutls_certificate_set_flags()</em>
+<a id='L233' name='L233'></a><em class='comment'> * with the %GNUTLS_CERTIFICATE_API_V2 flag to make the set certificate</em>
+<a id='L234' name='L234'></a><em class='comment'> * functions return an index usable by this function.</em>
+<a id='L235' name='L235'></a><em class='comment'> *</em>
+<a id='L236' name='L236'></a><em class='comment'> * This function can be called multiple times since GnuTLS 3.6.3</em>
+<a id='L237' name='L237'></a><em class='comment'> * when multiple responses which apply to the chain are available.</em>
+<a id='L238' name='L238'></a><em class='comment'> * If the response provided does not match any certificates present</em>
+<a id='L239' name='L239'></a><em class='comment'> * in the chain, the code %GNUTLS_E_OCSP_MISMATCH_WITH_CERTS is returned.</em>
+<a id='L240' name='L240'></a><em class='comment'> * To revert to the previous behavior set the flag %GNUTLS_CERTIFICATE_SKIP_OCSP_RESPONSE_CHECK</em>
+<a id='L241' name='L241'></a><em class='comment'> * in the certificate credentials structure. In that case, only the</em>
+<a id='L242' name='L242'></a><em class='comment'> * end-certificate's OCSP response can be set.</em>
+<a id='L243' name='L243'></a><em class='comment'> * If the response is already expired at the time of loading the code</em>
+<a id='L244' name='L244'></a><em class='comment'> * %GNUTLS_E_EXPIRED is returned.</em>
+<a id='L245' name='L245'></a><em class='comment'> *</em>
+<a id='L246' name='L246'></a><em class='comment'> * To revert to the previous behavior of this function which does not return</em>
+<a id='L247' name='L247'></a><em class='comment'> * any errors, set the flag %GNUTLS_CERTIFICATE_SKIP_OCSP_RESPONSE_CHECK</em>
+<a id='L248' name='L248'></a><em class='comment'> *</em>
+<a id='L249' name='L249'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned,</em>
+<a id='L250' name='L250'></a><em class='comment'> *   otherwise a negative error code is returned.</em>
+<a id='L251' name='L251'></a><em class='comment'> *</em>
+<a id='L252' name='L252'></a><em class='comment'> * Since: 3.1.3</em>
+<a id='L253' name='L253'></a><em class='comment'> **/</em>
+<a id='L254' name='L254'></a><strong class='reserved'>int</strong>
+<a id='L255' name='L255'></a><a href='../R/7564.html' title='Multiple referred from 17 places.'>gnutls_certificate_set_ocsp_status_request_file</a>(gnutls_certificate_credentials_t sc,
+<a id='L256' name='L256'></a>                                                <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *response_file,
+<a id='L257' name='L257'></a>                                                <strong class='reserved'>unsigned</strong> idx)
+<a id='L258' name='L258'></a><em class='brace'>{</em>
+<a id='L259' name='L259'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L260' name='L260'></a>
+<a id='L261' name='L261'></a>        ret = <a href='../S/5296.html#L370' title='Defined at 370 in lib/ocsp-api.c.'>gnutls_certificate_set_ocsp_status_request_file2</a>(sc, response_file,
+<a id='L262' name='L262'></a>                                                               idx, GNUTLS_X509_FMT_DER);
+<a id='L263' name='L263'></a>        <strong class='reserved'>if</strong> (ret &gt;= 0)
+<a id='L264' name='L264'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L265' name='L265'></a>        <strong class='reserved'>else</strong>
+<a id='L266' name='L266'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L267' name='L267'></a><em class='brace'>}</em>
+<a id='L268' name='L268'></a>
+<a id='L269' name='L269'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5296.html#L519' title='Referred from 519 in lib/ocsp-api.c.'>append_response</a>(gnutls_certificate_credentials_t sc, <strong class='reserved'>unsigned</strong> idx,
+<a id='L270' name='L270'></a>                           <a href='../S/6010.html#L196' title='Defined at 196 in lib/includes/gnutls/ocsp.h.'>gnutls_ocsp_resp_t</a> resp, <strong class='reserved'>const</strong> gnutls_datum_t *der)
+<a id='L271' name='L271'></a><em class='brace'>{</em>
+<a id='L272' name='L272'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L273' name='L273'></a>        <strong class='reserved'>unsigned</strong> i, found = 0;
+<a id='L274' name='L274'></a>        <strong class='reserved'>unsigned</strong> try_already_set = 0;
+<a id='L275' name='L275'></a>        time_t t;
+<a id='L276' name='L276'></a>
+<a id='L277' name='L277'></a> retry:
+<a id='L278' name='L278'></a>
+<a id='L279' name='L279'></a>        <em class='comment'>/* iterate through all certificates in chain, and add the response</em>
+<a id='L280' name='L280'></a><em class='comment'>         * to the certificate that it matches with.</em>
+<a id='L281' name='L281'></a><em class='comment'>         */</em>
+<a id='L282' name='L282'></a>        <strong class='reserved'>for</strong> (i=0;i&lt;<a href='../D/2832.html' title='Multiple defined in 10 places.'>MIN</a>(sc-&gt;certs[idx].cert_list_length, <a href='../S/5326.html#L35' title='Defined at 35 in lib/auth/cert.h.'>MAX_OCSP_RESPONSES</a>);i++) <em class='brace'>{</em>
+<a id='L283' name='L283'></a>                <strong class='reserved'>if</strong> (!try_already_set &amp;&amp; sc-&gt;certs[idx].ocsp_data[i].response.data)
+<a id='L284' name='L284'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L285' name='L285'></a>
+<a id='L286' name='L286'></a>                <strong class='reserved'>if</strong> (!<a href='../S/5296.html#L192' title='Defined at 192 in lib/ocsp-api.c.'>resp_matches_pcert</a>(resp, &amp;sc-&gt;certs[idx].cert_list[i]))
+<a id='L287' name='L287'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L288' name='L288'></a>
+<a id='L289' name='L289'></a>                t = <a href='../S/5343.html#L2520' title='Defined at 2520 in lib/x509/ocsp.c.'>_gnutls_ocsp_get_validity</a>(resp);
+<a id='L290' name='L290'></a>                <em class='comment'>/* if already invalid */</em>
+<a id='L291' name='L291'></a>                <strong class='reserved'>if</strong> (t == (time_t)-1) <em class='brace'>{</em>
+<a id='L292' name='L292'></a>                        <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>("the OCSP response associated with chain %d on pos %d, is invalid/expired\n", idx, i);
+<a id='L293' name='L293'></a>                        <strong class='reserved'>return</strong> GNUTLS_E_EXPIRED;
+<a id='L294' name='L294'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (t == (time_t)-2) <em class='brace'>{</em>
+<a id='L295' name='L295'></a>                        <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>("the OCSP response associated with chain %d on pos %d, is too old (ignoring)\n", idx, i);
+<a id='L296' name='L296'></a>                        <strong class='reserved'>return</strong> 0;
+<a id='L297' name='L297'></a>                <em class='brace'>}</em>
+<a id='L298' name='L298'></a>
+<a id='L299' name='L299'></a>                <strong class='reserved'>if</strong> (t &gt;= 0)
+<a id='L300' name='L300'></a>                        sc-&gt;certs[idx].ocsp_data[i].exptime = t;
+<a id='L301' name='L301'></a>                <strong class='reserved'>else</strong>
+<a id='L302' name='L302'></a>                        sc-&gt;certs[idx].ocsp_data[i].exptime = 0;
+<a id='L303' name='L303'></a>
+<a id='L304' name='L304'></a>                <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>("associating OCSP response with chain %d on pos %d\n", idx, i);
+<a id='L305' name='L305'></a>
+<a id='L306' name='L306'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(sc-&gt;certs[idx].ocsp_data[i].response.data);
+<a id='L307' name='L307'></a>
+<a id='L308' name='L308'></a>                ret = <a href='../S/5799.html#L35' title='Defined at 35 in lib/datum.c.'>_gnutls_set_datum</a>(&amp;sc-&gt;certs[idx].ocsp_data[i].response,
+<a id='L309' name='L309'></a>                                        der-&gt;data,
+<a id='L310' name='L310'></a>                                        der-&gt;size);
+<a id='L311' name='L311'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L312' name='L312'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L313' name='L313'></a>                        sc-&gt;certs[idx].ocsp_data[i].response.data = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L314' name='L314'></a>                        sc-&gt;certs[idx].ocsp_data[i].response.size = 0;
+<a id='L315' name='L315'></a>                        <strong class='reserved'>return</strong> ret;
+<a id='L316' name='L316'></a>                <em class='brace'>}</em>
+<a id='L317' name='L317'></a>
+<a id='L318' name='L318'></a>                <strong class='reserved'>if</strong> (sc-&gt;certs[idx].ocsp_data_length &lt;= i)
+<a id='L319' name='L319'></a>                        sc-&gt;certs[idx].ocsp_data_length = i+1;
+<a id='L320' name='L320'></a>
+<a id='L321' name='L321'></a>                found = 1;
+<a id='L322' name='L322'></a>                <strong class='reserved'>break</strong>;
+<a id='L323' name='L323'></a>        <em class='brace'>}</em>
+<a id='L324' name='L324'></a>
+<a id='L325' name='L325'></a>        <strong class='reserved'>if</strong> (!found) <em class='brace'>{</em>
+<a id='L326' name='L326'></a>                <em class='comment'>/* slow path; if we found no matching certificate for the OCSP</em>
+<a id='L327' name='L327'></a><em class='comment'>                 * response, try all the existing, even if a response is already</em>
+<a id='L328' name='L328'></a><em class='comment'>                 * given. */</em>
+<a id='L329' name='L329'></a>                <strong class='reserved'>if</strong> (!try_already_set) <em class='brace'>{</em>
+<a id='L330' name='L330'></a>                        try_already_set = 1;
+<a id='L331' name='L331'></a>                        <strong class='reserved'>goto</strong> retry;
+<a id='L332' name='L332'></a>                <em class='brace'>}</em>
+<a id='L333' name='L333'></a>                ret = GNUTLS_E_OCSP_MISMATCH_WITH_CERTS;
+<a id='L334' name='L334'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L335' name='L335'></a>                ret = 0;
+<a id='L336' name='L336'></a>        <em class='brace'>}</em>
+<a id='L337' name='L337'></a>
+<a id='L338' name='L338'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L339' name='L339'></a><em class='brace'>}</em>
+<a id='L340' name='L340'></a>
+<a id='L341' name='L341'></a><em class='comment'>/**</em>
+<a id='L342' name='L342'></a><em class='comment'> * gnutls_certificate_set_ocsp_status_request_file2:</em>
+<a id='L343' name='L343'></a><em class='comment'> * @sc: is a credentials structure.</em>
+<a id='L344' name='L344'></a><em class='comment'> * @response_file: a filename of the OCSP response</em>
+<a id='L345' name='L345'></a><em class='comment'> * @idx: is a certificate index as returned by gnutls_certificate_set_key() and friends</em>
+<a id='L346' name='L346'></a><em class='comment'> * @fmt: is PEM or DER</em>
+<a id='L347' name='L347'></a><em class='comment'> *</em>
+<a id='L348' name='L348'></a><em class='comment'> * This function loads the OCSP responses to be sent to the</em>
+<a id='L349' name='L349'></a><em class='comment'> * peer for the certificate chain specified by @idx. When @fmt is</em>
+<a id='L350' name='L350'></a><em class='comment'> * set to PEM, multiple responses can be loaded.</em>
+<a id='L351' name='L351'></a><em class='comment'> *</em>
+<a id='L352' name='L352'></a><em class='comment'> * This function must be called after setting any certificates, and</em>
+<a id='L353' name='L353'></a><em class='comment'> * cannot be used for certificates that are provided via a callback --</em>
+<a id='L354' name='L354'></a><em class='comment'> * that is when gnutls_certificate_set_retrieve_function() is used. In</em>
+<a id='L355' name='L355'></a><em class='comment'> * that case consider using gnutls_certificate_set_retrieve_function3().</em>
+<a id='L356' name='L356'></a><em class='comment'> *</em>
+<a id='L357' name='L357'></a><em class='comment'> * This function can be called multiple times when multiple responses</em>
+<a id='L358' name='L358'></a><em class='comment'> * applicable to the certificate chain are available.</em>
+<a id='L359' name='L359'></a><em class='comment'> * If the response provided does not match any certificates present</em>
+<a id='L360' name='L360'></a><em class='comment'> * in the chain, the code %GNUTLS_E_OCSP_MISMATCH_WITH_CERTS is returned.</em>
+<a id='L361' name='L361'></a><em class='comment'> * If the response is already expired at the time of loading the code</em>
+<a id='L362' name='L362'></a><em class='comment'> * %GNUTLS_E_EXPIRED is returned.</em>
+<a id='L363' name='L363'></a><em class='comment'> *</em>
+<a id='L364' name='L364'></a><em class='comment'> * Returns: On success, the number of loaded responses is returned,</em>
+<a id='L365' name='L365'></a><em class='comment'> *   otherwise a negative error code.</em>
+<a id='L366' name='L366'></a><em class='comment'> *</em>
+<a id='L367' name='L367'></a><em class='comment'> * Since: 3.1.3</em>
+<a id='L368' name='L368'></a><em class='comment'> **/</em>
+<a id='L369' name='L369'></a><strong class='reserved'>int</strong>
+<a id='L370' name='L370'></a><a href='../R/7565.html' title='Multiple referred from 5 places.'>gnutls_certificate_set_ocsp_status_request_file2</a>(gnutls_certificate_credentials_t sc,
+<a id='L371' name='L371'></a>                                                <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *response_file,
+<a id='L372' name='L372'></a>                                                <strong class='reserved'>unsigned</strong> idx,
+<a id='L373' name='L373'></a>                                                gnutls_x509_crt_fmt_t fmt)
+<a id='L374' name='L374'></a><em class='brace'>{</em>
+<a id='L375' name='L375'></a>        gnutls_datum_t raw = <em class='brace'>{</em><a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0<em class='brace'>}</em>;
+<a id='L376' name='L376'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L377' name='L377'></a>
+<a id='L378' name='L378'></a>        <strong class='reserved'>if</strong> (idx &gt;= sc-&gt;ncerts)
+<a id='L379' name='L379'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE);
+<a id='L380' name='L380'></a>
+<a id='L381' name='L381'></a>        ret = <a href='../S/5745.html#L58' title='Defined at 58 in lib/file.c.'>gnutls_load_file</a>(response_file, &amp;raw);
+<a id='L382' name='L382'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L383' name='L383'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_FILE_ERROR);
+<a id='L384' name='L384'></a>
+<a id='L385' name='L385'></a>        ret = <a href='../S/5296.html#L427' title='Defined at 427 in lib/ocsp-api.c.'>gnutls_certificate_set_ocsp_status_request_mem</a>(sc, &amp;raw, idx, fmt);
+<a id='L386' name='L386'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(raw.data);
+<a id='L387' name='L387'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L388' name='L388'></a><em class='brace'>}</em>
+<a id='L389' name='L389'></a>
+<a id='L390' name='L390'></a><em class='sharp'>#define</em> <a href='../R/2765.html' title='Multiple referred from 5 places.'>PEM_OCSP_RESPONSE</a> "OCSP RESPONSE"
+<a id='L391' name='L391'></a><em class='sharp'>#define</em> <a href='../R/905.html' title='Multiple referred from 4 places.'>FULL_PEM_OCSP_RESPONSE</a> "-----BEGIN OCSP RESPONSE"
+<a id='L392' name='L392'></a>
+<a id='L393' name='L393'></a><em class='comment'>/**</em>
+<a id='L394' name='L394'></a><em class='comment'> * gnutls_certificate_set_ocsp_status_request_mem:</em>
+<a id='L395' name='L395'></a><em class='comment'> * @sc: is a credentials structure.</em>
+<a id='L396' name='L396'></a><em class='comment'> * @resp_data: a memory buffer holding an OCSP response</em>
+<a id='L397' name='L397'></a><em class='comment'> * @idx: is a certificate index as returned by gnutls_certificate_set_key() and friends</em>
+<a id='L398' name='L398'></a><em class='comment'> * @fmt: is PEM or DER</em>
+<a id='L399' name='L399'></a><em class='comment'> *</em>
+<a id='L400' name='L400'></a><em class='comment'> * This function sets the OCSP responses to be sent to the</em>
+<a id='L401' name='L401'></a><em class='comment'> * peer for the certificate chain specified by @idx. When @fmt is set</em>
+<a id='L402' name='L402'></a><em class='comment'> * to PEM, multiple responses can be loaded.</em>
+<a id='L403' name='L403'></a><em class='comment'> *</em>
+<a id='L404' name='L404'></a><em class='comment'> * Note: the ability to set multiple OCSP responses per credential</em>
+<a id='L405' name='L405'></a><em class='comment'> * structure via the index @idx was added in version 3.5.6. To keep</em>
+<a id='L406' name='L406'></a><em class='comment'> * backwards compatibility, it requires using gnutls_certificate_set_flags()</em>
+<a id='L407' name='L407'></a><em class='comment'> * with the %GNUTLS_CERTIFICATE_API_V2 flag to make the set certificate</em>
+<a id='L408' name='L408'></a><em class='comment'> * functions return an index usable by this function.</em>
+<a id='L409' name='L409'></a><em class='comment'> *</em>
+<a id='L410' name='L410'></a><em class='comment'> * This function must be called after setting any certificates, and</em>
+<a id='L411' name='L411'></a><em class='comment'> * cannot be used for certificates that are provided via a callback --</em>
+<a id='L412' name='L412'></a><em class='comment'> * that is when gnutls_certificate_set_retrieve_function() is used.</em>
+<a id='L413' name='L413'></a><em class='comment'> *</em>
+<a id='L414' name='L414'></a><em class='comment'> * This function can be called multiple times when multiple responses which</em>
+<a id='L415' name='L415'></a><em class='comment'> * apply to the certificate chain are available.</em>
+<a id='L416' name='L416'></a><em class='comment'> * If the response provided does not match any certificates present</em>
+<a id='L417' name='L417'></a><em class='comment'> * in the chain, the code %GNUTLS_E_OCSP_MISMATCH_WITH_CERTS is returned.</em>
+<a id='L418' name='L418'></a><em class='comment'> * If the response is already expired at the time of loading the code</em>
+<a id='L419' name='L419'></a><em class='comment'> * %GNUTLS_E_EXPIRED is returned.</em>
+<a id='L420' name='L420'></a><em class='comment'> *</em>
+<a id='L421' name='L421'></a><em class='comment'> * Returns: On success, the number of loaded responses is returned,</em>
+<a id='L422' name='L422'></a><em class='comment'> *   otherwise a negative error code.</em>
+<a id='L423' name='L423'></a><em class='comment'> *</em>
+<a id='L424' name='L424'></a><em class='comment'> * Since: 3.6.3</em>
+<a id='L425' name='L425'></a><em class='comment'> **/</em>
+<a id='L426' name='L426'></a><strong class='reserved'>int</strong>
+<a id='L427' name='L427'></a><a href='../R/7568.html' title='Multiple referred from 9 places.'>gnutls_certificate_set_ocsp_status_request_mem</a>(gnutls_certificate_credentials_t sc,
+<a id='L428' name='L428'></a>                                               <strong class='reserved'>const</strong> gnutls_datum_t *resp_data,
+<a id='L429' name='L429'></a>                                               <strong class='reserved'>unsigned</strong> idx,
+<a id='L430' name='L430'></a>                                               gnutls_x509_crt_fmt_t fmt)
+<a id='L431' name='L431'></a>
+<a id='L432' name='L432'></a><em class='brace'>{</em>
+<a id='L433' name='L433'></a>        gnutls_datum_t der = <em class='brace'>{</em><a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0<em class='brace'>}</em>;
+<a id='L434' name='L434'></a>        <a href='../S/6010.html#L196' title='Defined at 196 in lib/includes/gnutls/ocsp.h.'>gnutls_ocsp_resp_t</a> resp = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L435' name='L435'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L436' name='L436'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> nresp = 0;
+<a id='L437' name='L437'></a>
+<a id='L438' name='L438'></a>        ret = <a href='../S/5343.html#L115' title='Defined at 115 in lib/x509/ocsp.c.'>gnutls_ocsp_resp_init</a>(&amp;resp);
+<a id='L439' name='L439'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L440' name='L440'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L441' name='L441'></a>        <em class='brace'>}</em>
+<a id='L442' name='L442'></a>
+<a id='L443' name='L443'></a>        <strong class='reserved'>if</strong> (fmt == GNUTLS_X509_FMT_PEM) <em class='brace'>{</em>
+<a id='L444' name='L444'></a>                <em class='comment'>/* load multiple responses */</em>
+<a id='L445' name='L445'></a>                gnutls_datum_t p = <em class='brace'>{</em>resp_data-&gt;data, resp_data-&gt;size<em class='brace'>}</em>;
+<a id='L446' name='L446'></a>
+<a id='L447' name='L447'></a>                p.data = <a href='../D/10285.html' title='Multiple defined in 5 places.'>memmem</a>(p.data, p.size, <a href='../S/5296.html#L391' title='Defined at 391 in lib/ocsp-api.c.'>FULL_PEM_OCSP_RESPONSE</a>,
+<a id='L448' name='L448'></a>                                <strong class='reserved'>sizeof</strong>(<a href='../S/5296.html#L391' title='Defined at 391 in lib/ocsp-api.c.'>FULL_PEM_OCSP_RESPONSE</a>)-1);
+<a id='L449' name='L449'></a>                <strong class='reserved'>if</strong> (p.data == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L450' name='L450'></a>                        ret = <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE);
+<a id='L451' name='L451'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L452' name='L452'></a>                <em class='brace'>}</em>
+<a id='L453' name='L453'></a>
+<a id='L454' name='L454'></a>                p.size -= p.data - resp_data-&gt;data;
+<a id='L455' name='L455'></a>                <strong class='reserved'>if</strong> (p.size &lt;= 0) <em class='brace'>{</em>
+<a id='L456' name='L456'></a>                        ret = <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE);
+<a id='L457' name='L457'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L458' name='L458'></a>                <em class='brace'>}</em>
+<a id='L459' name='L459'></a>
+<a id='L460' name='L460'></a>                <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L461' name='L461'></a>                        ret = <a href='../S/5290.html#L459' title='Defined at 459 in lib/x509_b64.c.'>gnutls_pem_base64_decode2</a>(<a href='../D/3206.html' title='Multiple defined in 2 places.'>PEM_OCSP_RESPONSE</a>, &amp;p, &amp;der);
+<a id='L462' name='L462'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L463' name='L463'></a>                                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L464' name='L464'></a>                                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L465' name='L465'></a>                        <em class='brace'>}</em>
+<a id='L466' name='L466'></a>
+<a id='L467' name='L467'></a>                        ret = <a href='../S/5296.html#L427' title='Defined at 427 in lib/ocsp-api.c.'>gnutls_certificate_set_ocsp_status_request_mem</a>(sc, &amp;der, idx,
+<a id='L468' name='L468'></a>                                                                             GNUTLS_X509_FMT_DER);
+<a id='L469' name='L469'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L470' name='L470'></a>                                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L471' name='L471'></a>                                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L472' name='L472'></a>                        <em class='brace'>}</em>
+<a id='L473' name='L473'></a>                        nresp++;
+<a id='L474' name='L474'></a>
+<a id='L475' name='L475'></a>                        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(der.data);
+<a id='L476' name='L476'></a>
+<a id='L477' name='L477'></a>                        p.data++;
+<a id='L478' name='L478'></a>                        p.size--;
+<a id='L479' name='L479'></a>
+<a id='L480' name='L480'></a>                        p.data = <a href='../D/10285.html' title='Multiple defined in 5 places.'>memmem</a>(p.data, p.size, <a href='../S/5296.html#L391' title='Defined at 391 in lib/ocsp-api.c.'>FULL_PEM_OCSP_RESPONSE</a>,
+<a id='L481' name='L481'></a>                                        <strong class='reserved'>sizeof</strong>(<a href='../S/5296.html#L391' title='Defined at 391 in lib/ocsp-api.c.'>FULL_PEM_OCSP_RESPONSE</a>)-1);
+<a id='L482' name='L482'></a>                        <strong class='reserved'>if</strong> (p.data == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L483' name='L483'></a>                                <strong class='reserved'>break</strong>;
+<a id='L484' name='L484'></a>                        p.size = resp_data-&gt;size - (p.data - resp_data-&gt;data);
+<a id='L485' name='L485'></a>                <em class='brace'>}</em> <strong class='reserved'>while</strong>(p.size &gt; 0);
+<a id='L486' name='L486'></a>
+<a id='L487' name='L487'></a>                ret = nresp;
+<a id='L488' name='L488'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L489' name='L489'></a>                <em class='comment'>/* DER: load a single response */</em>
+<a id='L490' name='L490'></a>                <strong class='reserved'>if</strong> (sc-&gt;flags &amp; GNUTLS_CERTIFICATE_SKIP_OCSP_RESPONSE_CHECK) <em class='brace'>{</em>
+<a id='L491' name='L491'></a>                        ret = <a href='../S/5343.html#L252' title='Defined at 252 in lib/x509/ocsp.c.'>gnutls_ocsp_resp_import2</a>(resp, resp_data, GNUTLS_X509_FMT_DER);
+<a id='L492' name='L492'></a>                        <strong class='reserved'>if</strong> (ret &gt;= 0) <em class='brace'>{</em>
+<a id='L493' name='L493'></a>                                sc-&gt;certs[idx].ocsp_data[0].exptime = <a href='../S/5343.html#L2520' title='Defined at 2520 in lib/x509/ocsp.c.'>_gnutls_ocsp_get_validity</a>(resp);
+<a id='L494' name='L494'></a>                                <strong class='reserved'>if</strong> (sc-&gt;certs[idx].ocsp_data[0].exptime &lt;= 0)
+<a id='L495' name='L495'></a>                                        sc-&gt;certs[idx].ocsp_data[0].exptime = 0;
+<a id='L496' name='L496'></a>                        <em class='brace'>}</em>
+<a id='L497' name='L497'></a>
+<a id='L498' name='L498'></a>                        <em class='comment'>/* quick load of first response */</em>
+<a id='L499' name='L499'></a>                        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(sc-&gt;certs[idx].ocsp_data[0].response.data);
+<a id='L500' name='L500'></a>
+<a id='L501' name='L501'></a>                        ret = <a href='../S/5799.html#L35' title='Defined at 35 in lib/datum.c.'>_gnutls_set_datum</a>(&amp;sc-&gt;certs[idx].ocsp_data[0].response,
+<a id='L502' name='L502'></a>                                                resp_data-&gt;data,
+<a id='L503' name='L503'></a>                                                resp_data-&gt;size);
+<a id='L504' name='L504'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L505' name='L505'></a>                                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L506' name='L506'></a>                                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L507' name='L507'></a>                        <em class='brace'>}</em>
+<a id='L508' name='L508'></a>
+<a id='L509' name='L509'></a>                        sc-&gt;certs[idx].ocsp_data_length = 1;
+<a id='L510' name='L510'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L511' name='L511'></a>                <em class='brace'>}</em>
+<a id='L512' name='L512'></a>
+<a id='L513' name='L513'></a>                ret = <a href='../S/5343.html#L252' title='Defined at 252 in lib/x509/ocsp.c.'>gnutls_ocsp_resp_import2</a>(resp, resp_data, GNUTLS_X509_FMT_DER);
+<a id='L514' name='L514'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L515' name='L515'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L516' name='L516'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L517' name='L517'></a>                <em class='brace'>}</em>
+<a id='L518' name='L518'></a>
+<a id='L519' name='L519'></a>                ret = <a href='../S/5296.html#L269' title='Defined at 269 in lib/ocsp-api.c.'>append_response</a>(sc, idx, resp, resp_data);
+<a id='L520' name='L520'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L521' name='L521'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L522' name='L522'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L523' name='L523'></a>                <em class='brace'>}</em>
+<a id='L524' name='L524'></a>
+<a id='L525' name='L525'></a>                ret = 1;
+<a id='L526' name='L526'></a>        <em class='brace'>}</em>
+<a id='L527' name='L527'></a>  <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>:
+<a id='L528' name='L528'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(der.data);
+<a id='L529' name='L529'></a>        <strong class='reserved'>if</strong> (resp)
+<a id='L530' name='L530'></a>                <a href='../S/5343.html#L153' title='Defined at 153 in lib/x509/ocsp.c.'>gnutls_ocsp_resp_deinit</a>(resp);
+<a id='L531' name='L531'></a>
+<a id='L532' name='L532'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L533' name='L533'></a><em class='brace'>}</em>
+<a id='L534' name='L534'></a>
+<a id='L535' name='L535'></a><em class='comment'>/**</em>
+<a id='L536' name='L536'></a><em class='comment'> * gnutls_certificate_get_ocsp_expiration:</em>
+<a id='L537' name='L537'></a><em class='comment'> * @sc: is a credentials structure.</em>
+<a id='L538' name='L538'></a><em class='comment'> * @idx: is a certificate chain index as returned by gnutls_certificate_set_key() and friends</em>
+<a id='L539' name='L539'></a><em class='comment'> * @oidx: is an OCSP response index</em>
+<a id='L540' name='L540'></a><em class='comment'> * @flags: should be zero</em>
+<a id='L541' name='L541'></a><em class='comment'> *</em>
+<a id='L542' name='L542'></a><em class='comment'> * This function returns the validity of the loaded OCSP responses,</em>
+<a id='L543' name='L543'></a><em class='comment'> * to provide information on when to reload/refresh them.</em>
+<a id='L544' name='L544'></a><em class='comment'> *</em>
+<a id='L545' name='L545'></a><em class='comment'> * Note that the credentials structure should be read-only when in</em>
+<a id='L546' name='L546'></a><em class='comment'> * use, thus when reloading, either the credentials structure must not</em>
+<a id='L547' name='L547'></a><em class='comment'> * be in use by any sessions, or a new credentials structure should be</em>
+<a id='L548' name='L548'></a><em class='comment'> * allocated for new sessions.</em>
+<a id='L549' name='L549'></a><em class='comment'> *</em>
+<a id='L550' name='L550'></a><em class='comment'> * When @oidx is (-1) then the minimum refresh time for all responses</em>
+<a id='L551' name='L551'></a><em class='comment'> * is returned. Otherwise the index specifies the response corresponding</em>
+<a id='L552' name='L552'></a><em class='comment'> * to the @odix certificate in the certificate chain.</em>
+<a id='L553' name='L553'></a><em class='comment'> *</em>
+<a id='L554' name='L554'></a><em class='comment'> * Returns: On success, the expiration time of the OCSP response. Otherwise</em>
+<a id='L555' name='L555'></a><em class='comment'> *   (time_t)(-1) on error, or (time_t)-2 on out of bounds.</em>
+<a id='L556' name='L556'></a><em class='comment'> *</em>
+<a id='L557' name='L557'></a><em class='comment'> * Since: 3.6.3</em>
+<a id='L558' name='L558'></a><em class='comment'> **/</em>
+<a id='L559' name='L559'></a>time_t
+<a id='L560' name='L560'></a><a href='../R/7548.html' title='Multiple referred from 9 places.'>gnutls_certificate_get_ocsp_expiration</a>(gnutls_certificate_credentials_t sc,
+<a id='L561' name='L561'></a>                                       <strong class='reserved'>unsigned</strong> idx,
+<a id='L562' name='L562'></a>                                       <strong class='reserved'>int</strong> oidx,
+<a id='L563' name='L563'></a>                                       <strong class='reserved'>unsigned</strong> flags)
+<a id='L564' name='L564'></a><em class='brace'>{</em>
+<a id='L565' name='L565'></a>        <strong class='reserved'>unsigned</strong> <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>;
+<a id='L566' name='L566'></a>
+<a id='L567' name='L567'></a>        <strong class='reserved'>if</strong> (idx &gt;= sc-&gt;ncerts)
+<a id='L568' name='L568'></a>                <strong class='reserved'>return</strong> (time_t)-2;
+<a id='L569' name='L569'></a>
+<a id='L570' name='L570'></a>        <strong class='reserved'>if</strong> (oidx == -1) <em class='brace'>{</em>
+<a id='L571' name='L571'></a>                time_t <a href='../S/4981.html#L8' title='Defined at 8 in tests/eagain-common.h.'>min</a> = 0;
+<a id='L572' name='L572'></a>
+<a id='L573' name='L573'></a>                <strong class='reserved'>for</strong> (<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>=0;<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>&lt;<a href='../D/2832.html' title='Multiple defined in 10 places.'>MIN</a>(sc-&gt;certs[idx].cert_list_length, <a href='../S/5326.html#L35' title='Defined at 35 in lib/auth/cert.h.'>MAX_OCSP_RESPONSES</a>);<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>++) <em class='brace'>{</em>
+<a id='L574' name='L574'></a>                        <strong class='reserved'>if</strong> (<a href='../S/4981.html#L8' title='Defined at 8 in tests/eagain-common.h.'>min</a> &lt;= 0)
+<a id='L575' name='L575'></a>                                <a href='../S/4981.html#L8' title='Defined at 8 in tests/eagain-common.h.'>min</a> = sc-&gt;certs[idx].ocsp_data[<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>].exptime;
+<a id='L576' name='L576'></a>                        <strong class='reserved'>else</strong>
+<a id='L577' name='L577'></a>                                <strong class='reserved'>if</strong> (sc-&gt;certs[idx].ocsp_data[<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>].exptime &gt; 0 &amp;&amp;
+<a id='L578' name='L578'></a>                                    <a href='../S/4981.html#L8' title='Defined at 8 in tests/eagain-common.h.'>min</a> &gt;= sc-&gt;certs[idx].ocsp_data[<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>].exptime)
+<a id='L579' name='L579'></a>                                        <a href='../S/4981.html#L8' title='Defined at 8 in tests/eagain-common.h.'>min</a> = sc-&gt;certs[idx].ocsp_data[<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>].exptime;
+<a id='L580' name='L580'></a>                <em class='brace'>}</em>
+<a id='L581' name='L581'></a>                <strong class='reserved'>return</strong> <a href='../S/4981.html#L8' title='Defined at 8 in tests/eagain-common.h.'>min</a>;
+<a id='L582' name='L582'></a>        <em class='brace'>}</em>
+<a id='L583' name='L583'></a>
+<a id='L584' name='L584'></a>        <strong class='reserved'>if</strong> (oidx &gt;= <a href='../S/5326.html#L35' title='Defined at 35 in lib/auth/cert.h.'>MAX_OCSP_RESPONSES</a> || (<strong class='reserved'>unsigned</strong>)oidx &gt;= sc-&gt;certs[idx].cert_list_length)
+<a id='L585' name='L585'></a>                <strong class='reserved'>return</strong> (time_t)-2;
+<a id='L586' name='L586'></a>
+<a id='L587' name='L587'></a>        <strong class='reserved'>if</strong> (sc-&gt;certs[idx].ocsp_data[oidx].response.data == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L588' name='L588'></a>                <strong class='reserved'>return</strong> (time_t)-1;
+<a id='L589' name='L589'></a>
+<a id='L590' name='L590'></a>        <strong class='reserved'>return</strong> sc-&gt;certs[idx].ocsp_data[oidx].exptime;
+<a id='L591' name='L591'></a><em class='brace'>}</em>
+<a id='L592' name='L592'></a>
+<a id='L593' name='L593'></a><em class='comment'>/**</em>
+<a id='L594' name='L594'></a><em class='comment'> * gnutls_ocsp_status_request_is_checked:</em>
+<a id='L595' name='L595'></a><em class='comment'> * @session: is a gnutls session</em>
+<a id='L596' name='L596'></a><em class='comment'> * @flags: should be zero or %GNUTLS_OCSP_SR_IS_AVAIL</em>
+<a id='L597' name='L597'></a><em class='comment'> *</em>
+<a id='L598' name='L598'></a><em class='comment'> * When flags are zero this function returns non-zero if a valid OCSP status</em>
+<a id='L599' name='L599'></a><em class='comment'> * response was included in the TLS handshake. That is, an OCSP status response</em>
+<a id='L600' name='L600'></a><em class='comment'> * which is not too old, superseded or marks the certificate as revoked.</em>
+<a id='L601' name='L601'></a><em class='comment'> * It returns zero otherwise.</em>
+<a id='L602' name='L602'></a><em class='comment'> *</em>
+<a id='L603' name='L603'></a><em class='comment'> * When the flag %GNUTLS_OCSP_SR_IS_AVAIL is specified, the function</em>
+<a id='L604' name='L604'></a><em class='comment'> * returns non-zero if an OCSP status response was included in the handshake</em>
+<a id='L605' name='L605'></a><em class='comment'> * even if it was invalid. Otherwise, if no OCSP status response was included,</em>
+<a id='L606' name='L606'></a><em class='comment'> * it returns zero. The %GNUTLS_OCSP_SR_IS_AVAIL flag was introduced in GnuTLS 3.4.0.</em>
+<a id='L607' name='L607'></a><em class='comment'> *</em>
+<a id='L608' name='L608'></a><em class='comment'> * This is a helper function when needing to decide whether to perform an</em>
+<a id='L609' name='L609'></a><em class='comment'> * explicit OCSP validity check on the peer's certificate. Should be called after</em>
+<a id='L610' name='L610'></a><em class='comment'> * any of gnutls_certificate_verify_peers*() are called.</em>
+<a id='L611' name='L611'></a><em class='comment'> *</em>
+<a id='L612' name='L612'></a><em class='comment'> * This function is always usable on client side, but on server side only</em>
+<a id='L613' name='L613'></a><em class='comment'> * under TLS 1.3, which is the first version of TLS that allows cliend-side OCSP</em>
+<a id='L614' name='L614'></a><em class='comment'> * responses.</em>
+<a id='L615' name='L615'></a><em class='comment'> *</em>
+<a id='L616' name='L616'></a><em class='comment'> * Returns: Non-zero if the response was valid, or a zero if it wasn't sent,</em>
+<a id='L617' name='L617'></a><em class='comment'> * or sent and was invalid.</em>
+<a id='L618' name='L618'></a><em class='comment'> *</em>
+<a id='L619' name='L619'></a><em class='comment'> * Since: 3.1.4</em>
+<a id='L620' name='L620'></a><em class='comment'> **/</em>
+<a id='L621' name='L621'></a><strong class='reserved'>unsigned</strong>
+<a id='L622' name='L622'></a><a href='../R/7864.html' title='Multiple referred from 16 places.'>gnutls_ocsp_status_request_is_checked</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L623' name='L623'></a>                                      <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> flags)
+<a id='L624' name='L624'></a><em class='brace'>{</em>
+<a id='L625' name='L625'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L626' name='L626'></a>        gnutls_datum_t data;
+<a id='L627' name='L627'></a>
+<a id='L628' name='L628'></a>        <strong class='reserved'>if</strong> (flags &amp; GNUTLS_OCSP_SR_IS_AVAIL) <em class='brace'>{</em>
+<a id='L629' name='L629'></a>                ret = <a href='../S/5296.html#L56' title='Defined at 56 in lib/ocsp-api.c.'>gnutls_ocsp_status_request_get</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;data);
+<a id='L630' name='L630'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L631' name='L631'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(0);
+<a id='L632' name='L632'></a>
+<a id='L633' name='L633'></a>                <strong class='reserved'>if</strong> (data.data == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L634' name='L634'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(0);
+<a id='L635' name='L635'></a>                <strong class='reserved'>return</strong> 1;
+<a id='L636' name='L636'></a>        <em class='brace'>}</em>
+<a id='L637' name='L637'></a>        <strong class='reserved'>return</strong> <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.ocsp_check_ok;
+<a id='L638' name='L638'></a><em class='brace'>}</em>
+<a id='L639' name='L639'></a>
+<a id='L640' name='L640'></a><em class='sharp'>#endif</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L56'>[^]</a><a href='#L622'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

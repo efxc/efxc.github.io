@@ -1,0 +1,299 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/nettle/rnd.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6481.html'>nettle</a>/rnd.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L76'>[^]</a><a href='#L246'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L76' title='Defined at 76.'>wrap_nettle_rnd_deinit</a></li>
+<li><a href='#L88' title='Defined at 88.'>single_prng_init</a></li>
+<li><a href='#L126' title='Defined at 126.'>wrap_nettle_rnd_init</a></li>
+<li><a href='#L165' title='Defined at 165.'>wrap_nettle_rnd</a></li>
+<li><a href='#L246' title='Defined at 246.'>wrap_nettle_rnd_refresh</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2010-2012 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> * Copyright (C) 2016-2017 Red Hat, Inc.</em>
+<a id='L4' name='L4'></a><em class='comment'> *</em>
+<a id='L5' name='L5'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> * This file is part of GNUTLS.</em>
+<a id='L8' name='L8'></a><em class='comment'> *</em>
+<a id='L9' name='L9'></a><em class='comment'> * The GNUTLS library is free software; you can redistribute it and/or</em>
+<a id='L10' name='L10'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L11' name='L11'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L12' name='L12'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L13' name='L13'></a><em class='comment'> *</em>
+<a id='L14' name='L14'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L15' name='L15'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L16' name='L16'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L17' name='L17'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L18' name='L18'></a><em class='comment'> *</em>
+<a id='L19' name='L19'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L20' name='L20'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L21' name='L21'></a><em class='comment'> *</em>
+<a id='L22' name='L22'></a><em class='comment'> */</em>
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> &lt;<a href='6025.html'>locks.h</a>&gt;
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;<a href='5268.html'>num.h</a>&gt;
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> &lt;<a href='5614.html'>nettle/chacha.h</a>&gt;
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;<a href='5474.html'>rnd-common.h</a>&gt;
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;<a href='5450.html'>system.h</a>&gt;
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;<a href='5757.html'>atfork.h</a>&gt;
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;<a href='../I/135.html'>minmax.h</a>&gt;
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='sharp'>#define</em> <a href='../R/2972.html' title='Multiple referred from 5 places.'>PRNG_KEY_SIZE</a> <a href='../S/5614.html#L56' title='Defined at 56 in lib/nettle/backport/chacha.h.'>CHACHA_KEY_SIZE</a>
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a><em class='comment'>/* For a high level description see the documentation and</em>
+<a id='L38' name='L38'></a><em class='comment'> * the 'Random number generation' section of chapter</em>
+<a id='L39' name='L39'></a><em class='comment'> * 'Using GnuTLS as a cryptographic library'.</em>
+<a id='L40' name='L40'></a><em class='comment'> */</em>
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a><em class='comment'>/* We have two "refresh" operations for the PRNG:</em>
+<a id='L43' name='L43'></a><em class='comment'> *  re-seed: the random generator obtains a new key from the system or another PRNG</em>
+<a id='L44' name='L44'></a><em class='comment'> *           (occurs when a time or data-based limit is reached for the GNUTLS_RND_RANDOM</em>
+<a id='L45' name='L45'></a><em class='comment'> *            and GNUTLS_RND_KEY levels and data-based for the nonce level)</em>
+<a id='L46' name='L46'></a><em class='comment'> *  re-key:  the random generator obtains a new key by utilizing its own output.</em>
+<a id='L47' name='L47'></a><em class='comment'> *           This only happens for the GNUTLS_RND_KEY level, on every operation.</em>
+<a id='L48' name='L48'></a><em class='comment'> */</em>
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a><em class='comment'>/* after this number of bytes PRNG will rekey using the system RNG */</em>
+<a id='L51' name='L51'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <strong class='reserved'>unsigned</strong> prng_reseed_limits[] = <em class='brace'>{</em>
+<a id='L52' name='L52'></a>        [GNUTLS_RND_NONCE] = 16*1024*1024, <em class='comment'>/* 16 MB - we re-seed using the GNUTLS_RND_RANDOM output */</em>
+<a id='L53' name='L53'></a>        [GNUTLS_RND_RANDOM] = 2*1024*1024, <em class='comment'>/* 2MB - we re-seed by time as well */</em>
+<a id='L54' name='L54'></a>        [GNUTLS_RND_KEY] = 2*1024*1024 <em class='comment'>/* same as GNUTLS_RND_RANDOM - but we re-key on every operation */</em>
+<a id='L55' name='L55'></a><em class='brace'>}</em>;
+<a id='L56' name='L56'></a>
+<a id='L57' name='L57'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> time_t prng_reseed_time[] = <em class='brace'>{</em>
+<a id='L58' name='L58'></a>        [GNUTLS_RND_NONCE] = 14400, <em class='comment'>/* 4 hours */</em>
+<a id='L59' name='L59'></a>        [GNUTLS_RND_RANDOM] = 7200, <em class='comment'>/* 2 hours */</em>
+<a id='L60' name='L60'></a>        [GNUTLS_RND_KEY] = 7200 <em class='comment'>/* same as RANDOM */</em>
+<a id='L61' name='L61'></a><em class='brace'>}</em>;
+<a id='L62' name='L62'></a>
+<a id='L63' name='L63'></a><strong class='reserved'>struct</strong> <a href='../R/9865.html' title='Multiple referred from 4 places.'>prng_ctx_st</a> <em class='brace'>{</em>
+<a id='L64' name='L64'></a>        <strong class='reserved'>struct</strong> <a href='../S/5614.html#L65' title='Defined at 65 in lib/nettle/backport/chacha.h.'>chacha_ctx</a> ctx;
+<a id='L65' name='L65'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> counter;
+<a id='L66' name='L66'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> forkid;
+<a id='L67' name='L67'></a>        time_t last_reseed;
+<a id='L68' name='L68'></a><em class='brace'>}</em>;
+<a id='L69' name='L69'></a>
+<a id='L70' name='L70'></a><strong class='reserved'>struct</strong> <a href='../R/7140.html' title='Multiple referred from 3 places.'>generators_ctx_st</a> <em class='brace'>{</em>
+<a id='L71' name='L71'></a>        <strong class='reserved'>struct</strong> <a href='../S/5590.html#L63' title='Defined at 63 in lib/nettle/rnd.c.'>prng_ctx_st</a> nonce;  <em class='comment'>/* GNUTLS_RND_NONCE */</em>
+<a id='L72' name='L72'></a>        <strong class='reserved'>struct</strong> <a href='../S/5590.html#L63' title='Defined at 63 in lib/nettle/rnd.c.'>prng_ctx_st</a> normal; <em class='comment'>/* GNUTLS_RND_RANDOM, GNUTLS_RND_KEY */</em>
+<a id='L73' name='L73'></a><em class='brace'>}</em>;
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a>
+<a id='L76' name='L76'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../S/5590.html#L265' title='Referred from 265 in lib/nettle/rnd.c.'>wrap_nettle_rnd_deinit</a>(<strong class='reserved'>void</strong> *_ctx)
+<a id='L77' name='L77'></a><em class='brace'>{</em>
+<a id='L78' name='L78'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(_ctx);
+<a id='L79' name='L79'></a><em class='brace'>}</em>
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a><em class='comment'>/* Initializes the nonce level random generator.</em>
+<a id='L82' name='L82'></a><em class='comment'> *</em>
+<a id='L83' name='L83'></a><em class='comment'> * the @new_key must be provided.</em>
+<a id='L84' name='L84'></a><em class='comment'> *</em>
+<a id='L85' name='L85'></a><em class='comment'> * @init must be non zero on first initialization, and</em>
+<a id='L86' name='L86'></a><em class='comment'> * zero on any subsequent reinitializations.</em>
+<a id='L87' name='L87'></a><em class='comment'> */</em>
+<a id='L88' name='L88'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../R/10485.html' title='Multiple referred from 4 places.'>single_prng_init</a>(<strong class='reserved'>struct</strong> <a href='../S/5590.html#L63' title='Defined at 63 in lib/nettle/rnd.c.'>prng_ctx_st</a> *ctx,
+<a id='L89' name='L89'></a>                            <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> new_key[<a href='../S/5590.html#L35' title='Defined at 35 in lib/nettle/rnd.c.'>PRNG_KEY_SIZE</a>],
+<a id='L90' name='L90'></a>                            <strong class='reserved'>unsigned</strong> new_key_size,
+<a id='L91' name='L91'></a>                            <strong class='reserved'>unsigned</strong> <a href='../S/4268.html#L34' title='Defined at 34 in fuzz/fuzzer.h.'>init</a>)
+<a id='L92' name='L92'></a><em class='brace'>{</em>
+<a id='L93' name='L93'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> nonce[<a href='../S/5614.html#L58' title='Defined at 58 in lib/nettle/backport/chacha.h.'>CHACHA_NONCE_SIZE</a>];
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a>        memset(nonce, 0, <strong class='reserved'>sizeof</strong>(nonce)); <em class='comment'>/* to prevent valgrind from whinning */</em>
+<a id='L96' name='L96'></a>
+<a id='L97' name='L97'></a>        <strong class='reserved'>if</strong> (<a href='../S/4268.html#L34' title='Defined at 34 in fuzz/fuzzer.h.'>init</a> == 0) <em class='brace'>{</em>
+<a id='L98' name='L98'></a>                <em class='comment'>/* use the previous key to generate IV as well */</em>
+<a id='L99' name='L99'></a>                <a href='../D/7057.html' title='Multiple defined in 2 places.'>chacha_crypt</a>(&amp;ctx-&gt;ctx, <strong class='reserved'>sizeof</strong>(nonce), nonce, nonce);
+<a id='L100' name='L100'></a>
+<a id='L101' name='L101'></a>                <em class='comment'>/* Add key continuity by XORing the new key with data generated</em>
+<a id='L102' name='L102'></a><em class='comment'>                 * from the old key */</em>
+<a id='L103' name='L103'></a>                <a href='../D/7057.html' title='Multiple defined in 2 places.'>chacha_crypt</a>(&amp;ctx-&gt;ctx, new_key_size, new_key, new_key);
+<a id='L104' name='L104'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L105' name='L105'></a>                <strong class='reserved'>struct</strong> <a href='../D/11905.html' title='Multiple defined in 6 places.'>timespec</a> now; <em class='comment'>/* current time */</em>
+<a id='L106' name='L106'></a>
+<a id='L107' name='L107'></a>                ctx-&gt;forkid = <a href='../D/5876.html' title='Multiple defined in 3 places.'>_gnutls_get_forkid</a>();
+<a id='L108' name='L108'></a>
+<a id='L109' name='L109'></a>                gnutls_gettime(&amp;now);
+<a id='L110' name='L110'></a>                memcpy(nonce, &amp;now, <a href='../D/2832.html' title='Multiple defined in 10 places.'>MIN</a>(<strong class='reserved'>sizeof</strong>(nonce), <strong class='reserved'>sizeof</strong>(now)));
+<a id='L111' name='L111'></a>                ctx-&gt;last_reseed = now.tv_sec;
+<a id='L112' name='L112'></a>        <em class='brace'>}</em>
+<a id='L113' name='L113'></a>
+<a id='L114' name='L114'></a>        <a href='../D/7069.html' title='Multiple defined in 2 places.'>chacha_set_key</a>(&amp;ctx-&gt;ctx, new_key);
+<a id='L115' name='L115'></a>        <a href='../D/7070.html' title='Multiple defined in 2 places.'>chacha_set_nonce</a>(&amp;ctx-&gt;ctx, nonce);
+<a id='L116' name='L116'></a>
+<a id='L117' name='L117'></a>        <a href='../S/5986.html#L43' title='Defined at 43 in lib/mem.h.'>zeroize_key</a>(new_key, new_key_size);
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a>        ctx-&gt;counter = 0;
+<a id='L120' name='L120'></a>
+<a id='L121' name='L121'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L122' name='L122'></a><em class='brace'>}</em>
+<a id='L123' name='L123'></a>
+<a id='L124' name='L124'></a><em class='comment'>/* API functions */</em>
+<a id='L125' name='L125'></a>
+<a id='L126' name='L126'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5590.html#L264' title='Referred from 264 in lib/nettle/rnd.c.'>wrap_nettle_rnd_init</a>(<strong class='reserved'>void</strong> **_ctx)
+<a id='L127' name='L127'></a><em class='brace'>{</em>
+<a id='L128' name='L128'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L129' name='L129'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> new_key[<a href='../S/5590.html#L35' title='Defined at 35 in lib/nettle/rnd.c.'>PRNG_KEY_SIZE</a>*2];
+<a id='L130' name='L130'></a>        <strong class='reserved'>struct</strong> <a href='../S/5590.html#L70' title='Defined at 70 in lib/nettle/rnd.c.'>generators_ctx_st</a> *ctx;
+<a id='L131' name='L131'></a>
+<a id='L132' name='L132'></a>        ctx = <a href='../D/7002.html' title='Multiple defined in 6 places.'>calloc</a>(1, <strong class='reserved'>sizeof</strong>(*ctx));
+<a id='L133' name='L133'></a>        <strong class='reserved'>if</strong> (ctx == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L134' name='L134'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_MEMORY_ERROR);
+<a id='L135' name='L135'></a>
+<a id='L136' name='L136'></a>        <em class='comment'>/* initialize the nonce RNG */</em>
+<a id='L137' name='L137'></a>        ret = _rnd_get_system_entropy(new_key, <strong class='reserved'>sizeof</strong>(new_key));
+<a id='L138' name='L138'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L139' name='L139'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L140' name='L140'></a>                <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L141' name='L141'></a>        <em class='brace'>}</em>
+<a id='L142' name='L142'></a>
+<a id='L143' name='L143'></a>        ret = <a href='../S/5590.html#L88' title='Defined at 88 in lib/nettle/rnd.c.'>single_prng_init</a>(&amp;ctx-&gt;nonce, new_key, <a href='../S/5590.html#L35' title='Defined at 35 in lib/nettle/rnd.c.'>PRNG_KEY_SIZE</a>, 1);
+<a id='L144' name='L144'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L145' name='L145'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L146' name='L146'></a>                <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L147' name='L147'></a>        <em class='brace'>}</em>
+<a id='L148' name='L148'></a>
+<a id='L149' name='L149'></a>        <em class='comment'>/* initialize the random/key RNG */</em>
+<a id='L150' name='L150'></a>        ret = <a href='../S/5590.html#L88' title='Defined at 88 in lib/nettle/rnd.c.'>single_prng_init</a>(&amp;ctx-&gt;normal, new_key+<a href='../S/5590.html#L35' title='Defined at 35 in lib/nettle/rnd.c.'>PRNG_KEY_SIZE</a>, <a href='../S/5590.html#L35' title='Defined at 35 in lib/nettle/rnd.c.'>PRNG_KEY_SIZE</a>, 1);
+<a id='L151' name='L151'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L152' name='L152'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L153' name='L153'></a>                <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L154' name='L154'></a>        <em class='brace'>}</em>
+<a id='L155' name='L155'></a>
+<a id='L156' name='L156'></a>        *_ctx = ctx;
+<a id='L157' name='L157'></a>
+<a id='L158' name='L158'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L159' name='L159'></a> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>:
+<a id='L160' name='L160'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(ctx);
+<a id='L161' name='L161'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L162' name='L162'></a><em class='brace'>}</em>
+<a id='L163' name='L163'></a>
+<a id='L164' name='L164'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L165' name='L165'></a><a href='../R/11309.html' title='Multiple referred from 5 places.'>wrap_nettle_rnd</a>(<strong class='reserved'>void</strong> *_ctx, <strong class='reserved'>int</strong> level, <strong class='reserved'>void</strong> *data, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> datasize)
+<a id='L166' name='L166'></a><em class='brace'>{</em>
+<a id='L167' name='L167'></a>        <strong class='reserved'>struct</strong> <a href='../S/5590.html#L70' title='Defined at 70 in lib/nettle/rnd.c.'>generators_ctx_st</a> *ctx = _ctx;
+<a id='L168' name='L168'></a>        <strong class='reserved'>struct</strong> <a href='../S/5590.html#L63' title='Defined at 63 in lib/nettle/rnd.c.'>prng_ctx_st</a> *prng_ctx;
+<a id='L169' name='L169'></a>        <strong class='reserved'>int</strong> ret, reseed = 0;
+<a id='L170' name='L170'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> new_key[<a href='../S/5590.html#L35' title='Defined at 35 in lib/nettle/rnd.c.'>PRNG_KEY_SIZE</a>];
+<a id='L171' name='L171'></a>        time_t now;
+<a id='L172' name='L172'></a>
+<a id='L173' name='L173'></a>        <strong class='reserved'>if</strong> (level == GNUTLS_RND_RANDOM || level == GNUTLS_RND_KEY)
+<a id='L174' name='L174'></a>                prng_ctx = &amp;ctx-&gt;normal;
+<a id='L175' name='L175'></a>        <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (level == GNUTLS_RND_NONCE)
+<a id='L176' name='L176'></a>                prng_ctx = &amp;ctx-&gt;nonce;
+<a id='L177' name='L177'></a>        <strong class='reserved'>else</strong>
+<a id='L178' name='L178'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_RANDOM_FAILED);
+<a id='L179' name='L179'></a>
+<a id='L180' name='L180'></a>        <em class='comment'>/* Two reasons for this memset():</em>
+<a id='L181' name='L181'></a><em class='comment'>         *  1. avoid getting filled with valgrind warnings</em>
+<a id='L182' name='L182'></a><em class='comment'>         *  2. avoid a cipher/PRNG failure to expose stack data</em>
+<a id='L183' name='L183'></a><em class='comment'>         */</em>
+<a id='L184' name='L184'></a>        memset(data, 0, datasize);
+<a id='L185' name='L185'></a>
+<a id='L186' name='L186'></a>        now = gnutls_time(0);
+<a id='L187' name='L187'></a>
+<a id='L188' name='L188'></a>        <em class='comment'>/* We re-seed based on time in addition to output data. That is,</em>
+<a id='L189' name='L189'></a><em class='comment'>         * to prevent a temporal state compromise to become permanent for low</em>
+<a id='L190' name='L190'></a><em class='comment'>         * traffic sites */</em>
+<a id='L191' name='L191'></a>        <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>(<a href='../D/5753.html' title='Multiple defined in 3 places.'>_gnutls_detect_fork</a>(prng_ctx-&gt;forkid))) <em class='brace'>{</em>
+<a id='L192' name='L192'></a>                reseed = 1;
+<a id='L193' name='L193'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L194' name='L194'></a>                <strong class='reserved'>if</strong> (now &gt; prng_ctx-&gt;last_reseed + prng_reseed_time[level])
+<a id='L195' name='L195'></a>                        reseed = 1;
+<a id='L196' name='L196'></a>        <em class='brace'>}</em>
+<a id='L197' name='L197'></a>
+<a id='L198' name='L198'></a>        <strong class='reserved'>if</strong> (reseed != 0 || prng_ctx-&gt;counter &gt; prng_reseed_limits[level]) <em class='brace'>{</em>
+<a id='L199' name='L199'></a>                <strong class='reserved'>if</strong> (level == GNUTLS_RND_NONCE) <em class='brace'>{</em>
+<a id='L200' name='L200'></a>                        ret = <a href='../S/5590.html#L165' title='Defined at 165 in lib/nettle/rnd.c.'>wrap_nettle_rnd</a>(_ctx, GNUTLS_RND_RANDOM, new_key, <strong class='reserved'>sizeof</strong>(new_key));
+<a id='L201' name='L201'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L202' name='L202'></a>
+<a id='L203' name='L203'></a>                        <em class='comment'>/* we also use the system entropy to reduce the impact</em>
+<a id='L204' name='L204'></a><em class='comment'>                         * of a temporal state compromise for these two levels. */</em>
+<a id='L205' name='L205'></a>                        ret = _rnd_get_system_entropy(new_key, <strong class='reserved'>sizeof</strong>(new_key));
+<a id='L206' name='L206'></a>                <em class='brace'>}</em>
+<a id='L207' name='L207'></a>
+<a id='L208' name='L208'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L209' name='L209'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L210' name='L210'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L211' name='L211'></a>                <em class='brace'>}</em>
+<a id='L212' name='L212'></a>
+<a id='L213' name='L213'></a>                ret = <a href='../S/5590.html#L88' title='Defined at 88 in lib/nettle/rnd.c.'>single_prng_init</a>(prng_ctx, new_key, <strong class='reserved'>sizeof</strong>(new_key), 0);
+<a id='L214' name='L214'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L215' name='L215'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L216' name='L216'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L217' name='L217'></a>                <em class='brace'>}</em>
+<a id='L218' name='L218'></a>
+<a id='L219' name='L219'></a>                prng_ctx-&gt;last_reseed = now;
+<a id='L220' name='L220'></a>                prng_ctx-&gt;forkid = <a href='../D/5876.html' title='Multiple defined in 3 places.'>_gnutls_get_forkid</a>();
+<a id='L221' name='L221'></a>        <em class='brace'>}</em>
+<a id='L222' name='L222'></a>
+<a id='L223' name='L223'></a>        <a href='../D/7057.html' title='Multiple defined in 2 places.'>chacha_crypt</a>(&amp;prng_ctx-&gt;ctx, datasize, data, data);
+<a id='L224' name='L224'></a>        prng_ctx-&gt;counter += datasize;
+<a id='L225' name='L225'></a>
+<a id='L226' name='L226'></a>        <strong class='reserved'>if</strong> (level == GNUTLS_RND_KEY) <em class='brace'>{</em> <em class='comment'>/* prevent backtracking */</em>
+<a id='L227' name='L227'></a>                ret = <a href='../S/5590.html#L165' title='Defined at 165 in lib/nettle/rnd.c.'>wrap_nettle_rnd</a>(_ctx, GNUTLS_RND_RANDOM, new_key, <strong class='reserved'>sizeof</strong>(new_key));
+<a id='L228' name='L228'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L229' name='L229'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L230' name='L230'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L231' name='L231'></a>                <em class='brace'>}</em>
+<a id='L232' name='L232'></a>
+<a id='L233' name='L233'></a>                ret = <a href='../S/5590.html#L88' title='Defined at 88 in lib/nettle/rnd.c.'>single_prng_init</a>(prng_ctx, new_key, <strong class='reserved'>sizeof</strong>(new_key), 0);
+<a id='L234' name='L234'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L235' name='L235'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L236' name='L236'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L237' name='L237'></a>                <em class='brace'>}</em>
+<a id='L238' name='L238'></a>        <em class='brace'>}</em>
+<a id='L239' name='L239'></a>
+<a id='L240' name='L240'></a>        ret = 0;
+<a id='L241' name='L241'></a>
+<a id='L242' name='L242'></a><a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>:
+<a id='L243' name='L243'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L244' name='L244'></a><em class='brace'>}</em>
+<a id='L245' name='L245'></a>
+<a id='L246' name='L246'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../S/5590.html#L267' title='Referred from 267 in lib/nettle/rnd.c.'>wrap_nettle_rnd_refresh</a>(<strong class='reserved'>void</strong> *_ctx)
+<a id='L247' name='L247'></a><em class='brace'>{</em>
+<a id='L248' name='L248'></a>        <strong class='reserved'>struct</strong> <a href='../S/5590.html#L70' title='Defined at 70 in lib/nettle/rnd.c.'>generators_ctx_st</a> *ctx = _ctx;
+<a id='L249' name='L249'></a>        <strong class='reserved'>char</strong> tmp;
+<a id='L250' name='L250'></a>
+<a id='L251' name='L251'></a>        <em class='comment'>/* force reseed */</em>
+<a id='L252' name='L252'></a>        ctx-&gt;nonce.counter = prng_reseed_limits[GNUTLS_RND_NONCE]+1;
+<a id='L253' name='L253'></a>        ctx-&gt;normal.counter = prng_reseed_limits[GNUTLS_RND_RANDOM]+1;
+<a id='L254' name='L254'></a>
+<a id='L255' name='L255'></a>        <a href='../S/5590.html#L165' title='Defined at 165 in lib/nettle/rnd.c.'>wrap_nettle_rnd</a>(_ctx, GNUTLS_RND_NONCE, &amp;tmp, 1);
+<a id='L256' name='L256'></a>        <a href='../S/5590.html#L165' title='Defined at 165 in lib/nettle/rnd.c.'>wrap_nettle_rnd</a>(_ctx, GNUTLS_RND_RANDOM, &amp;tmp, 1);
+<a id='L257' name='L257'></a>
+<a id='L258' name='L258'></a>        <strong class='reserved'>return</strong>;
+<a id='L259' name='L259'></a><em class='brace'>}</em>
+<a id='L260' name='L260'></a>
+<a id='L261' name='L261'></a><strong class='reserved'>int</strong> crypto_rnd_prio = <a href='../S/4209.html#L247' title='Defined at 247 in src/libopts/compat/compat.h.'>INT_MAX</a>;
+<a id='L262' name='L262'></a>
+<a id='L263' name='L263'></a><a href='../S/5825.html#L100' title='Defined at 100 in lib/crypto-backend.h.'>gnutls_crypto_rnd_st</a> _gnutls_rnd_ops = <em class='brace'>{</em>
+<a id='L264' name='L264'></a>        .<a href='../S/4268.html#L34' title='Defined at 34 in fuzz/fuzzer.h.'>init</a> = <a href='../S/5590.html#L126' title='Defined at 126 in lib/nettle/rnd.c.'>wrap_nettle_rnd_init</a>,
+<a id='L265' name='L265'></a>        .<a href='../S/4268.html#L39' title='Defined at 39 in fuzz/fuzzer.h.'>deinit</a> = <a href='../S/5590.html#L76' title='Defined at 76 in lib/nettle/rnd.c.'>wrap_nettle_rnd_deinit</a>,
+<a id='L266' name='L266'></a>        .rnd = <a href='../S/5590.html#L165' title='Defined at 165 in lib/nettle/rnd.c.'>wrap_nettle_rnd</a>,
+<a id='L267' name='L267'></a>        .rnd_refresh = <a href='../S/5590.html#L246' title='Defined at 246 in lib/nettle/rnd.c.'>wrap_nettle_rnd_refresh</a>,
+<a id='L268' name='L268'></a>        .self_test = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L269' name='L269'></a><em class='brace'>}</em>;
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L76'>[^]</a><a href='#L246'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

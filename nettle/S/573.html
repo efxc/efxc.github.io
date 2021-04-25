@@ -1,0 +1,175 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>pkcs1-sec-decrypt.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/pkcs1-sec-decrypt.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L59'>[^]</a><a href='#L86'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L59' title='Defined at 59.'>_pkcs1_sec_decrypt</a></li>
+<li><a href='#L86' title='Defined at 86.'>_pkcs1_sec_decrypt_variable</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* pkcs1-sec-decrypt.c</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   The RSA publickey algorithm. Side channel resistant PKCS#1 decryption.</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   Copyright (C) 2001, 2012 Niels Möller</em>
+<a id='L6' name='L6'></a><em class='comment'>   Copyright (C) 2018 Red Hat, Inc.</em>
+<a id='L7' name='L7'></a><em class='comment'></em>
+<a id='L8' name='L8'></a><em class='comment'>   This file is part of GNU Nettle.</em>
+<a id='L9' name='L9'></a><em class='comment'></em>
+<a id='L10' name='L10'></a><em class='comment'>   GNU Nettle is free software: you can redistribute it and/or</em>
+<a id='L11' name='L11'></a><em class='comment'>   modify it under the terms of either:</em>
+<a id='L12' name='L12'></a><em class='comment'></em>
+<a id='L13' name='L13'></a><em class='comment'>     * the GNU Lesser General Public License as published by the Free</em>
+<a id='L14' name='L14'></a><em class='comment'>       Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L15' name='L15'></a><em class='comment'>       option) any later version.</em>
+<a id='L16' name='L16'></a><em class='comment'></em>
+<a id='L17' name='L17'></a><em class='comment'>   or</em>
+<a id='L18' name='L18'></a><em class='comment'></em>
+<a id='L19' name='L19'></a><em class='comment'>     * the GNU General Public License as published by the Free</em>
+<a id='L20' name='L20'></a><em class='comment'>       Software Foundation; either version 2 of the License, or (at your</em>
+<a id='L21' name='L21'></a><em class='comment'>       option) any later version.</em>
+<a id='L22' name='L22'></a><em class='comment'></em>
+<a id='L23' name='L23'></a><em class='comment'>   or both in parallel, as here.</em>
+<a id='L24' name='L24'></a><em class='comment'></em>
+<a id='L25' name='L25'></a><em class='comment'>   GNU Nettle is distributed in the hope that it will be useful,</em>
+<a id='L26' name='L26'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L27' name='L27'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L28' name='L28'></a><em class='comment'>   General Public License for more details.</em>
+<a id='L29' name='L29'></a><em class='comment'></em>
+<a id='L30' name='L30'></a><em class='comment'>   You should have received copies of the GNU General Public License and</em>
+<a id='L31' name='L31'></a><em class='comment'>   the GNU Lesser General Public License along with this program.  If</em>
+<a id='L32' name='L32'></a><em class='comment'>   not, see http://www.gnu.org/licenses/.</em>
+<a id='L33' name='L33'></a><em class='comment'>*/</em>
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='sharp'>#if</em> HAVE_CONFIG_H
+<a id='L36' name='L36'></a><em class='sharp'># include</em> "config.h"
+<a id='L37' name='L37'></a><em class='sharp'>#endif</em>
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> &lt;assert.h&gt;
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L42' name='L42'></a>
+<a id='L43' name='L43'></a><em class='sharp'>#include</em> "<a href='307.html'>memops.h</a>"
+<a id='L44' name='L44'></a>
+<a id='L45' name='L45'></a><em class='sharp'>#include</em> "<a href='606.html'>gmp-glue.h</a>"
+<a id='L46' name='L46'></a><em class='sharp'>#include</em> "<a href='505.html'>pkcs1-internal.h</a>"
+<a id='L47' name='L47'></a>
+<a id='L48' name='L48'></a><em class='comment'>/* Inputs are always cast to uint32_t values. But all values used in this</em>
+<a id='L49' name='L49'></a><em class='comment'> * function should never exceed the maximum value of a uint32_t anyway.</em>
+<a id='L50' name='L50'></a><em class='comment'> * these macros returns 1 on success, 0 on failure */</em>
+<a id='L51' name='L51'></a><em class='sharp'>#define</em> <a href='../R/533.html' title='Multiple referred from 3 places.'>NOT_EQUAL</a>(a, b) \
+<a id='L52' name='L52'></a>    ((0U - ((uint32_t)(a) ^ (uint32_t)(b))) &gt;&gt; 31)
+<a id='L53' name='L53'></a><em class='sharp'>#define</em> <a href='../R/240.html' title='Multiple referred from 5 places.'>EQUAL</a>(a, b) \
+<a id='L54' name='L54'></a>    ((((uint32_t)(a) ^ (uint32_t)(b)) - 1U) &gt;&gt; 31)
+<a id='L55' name='L55'></a><em class='sharp'>#define</em> <a href='../R/295.html' title='Multiple referred from 2 places.'>GREATER_OR_EQUAL</a>(a, b) \
+<a id='L56' name='L56'></a>    (1U - (((uint32_t)(a) - (uint32_t)(b)) &gt;&gt; 31))
+<a id='L57' name='L57'></a>
+<a id='L58' name='L58'></a><strong class='reserved'>int</strong>
+<a id='L59' name='L59'></a><a href='../R/901.html' title='Multiple referred from 4 places.'>_pkcs1_sec_decrypt</a> (size_t length, uint8_t *message,
+<a id='L60' name='L60'></a>                    size_t padded_message_length,
+<a id='L61' name='L61'></a>                    <strong class='reserved'>const</strong> <strong class='reserved'>volatile</strong> uint8_t *padded_message)
+<a id='L62' name='L62'></a><em class='brace'>{</em>
+<a id='L63' name='L63'></a>  <strong class='reserved'>volatile</strong> <strong class='reserved'>int</strong> ok;
+<a id='L64' name='L64'></a>  size_t <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>, t;
+<a id='L65' name='L65'></a>
+<a id='L66' name='L66'></a>  assert (padded_message_length &gt;= length);
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a>  t = padded_message_length - length - 1;
+<a id='L69' name='L69'></a>
+<a id='L70' name='L70'></a>  <em class='comment'>/* Check format, padding, message_size */</em>
+<a id='L71' name='L71'></a>  ok = <a href='../S/573.html#L53' title='Defined at 53 in pkcs1-sec-decrypt.c.'>EQUAL</a>(padded_message[0], 0);       <em class='comment'>/* ok if padded_message[0] == 0 */</em>
+<a id='L72' name='L72'></a>  ok &amp;= <a href='../S/573.html#L53' title='Defined at 53 in pkcs1-sec-decrypt.c.'>EQUAL</a>(padded_message[1], 2);      <em class='comment'>/* ok if padded_message[1] == 2 */</em>
+<a id='L73' name='L73'></a>  <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 2; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &lt; t; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++)      <em class='comment'>/* check padding has no zeros */</em>
+<a id='L74' name='L74'></a>    <em class='brace'>{</em>
+<a id='L75' name='L75'></a>      ok &amp;= <a href='../S/573.html#L51' title='Defined at 51 in pkcs1-sec-decrypt.c.'>NOT_EQUAL</a>(padded_message[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>], 0);
+<a id='L76' name='L76'></a>    <em class='brace'>}</em>
+<a id='L77' name='L77'></a>  ok &amp;= <a href='../S/573.html#L53' title='Defined at 53 in pkcs1-sec-decrypt.c.'>EQUAL</a>(padded_message[t], 0);      <em class='comment'>/* ok if terminator == 0 */</em>
+<a id='L78' name='L78'></a>
+<a id='L79' name='L79'></a>  <em class='comment'>/* fill destination buffer regardless of outcome */</em>
+<a id='L80' name='L80'></a>  <a href='../D/1398.html' title='Multiple defined in 2 places.'>cnd_memcpy</a>(ok, message, padded_message + t + 1, length);
+<a id='L81' name='L81'></a>
+<a id='L82' name='L82'></a>  <strong class='reserved'>return</strong> ok;
+<a id='L83' name='L83'></a><em class='brace'>}</em>
+<a id='L84' name='L84'></a>
+<a id='L85' name='L85'></a><strong class='reserved'>int</strong>
+<a id='L86' name='L86'></a><a href='../R/902.html' title='Multiple referred from 3 places.'>_pkcs1_sec_decrypt_variable</a>(size_t *length, uint8_t *message,
+<a id='L87' name='L87'></a>                            size_t padded_message_length,
+<a id='L88' name='L88'></a>                            <strong class='reserved'>const</strong> <strong class='reserved'>volatile</strong> uint8_t *padded_message)
+<a id='L89' name='L89'></a><em class='brace'>{</em>
+<a id='L90' name='L90'></a>  <strong class='reserved'>volatile</strong> <strong class='reserved'>int</strong> not_found = 1;
+<a id='L91' name='L91'></a>  <strong class='reserved'>volatile</strong> <strong class='reserved'>int</strong> ok;
+<a id='L92' name='L92'></a>  <strong class='reserved'>volatile</strong> size_t offset;
+<a id='L93' name='L93'></a>  size_t buflen, msglen;
+<a id='L94' name='L94'></a>  size_t shift, <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L95' name='L95'></a>
+<a id='L96' name='L96'></a>  <em class='comment'>/* Check format, padding, message_size */</em>
+<a id='L97' name='L97'></a>  ok = <a href='../S/573.html#L53' title='Defined at 53 in pkcs1-sec-decrypt.c.'>EQUAL</a>(padded_message[0], 0);
+<a id='L98' name='L98'></a>  ok &amp;= <a href='../S/573.html#L53' title='Defined at 53 in pkcs1-sec-decrypt.c.'>EQUAL</a>(padded_message[1], 2);
+<a id='L99' name='L99'></a>
+<a id='L100' name='L100'></a>  <em class='comment'>/* length is discovered in a side-channel silent way.</em>
+<a id='L101' name='L101'></a><em class='comment'>   * not_found goes to 0 when the terminator is found.</em>
+<a id='L102' name='L102'></a><em class='comment'>   * offset strts at 3 as it includes the terminator and</em>
+<a id='L103' name='L103'></a><em class='comment'>   * the fomat bytes already */</em>
+<a id='L104' name='L104'></a>  offset = 3;
+<a id='L105' name='L105'></a>  <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 2; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &lt; padded_message_length; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++)
+<a id='L106' name='L106'></a>    <em class='brace'>{</em>
+<a id='L107' name='L107'></a>      not_found &amp;= <a href='../S/573.html#L51' title='Defined at 51 in pkcs1-sec-decrypt.c.'>NOT_EQUAL</a>(padded_message[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>], 0);
+<a id='L108' name='L108'></a>      offset += not_found;
+<a id='L109' name='L109'></a>    <em class='brace'>}</em>
+<a id='L110' name='L110'></a>  <em class='comment'>/* check if we ran out of buffer */</em>
+<a id='L111' name='L111'></a>  ok &amp;= <a href='../S/573.html#L51' title='Defined at 51 in pkcs1-sec-decrypt.c.'>NOT_EQUAL</a>(not_found, 1);
+<a id='L112' name='L112'></a>  <em class='comment'>/* padding must be &gt;= 11 (2 format bytes + 8 pad bytes min. + terminator) */</em>
+<a id='L113' name='L113'></a>  ok &amp;= <a href='../S/573.html#L55' title='Defined at 55 in pkcs1-sec-decrypt.c.'>GREATER_OR_EQUAL</a>(offset, 11);
+<a id='L114' name='L114'></a>
+<a id='L115' name='L115'></a>  <em class='comment'>/* offset can vary between 3 and padded_message_length, due to the loop</em>
+<a id='L116' name='L116'></a><em class='comment'>   * above, therefore msglen can't underflow */</em>
+<a id='L117' name='L117'></a>  msglen = padded_message_length - offset;
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a>  <em class='comment'>/* we always fill the whole buffer but only up to</em>
+<a id='L120' name='L120'></a><em class='comment'>   * padded_message_length length */</em>
+<a id='L121' name='L121'></a>  buflen = *length;
+<a id='L122' name='L122'></a>  <strong class='reserved'>if</strong> (buflen &gt; padded_message_length) <em class='brace'>{</em> <em class='comment'>/* input independent branch */</em>
+<a id='L123' name='L123'></a>    buflen = padded_message_length;
+<a id='L124' name='L124'></a>  <em class='brace'>}</em>
+<a id='L125' name='L125'></a>
+<a id='L126' name='L126'></a>  <em class='comment'>/* if the message length is larger than the buffer we must fail */</em>
+<a id='L127' name='L127'></a>  ok &amp;= <a href='../S/573.html#L55' title='Defined at 55 in pkcs1-sec-decrypt.c.'>GREATER_OR_EQUAL</a>(buflen, msglen);
+<a id='L128' name='L128'></a>
+<a id='L129' name='L129'></a>  <em class='comment'>/* fill destination buffer fully regardless of outcome. Copies the message</em>
+<a id='L130' name='L130'></a><em class='comment'>   * in a memory access independent way. The destination message buffer will</em>
+<a id='L131' name='L131'></a><em class='comment'>   * be clobbered past the message length. */</em>
+<a id='L132' name='L132'></a>  shift = padded_message_length - buflen;
+<a id='L133' name='L133'></a>  <a href='../D/1398.html' title='Multiple defined in 2 places.'>cnd_memcpy</a>(ok, message, padded_message + shift, buflen);
+<a id='L134' name='L134'></a>  offset -= shift;
+<a id='L135' name='L135'></a>  <em class='comment'>/* In this loop, the bits of the 'offset' variable are used as shifting</em>
+<a id='L136' name='L136'></a><em class='comment'>   * conditions, starting from the least significant bit. The end result is</em>
+<a id='L137' name='L137'></a><em class='comment'>   * that the buffer is shifted left exactly 'offset' bytes. */</em>
+<a id='L138' name='L138'></a>  <strong class='reserved'>for</strong> (shift = 1; shift &lt; buflen; shift &lt;&lt;= 1, offset &gt;&gt;= 1)
+<a id='L139' name='L139'></a>    <em class='brace'>{</em>
+<a id='L140' name='L140'></a>      <em class='comment'>/* 'ok' is both a least significant bit mask and a condition */</em>
+<a id='L141' name='L141'></a>      <a href='../D/1398.html' title='Multiple defined in 2 places.'>cnd_memcpy</a>(offset &amp; ok, message, message + shift, buflen - shift);
+<a id='L142' name='L142'></a>    <em class='brace'>}</em>
+<a id='L143' name='L143'></a>
+<a id='L144' name='L144'></a>  <em class='comment'>/* update length only if we succeeded, otherwise leave unchanged */</em>
+<a id='L145' name='L145'></a>  *length = (msglen &amp; (-(size_t) ok)) + (*length &amp; ((size_t) ok - 1));
+<a id='L146' name='L146'></a>
+<a id='L147' name='L147'></a>  <strong class='reserved'>return</strong> ok;
+<a id='L148' name='L148'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L59'>[^]</a><a href='#L86'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

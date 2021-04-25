@@ -1,0 +1,712 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/ext/srtp.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6475.html'>ext</a>/srtp.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L87'>[^]</a><a href='#L639'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L87' title='Defined at 87.'>get_profile</a></li>
+<li><a href='#L98' title='Defined at 98.'>find_profile</a></li>
+<li><a href='#L130' title='Defined at 130.'>gnutls_srtp_get_profile_id</a></li>
+<li><a href='#L154' title='Defined at 154.'>gnutls_srtp_get_profile_name</a></li>
+<li><a href='#L165' title='Defined at 165.'>_gnutls_srtp_recv_params</a></li>
+<li><a href='#L234' title='Defined at 234.'>_gnutls_srtp_send_params</a></li>
+<li><a href='#L309' title='Defined at 309.'>gnutls_srtp_get_selected_profile</a></li>
+<li><a href='#L349' title='Defined at 349.'>gnutls_srtp_get_mki</a></li>
+<li><a href='#L390' title='Defined at 390.'>gnutls_srtp_set_mki</a></li>
+<li><a href='#L434' title='Defined at 434.'>gnutls_srtp_set_profile</a></li>
+<li><a href='#L479' title='Defined at 479.'>gnutls_srtp_set_profile_direct</a></li>
+<li><a href='#L553' title='Defined at 553.'>gnutls_srtp_get_keys</a></li>
+<li><a href='#L613' title='Defined at 613.'>_gnutls_srtp_deinit_data</a></li>
+<li><a href='#L619' title='Defined at 619.'>_gnutls_srtp_pack</a></li>
+<li><a href='#L639' title='Defined at 639.'>_gnutls_srtp_unpack</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2012 Free Software Foundation</em>
+<a id='L3' name='L3'></a><em class='comment'> * </em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Martin Storsjo</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L9' name='L9'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L10' name='L10'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L11' name='L11'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> "<a href='5289.html'>auth.h</a>"
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> "<a href='5268.html'>num.h</a>"
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;<a href='5421.html'>ext/srtp.h</a>&gt;
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5445.html#L165' title='Defined at 165 in lib/ext/srtp.c.'>_gnutls_srtp_recv_params</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L30' name='L30'></a>                                    <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * data,
+<a id='L31' name='L31'></a>                                    <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> data_size);
+<a id='L32' name='L32'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5445.html#L234' title='Defined at 234 in lib/ext/srtp.c.'>_gnutls_srtp_send_params</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L33' name='L33'></a>                                    <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * extdata);
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5445.html#L639' title='Defined at 639 in lib/ext/srtp.c.'>_gnutls_srtp_unpack</a>(<a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps,
+<a id='L36' name='L36'></a>                               gnutls_ext_priv_data_t * _priv);
+<a id='L37' name='L37'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5445.html#L619' title='Defined at 619 in lib/ext/srtp.c.'>_gnutls_srtp_pack</a>(gnutls_ext_priv_data_t _priv,
+<a id='L38' name='L38'></a>                             <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps);
+<a id='L39' name='L39'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../S/5445.html#L613' title='Defined at 613 in lib/ext/srtp.c.'>_gnutls_srtp_deinit_data</a>(gnutls_ext_priv_data_t priv);
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a><strong class='reserved'>const</strong> <a href='../D/9926.html' title='Multiple defined in 2 places.'>hello_ext_entry_st</a> ext_mod_srtp = <em class='brace'>{</em>
+<a id='L43' name='L43'></a>        .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "SRTP",
+<a id='L44' name='L44'></a>        .tls_id = 14,
+<a id='L45' name='L45'></a>        .gid = <a href='../S/5822.html#L319' title='Defined at 319 in lib/gnutls_int.h.'>GNUTLS_EXTENSION_SRTP</a>,
+<a id='L46' name='L46'></a>        .validity = GNUTLS_EXT_FLAG_TLS | GNUTLS_EXT_FLAG_DTLS | GNUTLS_EXT_FLAG_CLIENT_HELLO |
+<a id='L47' name='L47'></a>                    GNUTLS_EXT_FLAG_EE | GNUTLS_EXT_FLAG_TLS12_SERVER_HELLO,
+<a id='L48' name='L48'></a>        .client_parse_point = GNUTLS_EXT_APPLICATION,
+<a id='L49' name='L49'></a>        .server_parse_point = GNUTLS_EXT_APPLICATION,
+<a id='L50' name='L50'></a>        .recv_func = <a href='../S/5445.html#L165' title='Defined at 165 in lib/ext/srtp.c.'>_gnutls_srtp_recv_params</a>,
+<a id='L51' name='L51'></a>        .send_func = <a href='../S/5445.html#L234' title='Defined at 234 in lib/ext/srtp.c.'>_gnutls_srtp_send_params</a>,
+<a id='L52' name='L52'></a>        .pack_func = <a href='../S/5445.html#L619' title='Defined at 619 in lib/ext/srtp.c.'>_gnutls_srtp_pack</a>,
+<a id='L53' name='L53'></a>        .unpack_func = <a href='../S/5445.html#L639' title='Defined at 639 in lib/ext/srtp.c.'>_gnutls_srtp_unpack</a>,
+<a id='L54' name='L54'></a>        .deinit_func = <a href='../S/5445.html#L613' title='Defined at 613 in lib/ext/srtp.c.'>_gnutls_srtp_deinit_data</a>,
+<a id='L55' name='L55'></a>        .cannot_be_overriden = 1
+<a id='L56' name='L56'></a><em class='brace'>}</em>;
+<a id='L57' name='L57'></a>
+<a id='L58' name='L58'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>struct</strong> <em class='brace'>{</em>
+<a id='L59' name='L59'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>;
+<a id='L60' name='L60'></a>        gnutls_srtp_profile_t id;
+<a id='L61' name='L61'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> key_length;
+<a id='L62' name='L62'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> salt_length;
+<a id='L63' name='L63'></a><em class='brace'>}</em> <a href='../R/10541.html' title='Multiple referred from 6 places.'>srtp_profile_st</a>;
+<a id='L64' name='L64'></a>
+<a id='L65' name='L65'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <a href='../S/5445.html#L63' title='Defined at 63 in lib/ext/srtp.c.'>srtp_profile_st</a> profile_names[] = <em class='brace'>{</em>
+<a id='L66' name='L66'></a>        <em class='brace'>{</em>
+<a id='L67' name='L67'></a>         "SRTP_AES128_CM_HMAC_SHA1_80",
+<a id='L68' name='L68'></a>         GNUTLS_SRTP_AES128_CM_HMAC_SHA1_80,
+<a id='L69' name='L69'></a>         16, 14<em class='brace'>}</em>,
+<a id='L70' name='L70'></a>        <em class='brace'>{</em>
+<a id='L71' name='L71'></a>         "SRTP_AES128_CM_HMAC_SHA1_32",
+<a id='L72' name='L72'></a>         GNUTLS_SRTP_AES128_CM_HMAC_SHA1_32,
+<a id='L73' name='L73'></a>         16, 14<em class='brace'>}</em>,
+<a id='L74' name='L74'></a>        <em class='brace'>{</em>
+<a id='L75' name='L75'></a>         "SRTP_NULL_HMAC_SHA1_80",
+<a id='L76' name='L76'></a>         GNUTLS_SRTP_NULL_HMAC_SHA1_80,
+<a id='L77' name='L77'></a>         16, 14<em class='brace'>}</em>,
+<a id='L78' name='L78'></a>        <em class='brace'>{</em>
+<a id='L79' name='L79'></a>         "SRTP_NULL_SHA1_32",
+<a id='L80' name='L80'></a>         GNUTLS_SRTP_NULL_HMAC_SHA1_32,
+<a id='L81' name='L81'></a>         16, 14<em class='brace'>}</em>,
+<a id='L82' name='L82'></a>        <em class='brace'>{</em>
+<a id='L83' name='L83'></a>         <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L84' name='L84'></a>         0, 0, 0<em class='brace'>}</em>
+<a id='L85' name='L85'></a><em class='brace'>}</em>;
+<a id='L86' name='L86'></a>
+<a id='L87' name='L87'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <a href='../S/5445.html#L63' title='Defined at 63 in lib/ext/srtp.c.'>srtp_profile_st</a> *<a href='../R/7259.html' title='Multiple referred from 2 places.'>get_profile</a>(gnutls_srtp_profile_t profile)
+<a id='L88' name='L88'></a><em class='brace'>{</em>
+<a id='L89' name='L89'></a>        <strong class='reserved'>const</strong> <a href='../S/5445.html#L63' title='Defined at 63 in lib/ext/srtp.c.'>srtp_profile_st</a> *p = profile_names;
+<a id='L90' name='L90'></a>        <strong class='reserved'>while</strong> (p-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L91' name='L91'></a>                <strong class='reserved'>if</strong> (p-&gt;id == profile)
+<a id='L92' name='L92'></a>                        <strong class='reserved'>return</strong> p;
+<a id='L93' name='L93'></a>                p++;
+<a id='L94' name='L94'></a>        <em class='brace'>}</em>
+<a id='L95' name='L95'></a>        <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L96' name='L96'></a><em class='brace'>}</em>
+<a id='L97' name='L97'></a>
+<a id='L98' name='L98'></a><strong class='reserved'>static</strong> gnutls_srtp_profile_t <a href='../R/7018.html' title='Multiple referred from 2 places.'>find_profile</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *end)
+<a id='L99' name='L99'></a><em class='brace'>{</em>
+<a id='L100' name='L100'></a>        <strong class='reserved'>const</strong> <a href='../S/5445.html#L63' title='Defined at 63 in lib/ext/srtp.c.'>srtp_profile_st</a> *prof = profile_names;
+<a id='L101' name='L101'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> len;
+<a id='L102' name='L102'></a>        <strong class='reserved'>if</strong> (end != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L103' name='L103'></a>                len = end - str;
+<a id='L104' name='L104'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L105' name='L105'></a>                len = strlen(str);
+<a id='L106' name='L106'></a>        <em class='brace'>}</em>
+<a id='L107' name='L107'></a>
+<a id='L108' name='L108'></a>        <strong class='reserved'>while</strong> (prof-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L109' name='L109'></a>                <strong class='reserved'>if</strong> (strlen(prof-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>) == len
+<a id='L110' name='L110'></a>                    &amp;&amp; !strncmp(str, prof-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, len)) <em class='brace'>{</em>
+<a id='L111' name='L111'></a>                        <strong class='reserved'>return</strong> prof-&gt;id;
+<a id='L112' name='L112'></a>                <em class='brace'>}</em>
+<a id='L113' name='L113'></a>                prof++;
+<a id='L114' name='L114'></a>        <em class='brace'>}</em>
+<a id='L115' name='L115'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L116' name='L116'></a><em class='brace'>}</em>
+<a id='L117' name='L117'></a>
+<a id='L118' name='L118'></a><em class='comment'>/**</em>
+<a id='L119' name='L119'></a><em class='comment'> * gnutls_srtp_get_profile_id</em>
+<a id='L120' name='L120'></a><em class='comment'> * @name: The name of the profile to look up</em>
+<a id='L121' name='L121'></a><em class='comment'> * @profile: Will hold the profile id</em>
+<a id='L122' name='L122'></a><em class='comment'> *</em>
+<a id='L123' name='L123'></a><em class='comment'> * This function allows you to look up a profile based on a string.</em>
+<a id='L124' name='L124'></a><em class='comment'> *</em>
+<a id='L125' name='L125'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned,</em>
+<a id='L126' name='L126'></a><em class='comment'> *   otherwise a negative error code is returned.</em>
+<a id='L127' name='L127'></a><em class='comment'> *</em>
+<a id='L128' name='L128'></a><em class='comment'> * Since 3.1.4</em>
+<a id='L129' name='L129'></a><em class='comment'> **/</em>
+<a id='L130' name='L130'></a><strong class='reserved'>int</strong> gnutls_srtp_get_profile_id(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>,
+<a id='L131' name='L131'></a>                               gnutls_srtp_profile_t * profile)
+<a id='L132' name='L132'></a><em class='brace'>{</em>
+<a id='L133' name='L133'></a>        *profile = <a href='../S/5445.html#L98' title='Defined at 98 in lib/ext/srtp.c.'>find_profile</a>(<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L134' name='L134'></a>        <strong class='reserved'>if</strong> (*profile == 0) <em class='brace'>{</em>
+<a id='L135' name='L135'></a>                <strong class='reserved'>return</strong> GNUTLS_E_ILLEGAL_PARAMETER;
+<a id='L136' name='L136'></a>        <em class='brace'>}</em>
+<a id='L137' name='L137'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L138' name='L138'></a><em class='brace'>}</em>
+<a id='L139' name='L139'></a>
+<a id='L140' name='L140'></a><em class='sharp'>#define</em> <a href='../S/5445.html#L193' title='Referred from 193 in lib/ext/srtp.c.'>MAX_PROFILES_IN_SRTP_EXTENSION</a> 256
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a><em class='comment'>/**</em>
+<a id='L143' name='L143'></a><em class='comment'> * gnutls_srtp_get_profile_name</em>
+<a id='L144' name='L144'></a><em class='comment'> * @profile: The profile to look up a string for</em>
+<a id='L145' name='L145'></a><em class='comment'> *</em>
+<a id='L146' name='L146'></a><em class='comment'> * This function allows you to get the corresponding name for a</em>
+<a id='L147' name='L147'></a><em class='comment'> * SRTP protection profile.</em>
+<a id='L148' name='L148'></a><em class='comment'> *</em>
+<a id='L149' name='L149'></a><em class='comment'> * Returns: On success, the name of a SRTP profile as a string,</em>
+<a id='L150' name='L150'></a><em class='comment'> *   otherwise NULL.</em>
+<a id='L151' name='L151'></a><em class='comment'> *</em>
+<a id='L152' name='L152'></a><em class='comment'> * Since 3.1.4</em>
+<a id='L153' name='L153'></a><em class='comment'> **/</em>
+<a id='L154' name='L154'></a><strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../S/4179.html#L546' title='Referred from 546 in src/common.c.'>gnutls_srtp_get_profile_name</a>(gnutls_srtp_profile_t profile)
+<a id='L155' name='L155'></a><em class='brace'>{</em>
+<a id='L156' name='L156'></a>        <strong class='reserved'>const</strong> <a href='../S/5445.html#L63' title='Defined at 63 in lib/ext/srtp.c.'>srtp_profile_st</a> *p = <a href='../S/5445.html#L87' title='Defined at 87 in lib/ext/srtp.c.'>get_profile</a>(profile);
+<a id='L157' name='L157'></a>
+<a id='L158' name='L158'></a>        <strong class='reserved'>if</strong> (p != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L159' name='L159'></a>                <strong class='reserved'>return</strong> p-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>;
+<a id='L160' name='L160'></a>
+<a id='L161' name='L161'></a>        <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L162' name='L162'></a><em class='brace'>}</em>
+<a id='L163' name='L163'></a>
+<a id='L164' name='L164'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L165' name='L165'></a><a href='../R/5513.html' title='Multiple referred from 2 places.'>_gnutls_srtp_recv_params</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L166' name='L166'></a>                         <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * data, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> data_size)
+<a id='L167' name='L167'></a><em class='brace'>{</em>
+<a id='L168' name='L168'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> i;
+<a id='L169' name='L169'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L170' name='L170'></a>        <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *p = data;
+<a id='L171' name='L171'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> len;
+<a id='L172' name='L172'></a>        <a href='../S/5421.html#L39' title='Defined at 39 in lib/ext/srtp.h.'>srtp_ext_st</a> *priv;
+<a id='L173' name='L173'></a>        gnutls_ext_priv_data_t epriv;
+<a id='L174' name='L174'></a>        <a href='../D/12095.html' title='Multiple defined in 8 places.'>uint16_t</a> profile;
+<a id='L175' name='L175'></a>
+<a id='L176' name='L176'></a>        ret =
+<a id='L177' name='L177'></a>            <a href='../S/5633.html#L717' title='Defined at 717 in lib/hello_ext.c.'>_gnutls_hello_ext_get_priv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../S/5822.html#L319' title='Defined at 319 in lib/gnutls_int.h.'>GNUTLS_EXTENSION_SRTP</a>,
+<a id='L178' name='L178'></a>                                         &amp;epriv);
+<a id='L179' name='L179'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L180' name='L180'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L181' name='L181'></a>
+<a id='L182' name='L182'></a>        priv = epriv;
+<a id='L183' name='L183'></a>
+<a id='L184' name='L184'></a>        <a href='../S/5822.html#L240' title='Defined at 240 in lib/gnutls_int.h.'>DECR_LENGTH_RET</a>(data_size, 2, 0);
+<a id='L185' name='L185'></a>        len = <a href='../S/5268.html#L83' title='Defined at 83 in lib/num.h.'>_gnutls_read_uint16</a>(p);
+<a id='L186' name='L186'></a>        p += 2;
+<a id='L187' name='L187'></a>
+<a id='L188' name='L188'></a>        <strong class='reserved'>if</strong> (len + 1 &gt; data_size)
+<a id='L189' name='L189'></a>                <strong class='reserved'>return</strong>
+<a id='L190' name='L190'></a>                    <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_UNEXPECTED_PACKET_LENGTH);
+<a id='L191' name='L191'></a>
+<a id='L192' name='L192'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.entity == GNUTLS_SERVER) <em class='brace'>{</em>
+<a id='L193' name='L193'></a>                <strong class='reserved'>if</strong> (len &gt; <a href='../S/5445.html#L140' title='Defined at 140 in lib/ext/srtp.c.'>MAX_PROFILES_IN_SRTP_EXTENSION</a> * 2)
+<a id='L194' name='L194'></a>                        <strong class='reserved'>return</strong> 0;
+<a id='L195' name='L195'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L196' name='L196'></a>                <strong class='reserved'>if</strong> (len != 2)
+<a id='L197' name='L197'></a>                        <strong class='reserved'>return</strong>
+<a id='L198' name='L198'></a>                            <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>
+<a id='L199' name='L199'></a>                            (GNUTLS_E_UNEXPECTED_PACKET_LENGTH);
+<a id='L200' name='L200'></a>        <em class='brace'>}</em>
+<a id='L201' name='L201'></a>
+<a id='L202' name='L202'></a>        priv-&gt;selected_profile = 0;
+<a id='L203' name='L203'></a>
+<a id='L204' name='L204'></a>        <strong class='reserved'>while</strong> (len &gt; 0) <em class='brace'>{</em>
+<a id='L205' name='L205'></a>                <a href='../D/711.html' title='Multiple defined in 2 places.'>DECR_LEN</a>(data_size, 2);
+<a id='L206' name='L206'></a>                profile = <a href='../S/5268.html#L83' title='Defined at 83 in lib/num.h.'>_gnutls_read_uint16</a>(p);
+<a id='L207' name='L207'></a>
+<a id='L208' name='L208'></a>                <strong class='reserved'>for</strong> (i = 0;
+<a id='L209' name='L209'></a>                     i &lt; priv-&gt;profiles_size
+<a id='L210' name='L210'></a>                     &amp;&amp; priv-&gt;selected_profile == 0; i++) <em class='brace'>{</em>
+<a id='L211' name='L211'></a>                        <strong class='reserved'>if</strong> (priv-&gt;profiles[i] == profile) <em class='brace'>{</em>
+<a id='L212' name='L212'></a>                                priv-&gt;selected_profile = profile;
+<a id='L213' name='L213'></a>                                <strong class='reserved'>break</strong>;
+<a id='L214' name='L214'></a>                        <em class='brace'>}</em>
+<a id='L215' name='L215'></a>                <em class='brace'>}</em>
+<a id='L216' name='L216'></a>                p += 2;
+<a id='L217' name='L217'></a>                len -= 2;
+<a id='L218' name='L218'></a>        <em class='brace'>}</em>
+<a id='L219' name='L219'></a>
+<a id='L220' name='L220'></a>        <a href='../D/711.html' title='Multiple defined in 2 places.'>DECR_LEN</a>(data_size, 1);
+<a id='L221' name='L221'></a>        priv-&gt;mki_size = *p;
+<a id='L222' name='L222'></a>        p++;
+<a id='L223' name='L223'></a>
+<a id='L224' name='L224'></a>        <strong class='reserved'>if</strong> (priv-&gt;mki_size &gt; 0) <em class='brace'>{</em>
+<a id='L225' name='L225'></a>                <a href='../D/711.html' title='Multiple defined in 2 places.'>DECR_LEN</a>(data_size, priv-&gt;mki_size);
+<a id='L226' name='L226'></a>                memcpy(priv-&gt;mki, p, priv-&gt;mki_size);
+<a id='L227' name='L227'></a>                priv-&gt;mki_received = 1;
+<a id='L228' name='L228'></a>        <em class='brace'>}</em>
+<a id='L229' name='L229'></a>
+<a id='L230' name='L230'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L231' name='L231'></a><em class='brace'>}</em>
+<a id='L232' name='L232'></a>
+<a id='L233' name='L233'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L234' name='L234'></a><a href='../R/5514.html' title='Multiple referred from 2 places.'>_gnutls_srtp_send_params</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L235' name='L235'></a>                         <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * extdata)
+<a id='L236' name='L236'></a><em class='brace'>{</em>
+<a id='L237' name='L237'></a>        <strong class='reserved'>unsigned</strong> i;
+<a id='L238' name='L238'></a>        <strong class='reserved'>int</strong> total_size = 0, ret;
+<a id='L239' name='L239'></a>        <a href='../S/5421.html#L39' title='Defined at 39 in lib/ext/srtp.h.'>srtp_ext_st</a> *priv;
+<a id='L240' name='L240'></a>        gnutls_ext_priv_data_t epriv;
+<a id='L241' name='L241'></a>
+<a id='L242' name='L242'></a>        ret =
+<a id='L243' name='L243'></a>            <a href='../S/5633.html#L717' title='Defined at 717 in lib/hello_ext.c.'>_gnutls_hello_ext_get_priv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../S/5822.html#L319' title='Defined at 319 in lib/gnutls_int.h.'>GNUTLS_EXTENSION_SRTP</a>,
+<a id='L244' name='L244'></a>                                         &amp;epriv);
+<a id='L245' name='L245'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L246' name='L246'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L247' name='L247'></a>
+<a id='L248' name='L248'></a>        priv = epriv;
+<a id='L249' name='L249'></a>
+<a id='L250' name='L250'></a>        <strong class='reserved'>if</strong> (priv-&gt;profiles_size == 0)
+<a id='L251' name='L251'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L252' name='L252'></a>
+<a id='L253' name='L253'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.entity == GNUTLS_SERVER) <em class='brace'>{</em>
+<a id='L254' name='L254'></a>                <em class='comment'>/* Don't send anything if no matching profile was found */</em>
+<a id='L255' name='L255'></a>                <strong class='reserved'>if</strong> (priv-&gt;selected_profile == 0)
+<a id='L256' name='L256'></a>                        <strong class='reserved'>return</strong> 0;
+<a id='L257' name='L257'></a>
+<a id='L258' name='L258'></a>                ret = <a href='../S/5806.html#L745' title='Defined at 745 in lib/str.c.'>_gnutls_buffer_append_prefix</a>(extdata, 16, 2);
+<a id='L259' name='L259'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L260' name='L260'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L261' name='L261'></a>                ret =
+<a id='L262' name='L262'></a>                    <a href='../S/5806.html#L745' title='Defined at 745 in lib/str.c.'>_gnutls_buffer_append_prefix</a>(extdata, 16,
+<a id='L263' name='L263'></a>                                                 priv-&gt;selected_profile);
+<a id='L264' name='L264'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L265' name='L265'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L266' name='L266'></a>                total_size = 4;
+<a id='L267' name='L267'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L268' name='L268'></a>                ret =
+<a id='L269' name='L269'></a>                    <a href='../S/5806.html#L745' title='Defined at 745 in lib/str.c.'>_gnutls_buffer_append_prefix</a>(extdata, 16,
+<a id='L270' name='L270'></a>                                                 2 * priv-&gt;profiles_size);
+<a id='L271' name='L271'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L272' name='L272'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L273' name='L273'></a>
+<a id='L274' name='L274'></a>                <strong class='reserved'>for</strong> (i = 0; i &lt; priv-&gt;profiles_size; i++) <em class='brace'>{</em>
+<a id='L275' name='L275'></a>                        ret =
+<a id='L276' name='L276'></a>                            <a href='../S/5806.html#L745' title='Defined at 745 in lib/str.c.'>_gnutls_buffer_append_prefix</a>(extdata, 16,
+<a id='L277' name='L277'></a>                                                         priv-&gt;
+<a id='L278' name='L278'></a>                                                         profiles[i]);
+<a id='L279' name='L279'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L280' name='L280'></a>                                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L281' name='L281'></a>                <em class='brace'>}</em>
+<a id='L282' name='L282'></a>                total_size = 2 + 2 * priv-&gt;profiles_size;
+<a id='L283' name='L283'></a>        <em class='brace'>}</em>
+<a id='L284' name='L284'></a>
+<a id='L285' name='L285'></a>        <em class='comment'>/* use_mki */</em>
+<a id='L286' name='L286'></a>        ret =
+<a id='L287' name='L287'></a>            <a href='../S/5806.html#L932' title='Defined at 932 in lib/str.c.'>_gnutls_buffer_append_data_prefix</a>(extdata, 8, priv-&gt;mki,
+<a id='L288' name='L288'></a>                                              priv-&gt;mki_size);
+<a id='L289' name='L289'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L290' name='L290'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L291' name='L291'></a>        total_size += 1 + priv-&gt;mki_size;
+<a id='L292' name='L292'></a>
+<a id='L293' name='L293'></a>        <strong class='reserved'>return</strong> total_size;
+<a id='L294' name='L294'></a><em class='brace'>}</em>
+<a id='L295' name='L295'></a>
+<a id='L296' name='L296'></a><em class='comment'>/**</em>
+<a id='L297' name='L297'></a><em class='comment'> * gnutls_srtp_get_selected_profile:</em>
+<a id='L298' name='L298'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L299' name='L299'></a><em class='comment'> * @profile: will hold the profile</em>
+<a id='L300' name='L300'></a><em class='comment'> *</em>
+<a id='L301' name='L301'></a><em class='comment'> * This function allows you to get the negotiated SRTP profile.</em>
+<a id='L302' name='L302'></a><em class='comment'> *</em>
+<a id='L303' name='L303'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned,</em>
+<a id='L304' name='L304'></a><em class='comment'> *   otherwise a negative error code is returned.</em>
+<a id='L305' name='L305'></a><em class='comment'> *</em>
+<a id='L306' name='L306'></a><em class='comment'> * Since 3.1.4</em>
+<a id='L307' name='L307'></a><em class='comment'> **/</em>
+<a id='L308' name='L308'></a><strong class='reserved'>int</strong>
+<a id='L309' name='L309'></a><a href='../R/8366.html' title='Multiple referred from 2 places.'>gnutls_srtp_get_selected_profile</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L310' name='L310'></a>                                 gnutls_srtp_profile_t * profile)
+<a id='L311' name='L311'></a><em class='brace'>{</em>
+<a id='L312' name='L312'></a>        <a href='../S/5421.html#L39' title='Defined at 39 in lib/ext/srtp.h.'>srtp_ext_st</a> *priv;
+<a id='L313' name='L313'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L314' name='L314'></a>        gnutls_ext_priv_data_t epriv;
+<a id='L315' name='L315'></a>
+<a id='L316' name='L316'></a>        ret =
+<a id='L317' name='L317'></a>            <a href='../S/5633.html#L717' title='Defined at 717 in lib/hello_ext.c.'>_gnutls_hello_ext_get_priv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../S/5822.html#L319' title='Defined at 319 in lib/gnutls_int.h.'>GNUTLS_EXTENSION_SRTP</a>,
+<a id='L318' name='L318'></a>                                         &amp;epriv);
+<a id='L319' name='L319'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L320' name='L320'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L321' name='L321'></a>                <strong class='reserved'>return</strong> GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE;
+<a id='L322' name='L322'></a>        <em class='brace'>}</em>
+<a id='L323' name='L323'></a>
+<a id='L324' name='L324'></a>        priv = epriv;
+<a id='L325' name='L325'></a>
+<a id='L326' name='L326'></a>        <strong class='reserved'>if</strong> (priv-&gt;selected_profile == 0) <em class='brace'>{</em>
+<a id='L327' name='L327'></a>                <strong class='reserved'>return</strong> GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE;
+<a id='L328' name='L328'></a>        <em class='brace'>}</em>
+<a id='L329' name='L329'></a>
+<a id='L330' name='L330'></a>        *profile = priv-&gt;selected_profile;
+<a id='L331' name='L331'></a>
+<a id='L332' name='L332'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L333' name='L333'></a><em class='brace'>}</em>
+<a id='L334' name='L334'></a>
+<a id='L335' name='L335'></a><em class='comment'>/**</em>
+<a id='L336' name='L336'></a><em class='comment'> * gnutls_srtp_get_mki:</em>
+<a id='L337' name='L337'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L338' name='L338'></a><em class='comment'> * @mki: will hold the MKI</em>
+<a id='L339' name='L339'></a><em class='comment'> *</em>
+<a id='L340' name='L340'></a><em class='comment'> * This function exports the negotiated Master Key Identifier,</em>
+<a id='L341' name='L341'></a><em class='comment'> * received by the peer if any. The returned value in @mki should be </em>
+<a id='L342' name='L342'></a><em class='comment'> * treated as constant and valid only during the session's lifetime.</em>
+<a id='L343' name='L343'></a><em class='comment'> *</em>
+<a id='L344' name='L344'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned,</em>
+<a id='L345' name='L345'></a><em class='comment'> *   otherwise a negative error code is returned.</em>
+<a id='L346' name='L346'></a><em class='comment'> *</em>
+<a id='L347' name='L347'></a><em class='comment'> * Since 3.1.4</em>
+<a id='L348' name='L348'></a><em class='comment'> **/</em>
+<a id='L349' name='L349'></a><strong class='reserved'>int</strong> gnutls_srtp_get_mki(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, gnutls_datum_t * mki)
+<a id='L350' name='L350'></a><em class='brace'>{</em>
+<a id='L351' name='L351'></a>        <a href='../S/5421.html#L39' title='Defined at 39 in lib/ext/srtp.h.'>srtp_ext_st</a> *priv;
+<a id='L352' name='L352'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L353' name='L353'></a>        gnutls_ext_priv_data_t epriv;
+<a id='L354' name='L354'></a>
+<a id='L355' name='L355'></a>        ret =
+<a id='L356' name='L356'></a>            <a href='../S/5633.html#L717' title='Defined at 717 in lib/hello_ext.c.'>_gnutls_hello_ext_get_priv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../S/5822.html#L319' title='Defined at 319 in lib/gnutls_int.h.'>GNUTLS_EXTENSION_SRTP</a>,
+<a id='L357' name='L357'></a>                                         &amp;epriv);
+<a id='L358' name='L358'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L359' name='L359'></a>                <strong class='reserved'>return</strong>
+<a id='L360' name='L360'></a>                    <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>
+<a id='L361' name='L361'></a>                    (GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE);
+<a id='L362' name='L362'></a>
+<a id='L363' name='L363'></a>        priv = epriv;
+<a id='L364' name='L364'></a>
+<a id='L365' name='L365'></a>        <strong class='reserved'>if</strong> (priv-&gt;mki_received == 0)
+<a id='L366' name='L366'></a>                <strong class='reserved'>return</strong>
+<a id='L367' name='L367'></a>                    <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>
+<a id='L368' name='L368'></a>                    (GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE);
+<a id='L369' name='L369'></a>
+<a id='L370' name='L370'></a>        mki-&gt;data = priv-&gt;mki;
+<a id='L371' name='L371'></a>        mki-&gt;size = priv-&gt;mki_size;
+<a id='L372' name='L372'></a>
+<a id='L373' name='L373'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L374' name='L374'></a><em class='brace'>}</em>
+<a id='L375' name='L375'></a>
+<a id='L376' name='L376'></a><em class='comment'>/**</em>
+<a id='L377' name='L377'></a><em class='comment'> * gnutls_srtp_set_mki:</em>
+<a id='L378' name='L378'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L379' name='L379'></a><em class='comment'> * @mki: holds the MKI</em>
+<a id='L380' name='L380'></a><em class='comment'> *</em>
+<a id='L381' name='L381'></a><em class='comment'> * This function sets the Master Key Identifier, to be</em>
+<a id='L382' name='L382'></a><em class='comment'> * used by this session (if any).</em>
+<a id='L383' name='L383'></a><em class='comment'> *</em>
+<a id='L384' name='L384'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned,</em>
+<a id='L385' name='L385'></a><em class='comment'> *   otherwise a negative error code is returned.</em>
+<a id='L386' name='L386'></a><em class='comment'> *</em>
+<a id='L387' name='L387'></a><em class='comment'> * Since 3.1.4</em>
+<a id='L388' name='L388'></a><em class='comment'> **/</em>
+<a id='L389' name='L389'></a><strong class='reserved'>int</strong>
+<a id='L390' name='L390'></a>gnutls_srtp_set_mki(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <strong class='reserved'>const</strong> gnutls_datum_t * mki)
+<a id='L391' name='L391'></a><em class='brace'>{</em>
+<a id='L392' name='L392'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L393' name='L393'></a>        <a href='../S/5421.html#L39' title='Defined at 39 in lib/ext/srtp.h.'>srtp_ext_st</a> *priv;
+<a id='L394' name='L394'></a>        gnutls_ext_priv_data_t epriv;
+<a id='L395' name='L395'></a>
+<a id='L396' name='L396'></a>        ret =
+<a id='L397' name='L397'></a>            <a href='../S/5633.html#L717' title='Defined at 717 in lib/hello_ext.c.'>_gnutls_hello_ext_get_priv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../S/5822.html#L319' title='Defined at 319 in lib/gnutls_int.h.'>GNUTLS_EXTENSION_SRTP</a>,
+<a id='L398' name='L398'></a>                                         &amp;epriv);
+<a id='L399' name='L399'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L400' name='L400'></a>                priv = gnutls_calloc(1, <strong class='reserved'>sizeof</strong>(*priv));
+<a id='L401' name='L401'></a>                <strong class='reserved'>if</strong> (priv == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L402' name='L402'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L403' name='L403'></a>                        <strong class='reserved'>return</strong> GNUTLS_E_MEMORY_ERROR;
+<a id='L404' name='L404'></a>                <em class='brace'>}</em>
+<a id='L405' name='L405'></a>                epriv = priv;
+<a id='L406' name='L406'></a>                <a href='../S/5633.html#L697' title='Defined at 697 in lib/hello_ext.c.'>_gnutls_hello_ext_set_priv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L407' name='L407'></a>                                             <a href='../S/5822.html#L319' title='Defined at 319 in lib/gnutls_int.h.'>GNUTLS_EXTENSION_SRTP</a>, epriv);
+<a id='L408' name='L408'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong>
+<a id='L409' name='L409'></a>                priv = epriv;
+<a id='L410' name='L410'></a>
+<a id='L411' name='L411'></a>        <strong class='reserved'>if</strong> (mki-&gt;size &gt; 0 &amp;&amp; mki-&gt;size &lt;= <strong class='reserved'>sizeof</strong>(priv-&gt;mki)) <em class='brace'>{</em>
+<a id='L412' name='L412'></a>                priv-&gt;mki_size = mki-&gt;size;
+<a id='L413' name='L413'></a>                memcpy(priv-&gt;mki, mki-&gt;data, mki-&gt;size);
+<a id='L414' name='L414'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong>
+<a id='L415' name='L415'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L416' name='L416'></a>
+<a id='L417' name='L417'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L418' name='L418'></a><em class='brace'>}</em>
+<a id='L419' name='L419'></a>
+<a id='L420' name='L420'></a><em class='comment'>/**</em>
+<a id='L421' name='L421'></a><em class='comment'> * gnutls_srtp_set_profile:</em>
+<a id='L422' name='L422'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L423' name='L423'></a><em class='comment'> * @profile: is the profile id to add.</em>
+<a id='L424' name='L424'></a><em class='comment'> *</em>
+<a id='L425' name='L425'></a><em class='comment'> * This function is to be used by both clients and servers, to declare</em>
+<a id='L426' name='L426'></a><em class='comment'> * what SRTP profiles they support, to negotiate with the peer.</em>
+<a id='L427' name='L427'></a><em class='comment'> *</em>
+<a id='L428' name='L428'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned,</em>
+<a id='L429' name='L429'></a><em class='comment'> *   otherwise a negative error code is returned.</em>
+<a id='L430' name='L430'></a><em class='comment'> *</em>
+<a id='L431' name='L431'></a><em class='comment'> * Since 3.1.4</em>
+<a id='L432' name='L432'></a><em class='comment'> **/</em>
+<a id='L433' name='L433'></a><strong class='reserved'>int</strong>
+<a id='L434' name='L434'></a>gnutls_srtp_set_profile(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L435' name='L435'></a>                        gnutls_srtp_profile_t profile)
+<a id='L436' name='L436'></a><em class='brace'>{</em>
+<a id='L437' name='L437'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L438' name='L438'></a>        <a href='../S/5421.html#L39' title='Defined at 39 in lib/ext/srtp.h.'>srtp_ext_st</a> *priv;
+<a id='L439' name='L439'></a>        gnutls_ext_priv_data_t epriv;
+<a id='L440' name='L440'></a>
+<a id='L441' name='L441'></a>        ret =
+<a id='L442' name='L442'></a>            <a href='../S/5633.html#L717' title='Defined at 717 in lib/hello_ext.c.'>_gnutls_hello_ext_get_priv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../S/5822.html#L319' title='Defined at 319 in lib/gnutls_int.h.'>GNUTLS_EXTENSION_SRTP</a>,
+<a id='L443' name='L443'></a>                                         &amp;epriv);
+<a id='L444' name='L444'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L445' name='L445'></a>                priv = gnutls_calloc(1, <strong class='reserved'>sizeof</strong>(*priv));
+<a id='L446' name='L446'></a>                <strong class='reserved'>if</strong> (priv == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L447' name='L447'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L448' name='L448'></a>                        <strong class='reserved'>return</strong> GNUTLS_E_MEMORY_ERROR;
+<a id='L449' name='L449'></a>                <em class='brace'>}</em>
+<a id='L450' name='L450'></a>                epriv = priv;
+<a id='L451' name='L451'></a>                <a href='../S/5633.html#L697' title='Defined at 697 in lib/hello_ext.c.'>_gnutls_hello_ext_set_priv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L452' name='L452'></a>                                             <a href='../S/5822.html#L319' title='Defined at 319 in lib/gnutls_int.h.'>GNUTLS_EXTENSION_SRTP</a>, epriv);
+<a id='L453' name='L453'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong>
+<a id='L454' name='L454'></a>                priv = epriv;
+<a id='L455' name='L455'></a>
+<a id='L456' name='L456'></a>        <strong class='reserved'>if</strong> (priv-&gt;profiles_size &lt; <a href='../S/5421.html#L30' title='Defined at 30 in lib/ext/srtp.h.'>MAX_SRTP_PROFILES</a>)
+<a id='L457' name='L457'></a>                priv-&gt;profiles_size++;
+<a id='L458' name='L458'></a>        priv-&gt;profiles[priv-&gt;profiles_size - 1] = profile;
+<a id='L459' name='L459'></a>
+<a id='L460' name='L460'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L461' name='L461'></a><em class='brace'>}</em>
+<a id='L462' name='L462'></a>
+<a id='L463' name='L463'></a><em class='comment'>/**</em>
+<a id='L464' name='L464'></a><em class='comment'> * gnutls_srtp_set_profile_direct:</em>
+<a id='L465' name='L465'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L466' name='L466'></a><em class='comment'> * @profiles: is a string that contains the supported SRTP profiles,</em>
+<a id='L467' name='L467'></a><em class='comment'> *   separated by colons.</em>
+<a id='L468' name='L468'></a><em class='comment'> * @err_pos: In case of an error this will have the position in the string the error occurred, may be NULL.</em>
+<a id='L469' name='L469'></a><em class='comment'> *</em>
+<a id='L470' name='L470'></a><em class='comment'> * This function is to be used by both clients and servers, to declare</em>
+<a id='L471' name='L471'></a><em class='comment'> * what SRTP profiles they support, to negotiate with the peer.</em>
+<a id='L472' name='L472'></a><em class='comment'> *</em>
+<a id='L473' name='L473'></a><em class='comment'> * Returns: On syntax error %GNUTLS_E_INVALID_REQUEST is returned,</em>
+<a id='L474' name='L474'></a><em class='comment'> * %GNUTLS_E_SUCCESS on success, or an error code.</em>
+<a id='L475' name='L475'></a><em class='comment'> *</em>
+<a id='L476' name='L476'></a><em class='comment'> * Since 3.1.4</em>
+<a id='L477' name='L477'></a><em class='comment'> **/</em>
+<a id='L478' name='L478'></a><strong class='reserved'>int</strong>
+<a id='L479' name='L479'></a><a href='../R/8367.html' title='Multiple referred from 6 places.'>gnutls_srtp_set_profile_direct</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L480' name='L480'></a>                               <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *profiles, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> **err_pos)
+<a id='L481' name='L481'></a><em class='brace'>{</em>
+<a id='L482' name='L482'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L483' name='L483'></a>        <a href='../S/5421.html#L39' title='Defined at 39 in lib/ext/srtp.h.'>srtp_ext_st</a> *priv;
+<a id='L484' name='L484'></a>        gnutls_ext_priv_data_t epriv;
+<a id='L485' name='L485'></a>        <strong class='reserved'>int</strong> set = 0;
+<a id='L486' name='L486'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *col;
+<a id='L487' name='L487'></a>        gnutls_srtp_profile_t id;
+<a id='L488' name='L488'></a>
+<a id='L489' name='L489'></a>        ret =
+<a id='L490' name='L490'></a>            <a href='../S/5633.html#L717' title='Defined at 717 in lib/hello_ext.c.'>_gnutls_hello_ext_get_priv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../S/5822.html#L319' title='Defined at 319 in lib/gnutls_int.h.'>GNUTLS_EXTENSION_SRTP</a>,
+<a id='L491' name='L491'></a>                                         &amp;epriv);
+<a id='L492' name='L492'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L493' name='L493'></a>                set = 1;
+<a id='L494' name='L494'></a>                priv = gnutls_calloc(1, <strong class='reserved'>sizeof</strong>(*priv));
+<a id='L495' name='L495'></a>                <strong class='reserved'>if</strong> (priv == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L496' name='L496'></a>                        <strong class='reserved'>if</strong> (err_pos != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L497' name='L497'></a>                                *err_pos = profiles;
+<a id='L498' name='L498'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L499' name='L499'></a>                        <strong class='reserved'>return</strong> GNUTLS_E_MEMORY_ERROR;
+<a id='L500' name='L500'></a>                <em class='brace'>}</em>
+<a id='L501' name='L501'></a>                epriv = priv;
+<a id='L502' name='L502'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong>
+<a id='L503' name='L503'></a>                priv = epriv;
+<a id='L504' name='L504'></a>
+<a id='L505' name='L505'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L506' name='L506'></a>                col = <a href='../D/11595.html' title='Multiple defined in 5 places.'>strchr</a>(profiles, ':');
+<a id='L507' name='L507'></a>                id = <a href='../S/5445.html#L98' title='Defined at 98 in lib/ext/srtp.c.'>find_profile</a>(profiles, col);
+<a id='L508' name='L508'></a>                <strong class='reserved'>if</strong> (id == 0) <em class='brace'>{</em>
+<a id='L509' name='L509'></a>                        <strong class='reserved'>if</strong> (set != 0)
+<a id='L510' name='L510'></a>                                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(priv);
+<a id='L511' name='L511'></a>                        <strong class='reserved'>if</strong> (err_pos != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L512' name='L512'></a>                                *err_pos = profiles;
+<a id='L513' name='L513'></a>                        <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L514' name='L514'></a>                <em class='brace'>}</em>
+<a id='L515' name='L515'></a>
+<a id='L516' name='L516'></a>                <strong class='reserved'>if</strong> (priv-&gt;profiles_size &lt; <a href='../S/5421.html#L30' title='Defined at 30 in lib/ext/srtp.h.'>MAX_SRTP_PROFILES</a>) <em class='brace'>{</em>
+<a id='L517' name='L517'></a>                        priv-&gt;profiles_size++;
+<a id='L518' name='L518'></a>                <em class='brace'>}</em>
+<a id='L519' name='L519'></a>                priv-&gt;profiles[priv-&gt;profiles_size - 1] = id;
+<a id='L520' name='L520'></a>                profiles = col + 1;
+<a id='L521' name='L521'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (col != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L522' name='L522'></a>
+<a id='L523' name='L523'></a>        <strong class='reserved'>if</strong> (set != 0)
+<a id='L524' name='L524'></a>                <a href='../S/5633.html#L697' title='Defined at 697 in lib/hello_ext.c.'>_gnutls_hello_ext_set_priv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L525' name='L525'></a>                                             <a href='../S/5822.html#L319' title='Defined at 319 in lib/gnutls_int.h.'>GNUTLS_EXTENSION_SRTP</a>, epriv);
+<a id='L526' name='L526'></a>
+<a id='L527' name='L527'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L528' name='L528'></a><em class='brace'>}</em>
+<a id='L529' name='L529'></a>
+<a id='L530' name='L530'></a><em class='comment'>/**</em>
+<a id='L531' name='L531'></a><em class='comment'> * gnutls_srtp_get_keys:</em>
+<a id='L532' name='L532'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L533' name='L533'></a><em class='comment'> * @key_material: Space to hold the generated key material</em>
+<a id='L534' name='L534'></a><em class='comment'> * @key_material_size: The maximum size of the key material</em>
+<a id='L535' name='L535'></a><em class='comment'> * @client_key: The master client write key, pointing inside the key material</em>
+<a id='L536' name='L536'></a><em class='comment'> * @server_key: The master server write key, pointing inside the key material</em>
+<a id='L537' name='L537'></a><em class='comment'> * @client_salt: The master client write salt, pointing inside the key material</em>
+<a id='L538' name='L538'></a><em class='comment'> * @server_salt: The master server write salt, pointing inside the key material</em>
+<a id='L539' name='L539'></a><em class='comment'> *</em>
+<a id='L540' name='L540'></a><em class='comment'> * This is a helper function to generate the keying material for SRTP.</em>
+<a id='L541' name='L541'></a><em class='comment'> * It requires the space of the key material to be pre-allocated (should be at least</em>
+<a id='L542' name='L542'></a><em class='comment'> * 2x the maximum key size and salt size). The @client_key, @client_salt, @server_key</em>
+<a id='L543' name='L543'></a><em class='comment'> * and @server_salt are convenience datums that point inside the key material. They may</em>
+<a id='L544' name='L544'></a><em class='comment'> * be %NULL.</em>
+<a id='L545' name='L545'></a><em class='comment'> *</em>
+<a id='L546' name='L546'></a><em class='comment'> * Returns: On success the size of the key material is returned,</em>
+<a id='L547' name='L547'></a><em class='comment'> * otherwise, %GNUTLS_E_SHORT_MEMORY_BUFFER if the buffer given is not </em>
+<a id='L548' name='L548'></a><em class='comment'> * sufficient, or a negative error code.</em>
+<a id='L549' name='L549'></a><em class='comment'> *</em>
+<a id='L550' name='L550'></a><em class='comment'> * Since 3.1.4</em>
+<a id='L551' name='L551'></a><em class='comment'> **/</em>
+<a id='L552' name='L552'></a><strong class='reserved'>int</strong>
+<a id='L553' name='L553'></a><a href='../R/8364.html' title='Multiple referred from 2 places.'>gnutls_srtp_get_keys</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L554' name='L554'></a>                     <strong class='reserved'>void</strong> *key_material,
+<a id='L555' name='L555'></a>                     <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> key_material_size,
+<a id='L556' name='L556'></a>                     gnutls_datum_t * client_key,
+<a id='L557' name='L557'></a>                     gnutls_datum_t * client_salt,
+<a id='L558' name='L558'></a>                     gnutls_datum_t * server_key,
+<a id='L559' name='L559'></a>                     gnutls_datum_t * server_salt)
+<a id='L560' name='L560'></a><em class='brace'>{</em>
+<a id='L561' name='L561'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L562' name='L562'></a>        <strong class='reserved'>const</strong> <a href='../S/5445.html#L63' title='Defined at 63 in lib/ext/srtp.c.'>srtp_profile_st</a> *p;
+<a id='L563' name='L563'></a>        gnutls_srtp_profile_t profile;
+<a id='L564' name='L564'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> msize;
+<a id='L565' name='L565'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *km = key_material;
+<a id='L566' name='L566'></a>
+<a id='L567' name='L567'></a>        ret = <a href='../S/5445.html#L309' title='Defined at 309 in lib/ext/srtp.c.'>gnutls_srtp_get_selected_profile</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;profile);
+<a id='L568' name='L568'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L569' name='L569'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L570' name='L570'></a>
+<a id='L571' name='L571'></a>        p = <a href='../S/5445.html#L87' title='Defined at 87 in lib/ext/srtp.c.'>get_profile</a>(profile);
+<a id='L572' name='L572'></a>        <strong class='reserved'>if</strong> (p == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L573' name='L573'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_UNKNOWN_ALGORITHM);
+<a id='L574' name='L574'></a>
+<a id='L575' name='L575'></a>        msize = 2 * (p-&gt;key_length + p-&gt;salt_length);
+<a id='L576' name='L576'></a>        <strong class='reserved'>if</strong> (msize &gt; key_material_size)
+<a id='L577' name='L577'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_SHORT_MEMORY_BUFFER);
+<a id='L578' name='L578'></a>
+<a id='L579' name='L579'></a>        <strong class='reserved'>if</strong> (msize == 0)
+<a id='L580' name='L580'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L581' name='L581'></a>
+<a id='L582' name='L582'></a>        ret =
+<a id='L583' name='L583'></a>            <a href='../S/5788.html#L298' title='Defined at 298 in lib/prf.c.'>gnutls_prf</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <strong class='reserved'>sizeof</strong>("EXTRACTOR-dtls_srtp") - 1,
+<a id='L584' name='L584'></a>                       "EXTRACTOR-dtls_srtp", 0, 0, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, msize,
+<a id='L585' name='L585'></a>                       key_material);
+<a id='L586' name='L586'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L587' name='L587'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L588' name='L588'></a>
+<a id='L589' name='L589'></a>        <strong class='reserved'>if</strong> (client_key) <em class='brace'>{</em>
+<a id='L590' name='L590'></a>                client_key-&gt;data = km;
+<a id='L591' name='L591'></a>                client_key-&gt;size = p-&gt;key_length;
+<a id='L592' name='L592'></a>        <em class='brace'>}</em>
+<a id='L593' name='L593'></a>
+<a id='L594' name='L594'></a>        <strong class='reserved'>if</strong> (server_key) <em class='brace'>{</em>
+<a id='L595' name='L595'></a>                server_key-&gt;data = km + p-&gt;key_length;
+<a id='L596' name='L596'></a>                server_key-&gt;size = p-&gt;key_length;
+<a id='L597' name='L597'></a>        <em class='brace'>}</em>
+<a id='L598' name='L598'></a>
+<a id='L599' name='L599'></a>        <strong class='reserved'>if</strong> (client_salt) <em class='brace'>{</em>
+<a id='L600' name='L600'></a>                client_salt-&gt;data = km + 2 * p-&gt;key_length;
+<a id='L601' name='L601'></a>                client_salt-&gt;size = p-&gt;salt_length;
+<a id='L602' name='L602'></a>        <em class='brace'>}</em>
+<a id='L603' name='L603'></a>
+<a id='L604' name='L604'></a>        <strong class='reserved'>if</strong> (server_salt) <em class='brace'>{</em>
+<a id='L605' name='L605'></a>                server_salt-&gt;data =
+<a id='L606' name='L606'></a>                    km + 2 * p-&gt;key_length + p-&gt;salt_length;
+<a id='L607' name='L607'></a>                server_salt-&gt;size = p-&gt;salt_length;
+<a id='L608' name='L608'></a>        <em class='brace'>}</em>
+<a id='L609' name='L609'></a>
+<a id='L610' name='L610'></a>        <strong class='reserved'>return</strong> msize;
+<a id='L611' name='L611'></a><em class='brace'>}</em>
+<a id='L612' name='L612'></a>
+<a id='L613' name='L613'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/5511.html' title='Multiple referred from 2 places.'>_gnutls_srtp_deinit_data</a>(gnutls_ext_priv_data_t priv)
+<a id='L614' name='L614'></a><em class='brace'>{</em>
+<a id='L615' name='L615'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(priv);
+<a id='L616' name='L616'></a><em class='brace'>}</em>
+<a id='L617' name='L617'></a>
+<a id='L618' name='L618'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L619' name='L619'></a><a href='../R/5512.html' title='Multiple referred from 2 places.'>_gnutls_srtp_pack</a>(gnutls_ext_priv_data_t epriv, <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps)
+<a id='L620' name='L620'></a><em class='brace'>{</em>
+<a id='L621' name='L621'></a>        <a href='../S/5421.html#L39' title='Defined at 39 in lib/ext/srtp.h.'>srtp_ext_st</a> *priv = epriv;
+<a id='L622' name='L622'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> i;
+<a id='L623' name='L623'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L624' name='L624'></a>
+<a id='L625' name='L625'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, priv-&gt;profiles_size);
+<a id='L626' name='L626'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; priv-&gt;profiles_size; i++) <em class='brace'>{</em>
+<a id='L627' name='L627'></a>                <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, priv-&gt;profiles[i]);
+<a id='L628' name='L628'></a>        <em class='brace'>}</em>
+<a id='L629' name='L629'></a>
+<a id='L630' name='L630'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, priv-&gt;mki_received);
+<a id='L631' name='L631'></a>        <strong class='reserved'>if</strong> (priv-&gt;mki_received) <em class='brace'>{</em>
+<a id='L632' name='L632'></a>                <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, priv-&gt;selected_profile);
+<a id='L633' name='L633'></a>                <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps, priv-&gt;mki, priv-&gt;mki_size);
+<a id='L634' name='L634'></a>        <em class='brace'>}</em>
+<a id='L635' name='L635'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L636' name='L636'></a><em class='brace'>}</em>
+<a id='L637' name='L637'></a>
+<a id='L638' name='L638'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L639' name='L639'></a><a href='../R/5515.html' title='Multiple referred from 2 places.'>_gnutls_srtp_unpack</a>(<a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps, gnutls_ext_priv_data_t * _priv)
+<a id='L640' name='L640'></a><em class='brace'>{</em>
+<a id='L641' name='L641'></a>        <a href='../S/5421.html#L39' title='Defined at 39 in lib/ext/srtp.h.'>srtp_ext_st</a> *priv;
+<a id='L642' name='L642'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> i;
+<a id='L643' name='L643'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L644' name='L644'></a>        gnutls_ext_priv_data_t epriv;
+<a id='L645' name='L645'></a>
+<a id='L646' name='L646'></a>        priv = gnutls_calloc(1, <strong class='reserved'>sizeof</strong>(*priv));
+<a id='L647' name='L647'></a>        <strong class='reserved'>if</strong> (priv == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L648' name='L648'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L649' name='L649'></a>                <strong class='reserved'>return</strong> GNUTLS_E_MEMORY_ERROR;
+<a id='L650' name='L650'></a>        <em class='brace'>}</em>
+<a id='L651' name='L651'></a>
+<a id='L652' name='L652'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, priv-&gt;profiles_size);
+<a id='L653' name='L653'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; priv-&gt;profiles_size; i++) <em class='brace'>{</em>
+<a id='L654' name='L654'></a>                <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, priv-&gt;profiles[i]);
+<a id='L655' name='L655'></a>        <em class='brace'>}</em>
+<a id='L656' name='L656'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, priv-&gt;selected_profile);
+<a id='L657' name='L657'></a>
+<a id='L658' name='L658'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, priv-&gt;mki_received);
+<a id='L659' name='L659'></a>        <strong class='reserved'>if</strong> (priv-&gt;mki_received) <em class='brace'>{</em>
+<a id='L660' name='L660'></a>                <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, priv-&gt;mki_size);
+<a id='L661' name='L661'></a>                <a href='../S/5333.html#L261' title='Defined at 261 in lib/str.h.'>BUFFER_POP</a>(ps, priv-&gt;mki, priv-&gt;mki_size);
+<a id='L662' name='L662'></a>        <em class='brace'>}</em>
+<a id='L663' name='L663'></a>
+<a id='L664' name='L664'></a>        epriv = priv;
+<a id='L665' name='L665'></a>        *_priv = epriv;
+<a id='L666' name='L666'></a>
+<a id='L667' name='L667'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L668' name='L668'></a>
+<a id='L669' name='L669'></a>      error:
+<a id='L670' name='L670'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(priv);
+<a id='L671' name='L671'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L672' name='L672'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L87'>[^]</a><a href='#L639'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

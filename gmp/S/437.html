@@ -1,0 +1,482 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>demos/factorize.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/2095.html'>demos</a>/factorize.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L51'>[^]</a><a href='#L389'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L51' title='Defined at 51.'>factor_init</a></li>
+<li><a href='#L59' title='Defined at 59.'>factor_clear</a></li>
+<li><a href='#L71' title='Defined at 71.'>factor_insert</a></li>
+<li><a href='#L110' title='Defined at 110.'>factor_insert_ui</a></li>
+<li><a href='#L121' title='Defined at 121.'>factor_using_division</a></li>
+<li><a href='#L162' title='Defined at 162.'>mp_millerrabin</a></li>
+<li><a href='#L184' title='Defined at 184.'>mp_prime_p</a></li>
+<li><a href='#L269' title='Defined at 269.'>factor_using_pollard_rho</a></li>
+<li><a href='#L366' title='Defined at 366.'>factor</a></li>
+<li><a href='#L389' title='Defined at 389.'>main</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* Factoring with Pollard's rho method.</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>Copyright 1995, 1997-2003, 2005, 2009, 2012, 2015 Free Software</em>
+<a id='L4' name='L4'></a><em class='comment'>Foundation, Inc.</em>
+<a id='L5' name='L5'></a><em class='comment'></em>
+<a id='L6' name='L6'></a><em class='comment'>This program is free software; you can redistribute it and/or modify it under</em>
+<a id='L7' name='L7'></a><em class='comment'>the terms of the GNU General Public License as published by the Free Software</em>
+<a id='L8' name='L8'></a><em class='comment'>Foundation; either version 3 of the License, or (at your option) any later</em>
+<a id='L9' name='L9'></a><em class='comment'>version.</em>
+<a id='L10' name='L10'></a><em class='comment'></em>
+<a id='L11' name='L11'></a><em class='comment'>This program is distributed in the hope that it will be useful, but WITHOUT ANY</em>
+<a id='L12' name='L12'></a><em class='comment'>WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A</em>
+<a id='L13' name='L13'></a><em class='comment'>PARTICULAR PURPOSE.  See the GNU General Public License for more details.</em>
+<a id='L14' name='L14'></a><em class='comment'></em>
+<a id='L15' name='L15'></a><em class='comment'>You should have received a copy of the GNU General Public License along with</em>
+<a id='L16' name='L16'></a><em class='comment'>this program.  If not, see https://www.gnu.org/licenses/.  */</em>
+<a id='L17' name='L17'></a>
+<a id='L18' name='L18'></a>
+<a id='L19' name='L19'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L20' name='L20'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L21' name='L21'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L22' name='L22'></a><em class='sharp'>#include</em> &lt;inttypes.h&gt;
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> "gmp.h"
+<a id='L25' name='L25'></a>
+<a id='L26' name='L26'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> primes_diff[] = <em class='brace'>{</em>
+<a id='L27' name='L27'></a><em class='sharp'>#define</em> <a href='../R/955.html' title='Multiple referred from 610 places.'>P</a>(a,b,c) a,
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> "<a href='420.html'>primes.h</a>"
+<a id='L29' name='L29'></a><em class='sharp'>#undef</em> <a href='../R/955.html' title='Multiple referred from 610 places.'>P</a>
+<a id='L30' name='L30'></a><em class='brace'>}</em>;
+<a id='L31' name='L31'></a><em class='sharp'>#define</em> <a href='../R/982.html' title='Multiple referred from 2 places.'>PRIMES_PTAB_ENTRIES</a> (<strong class='reserved'>sizeof</strong>(primes_diff) / <strong class='reserved'>sizeof</strong>(primes_diff[0]))
+<a id='L32' name='L32'></a>
+<a id='L33' name='L33'></a><strong class='reserved'>int</strong> flag_verbose = 0;
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='comment'>/* Prove primality or run probabilistic tests.  */</em>
+<a id='L36' name='L36'></a><strong class='reserved'>int</strong> flag_prove_primality = 1;
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a><em class='comment'>/* Number of Miller-Rabin tests to run when not proving primality. */</em>
+<a id='L39' name='L39'></a><em class='sharp'>#define</em> <a href='../S/437.html#L241' title='Referred from 241 in demos/factorize.c.'>MR_REPS</a> 25
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a><strong class='reserved'>struct</strong> <a href='../R/2237.html' title='Multiple referred from 106 places.'>factors</a>
+<a id='L42' name='L42'></a><em class='brace'>{</em>
+<a id='L43' name='L43'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a>         *p;
+<a id='L44' name='L44'></a>  <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> *e;
+<a id='L45' name='L45'></a>  <strong class='reserved'>long</strong> nfactors;
+<a id='L46' name='L46'></a><em class='brace'>}</em>;
+<a id='L47' name='L47'></a>
+<a id='L48' name='L48'></a><strong class='reserved'>void</strong> <a href='../D/2458.html' title='Multiple defined in 2 places.'>factor</a> (<a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a>, <strong class='reserved'>struct</strong> <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a> *);
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a><strong class='reserved'>void</strong>
+<a id='L51' name='L51'></a><a href='../S/437.html#L368' title='Referred from 368 in demos/factorize.c.'>factor_init</a> (<strong class='reserved'>struct</strong> <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a> *<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>)
+<a id='L52' name='L52'></a><em class='brace'>{</em>
+<a id='L53' name='L53'></a>  <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>-&gt;p = malloc (1);
+<a id='L54' name='L54'></a>  <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>-&gt;e = malloc (1);
+<a id='L55' name='L55'></a>  <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>-&gt;nfactors = 0;
+<a id='L56' name='L56'></a><em class='brace'>}</em>
+<a id='L57' name='L57'></a>
+<a id='L58' name='L58'></a><strong class='reserved'>void</strong>
+<a id='L59' name='L59'></a><a href='../R/2230.html' title='Multiple referred from 3 places.'>factor_clear</a> (<strong class='reserved'>struct</strong> <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a> *<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>)
+<a id='L60' name='L60'></a><em class='brace'>{</em>
+<a id='L61' name='L61'></a>  <strong class='reserved'>int</strong> i;
+<a id='L62' name='L62'></a>
+<a id='L63' name='L63'></a>  <strong class='reserved'>for</strong> (i = 0; i &lt; <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>-&gt;nfactors; i++)
+<a id='L64' name='L64'></a>    <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>-&gt;p[i]);
+<a id='L65' name='L65'></a>
+<a id='L66' name='L66'></a>  free (<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>-&gt;p);
+<a id='L67' name='L67'></a>  free (<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>-&gt;e);
+<a id='L68' name='L68'></a><em class='brace'>}</em>
+<a id='L69' name='L69'></a>
+<a id='L70' name='L70'></a><strong class='reserved'>void</strong>
+<a id='L71' name='L71'></a><a href='../R/2232.html' title='Multiple referred from 4 places.'>factor_insert</a> (<strong class='reserved'>struct</strong> <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a> *<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>, <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> prime)
+<a id='L72' name='L72'></a><em class='brace'>{</em>
+<a id='L73' name='L73'></a>  <strong class='reserved'>long</strong>    nfactors  = <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>-&gt;nfactors;
+<a id='L74' name='L74'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a>         *p  = <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>-&gt;p;
+<a id='L75' name='L75'></a>  <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> *e  = <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>-&gt;e;
+<a id='L76' name='L76'></a>  <strong class='reserved'>long</strong> i, j;
+<a id='L77' name='L77'></a>
+<a id='L78' name='L78'></a>  <em class='comment'>/* Locate position for insert new or increment e.  */</em>
+<a id='L79' name='L79'></a>  <strong class='reserved'>for</strong> (i = nfactors - 1; i &gt;= 0; i--)
+<a id='L80' name='L80'></a>    <em class='brace'>{</em>
+<a id='L81' name='L81'></a>      <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (p[i], prime) &lt;= 0)
+<a id='L82' name='L82'></a>        <strong class='reserved'>break</strong>;
+<a id='L83' name='L83'></a>    <em class='brace'>}</em>
+<a id='L84' name='L84'></a>
+<a id='L85' name='L85'></a>  <strong class='reserved'>if</strong> (i &lt; 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (p[i], prime) != 0)
+<a id='L86' name='L86'></a>    <em class='brace'>{</em>
+<a id='L87' name='L87'></a>      p = realloc (p, (nfactors + 1) * <strong class='reserved'>sizeof</strong> p[0]);
+<a id='L88' name='L88'></a>      e = realloc (e, (nfactors + 1) * <strong class='reserved'>sizeof</strong> e[0]);
+<a id='L89' name='L89'></a>
+<a id='L90' name='L90'></a>      <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (p[nfactors]);
+<a id='L91' name='L91'></a>      <strong class='reserved'>for</strong> (j = nfactors - 1; j &gt; i; j--)
+<a id='L92' name='L92'></a>        <em class='brace'>{</em>
+<a id='L93' name='L93'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (p[j + 1], p[j]);
+<a id='L94' name='L94'></a>          e[j + 1] = e[j];
+<a id='L95' name='L95'></a>        <em class='brace'>}</em>
+<a id='L96' name='L96'></a>      <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (p[i + 1], prime);
+<a id='L97' name='L97'></a>      e[i + 1] = 1;
+<a id='L98' name='L98'></a>
+<a id='L99' name='L99'></a>      <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>-&gt;p = p;
+<a id='L100' name='L100'></a>      <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>-&gt;e = e;
+<a id='L101' name='L101'></a>      <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>-&gt;nfactors = nfactors + 1;
+<a id='L102' name='L102'></a>    <em class='brace'>}</em>
+<a id='L103' name='L103'></a>  <strong class='reserved'>else</strong>
+<a id='L104' name='L104'></a>    <em class='brace'>{</em>
+<a id='L105' name='L105'></a>      e[i] += 1;
+<a id='L106' name='L106'></a>    <em class='brace'>}</em>
+<a id='L107' name='L107'></a><em class='brace'>}</em>
+<a id='L108' name='L108'></a>
+<a id='L109' name='L109'></a><strong class='reserved'>void</strong>
+<a id='L110' name='L110'></a><a href='../R/2233.html' title='Multiple referred from 2 places.'>factor_insert_ui</a> (<strong class='reserved'>struct</strong> <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a> *<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>, <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> prime)
+<a id='L111' name='L111'></a><em class='brace'>{</em>
+<a id='L112' name='L112'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> pz;
+<a id='L113' name='L113'></a>
+<a id='L114' name='L114'></a>  <a href='../D/3476.html' title='Multiple defined in 2 places.'>mpz_init_set_ui</a> (pz, prime);
+<a id='L115' name='L115'></a>  <a href='../S/437.html#L71' title='Defined at 71 in demos/factorize.c.'>factor_insert</a> (<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>, pz);
+<a id='L116' name='L116'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (pz);
+<a id='L117' name='L117'></a><em class='brace'>}</em>
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a>
+<a id='L120' name='L120'></a><strong class='reserved'>void</strong>
+<a id='L121' name='L121'></a><a href='../S/437.html#L372' title='Referred from 372 in demos/factorize.c.'>factor_using_division</a> (<a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, <strong class='reserved'>struct</strong> <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a> *<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>)
+<a id='L122' name='L122'></a><em class='brace'>{</em>
+<a id='L123' name='L123'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> q;
+<a id='L124' name='L124'></a>  <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>int</strong> p;
+<a id='L125' name='L125'></a>  <strong class='reserved'>int</strong> i;
+<a id='L126' name='L126'></a>
+<a id='L127' name='L127'></a>  <strong class='reserved'>if</strong> (flag_verbose &gt; 0)
+<a id='L128' name='L128'></a>    <em class='brace'>{</em>
+<a id='L129' name='L129'></a>      printf ("[trial division] ");
+<a id='L130' name='L130'></a>    <em class='brace'>}</em>
+<a id='L131' name='L131'></a>
+<a id='L132' name='L132'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (q);
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a>  p = <a href='../D/3547.html' title='Multiple defined in 2 places.'>mpz_scan1</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, 0);
+<a id='L135' name='L135'></a>  <a href='../D/3440.html' title='Multiple defined in 2 places.'>mpz_fdiv_q_2exp</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, p);
+<a id='L136' name='L136'></a>  <strong class='reserved'>while</strong> (p)
+<a id='L137' name='L137'></a>    <em class='brace'>{</em>
+<a id='L138' name='L138'></a>      <a href='../S/437.html#L110' title='Defined at 110 in demos/factorize.c.'>factor_insert_ui</a> (<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>, 2);
+<a id='L139' name='L139'></a>      --p;
+<a id='L140' name='L140'></a>    <em class='brace'>}</em>
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a>  p = 3;
+<a id='L143' name='L143'></a>  <strong class='reserved'>for</strong> (i = 1; i &lt;= <a href='../S/437.html#L31' title='Defined at 31 in demos/factorize.c.'>PRIMES_PTAB_ENTRIES</a>;)
+<a id='L144' name='L144'></a>    <em class='brace'>{</em>
+<a id='L145' name='L145'></a>      <strong class='reserved'>if</strong> (! <a href='../D/3424.html' title='Multiple defined in 2 places.'>mpz_divisible_ui_p</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, p))
+<a id='L146' name='L146'></a>        <em class='brace'>{</em>
+<a id='L147' name='L147'></a>          p += primes_diff[i++];
+<a id='L148' name='L148'></a>          <strong class='reserved'>if</strong> (<a href='../S/21.html#L1843' title='Defined at 1843 in mini-gmp/mini-gmp.c.'>mpz_cmp_ui</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, p * p) &lt; 0)
+<a id='L149' name='L149'></a>            <strong class='reserved'>break</strong>;
+<a id='L150' name='L150'></a>        <em class='brace'>}</em>
+<a id='L151' name='L151'></a>      <strong class='reserved'>else</strong>
+<a id='L152' name='L152'></a>        <em class='brace'>{</em>
+<a id='L153' name='L153'></a>          <a href='../D/3576.html' title='Multiple defined in 2 places.'>mpz_tdiv_q_ui</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, p);
+<a id='L154' name='L154'></a>          <a href='../S/437.html#L110' title='Defined at 110 in demos/factorize.c.'>factor_insert_ui</a> (<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>, p);
+<a id='L155' name='L155'></a>        <em class='brace'>}</em>
+<a id='L156' name='L156'></a>    <em class='brace'>}</em>
+<a id='L157' name='L157'></a>
+<a id='L158' name='L158'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (q);
+<a id='L159' name='L159'></a><em class='brace'>}</em>
+<a id='L160' name='L160'></a>
+<a id='L161' name='L161'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L162' name='L162'></a><a href='../R/2503.html' title='Multiple referred from 2 places.'>mp_millerrabin</a> (<a href='../S/18.html#L80' title='Defined at 80 in mini-gmp/mini-gmp.h.'>mpz_srcptr</a> n, <a href='../S/18.html#L80' title='Defined at 80 in mini-gmp/mini-gmp.h.'>mpz_srcptr</a> nm1, <a href='../D/3531.html' title='Multiple defined in 2 places.'>mpz_ptr</a> x, <a href='../D/3531.html' title='Multiple defined in 2 places.'>mpz_ptr</a> y,
+<a id='L163' name='L163'></a>                <a href='../S/18.html#L80' title='Defined at 80 in mini-gmp/mini-gmp.h.'>mpz_srcptr</a> q, <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>int</strong> k)
+<a id='L164' name='L164'></a><em class='brace'>{</em>
+<a id='L165' name='L165'></a>  <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>int</strong> i;
+<a id='L166' name='L166'></a>
+<a id='L167' name='L167'></a>  <a href='../D/3524.html' title='Multiple defined in 2 places.'>mpz_powm</a> (y, x, q, n);
+<a id='L168' name='L168'></a>
+<a id='L169' name='L169'></a>  <strong class='reserved'>if</strong> (<a href='../S/21.html#L1843' title='Defined at 1843 in mini-gmp/mini-gmp.c.'>mpz_cmp_ui</a> (y, 1) == 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (y, nm1) == 0)
+<a id='L170' name='L170'></a>    <strong class='reserved'>return</strong> 1;
+<a id='L171' name='L171'></a>
+<a id='L172' name='L172'></a>  <strong class='reserved'>for</strong> (i = 1; i &lt; k; i++)
+<a id='L173' name='L173'></a>    <em class='brace'>{</em>
+<a id='L174' name='L174'></a>      <a href='../D/3526.html' title='Multiple defined in 2 places.'>mpz_powm_ui</a> (y, y, 2, n);
+<a id='L175' name='L175'></a>      <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (y, nm1) == 0)
+<a id='L176' name='L176'></a>        <strong class='reserved'>return</strong> 1;
+<a id='L177' name='L177'></a>      <strong class='reserved'>if</strong> (<a href='../S/21.html#L1843' title='Defined at 1843 in mini-gmp/mini-gmp.c.'>mpz_cmp_ui</a> (y, 1) == 0)
+<a id='L178' name='L178'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L179' name='L179'></a>    <em class='brace'>}</em>
+<a id='L180' name='L180'></a>  <strong class='reserved'>return</strong> 0;
+<a id='L181' name='L181'></a><em class='brace'>}</em>
+<a id='L182' name='L182'></a>
+<a id='L183' name='L183'></a><strong class='reserved'>int</strong>
+<a id='L184' name='L184'></a><a href='../R/2504.html' title='Multiple referred from 3 places.'>mp_prime_p</a> (<a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> n)
+<a id='L185' name='L185'></a><em class='brace'>{</em>
+<a id='L186' name='L186'></a>  <strong class='reserved'>int</strong> k, r, is_prime;
+<a id='L187' name='L187'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> q, a, nm1, tmp;
+<a id='L188' name='L188'></a>  <strong class='reserved'>struct</strong> <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a> <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>;
+<a id='L189' name='L189'></a>
+<a id='L190' name='L190'></a>  <strong class='reserved'>if</strong> (<a href='../S/21.html#L1843' title='Defined at 1843 in mini-gmp/mini-gmp.c.'>mpz_cmp_ui</a> (n, 1) &lt;= 0)
+<a id='L191' name='L191'></a>    <strong class='reserved'>return</strong> 0;
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a>  <em class='comment'>/* We have already casted out small primes. */</em>
+<a id='L194' name='L194'></a>  <strong class='reserved'>if</strong> (<a href='../S/21.html#L1843' title='Defined at 1843 in mini-gmp/mini-gmp.c.'>mpz_cmp_ui</a> (n, (<strong class='reserved'>long</strong>) <a href='../S/420.html#L552' title='Defined at 552 in demos/primes.h.'>FIRST_OMITTED_PRIME</a> * <a href='../S/420.html#L552' title='Defined at 552 in demos/primes.h.'>FIRST_OMITTED_PRIME</a>) &lt; 0)
+<a id='L195' name='L195'></a>    <strong class='reserved'>return</strong> 1;
+<a id='L196' name='L196'></a>
+<a id='L197' name='L197'></a>  <a href='../S/754.html#L35' title='Defined at 35 in mpz/inits.c.'>mpz_inits</a> (q, a, nm1, tmp, NULL);
+<a id='L198' name='L198'></a>
+<a id='L199' name='L199'></a>  <em class='comment'>/* Precomputation for Miller-Rabin.  */</em>
+<a id='L200' name='L200'></a>  <a href='../S/21.html#L1924' title='Defined at 1924 in mini-gmp/mini-gmp.c.'>mpz_sub_ui</a> (nm1, n, 1);
+<a id='L201' name='L201'></a>
+<a id='L202' name='L202'></a>  <em class='comment'>/* Find q and k, where q is odd and n = 1 + 2**k * q.  */</em>
+<a id='L203' name='L203'></a>  k = <a href='../D/3547.html' title='Multiple defined in 2 places.'>mpz_scan1</a> (nm1, 0);
+<a id='L204' name='L204'></a>  <a href='../D/3575.html' title='Multiple defined in 3 places.'>mpz_tdiv_q_2exp</a> (q, nm1, k);
+<a id='L205' name='L205'></a>
+<a id='L206' name='L206'></a>  <a href='../D/3556.html' title='Multiple defined in 2 places.'>mpz_set_ui</a> (a, 2);
+<a id='L207' name='L207'></a>
+<a id='L208' name='L208'></a>  <em class='comment'>/* Perform a Miller-Rabin test, finds most composites quickly.  */</em>
+<a id='L209' name='L209'></a>  <strong class='reserved'>if</strong> (!<a href='../S/437.html#L162' title='Defined at 162 in demos/factorize.c.'>mp_millerrabin</a> (n, nm1, a, tmp, q, k))
+<a id='L210' name='L210'></a>    <em class='brace'>{</em>
+<a id='L211' name='L211'></a>      is_prime = 0;
+<a id='L212' name='L212'></a>      <strong class='reserved'>goto</strong> ret2;
+<a id='L213' name='L213'></a>    <em class='brace'>}</em>
+<a id='L214' name='L214'></a>
+<a id='L215' name='L215'></a>  <strong class='reserved'>if</strong> (flag_prove_primality)
+<a id='L216' name='L216'></a>    <em class='brace'>{</em>
+<a id='L217' name='L217'></a>      <em class='comment'>/* Factor n-1 for Lucas.  */</em>
+<a id='L218' name='L218'></a>      <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (tmp, nm1);
+<a id='L219' name='L219'></a>      <a href='../D/2458.html' title='Multiple defined in 2 places.'>factor</a> (tmp, &amp;<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>);
+<a id='L220' name='L220'></a>    <em class='brace'>}</em>
+<a id='L221' name='L221'></a>
+<a id='L222' name='L222'></a>  <em class='comment'>/* Loop until Lucas proves our number prime, or Miller-Rabin proves our</em>
+<a id='L223' name='L223'></a><em class='comment'>     number composite.  */</em>
+<a id='L224' name='L224'></a>  <strong class='reserved'>for</strong> (r = 0; r &lt; <a href='../S/437.html#L31' title='Defined at 31 in demos/factorize.c.'>PRIMES_PTAB_ENTRIES</a>; r++)
+<a id='L225' name='L225'></a>    <em class='brace'>{</em>
+<a id='L226' name='L226'></a>      <strong class='reserved'>int</strong> i;
+<a id='L227' name='L227'></a>
+<a id='L228' name='L228'></a>      <strong class='reserved'>if</strong> (flag_prove_primality)
+<a id='L229' name='L229'></a>        <em class='brace'>{</em>
+<a id='L230' name='L230'></a>          is_prime = 1;
+<a id='L231' name='L231'></a>          <strong class='reserved'>for</strong> (i = 0; i &lt; <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>.nfactors &amp;&amp; is_prime; i++)
+<a id='L232' name='L232'></a>            <em class='brace'>{</em>
+<a id='L233' name='L233'></a>              <a href='../D/3416.html' title='Multiple defined in 2 places.'>mpz_divexact</a> (tmp, nm1, <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>.p[i]);
+<a id='L234' name='L234'></a>              <a href='../D/3524.html' title='Multiple defined in 2 places.'>mpz_powm</a> (tmp, a, tmp, n);
+<a id='L235' name='L235'></a>              is_prime = <a href='../S/21.html#L1843' title='Defined at 1843 in mini-gmp/mini-gmp.c.'>mpz_cmp_ui</a> (tmp, 1) != 0;
+<a id='L236' name='L236'></a>            <em class='brace'>}</em>
+<a id='L237' name='L237'></a>        <em class='brace'>}</em>
+<a id='L238' name='L238'></a>      <strong class='reserved'>else</strong>
+<a id='L239' name='L239'></a>        <em class='brace'>{</em>
+<a id='L240' name='L240'></a>          <em class='comment'>/* After enough Miller-Rabin runs, be content. */</em>
+<a id='L241' name='L241'></a>          is_prime = (r == <a href='../S/437.html#L39' title='Defined at 39 in demos/factorize.c.'>MR_REPS</a> - 1);
+<a id='L242' name='L242'></a>        <em class='brace'>}</em>
+<a id='L243' name='L243'></a>
+<a id='L244' name='L244'></a>      <strong class='reserved'>if</strong> (is_prime)
+<a id='L245' name='L245'></a>        <strong class='reserved'>goto</strong> ret1;
+<a id='L246' name='L246'></a>
+<a id='L247' name='L247'></a>      <a href='../S/21.html#L1915' title='Defined at 1915 in mini-gmp/mini-gmp.c.'>mpz_add_ui</a> (a, a, primes_diff[r]);        <em class='comment'>/* Establish new base.  */</em>
+<a id='L248' name='L248'></a>
+<a id='L249' name='L249'></a>      <strong class='reserved'>if</strong> (!<a href='../S/437.html#L162' title='Defined at 162 in demos/factorize.c.'>mp_millerrabin</a> (n, nm1, a, tmp, q, k))
+<a id='L250' name='L250'></a>        <em class='brace'>{</em>
+<a id='L251' name='L251'></a>          is_prime = 0;
+<a id='L252' name='L252'></a>          <strong class='reserved'>goto</strong> ret1;
+<a id='L253' name='L253'></a>        <em class='brace'>}</em>
+<a id='L254' name='L254'></a>    <em class='brace'>}</em>
+<a id='L255' name='L255'></a>
+<a id='L256' name='L256'></a>  fprintf (stderr, "Lucas prime test failure.  This should not happen\n");
+<a id='L257' name='L257'></a>  abort ();
+<a id='L258' name='L258'></a>
+<a id='L259' name='L259'></a> ret1:
+<a id='L260' name='L260'></a>  <strong class='reserved'>if</strong> (flag_prove_primality)
+<a id='L261' name='L261'></a>    <a href='../S/437.html#L59' title='Defined at 59 in demos/factorize.c.'>factor_clear</a> (&amp;<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>);
+<a id='L262' name='L262'></a> ret2:
+<a id='L263' name='L263'></a>  <a href='../S/706.html#L35' title='Defined at 35 in mpz/clears.c.'>mpz_clears</a> (q, a, nm1, tmp, NULL);
+<a id='L264' name='L264'></a>
+<a id='L265' name='L265'></a>  <strong class='reserved'>return</strong> is_prime;
+<a id='L266' name='L266'></a><em class='brace'>}</em>
+<a id='L267' name='L267'></a>
+<a id='L268' name='L268'></a><strong class='reserved'>void</strong>
+<a id='L269' name='L269'></a><a href='../R/2236.html' title='Multiple referred from 2 places.'>factor_using_pollard_rho</a> (<a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> n, <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> a, <strong class='reserved'>struct</strong> <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a> *<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>)
+<a id='L270' name='L270'></a><em class='brace'>{</em>
+<a id='L271' name='L271'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> x, z, y, <a href='../D/1009.html' title='Multiple defined in 6 places.'>P</a>;
+<a id='L272' name='L272'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, t2;
+<a id='L273' name='L273'></a>  <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong> k, l, i;
+<a id='L274' name='L274'></a>
+<a id='L275' name='L275'></a>  <strong class='reserved'>if</strong> (flag_verbose &gt; 0)
+<a id='L276' name='L276'></a>    <em class='brace'>{</em>
+<a id='L277' name='L277'></a>      printf ("[pollard-rho (%lu)] ", a);
+<a id='L278' name='L278'></a>    <em class='brace'>}</em>
+<a id='L279' name='L279'></a>
+<a id='L280' name='L280'></a>  <a href='../S/754.html#L35' title='Defined at 35 in mpz/inits.c.'>mpz_inits</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, t2, NULL);
+<a id='L281' name='L281'></a>  <a href='../D/3474.html' title='Multiple defined in 2 places.'>mpz_init_set_si</a> (y, 2);
+<a id='L282' name='L282'></a>  <a href='../D/3474.html' title='Multiple defined in 2 places.'>mpz_init_set_si</a> (x, 2);
+<a id='L283' name='L283'></a>  <a href='../D/3474.html' title='Multiple defined in 2 places.'>mpz_init_set_si</a> (z, 2);
+<a id='L284' name='L284'></a>  <a href='../D/3476.html' title='Multiple defined in 2 places.'>mpz_init_set_ui</a> (<a href='../D/1009.html' title='Multiple defined in 6 places.'>P</a>, 1);
+<a id='L285' name='L285'></a>  k = 1;
+<a id='L286' name='L286'></a>  l = 1;
+<a id='L287' name='L287'></a>
+<a id='L288' name='L288'></a>  <strong class='reserved'>while</strong> (<a href='../S/21.html#L1843' title='Defined at 1843 in mini-gmp/mini-gmp.c.'>mpz_cmp_ui</a> (n, 1) != 0)
+<a id='L289' name='L289'></a>    <em class='brace'>{</em>
+<a id='L290' name='L290'></a>      <strong class='reserved'>for</strong> (;;)
+<a id='L291' name='L291'></a>        <em class='brace'>{</em>
+<a id='L292' name='L292'></a>          <strong class='reserved'>do</strong>
+<a id='L293' name='L293'></a>            <em class='brace'>{</em>
+<a id='L294' name='L294'></a>              <a href='../D/3507.html' title='Multiple defined in 2 places.'>mpz_mul</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, x, x);
+<a id='L295' name='L295'></a>              <a href='../D/3502.html' title='Multiple defined in 2 places.'>mpz_mod</a> (x, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, n);
+<a id='L296' name='L296'></a>              <a href='../S/21.html#L1915' title='Defined at 1915 in mini-gmp/mini-gmp.c.'>mpz_add_ui</a> (x, x, a);
+<a id='L297' name='L297'></a>
+<a id='L298' name='L298'></a>              <a href='../S/21.html#L1998' title='Defined at 1998 in mini-gmp/mini-gmp.c.'>mpz_sub</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, z, x);
+<a id='L299' name='L299'></a>              <a href='../D/3507.html' title='Multiple defined in 2 places.'>mpz_mul</a> (t2, <a href='../D/1009.html' title='Multiple defined in 6 places.'>P</a>, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L300' name='L300'></a>              <a href='../D/3502.html' title='Multiple defined in 2 places.'>mpz_mod</a> (<a href='../D/1009.html' title='Multiple defined in 6 places.'>P</a>, t2, n);
+<a id='L301' name='L301'></a>
+<a id='L302' name='L302'></a>              <strong class='reserved'>if</strong> (k % 32 == 1)
+<a id='L303' name='L303'></a>                <em class='brace'>{</em>
+<a id='L304' name='L304'></a>                  <a href='../D/3454.html' title='Multiple defined in 2 places.'>mpz_gcd</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, <a href='../D/1009.html' title='Multiple defined in 6 places.'>P</a>, n);
+<a id='L305' name='L305'></a>                  <strong class='reserved'>if</strong> (<a href='../S/21.html#L1843' title='Defined at 1843 in mini-gmp/mini-gmp.c.'>mpz_cmp_ui</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, 1) != 0)
+<a id='L306' name='L306'></a>                    <strong class='reserved'>goto</strong> factor_found;
+<a id='L307' name='L307'></a>                  <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (y, x);
+<a id='L308' name='L308'></a>                <em class='brace'>}</em>
+<a id='L309' name='L309'></a>            <em class='brace'>}</em>
+<a id='L310' name='L310'></a>          <strong class='reserved'>while</strong> (--k != 0);
+<a id='L311' name='L311'></a>
+<a id='L312' name='L312'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (z, x);
+<a id='L313' name='L313'></a>          k = l;
+<a id='L314' name='L314'></a>          l = 2 * l;
+<a id='L315' name='L315'></a>          <strong class='reserved'>for</strong> (i = 0; i &lt; k; i++)
+<a id='L316' name='L316'></a>            <em class='brace'>{</em>
+<a id='L317' name='L317'></a>              <a href='../D/3507.html' title='Multiple defined in 2 places.'>mpz_mul</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, x, x);
+<a id='L318' name='L318'></a>              <a href='../D/3502.html' title='Multiple defined in 2 places.'>mpz_mod</a> (x, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, n);
+<a id='L319' name='L319'></a>              <a href='../S/21.html#L1915' title='Defined at 1915 in mini-gmp/mini-gmp.c.'>mpz_add_ui</a> (x, x, a);
+<a id='L320' name='L320'></a>            <em class='brace'>}</em>
+<a id='L321' name='L321'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (y, x);
+<a id='L322' name='L322'></a>        <em class='brace'>}</em>
+<a id='L323' name='L323'></a>
+<a id='L324' name='L324'></a>    factor_found:
+<a id='L325' name='L325'></a>      <strong class='reserved'>do</strong>
+<a id='L326' name='L326'></a>        <em class='brace'>{</em>
+<a id='L327' name='L327'></a>          <a href='../D/3507.html' title='Multiple defined in 2 places.'>mpz_mul</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, y, y);
+<a id='L328' name='L328'></a>          <a href='../D/3502.html' title='Multiple defined in 2 places.'>mpz_mod</a> (y, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, n);
+<a id='L329' name='L329'></a>          <a href='../S/21.html#L1915' title='Defined at 1915 in mini-gmp/mini-gmp.c.'>mpz_add_ui</a> (y, y, a);
+<a id='L330' name='L330'></a>
+<a id='L331' name='L331'></a>          <a href='../S/21.html#L1998' title='Defined at 1998 in mini-gmp/mini-gmp.c.'>mpz_sub</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, z, y);
+<a id='L332' name='L332'></a>          <a href='../D/3454.html' title='Multiple defined in 2 places.'>mpz_gcd</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, n);
+<a id='L333' name='L333'></a>        <em class='brace'>}</em>
+<a id='L334' name='L334'></a>      <strong class='reserved'>while</strong> (<a href='../S/21.html#L1843' title='Defined at 1843 in mini-gmp/mini-gmp.c.'>mpz_cmp_ui</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, 1) == 0);
+<a id='L335' name='L335'></a>
+<a id='L336' name='L336'></a>      <a href='../D/3416.html' title='Multiple defined in 2 places.'>mpz_divexact</a> (n, n, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);   <em class='comment'>/* divide by t, before t is overwritten */</em>
+<a id='L337' name='L337'></a>
+<a id='L338' name='L338'></a>      <strong class='reserved'>if</strong> (!<a href='../S/437.html#L184' title='Defined at 184 in demos/factorize.c.'>mp_prime_p</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>))
+<a id='L339' name='L339'></a>        <em class='brace'>{</em>
+<a id='L340' name='L340'></a>          <strong class='reserved'>if</strong> (flag_verbose &gt; 0)
+<a id='L341' name='L341'></a>            <em class='brace'>{</em>
+<a id='L342' name='L342'></a>              printf ("[composite factor--restarting pollard-rho] ");
+<a id='L343' name='L343'></a>            <em class='brace'>}</em>
+<a id='L344' name='L344'></a>          <a href='../S/437.html#L269' title='Defined at 269 in demos/factorize.c.'>factor_using_pollard_rho</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, a + 1, <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>);
+<a id='L345' name='L345'></a>        <em class='brace'>}</em>
+<a id='L346' name='L346'></a>      <strong class='reserved'>else</strong>
+<a id='L347' name='L347'></a>        <em class='brace'>{</em>
+<a id='L348' name='L348'></a>          <a href='../S/437.html#L71' title='Defined at 71 in demos/factorize.c.'>factor_insert</a> (<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L349' name='L349'></a>        <em class='brace'>}</em>
+<a id='L350' name='L350'></a>
+<a id='L351' name='L351'></a>      <strong class='reserved'>if</strong> (<a href='../S/437.html#L184' title='Defined at 184 in demos/factorize.c.'>mp_prime_p</a> (n))
+<a id='L352' name='L352'></a>        <em class='brace'>{</em>
+<a id='L353' name='L353'></a>          <a href='../S/437.html#L71' title='Defined at 71 in demos/factorize.c.'>factor_insert</a> (<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>, n);
+<a id='L354' name='L354'></a>          <strong class='reserved'>break</strong>;
+<a id='L355' name='L355'></a>        <em class='brace'>}</em>
+<a id='L356' name='L356'></a>
+<a id='L357' name='L357'></a>      <a href='../D/3502.html' title='Multiple defined in 2 places.'>mpz_mod</a> (x, x, n);
+<a id='L358' name='L358'></a>      <a href='../D/3502.html' title='Multiple defined in 2 places.'>mpz_mod</a> (z, z, n);
+<a id='L359' name='L359'></a>      <a href='../D/3502.html' title='Multiple defined in 2 places.'>mpz_mod</a> (y, y, n);
+<a id='L360' name='L360'></a>    <em class='brace'>}</em>
+<a id='L361' name='L361'></a>
+<a id='L362' name='L362'></a>  <a href='../S/706.html#L35' title='Defined at 35 in mpz/clears.c.'>mpz_clears</a> (<a href='../D/1009.html' title='Multiple defined in 6 places.'>P</a>, t2, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, z, x, y, NULL);
+<a id='L363' name='L363'></a><em class='brace'>}</em>
+<a id='L364' name='L364'></a>
+<a id='L365' name='L365'></a><strong class='reserved'>void</strong>
+<a id='L366' name='L366'></a><a href='../R/2229.html' title='Multiple referred from 38 places.'>factor</a> (<a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, <strong class='reserved'>struct</strong> <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a> *<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>)
+<a id='L367' name='L367'></a><em class='brace'>{</em>
+<a id='L368' name='L368'></a>  <a href='../S/437.html#L51' title='Defined at 51 in demos/factorize.c.'>factor_init</a> (<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>);
+<a id='L369' name='L369'></a>
+<a id='L370' name='L370'></a>  <strong class='reserved'>if</strong> (<a href='../D/3558.html' title='Multiple defined in 2 places.'>mpz_sgn</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>) != 0)
+<a id='L371' name='L371'></a>    <em class='brace'>{</em>
+<a id='L372' name='L372'></a>      <a href='../S/437.html#L121' title='Defined at 121 in demos/factorize.c.'>factor_using_division</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>);
+<a id='L373' name='L373'></a>
+<a id='L374' name='L374'></a>      <strong class='reserved'>if</strong> (<a href='../S/21.html#L1843' title='Defined at 1843 in mini-gmp/mini-gmp.c.'>mpz_cmp_ui</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, 1) != 0)
+<a id='L375' name='L375'></a>        <em class='brace'>{</em>
+<a id='L376' name='L376'></a>          <strong class='reserved'>if</strong> (flag_verbose &gt; 0)
+<a id='L377' name='L377'></a>            <em class='brace'>{</em>
+<a id='L378' name='L378'></a>              printf ("[is number prime?] ");
+<a id='L379' name='L379'></a>            <em class='brace'>}</em>
+<a id='L380' name='L380'></a>          <strong class='reserved'>if</strong> (<a href='../S/437.html#L184' title='Defined at 184 in demos/factorize.c.'>mp_prime_p</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>))
+<a id='L381' name='L381'></a>            <a href='../S/437.html#L71' title='Defined at 71 in demos/factorize.c.'>factor_insert</a> (<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L382' name='L382'></a>          <strong class='reserved'>else</strong>
+<a id='L383' name='L383'></a>            <a href='../S/437.html#L269' title='Defined at 269 in demos/factorize.c.'>factor_using_pollard_rho</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, 1, <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>);
+<a id='L384' name='L384'></a>        <em class='brace'>}</em>
+<a id='L385' name='L385'></a>    <em class='brace'>}</em>
+<a id='L386' name='L386'></a><em class='brace'>}</em>
+<a id='L387' name='L387'></a>
+<a id='L388' name='L388'></a><strong class='reserved'>int</strong>
+<a id='L389' name='L389'></a>main (<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> *argv[])
+<a id='L390' name='L390'></a><em class='brace'>{</em>
+<a id='L391' name='L391'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>;
+<a id='L392' name='L392'></a>  <strong class='reserved'>int</strong> i, j, k;
+<a id='L393' name='L393'></a>  <strong class='reserved'>struct</strong> <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a> <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>;
+<a id='L394' name='L394'></a>
+<a id='L395' name='L395'></a>  <strong class='reserved'>while</strong> (argc &gt; 1)
+<a id='L396' name='L396'></a>    <em class='brace'>{</em>
+<a id='L397' name='L397'></a>      <strong class='reserved'>if</strong> (!strcmp (argv[1], "-v"))
+<a id='L398' name='L398'></a>        flag_verbose = 1;
+<a id='L399' name='L399'></a>      <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (!strcmp (argv[1], "-w"))
+<a id='L400' name='L400'></a>        flag_prove_primality = 0;
+<a id='L401' name='L401'></a>      <strong class='reserved'>else</strong>
+<a id='L402' name='L402'></a>        <strong class='reserved'>break</strong>;
+<a id='L403' name='L403'></a>
+<a id='L404' name='L404'></a>      argv++;
+<a id='L405' name='L405'></a>      argc--;
+<a id='L406' name='L406'></a>    <em class='brace'>}</em>
+<a id='L407' name='L407'></a>
+<a id='L408' name='L408'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L409' name='L409'></a>  <strong class='reserved'>if</strong> (argc &gt; 1)
+<a id='L410' name='L410'></a>    <em class='brace'>{</em>
+<a id='L411' name='L411'></a>      <strong class='reserved'>for</strong> (i = 1; i &lt; argc; i++)
+<a id='L412' name='L412'></a>        <em class='brace'>{</em>
+<a id='L413' name='L413'></a>          <a href='../D/3554.html' title='Multiple defined in 2 places.'>mpz_set_str</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, argv[i], 0);
+<a id='L414' name='L414'></a>
+<a id='L415' name='L415'></a>          <a href='../S/577.html#L38' title='Defined at 38 in printf/printf.c.'>gmp_printf</a> ("%Zd:", <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L416' name='L416'></a>          <a href='../D/2458.html' title='Multiple defined in 2 places.'>factor</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, &amp;<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>);
+<a id='L417' name='L417'></a>
+<a id='L418' name='L418'></a>          <strong class='reserved'>for</strong> (j = 0; j &lt; <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>.nfactors; j++)
+<a id='L419' name='L419'></a>            <strong class='reserved'>for</strong> (k = 0; k &lt; <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>.e[j]; k++)
+<a id='L420' name='L420'></a>              <a href='../S/577.html#L38' title='Defined at 38 in printf/printf.c.'>gmp_printf</a> (" %Zd", <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>.p[j]);
+<a id='L421' name='L421'></a>
+<a id='L422' name='L422'></a>          puts ("");
+<a id='L423' name='L423'></a>          <a href='../S/437.html#L59' title='Defined at 59 in demos/factorize.c.'>factor_clear</a> (&amp;<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>);
+<a id='L424' name='L424'></a>        <em class='brace'>}</em>
+<a id='L425' name='L425'></a>    <em class='brace'>}</em>
+<a id='L426' name='L426'></a>  <strong class='reserved'>else</strong>
+<a id='L427' name='L427'></a>    <em class='brace'>{</em>
+<a id='L428' name='L428'></a>      <strong class='reserved'>for</strong> (;;)
+<a id='L429' name='L429'></a>        <em class='brace'>{</em>
+<a id='L430' name='L430'></a>          <a href='../S/619.html#L45' title='Defined at 45 in mpz/inp_str.c.'>mpz_inp_str</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, stdin, 0);
+<a id='L431' name='L431'></a>          <strong class='reserved'>if</strong> (feof (stdin))
+<a id='L432' name='L432'></a>            <strong class='reserved'>break</strong>;
+<a id='L433' name='L433'></a>
+<a id='L434' name='L434'></a>          <a href='../S/577.html#L38' title='Defined at 38 in printf/printf.c.'>gmp_printf</a> ("%Zd:", <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L435' name='L435'></a>          <a href='../D/2458.html' title='Multiple defined in 2 places.'>factor</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, &amp;<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>);
+<a id='L436' name='L436'></a>
+<a id='L437' name='L437'></a>          <strong class='reserved'>for</strong> (j = 0; j &lt; <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>.nfactors; j++)
+<a id='L438' name='L438'></a>            <strong class='reserved'>for</strong> (k = 0; k &lt; <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>.e[j]; k++)
+<a id='L439' name='L439'></a>              <a href='../S/577.html#L38' title='Defined at 38 in printf/printf.c.'>gmp_printf</a> (" %Zd", <a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>.p[j]);
+<a id='L440' name='L440'></a>
+<a id='L441' name='L441'></a>          puts ("");
+<a id='L442' name='L442'></a>          <a href='../S/437.html#L59' title='Defined at 59 in demos/factorize.c.'>factor_clear</a> (&amp;<a href='../S/437.html#L41' title='Defined at 41 in demos/factorize.c.'>factors</a>);
+<a id='L443' name='L443'></a>        <em class='brace'>}</em>
+<a id='L444' name='L444'></a>    <em class='brace'>}</em>
+<a id='L445' name='L445'></a>
+<a id='L446' name='L446'></a>  exit (0);
+<a id='L447' name='L447'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L51'>[^]</a><a href='#L389'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

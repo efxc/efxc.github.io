@@ -1,0 +1,1513 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/buffers.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/buffers.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L69'>[^]</a><a href='#L1398'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L69' title='Defined at 69.'>_gnutls_record_buffer_put</a></li>
+<li><a href='#L95' title='Defined at 95.'>gnutls_record_check_pending</a></li>
+<li><a href='#L111' title='Defined at 111.'>gnutls_record_check_corked</a></li>
+<li><a href='#L117' title='Defined at 117.'>_gnutls_record_buffer_get</a></li>
+<li><a href='#L168' title='Defined at 168.'>_gnutls_record_buffer_get_packet</a></li>
+<li><a href='#L196' title='Defined at 196.'>reset_errno</a></li>
+<li><a href='#L201' title='Defined at 201.'>get_errno</a></li>
+<li><a href='#L215' title='Defined at 215.'>errno_to_gerr</a></li>
+<li><a href='#L236' title='Defined at 236.'>_gnutls_dgram_read</a></li>
+<li><a href='#L310' title='Defined at 310.'>_gnutls_stream_read</a></li>
+<li><a href='#L419' title='Defined at 419.'>_gnutls_read</a></li>
+<li><a href='#L434' title='Defined at 434.'>_gnutls_writev_emu</a></li>
+<li><a href='#L483' title='Defined at 483.'>_gnutls_writev</a></li>
+<li><a href='#L536' title='Defined at 536.'>_gnutls_io_read_buffered</a></li>
+<li><a href='#L638' title='Defined at 638.'>_gnutls_io_write_buffered</a></li>
+<li><a href='#L667' title='Defined at 667.'>_gnutls_io_write_flush</a></li>
+<li><a href='#L739' title='Defined at 739.'>_gnutls_io_check_recv</a></li>
+<li><a href='#L774' title='Defined at 774.'>_gnutls_handshake_io_write_flush</a></li>
+<li><a href='#L831' title='Defined at 831.'>_gnutls_handshake_io_cache_int</a></li>
+<li><a href='#L865' title='Defined at 865.'>handshake_compare</a></li>
+<li><a href='#L878' title='Defined at 878.'>parse_handshake_header</a></li>
+<li><a href='#L977' title='Defined at 977.'>_gnutls_handshake_buffer_move</a></li>
+<li><a href='#L989' title='Defined at 989.'>merge_handshake_packet</a></li>
+<li><a href='#L1083' title='Defined at 1083.'>cmp_hsk_types</a></li>
+<li><a href='#L1104' title='Defined at 1104.'>get_last_packet</a></li>
+<li><a href='#L1181' title='Defined at 1181.'>_gnutls_parse_record_buffered_msgs</a></li>
+<li><a href='#L1398' title='Defined at 1398.'>_gnutls_handshake_io_recv_int</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2000-2012 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L9' name='L9'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L10' name='L10'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L11' name='L11'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='comment'>/*</em>
+<a id='L24' name='L24'></a><em class='comment'> * This file holds all the buffering code used in gnutls.</em>
+<a id='L25' name='L25'></a><em class='comment'> * The buffering code works as:</em>
+<a id='L26' name='L26'></a><em class='comment'> *</em>
+<a id='L27' name='L27'></a><em class='comment'> * RECORD LAYER:</em>
+<a id='L28' name='L28'></a><em class='comment'> *  1. uses a buffer to hold data (application/handshake),</em>
+<a id='L29' name='L29'></a><em class='comment'> *    we got but they were not requested, yet.</em>
+<a id='L30' name='L30'></a><em class='comment'> *  (see gnutls_record_buffer_put(), gnutls_record_buffer_get_size() etc.)</em>
+<a id='L31' name='L31'></a><em class='comment'> *</em>
+<a id='L32' name='L32'></a><em class='comment'> *  2. uses a buffer to hold data that were incomplete (ie the read/write</em>
+<a id='L33' name='L33'></a><em class='comment'> *    was interrupted)</em>
+<a id='L34' name='L34'></a><em class='comment'> *  (see _gnutls_io_read_buffered(), _gnutls_io_write_buffered() etc.)</em>
+<a id='L35' name='L35'></a><em class='comment'> *</em>
+<a id='L36' name='L36'></a><em class='comment'> * HANDSHAKE LAYER:</em>
+<a id='L37' name='L37'></a><em class='comment'> *  1. Uses buffer to hold the last received handshake message.</em>
+<a id='L38' name='L38'></a><em class='comment'> *  (see _gnutls_handshake_hash_buffer_put() etc.)</em>
+<a id='L39' name='L39'></a><em class='comment'> *</em>
+<a id='L40' name='L40'></a><em class='comment'> */</em>
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L43' name='L43'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L44' name='L44'></a><em class='sharp'>#include</em> &lt;<a href='5268.html'>num.h</a>&gt;
+<a id='L45' name='L45'></a><em class='sharp'>#include</em> &lt;<a href='5295.html'>record.h</a>&gt;
+<a id='L46' name='L46'></a><em class='sharp'>#include</em> &lt;<a href='6033.html'>buffers.h</a>&gt;
+<a id='L47' name='L47'></a><em class='sharp'>#include</em> &lt;<a href='5459.html'>mbuffers.h</a>&gt;
+<a id='L48' name='L48'></a><em class='sharp'>#include</em> &lt;<a href='5748.html'>state.h</a>&gt;
+<a id='L49' name='L49'></a><em class='sharp'>#include</em> &lt;<a href='../I/592.html'>dtls.h</a>&gt;
+<a id='L50' name='L50'></a><em class='sharp'>#include</em> &lt;<a href='5450.html'>system.h</a>&gt;
+<a id='L51' name='L51'></a><em class='sharp'>#include</em> &lt;<a href='5991.html'>constate.h</a>&gt;   <em class='comment'>/* gnutls_epoch_get */</em>
+<a id='L52' name='L52'></a><em class='sharp'>#include</em> &lt;<a href='5744.html'>handshake.h</a>&gt;  <em class='comment'>/* remaining_time() */</em>
+<a id='L53' name='L53'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L54' name='L54'></a><em class='sharp'>#include</em> &lt;<a href='5450.html'>system.h</a>&gt;
+<a id='L55' name='L55'></a><em class='sharp'>#include</em> "<a href='5626.html'>debug.h</a>"
+<a id='L56' name='L56'></a>
+<a id='L57' name='L57'></a><em class='sharp'>#ifndef</em> <a href='../S/5984.html#L58' title='Defined at 58 in lib/buffers.c.'>EAGAIN</a>
+<a id='L58' name='L58'></a><em class='sharp'>#define</em> <a href='../R/634.html' title='Multiple referred from 41 places.'>EAGAIN</a> <a href='../D/992.html' title='Multiple defined in 2 places.'>EWOULDBLOCK</a>
+<a id='L59' name='L59'></a><em class='sharp'>#endif</em>
+<a id='L60' name='L60'></a>
+<a id='L61' name='L61'></a><em class='comment'>/* this is the maximum number of messages allowed to queue.</em>
+<a id='L62' name='L62'></a><em class='comment'> */</em>
+<a id='L63' name='L63'></a><em class='sharp'>#define</em> <a href='../R/2418.html' title='Multiple referred from 2 places.'>MAX_QUEUE</a> 32
+<a id='L64' name='L64'></a>
+<a id='L65' name='L65'></a><em class='comment'>/* Buffers received packets of type APPLICATION DATA,</em>
+<a id='L66' name='L66'></a><em class='comment'> * HANDSHAKE DATA and HEARTBEAT.</em>
+<a id='L67' name='L67'></a><em class='comment'> */</em>
+<a id='L68' name='L68'></a><strong class='reserved'>void</strong>
+<a id='L69' name='L69'></a><a href='../R/5405.html' title='Multiple referred from 7 places.'>_gnutls_record_buffer_put</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L70' name='L70'></a>                          <a href='../D/7309.html' title='Multiple defined in 2 places.'>content_type_t</a> <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>, <a href='../D/12097.html' title='Multiple defined in 19 places.'>uint64_t</a> seq,
+<a id='L71' name='L71'></a>                          <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> * bufel)
+<a id='L72' name='L72'></a><em class='brace'>{</em>
+<a id='L73' name='L73'></a>
+<a id='L74' name='L74'></a>        bufel-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>;
+<a id='L75' name='L75'></a>        bufel-&gt;record_sequence = seq;
+<a id='L76' name='L76'></a>
+<a id='L77' name='L77'></a>        <a href='../S/5396.html#L84' title='Defined at 84 in lib/mbuffers.c.'>_mbuffer_enqueue</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.record_buffer, bufel);
+<a id='L78' name='L78'></a>        <a href='../D/5680.html' title='Multiple defined in 2 places.'>_gnutls_buffers_log</a>("BUF[REC]: Inserted %d bytes of Data(%d)\n",
+<a id='L79' name='L79'></a>                            (<strong class='reserved'>int</strong>) bufel-&gt;msg.size, (<strong class='reserved'>int</strong>) <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>);
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a>        <strong class='reserved'>return</strong>;
+<a id='L82' name='L82'></a><em class='brace'>}</em>
+<a id='L83' name='L83'></a>
+<a id='L84' name='L84'></a><em class='comment'>/**</em>
+<a id='L85' name='L85'></a><em class='comment'> * gnutls_record_check_pending:</em>
+<a id='L86' name='L86'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L87' name='L87'></a><em class='comment'> *</em>
+<a id='L88' name='L88'></a><em class='comment'> * This function checks if there are unread data</em>
+<a id='L89' name='L89'></a><em class='comment'> * in the gnutls buffers. If the return value is</em>
+<a id='L90' name='L90'></a><em class='comment'> * non-zero the next call to gnutls_record_recv()</em>
+<a id='L91' name='L91'></a><em class='comment'> * is guaranteed not to block.</em>
+<a id='L92' name='L92'></a><em class='comment'> *</em>
+<a id='L93' name='L93'></a><em class='comment'> * Returns: Returns the size of the data or zero.</em>
+<a id='L94' name='L94'></a><em class='comment'> **/</em>
+<a id='L95' name='L95'></a><a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../R/8267.html' title='Multiple referred from 7 places.'>gnutls_record_check_pending</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L96' name='L96'></a><em class='brace'>{</em>
+<a id='L97' name='L97'></a>        <strong class='reserved'>return</strong> <a href='../S/6033.html#L35' title='Defined at 35 in lib/buffers.h.'>_gnutls_record_buffer_get_size</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L98' name='L98'></a><em class='brace'>}</em>
+<a id='L99' name='L99'></a>
+<a id='L100' name='L100'></a><em class='comment'>/**</em>
+<a id='L101' name='L101'></a><em class='comment'> * gnutls_record_check_corked:</em>
+<a id='L102' name='L102'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L103' name='L103'></a><em class='comment'> *</em>
+<a id='L104' name='L104'></a><em class='comment'> * This function checks if there pending corked</em>
+<a id='L105' name='L105'></a><em class='comment'> * data in the gnutls buffers --see gnutls_record_cork().</em>
+<a id='L106' name='L106'></a><em class='comment'> *</em>
+<a id='L107' name='L107'></a><em class='comment'> * Returns: Returns the size of the corked data or zero.</em>
+<a id='L108' name='L108'></a><em class='comment'> *</em>
+<a id='L109' name='L109'></a><em class='comment'> * Since: 3.2.8</em>
+<a id='L110' name='L110'></a><em class='comment'> **/</em>
+<a id='L111' name='L111'></a><a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> gnutls_record_check_corked(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L112' name='L112'></a><em class='brace'>{</em>
+<a id='L113' name='L113'></a>        <strong class='reserved'>return</strong> <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.record_presend_buffer.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L114' name='L114'></a><em class='brace'>}</em>
+<a id='L115' name='L115'></a>
+<a id='L116' name='L116'></a><strong class='reserved'>int</strong>
+<a id='L117' name='L117'></a><a href='../R/5402.html' title='Multiple referred from 2 places.'>_gnutls_record_buffer_get</a>(<a href='../D/7309.html' title='Multiple defined in 2 places.'>content_type_t</a> <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>,
+<a id='L118' name='L118'></a>                          gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * data,
+<a id='L119' name='L119'></a>                          <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> seq[8])
+<a id='L120' name='L120'></a><em class='brace'>{</em>
+<a id='L121' name='L121'></a>        gnutls_datum_t msg;
+<a id='L122' name='L122'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *bufel;
+<a id='L123' name='L123'></a>
+<a id='L124' name='L124'></a>        <strong class='reserved'>if</strong> (<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> == 0 || data == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L125' name='L125'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L126' name='L126'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L127' name='L127'></a>        <em class='brace'>}</em>
+<a id='L128' name='L128'></a>
+<a id='L129' name='L129'></a>        bufel =
+<a id='L130' name='L130'></a>            <a href='../S/5396.html#L173' title='Defined at 173 in lib/mbuffers.c.'>_mbuffer_head_get_first</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.record_buffer,
+<a id='L131' name='L131'></a>                                    &amp;msg);
+<a id='L132' name='L132'></a>        <strong class='reserved'>if</strong> (bufel == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L133' name='L133'></a>                <strong class='reserved'>return</strong>
+<a id='L134' name='L134'></a>                    <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>
+<a id='L135' name='L135'></a>                    (GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE);
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a>        <strong class='reserved'>if</strong> (<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> != bufel-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>) <em class='brace'>{</em>
+<a id='L138' name='L138'></a>                <strong class='reserved'>if</strong> (<a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>))
+<a id='L139' name='L139'></a>                        <a href='../S/5298.html#L718' title='Defined at 718 in lib/errors.c.'>_gnutls_audit_log</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L140' name='L140'></a>                                          "Discarded unexpected %s (%d) packet (expecting: %s (%d))\n",
+<a id='L141' name='L141'></a>                                          <a href='../S/5753.html#L55' title='Defined at 55 in lib/debug.c.'>_gnutls_packet2str</a>(bufel-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>),
+<a id='L142' name='L142'></a>                                          (<strong class='reserved'>int</strong>) bufel-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>,
+<a id='L143' name='L143'></a>                                          <a href='../S/5753.html#L55' title='Defined at 55 in lib/debug.c.'>_gnutls_packet2str</a>(<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>),
+<a id='L144' name='L144'></a>                                          (<strong class='reserved'>int</strong>) <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>);
+<a id='L145' name='L145'></a>                <strong class='reserved'>else</strong>
+<a id='L146' name='L146'></a>                        <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>("received unexpected packet: %s(%d)\n",
+<a id='L147' name='L147'></a>                                                <a href='../S/5753.html#L55' title='Defined at 55 in lib/debug.c.'>_gnutls_packet2str</a>(bufel-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>), (<strong class='reserved'>int</strong>)bufel-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>);
+<a id='L148' name='L148'></a>
+<a id='L149' name='L149'></a>                <a href='../S/5396.html#L240' title='Defined at 240 in lib/mbuffers.c.'>_mbuffer_head_remove_bytes</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L150' name='L150'></a>                                           record_buffer, msg.size);
+<a id='L151' name='L151'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_UNEXPECTED_PACKET);
+<a id='L152' name='L152'></a>        <em class='brace'>}</em>
+<a id='L153' name='L153'></a>
+<a id='L154' name='L154'></a>        <strong class='reserved'>if</strong> (msg.size &lt;= <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>)
+<a id='L155' name='L155'></a>                <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> = msg.size;
+<a id='L156' name='L156'></a>
+<a id='L157' name='L157'></a>        <strong class='reserved'>if</strong> (seq)
+<a id='L158' name='L158'></a>                <a href='../S/5268.html#L48' title='Defined at 48 in lib/num.h.'>_gnutls_write_uint64</a>(bufel-&gt;record_sequence, seq);
+<a id='L159' name='L159'></a>
+<a id='L160' name='L160'></a>        memcpy(data, msg.data, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L161' name='L161'></a>        <a href='../S/5396.html#L240' title='Defined at 240 in lib/mbuffers.c.'>_mbuffer_head_remove_bytes</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.record_buffer,
+<a id='L162' name='L162'></a>                                   <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L163' name='L163'></a>
+<a id='L164' name='L164'></a>        <strong class='reserved'>return</strong> <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L165' name='L165'></a><em class='brace'>}</em>
+<a id='L166' name='L166'></a>
+<a id='L167' name='L167'></a><strong class='reserved'>int</strong>
+<a id='L168' name='L168'></a><a href='../R/5403.html' title='Multiple referred from 2 places.'>_gnutls_record_buffer_get_packet</a>(<a href='../D/7309.html' title='Multiple defined in 2 places.'>content_type_t</a> <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>, gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, gnutls_packet_t *packet)
+<a id='L169' name='L169'></a><em class='brace'>{</em>
+<a id='L170' name='L170'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *bufel;
+<a id='L171' name='L171'></a>
+<a id='L172' name='L172'></a>        bufel =
+<a id='L173' name='L173'></a>            <a href='../S/5396.html#L155' title='Defined at 155 in lib/mbuffers.c.'>_mbuffer_head_pop_first</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.record_buffer);
+<a id='L174' name='L174'></a>        <strong class='reserved'>if</strong> (bufel == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L175' name='L175'></a>                <strong class='reserved'>return</strong>
+<a id='L176' name='L176'></a>                    <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>
+<a id='L177' name='L177'></a>                    (GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE);
+<a id='L178' name='L178'></a>
+<a id='L179' name='L179'></a>        <strong class='reserved'>if</strong> (<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> != bufel-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>) <em class='brace'>{</em>
+<a id='L180' name='L180'></a>                <strong class='reserved'>if</strong> (<a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>))
+<a id='L181' name='L181'></a>                        <a href='../S/5298.html#L718' title='Defined at 718 in lib/errors.c.'>_gnutls_audit_log</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L182' name='L182'></a>                                          "Discarded unexpected %s (%d) packet (expecting: %s)\n",
+<a id='L183' name='L183'></a>                                          <a href='../S/5753.html#L55' title='Defined at 55 in lib/debug.c.'>_gnutls_packet2str</a>(bufel-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>),
+<a id='L184' name='L184'></a>                                          (<strong class='reserved'>int</strong>) bufel-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>,
+<a id='L185' name='L185'></a>                                          <a href='../S/5753.html#L55' title='Defined at 55 in lib/debug.c.'>_gnutls_packet2str</a>(<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>));
+<a id='L186' name='L186'></a>                <a href='../S/5396.html#L240' title='Defined at 240 in lib/mbuffers.c.'>_mbuffer_head_remove_bytes</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L187' name='L187'></a>                                           record_buffer, bufel-&gt;msg.size);
+<a id='L188' name='L188'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_UNEXPECTED_PACKET);
+<a id='L189' name='L189'></a>        <em class='brace'>}</em>
+<a id='L190' name='L190'></a>
+<a id='L191' name='L191'></a>        *packet = bufel;
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a>        <strong class='reserved'>return</strong> bufel-&gt;msg.size - bufel-&gt;mark;
+<a id='L194' name='L194'></a><em class='brace'>}</em>
+<a id='L195' name='L195'></a>
+<a id='L196' name='L196'></a><strong class='reserved'>inline</strong> <strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/10122.html' title='Multiple referred from 4 places.'>reset_errno</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L197' name='L197'></a><em class='brace'>{</em>
+<a id='L198' name='L198'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.errnum = 0;
+<a id='L199' name='L199'></a><em class='brace'>}</em>
+<a id='L200' name='L200'></a>
+<a id='L201' name='L201'></a><strong class='reserved'>inline</strong> <strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../R/7197.html' title='Multiple referred from 4 places.'>get_errno</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L202' name='L202'></a><em class='brace'>{</em>
+<a id='L203' name='L203'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L204' name='L204'></a>
+<a id='L205' name='L205'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.errnum != 0)
+<a id='L206' name='L206'></a>                ret = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.errnum;
+<a id='L207' name='L207'></a>        <strong class='reserved'>else</strong>
+<a id='L208' name='L208'></a>                ret =
+<a id='L209' name='L209'></a>                    <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.errno_func(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L210' name='L210'></a>                                                  transport_recv_ptr);
+<a id='L211' name='L211'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L212' name='L212'></a><em class='brace'>}</em>
+<a id='L213' name='L213'></a>
+<a id='L214' name='L214'></a><strong class='reserved'>inline</strong> <strong class='reserved'>static</strong>
+<a id='L215' name='L215'></a><strong class='reserved'>int</strong> <a href='../R/6901.html' title='Multiple referred from 4 places.'>errno_to_gerr</a>(<strong class='reserved'>int</strong> err, <strong class='reserved'>unsigned</strong> dtls)
+<a id='L216' name='L216'></a><em class='brace'>{</em>
+<a id='L217' name='L217'></a>        <strong class='reserved'>switch</strong> (err) <em class='brace'>{</em>
+<a id='L218' name='L218'></a>        <strong class='reserved'>case</strong> <a href='../S/5984.html#L58' title='Defined at 58 in lib/buffers.c.'>EAGAIN</a>:
+<a id='L219' name='L219'></a>                <strong class='reserved'>return</strong> GNUTLS_E_AGAIN;
+<a id='L220' name='L220'></a>        <strong class='reserved'>case</strong> EINTR:
+<a id='L221' name='L221'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INTERRUPTED;
+<a id='L222' name='L222'></a>        <strong class='reserved'>case</strong> <a href='../D/903.html' title='Multiple defined in 2 places.'>EMSGSIZE</a>:
+<a id='L223' name='L223'></a>                <strong class='reserved'>if</strong> (dtls != 0)
+<a id='L224' name='L224'></a>                        <strong class='reserved'>return</strong> GNUTLS_E_LARGE_PACKET;
+<a id='L225' name='L225'></a>                <strong class='reserved'>else</strong>
+<a id='L226' name='L226'></a>                        <strong class='reserved'>return</strong> GNUTLS_E_PUSH_ERROR;
+<a id='L227' name='L227'></a>        <strong class='reserved'>case</strong> <a href='../D/881.html' title='Multiple defined in 2 places.'>ECONNRESET</a>:
+<a id='L228' name='L228'></a>                <strong class='reserved'>return</strong> GNUTLS_E_PREMATURE_TERMINATION;
+<a id='L229' name='L229'></a>        <strong class='reserved'>default</strong>:
+<a id='L230' name='L230'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L231' name='L231'></a>                <strong class='reserved'>return</strong> GNUTLS_E_PUSH_ERROR;
+<a id='L232' name='L232'></a>        <em class='brace'>}</em>
+<a id='L233' name='L233'></a><em class='brace'>}</em>
+<a id='L234' name='L234'></a>
+<a id='L235' name='L235'></a><strong class='reserved'>static</strong> <a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a>
+<a id='L236' name='L236'></a><a href='../S/5984.html#L424' title='Referred from 424 in lib/buffers.c.'>_gnutls_dgram_read</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> ** bufel,
+<a id='L237' name='L237'></a>                   gnutls_pull_func <a href='../D/10998.html' title='Multiple defined in 2 places.'>pull_func</a>, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> *ms)
+<a id='L238' name='L238'></a><em class='brace'>{</em>
+<a id='L239' name='L239'></a>        <a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a> i, ret;
+<a id='L240' name='L240'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *<a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a>;
+<a id='L241' name='L241'></a>        <strong class='reserved'>struct</strong> <a href='../D/11905.html' title='Multiple defined in 6 places.'>timespec</a> <a href='../D/11678.html' title='Multiple defined in 6 places.'>t1</a>, <a href='../D/11679.html' title='Multiple defined in 4 places.'>t2</a>;
+<a id='L242' name='L242'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> max_size, recv_size;
+<a id='L243' name='L243'></a>        gnutls_transport_ptr_t fd = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.transport_recv_ptr;
+<a id='L244' name='L244'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> diff;
+<a id='L245' name='L245'></a>
+<a id='L246' name='L246'></a>        max_size = <a href='../S/5295.html#L51' title='Defined at 51 in lib/record.h.'>max_record_recv_size</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L247' name='L247'></a>        recv_size = max_size;
+<a id='L248' name='L248'></a>
+<a id='L249' name='L249'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.direction = 0;
+<a id='L250' name='L250'></a>
+<a id='L251' name='L251'></a>        <strong class='reserved'>if</strong> (ms &amp;&amp; *ms &gt; 0) <em class='brace'>{</em>
+<a id='L252' name='L252'></a>                ret = <a href='../S/5984.html#L739' title='Defined at 739 in lib/buffers.c.'>_gnutls_io_check_recv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, *ms);
+<a id='L253' name='L253'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L254' name='L254'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L255' name='L255'></a>                gnutls_gettime(&amp;<a href='../D/11678.html' title='Multiple defined in 6 places.'>t1</a>);
+<a id='L256' name='L256'></a>        <em class='brace'>}</em>
+<a id='L257' name='L257'></a>
+<a id='L258' name='L258'></a>        *bufel = <a href='../D/6508.html' title='Multiple defined in 2 places.'>_mbuffer_alloc_align16</a>(max_size, <a href='../S/5295.html#L81' title='Defined at 81 in lib/record.h.'>get_total_headers</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>));
+<a id='L259' name='L259'></a>        <strong class='reserved'>if</strong> (*bufel == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L260' name='L260'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_MEMORY_ERROR);
+<a id='L261' name='L261'></a>
+<a id='L262' name='L262'></a>        <a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a> = (*bufel)-&gt;msg.data;
+<a id='L263' name='L263'></a>
+<a id='L264' name='L264'></a>        <a href='../S/5984.html#L196' title='Defined at 196 in lib/buffers.c.'>reset_errno</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L265' name='L265'></a>        i = <a href='../D/10998.html' title='Multiple defined in 2 places.'>pull_func</a>(fd, <a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a>, recv_size);
+<a id='L266' name='L266'></a>
+<a id='L267' name='L267'></a>        <strong class='reserved'>if</strong> (i &lt; 0) <em class='brace'>{</em>
+<a id='L268' name='L268'></a>                <strong class='reserved'>int</strong> err = <a href='../S/5984.html#L201' title='Defined at 201 in lib/buffers.c.'>get_errno</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L269' name='L269'></a>
+<a id='L270' name='L270'></a>                <a href='../D/6192.html' title='Multiple defined in 2 places.'>_gnutls_read_log</a>("READ: %d returned from %p, errno=%d\n",
+<a id='L271' name='L271'></a>                                 (<strong class='reserved'>int</strong>) i, fd, err);
+<a id='L272' name='L272'></a>
+<a id='L273' name='L273'></a>                ret = <a href='../S/5984.html#L215' title='Defined at 215 in lib/buffers.c.'>errno_to_gerr</a>(err, 1);
+<a id='L274' name='L274'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L275' name='L275'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L276' name='L276'></a>                <a href='../D/6192.html' title='Multiple defined in 2 places.'>_gnutls_read_log</a>("READ: Got %d bytes from %p\n", (<strong class='reserved'>int</strong>) i,
+<a id='L277' name='L277'></a>                                 fd);
+<a id='L278' name='L278'></a>                <strong class='reserved'>if</strong> (i == 0) <em class='brace'>{</em>
+<a id='L279' name='L279'></a>                        <em class='comment'>/* If we get here, we likely have a stream socket.</em>
+<a id='L280' name='L280'></a><em class='comment'>                         * That assumption may not work on DCCP. */</em>
+<a id='L281' name='L281'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L282' name='L282'></a>                        ret = 0;
+<a id='L283' name='L283'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L284' name='L284'></a>                <em class='brace'>}</em>
+<a id='L285' name='L285'></a>
+<a id='L286' name='L286'></a>                <a href='../S/5459.html#L66' title='Defined at 66 in lib/mbuffers.h.'>_mbuffer_set_udata_size</a>(*bufel, i);
+<a id='L287' name='L287'></a>        <em class='brace'>}</em>
+<a id='L288' name='L288'></a>
+<a id='L289' name='L289'></a>        <strong class='reserved'>if</strong> (ms &amp;&amp; *ms &gt; 0) <em class='brace'>{</em>
+<a id='L290' name='L290'></a>                gnutls_gettime(&amp;<a href='../D/11679.html' title='Multiple defined in 4 places.'>t2</a>);
+<a id='L291' name='L291'></a>                diff = <a href='../D/11909.html' title='Multiple defined in 3 places.'>timespec_sub_ms</a>(&amp;<a href='../D/11679.html' title='Multiple defined in 4 places.'>t2</a>, &amp;<a href='../D/11678.html' title='Multiple defined in 6 places.'>t1</a>);
+<a id='L292' name='L292'></a>                <strong class='reserved'>if</strong> (diff &lt; *ms)
+<a id='L293' name='L293'></a>                        *ms -= diff;
+<a id='L294' name='L294'></a>                <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L295' name='L295'></a>                        ret = <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_TIMEDOUT);
+<a id='L296' name='L296'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L297' name='L297'></a>                <em class='brace'>}</em>
+<a id='L298' name='L298'></a>        <em class='brace'>}</em>
+<a id='L299' name='L299'></a>
+<a id='L300' name='L300'></a>        <a href='../D/6192.html' title='Multiple defined in 2 places.'>_gnutls_read_log</a>("READ: read %d bytes from %p\n", (<strong class='reserved'>int</strong>) i, fd);
+<a id='L301' name='L301'></a>
+<a id='L302' name='L302'></a>        <strong class='reserved'>return</strong> i;
+<a id='L303' name='L303'></a>
+<a id='L304' name='L304'></a>      <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>:
+<a id='L305' name='L305'></a>        <a href='../S/5459.html#L185' title='Defined at 185 in lib/mbuffers.h.'>_mbuffer_xfree</a>(bufel);
+<a id='L306' name='L306'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L307' name='L307'></a><em class='brace'>}</em>
+<a id='L308' name='L308'></a>
+<a id='L309' name='L309'></a><strong class='reserved'>static</strong> <a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a>
+<a id='L310' name='L310'></a><a href='../S/5984.html#L426' title='Referred from 426 in lib/buffers.c.'>_gnutls_stream_read</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> ** bufel,
+<a id='L311' name='L311'></a>                    <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> size, gnutls_pull_func <a href='../D/10998.html' title='Multiple defined in 2 places.'>pull_func</a>,
+<a id='L312' name='L312'></a>                    <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> *ms)
+<a id='L313' name='L313'></a><em class='brace'>{</em>
+<a id='L314' name='L314'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> left;
+<a id='L315' name='L315'></a>        <a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a> i = 0;
+<a id='L316' name='L316'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> max_size = <a href='../S/5295.html#L51' title='Defined at 51 in lib/record.h.'>max_record_recv_size</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L317' name='L317'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *<a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a>;
+<a id='L318' name='L318'></a>        gnutls_transport_ptr_t fd = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.transport_recv_ptr;
+<a id='L319' name='L319'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L320' name='L320'></a>        <strong class='reserved'>struct</strong> <a href='../D/11905.html' title='Multiple defined in 6 places.'>timespec</a> <a href='../D/11678.html' title='Multiple defined in 6 places.'>t1</a>, <a href='../D/11679.html' title='Multiple defined in 4 places.'>t2</a>;
+<a id='L321' name='L321'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> diff;
+<a id='L322' name='L322'></a>
+<a id='L323' name='L323'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.direction = 0;
+<a id='L324' name='L324'></a>
+<a id='L325' name='L325'></a>        *bufel = <a href='../D/6508.html' title='Multiple defined in 2 places.'>_mbuffer_alloc_align16</a>(<a href='../D/2691.html' title='Multiple defined in 4 places.'>MAX</a>(max_size, size), <a href='../S/5295.html#L81' title='Defined at 81 in lib/record.h.'>get_total_headers</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>));
+<a id='L326' name='L326'></a>        <strong class='reserved'>if</strong> (!*bufel) <em class='brace'>{</em>
+<a id='L327' name='L327'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L328' name='L328'></a>                <strong class='reserved'>return</strong> GNUTLS_E_MEMORY_ERROR;
+<a id='L329' name='L329'></a>        <em class='brace'>}</em>
+<a id='L330' name='L330'></a>        <a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a> = (*bufel)-&gt;msg.data;
+<a id='L331' name='L331'></a>
+<a id='L332' name='L332'></a>        left = size;
+<a id='L333' name='L333'></a>        <strong class='reserved'>while</strong> (left &gt; 0) <em class='brace'>{</em>
+<a id='L334' name='L334'></a>                <strong class='reserved'>if</strong> (ms &amp;&amp; *ms &gt; 0) <em class='brace'>{</em>
+<a id='L335' name='L335'></a>                        ret = <a href='../S/5984.html#L739' title='Defined at 739 in lib/buffers.c.'>_gnutls_io_check_recv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, *ms);
+<a id='L336' name='L336'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L337' name='L337'></a>                                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L338' name='L338'></a>                                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L339' name='L339'></a>                        <em class='brace'>}</em>
+<a id='L340' name='L340'></a>
+<a id='L341' name='L341'></a>                        gnutls_gettime(&amp;<a href='../D/11678.html' title='Multiple defined in 6 places.'>t1</a>);
+<a id='L342' name='L342'></a>                <em class='brace'>}</em>
+<a id='L343' name='L343'></a>
+<a id='L344' name='L344'></a>                <a href='../S/5984.html#L196' title='Defined at 196 in lib/buffers.c.'>reset_errno</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L345' name='L345'></a>
+<a id='L346' name='L346'></a>                i = <a href='../D/10998.html' title='Multiple defined in 2 places.'>pull_func</a>(fd, &amp;<a href='../D/10987.html' title='Multiple defined in 2 places.'>ptr</a>[size - left], left);
+<a id='L347' name='L347'></a>
+<a id='L348' name='L348'></a>                <strong class='reserved'>if</strong> (i &lt; 0) <em class='brace'>{</em>
+<a id='L349' name='L349'></a>                        <strong class='reserved'>int</strong> err = <a href='../S/5984.html#L201' title='Defined at 201 in lib/buffers.c.'>get_errno</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L350' name='L350'></a>
+<a id='L351' name='L351'></a>                        <a href='../D/6192.html' title='Multiple defined in 2 places.'>_gnutls_read_log</a>
+<a id='L352' name='L352'></a>                            ("READ: %d returned from %p, errno=%d gerrno=%d\n",
+<a id='L353' name='L353'></a>                             (<strong class='reserved'>int</strong>) i, fd, errno,
+<a id='L354' name='L354'></a>                             <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.errnum);
+<a id='L355' name='L355'></a>
+<a id='L356' name='L356'></a>                        <strong class='reserved'>if</strong> (err == <a href='../S/5984.html#L58' title='Defined at 58 in lib/buffers.c.'>EAGAIN</a> || err == EINTR) <em class='brace'>{</em>
+<a id='L357' name='L357'></a>                                <strong class='reserved'>if</strong> (size - left &gt; 0) <em class='brace'>{</em>
+<a id='L358' name='L358'></a>
+<a id='L359' name='L359'></a>                                        <a href='../D/6192.html' title='Multiple defined in 2 places.'>_gnutls_read_log</a>
+<a id='L360' name='L360'></a>                                            ("READ: returning %d bytes from %p\n",
+<a id='L361' name='L361'></a>                                             (<strong class='reserved'>int</strong>) (size - left), fd);
+<a id='L362' name='L362'></a>
+<a id='L363' name='L363'></a>                                        <strong class='reserved'>goto</strong> finish;
+<a id='L364' name='L364'></a>                                <em class='brace'>}</em>
+<a id='L365' name='L365'></a>
+<a id='L366' name='L366'></a>                                ret = <a href='../S/5984.html#L215' title='Defined at 215 in lib/buffers.c.'>errno_to_gerr</a>(err, 0);
+<a id='L367' name='L367'></a>                                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L368' name='L368'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L369' name='L369'></a>                                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L370' name='L370'></a>                                ret = GNUTLS_E_PULL_ERROR;
+<a id='L371' name='L371'></a>                                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L372' name='L372'></a>                        <em class='brace'>}</em>
+<a id='L373' name='L373'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L374' name='L374'></a>
+<a id='L375' name='L375'></a>                        <a href='../D/6192.html' title='Multiple defined in 2 places.'>_gnutls_read_log</a>("READ: Got %d bytes from %p\n",
+<a id='L376' name='L376'></a>                                         (<strong class='reserved'>int</strong>) i, fd);
+<a id='L377' name='L377'></a>
+<a id='L378' name='L378'></a>                        <strong class='reserved'>if</strong> (i == 0)
+<a id='L379' name='L379'></a>                                <strong class='reserved'>break</strong>;  <em class='comment'>/* EOF */</em>
+<a id='L380' name='L380'></a>                <em class='brace'>}</em>
+<a id='L381' name='L381'></a>
+<a id='L382' name='L382'></a>                left -= i;
+<a id='L383' name='L383'></a>                (*bufel)-&gt;msg.size += i;
+<a id='L384' name='L384'></a>
+<a id='L385' name='L385'></a>                <strong class='reserved'>if</strong> (ms &amp;&amp; *ms &gt; 0 &amp;&amp; *ms != GNUTLS_INDEFINITE_TIMEOUT) <em class='brace'>{</em>
+<a id='L386' name='L386'></a>                        gnutls_gettime(&amp;<a href='../D/11679.html' title='Multiple defined in 4 places.'>t2</a>);
+<a id='L387' name='L387'></a>                        diff = <a href='../D/11909.html' title='Multiple defined in 3 places.'>timespec_sub_ms</a>(&amp;<a href='../D/11679.html' title='Multiple defined in 4 places.'>t2</a>, &amp;<a href='../D/11678.html' title='Multiple defined in 6 places.'>t1</a>);
+<a id='L388' name='L388'></a>                        <strong class='reserved'>if</strong> (diff &lt; *ms)
+<a id='L389' name='L389'></a>                                *ms -= diff;
+<a id='L390' name='L390'></a>                        <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L391' name='L391'></a>                                ret = <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_TIMEDOUT);
+<a id='L392' name='L392'></a>                                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L393' name='L393'></a>                        <em class='brace'>}</em>
+<a id='L394' name='L394'></a>                <em class='brace'>}</em>
+<a id='L395' name='L395'></a>        <em class='brace'>}</em>
+<a id='L396' name='L396'></a>
+<a id='L397' name='L397'></a>      finish:
+<a id='L398' name='L398'></a>
+<a id='L399' name='L399'></a>        <a href='../D/6192.html' title='Multiple defined in 2 places.'>_gnutls_read_log</a>("READ: read %d bytes from %p\n",
+<a id='L400' name='L400'></a>                         (<strong class='reserved'>int</strong>) (size - left), fd);
+<a id='L401' name='L401'></a>
+<a id='L402' name='L402'></a>        <strong class='reserved'>if</strong> (size - left == 0)
+<a id='L403' name='L403'></a>                <a href='../S/5459.html#L185' title='Defined at 185 in lib/mbuffers.h.'>_mbuffer_xfree</a>(bufel);
+<a id='L404' name='L404'></a>
+<a id='L405' name='L405'></a>        <strong class='reserved'>return</strong> (size - left);
+<a id='L406' name='L406'></a>
+<a id='L407' name='L407'></a>      <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>:
+<a id='L408' name='L408'></a>        <a href='../S/5459.html#L185' title='Defined at 185 in lib/mbuffers.h.'>_mbuffer_xfree</a>(bufel);
+<a id='L409' name='L409'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L410' name='L410'></a><em class='brace'>}</em>
+<a id='L411' name='L411'></a>
+<a id='L412' name='L412'></a>
+<a id='L413' name='L413'></a><em class='comment'>/* This function is like read. But it does not return -1 on error.</em>
+<a id='L414' name='L414'></a><em class='comment'> * It does return gnutls_errno instead.</em>
+<a id='L415' name='L415'></a><em class='comment'> *</em>
+<a id='L416' name='L416'></a><em class='comment'> * Flags are only used if the default recv() function is being used.</em>
+<a id='L417' name='L417'></a><em class='comment'> */</em>
+<a id='L418' name='L418'></a><strong class='reserved'>static</strong> <a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a>
+<a id='L419' name='L419'></a><a href='../S/5984.html#L582' title='Referred from 582 in lib/buffers.c.'>_gnutls_read</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> ** bufel,
+<a id='L420' name='L420'></a>             <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> size, gnutls_pull_func <a href='../D/10998.html' title='Multiple defined in 2 places.'>pull_func</a>, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> *ms)
+<a id='L421' name='L421'></a><em class='brace'>{</em>
+<a id='L422' name='L422'></a>        <strong class='reserved'>if</strong> (<a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>))
+<a id='L423' name='L423'></a>                <em class='comment'>/* Size is not passed, since a whole datagram will be read. */</em>
+<a id='L424' name='L424'></a>                <strong class='reserved'>return</strong> <a href='../S/5984.html#L236' title='Defined at 236 in lib/buffers.c.'>_gnutls_dgram_read</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, bufel, <a href='../D/10998.html' title='Multiple defined in 2 places.'>pull_func</a>, ms);
+<a id='L425' name='L425'></a>        <strong class='reserved'>else</strong>
+<a id='L426' name='L426'></a>                <strong class='reserved'>return</strong> <a href='../S/5984.html#L310' title='Defined at 310 in lib/buffers.c.'>_gnutls_stream_read</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, bufel, size, <a href='../D/10998.html' title='Multiple defined in 2 places.'>pull_func</a>,
+<a id='L427' name='L427'></a>                                           ms);
+<a id='L428' name='L428'></a><em class='brace'>}</em>
+<a id='L429' name='L429'></a>
+<a id='L430' name='L430'></a><em class='comment'>/* @vec: if non-zero then the vector function will be used to</em>
+<a id='L431' name='L431'></a><em class='comment'> *       push the data.</em>
+<a id='L432' name='L432'></a><em class='comment'> */</em>
+<a id='L433' name='L433'></a><strong class='reserved'>static</strong> <a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a>
+<a id='L434' name='L434'></a><a href='../R/5578.html' title='Multiple referred from 2 places.'>_gnutls_writev_emu</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, gnutls_transport_ptr_t fd,
+<a id='L435' name='L435'></a>                   <strong class='reserved'>const</strong> giovec_t * giovec, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> giovec_cnt, <strong class='reserved'>unsigned</strong> vec)
+<a id='L436' name='L436'></a><em class='brace'>{</em>
+<a id='L437' name='L437'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> = 0;
+<a id='L438' name='L438'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> total = 0;
+<a id='L439' name='L439'></a>        <a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a> ret = 0;
+<a id='L440' name='L440'></a>
+<a id='L441' name='L441'></a>        <strong class='reserved'>for</strong> (<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> = 0; <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> &lt; giovec_cnt; <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>++) <em class='brace'>{</em>
+<a id='L442' name='L442'></a>                <strong class='reserved'>if</strong> (vec) <em class='brace'>{</em>
+<a id='L443' name='L443'></a>                        ret = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.vec_push_func(fd, &amp;giovec[<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>], 1);
+<a id='L444' name='L444'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L445' name='L445'></a>                        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> sent = 0;
+<a id='L446' name='L446'></a>                        <a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a> left = giovec[<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>].iov_len;
+<a id='L447' name='L447'></a>                        <strong class='reserved'>char</strong> *p = giovec[<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>].iov_base;
+<a id='L448' name='L448'></a>                        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L449' name='L449'></a>                                ret =
+<a id='L450' name='L450'></a>                                    <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.<a href='../D/11002.html' title='Multiple defined in 2 places.'>push_func</a>(fd, p,
+<a id='L451' name='L451'></a>                                                                 left);
+<a id='L452' name='L452'></a>                                <strong class='reserved'>if</strong> (ret &gt; 0) <em class='brace'>{</em>
+<a id='L453' name='L453'></a>                                        sent += ret;
+<a id='L454' name='L454'></a>                                        left -= ret;
+<a id='L455' name='L455'></a>                                        p += ret;
+<a id='L456' name='L456'></a>                                <em class='brace'>}</em>
+<a id='L457' name='L457'></a>                        <em class='brace'>}</em> <strong class='reserved'>while</strong>(ret &gt; 0 &amp;&amp; left &gt; 0);
+<a id='L458' name='L458'></a>
+<a id='L459' name='L459'></a>                        <strong class='reserved'>if</strong> (sent &gt; 0)
+<a id='L460' name='L460'></a>                                ret = sent;
+<a id='L461' name='L461'></a>                <em class='brace'>}</em>
+<a id='L462' name='L462'></a>
+<a id='L463' name='L463'></a>                <strong class='reserved'>if</strong> (ret == -1) <em class='brace'>{</em>
+<a id='L464' name='L464'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L465' name='L465'></a>                        <strong class='reserved'>break</strong>;
+<a id='L466' name='L466'></a>                <em class='brace'>}</em>
+<a id='L467' name='L467'></a>
+<a id='L468' name='L468'></a>                total += ret;
+<a id='L469' name='L469'></a>
+<a id='L470' name='L470'></a>                <strong class='reserved'>if</strong> ((<a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a>) ret != giovec[<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>].iov_len)
+<a id='L471' name='L471'></a>                        <strong class='reserved'>break</strong>;
+<a id='L472' name='L472'></a>        <em class='brace'>}</em>
+<a id='L473' name='L473'></a>
+<a id='L474' name='L474'></a>        <strong class='reserved'>if</strong> (total &gt; 0)
+<a id='L475' name='L475'></a>                <strong class='reserved'>return</strong> total;
+<a id='L476' name='L476'></a>
+<a id='L477' name='L477'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L478' name='L478'></a><em class='brace'>}</em>
+<a id='L479' name='L479'></a>
+<a id='L480' name='L480'></a><em class='comment'>/* @total: The sum of the data in giovec</em>
+<a id='L481' name='L481'></a><em class='comment'> */</em>
+<a id='L482' name='L482'></a><strong class='reserved'>static</strong> <a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a>
+<a id='L483' name='L483'></a><a href='../S/5984.html#L700' title='Referred from 700 in lib/buffers.c.'>_gnutls_writev</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <strong class='reserved'>const</strong> giovec_t * giovec,
+<a id='L484' name='L484'></a>               <strong class='reserved'>unsigned</strong> giovec_cnt, <strong class='reserved'>unsigned</strong> total)
+<a id='L485' name='L485'></a><em class='brace'>{</em>
+<a id='L486' name='L486'></a>        <strong class='reserved'>int</strong> i;
+<a id='L487' name='L487'></a>        <a href='../D/6941.html' title='Multiple defined in 8 places.'>bool</a> is_dtls = <a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L488' name='L488'></a>        <strong class='reserved'>unsigned</strong> no_writev = 0;
+<a id='L489' name='L489'></a>        gnutls_transport_ptr_t fd = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.transport_send_ptr;
+<a id='L490' name='L490'></a>
+<a id='L491' name='L491'></a>        <a href='../S/5984.html#L196' title='Defined at 196 in lib/buffers.c.'>reset_errno</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L492' name='L492'></a>
+<a id='L493' name='L493'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.vec_push_func != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L494' name='L494'></a>                <strong class='reserved'>if</strong> (is_dtls &amp;&amp; giovec_cnt &gt; 1) <em class='brace'>{</em>
+<a id='L495' name='L495'></a>                        <strong class='reserved'>if</strong> (total &gt; <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.dtls.mtu) <em class='brace'>{</em>
+<a id='L496' name='L496'></a>                                no_writev = 1;
+<a id='L497' name='L497'></a>                        <em class='brace'>}</em>
+<a id='L498' name='L498'></a>                <em class='brace'>}</em>
+<a id='L499' name='L499'></a>
+<a id='L500' name='L500'></a>                <strong class='reserved'>if</strong> (no_writev == 0) <em class='brace'>{</em>
+<a id='L501' name='L501'></a>                        i = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.vec_push_func(fd, giovec, giovec_cnt);
+<a id='L502' name='L502'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L503' name='L503'></a>                        i = <a href='../S/5984.html#L434' title='Defined at 434 in lib/buffers.c.'>_gnutls_writev_emu</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, fd, giovec, giovec_cnt, 1);
+<a id='L504' name='L504'></a>                <em class='brace'>}</em>
+<a id='L505' name='L505'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.<a href='../D/11002.html' title='Multiple defined in 2 places.'>push_func</a> != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L506' name='L506'></a>                i = <a href='../S/5984.html#L434' title='Defined at 434 in lib/buffers.c.'>_gnutls_writev_emu</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, fd, giovec, giovec_cnt, 0);
+<a id='L507' name='L507'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong>
+<a id='L508' name='L508'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_PUSH_ERROR);
+<a id='L509' name='L509'></a>
+<a id='L510' name='L510'></a>        <strong class='reserved'>if</strong> (i == -1) <em class='brace'>{</em>
+<a id='L511' name='L511'></a>                <strong class='reserved'>int</strong> err = <a href='../S/5984.html#L201' title='Defined at 201 in lib/buffers.c.'>get_errno</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L512' name='L512'></a>                <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>("WRITE: %d returned from %p, errno: %d\n",
+<a id='L513' name='L513'></a>                                  i, fd, err);
+<a id='L514' name='L514'></a>
+<a id='L515' name='L515'></a>                <strong class='reserved'>return</strong> <a href='../S/5984.html#L215' title='Defined at 215 in lib/buffers.c.'>errno_to_gerr</a>(err, is_dtls);
+<a id='L516' name='L516'></a>        <em class='brace'>}</em>
+<a id='L517' name='L517'></a>        <strong class='reserved'>return</strong> i;
+<a id='L518' name='L518'></a><em class='brace'>}</em>
+<a id='L519' name='L519'></a>
+<a id='L520' name='L520'></a><em class='comment'>/*</em>
+<a id='L521' name='L521'></a><em class='comment'> * @ms: a pointer to the number of milliseconds to wait for data. Use zero or NULL for indefinite.</em>
+<a id='L522' name='L522'></a><em class='comment'> *</em>
+<a id='L523' name='L523'></a><em class='comment'> * This function is like recv(with MSG_PEEK). But it does not return -1 on error.</em>
+<a id='L524' name='L524'></a><em class='comment'> * It does return gnutls_errno instead.</em>
+<a id='L525' name='L525'></a><em class='comment'> * This function reads data from the socket and keeps them in a buffer, of up to</em>
+<a id='L526' name='L526'></a><em class='comment'> * max_record_recv_size.</em>
+<a id='L527' name='L527'></a><em class='comment'> *</em>
+<a id='L528' name='L528'></a><em class='comment'> * This is not a general purpose function. It returns EXACTLY the data requested,</em>
+<a id='L529' name='L529'></a><em class='comment'> * which are stored in a local (in the session) buffer.</em>
+<a id='L530' name='L530'></a><em class='comment'> *</em>
+<a id='L531' name='L531'></a><em class='comment'> * If the @ms parameter is non zero then this function will return before</em>
+<a id='L532' name='L532'></a><em class='comment'> * the given amount of milliseconds or return GNUTLS_E_TIMEDOUT.</em>
+<a id='L533' name='L533'></a><em class='comment'> *</em>
+<a id='L534' name='L534'></a><em class='comment'> */</em>
+<a id='L535' name='L535'></a><a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a>
+<a id='L536' name='L536'></a><a href='../R/5186.html' title='Multiple referred from 3 places.'>_gnutls_io_read_buffered</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> total,
+<a id='L537' name='L537'></a>                         <a href='../D/7309.html' title='Multiple defined in 2 places.'>content_type_t</a> recv_type, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> *ms)
+<a id='L538' name='L538'></a><em class='brace'>{</em>
+<a id='L539' name='L539'></a>        <a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a> ret;
+<a id='L540' name='L540'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../S/4981.html#L8' title='Defined at 8 in tests/eagain-common.h.'>min</a>;
+<a id='L541' name='L541'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *bufel = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L542' name='L542'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> recvdata, readsize;
+<a id='L543' name='L543'></a>
+<a id='L544' name='L544'></a>        <strong class='reserved'>if</strong> (total &gt; <a href='../S/5295.html#L51' title='Defined at 51 in lib/record.h.'>max_record_recv_size</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>) || total == 0) <em class='brace'>{</em>
+<a id='L545' name='L545'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L546' name='L546'></a>                <strong class='reserved'>return</strong> GNUTLS_E_RECORD_OVERFLOW;
+<a id='L547' name='L547'></a>        <em class='brace'>}</em>
+<a id='L548' name='L548'></a>
+<a id='L549' name='L549'></a>        <em class='comment'>/* calculate the actual size, ie. get the minimum of the</em>
+<a id='L550' name='L550'></a><em class='comment'>         * buffered data and the requested data.</em>
+<a id='L551' name='L551'></a><em class='comment'>         */</em>
+<a id='L552' name='L552'></a>        <a href='../S/4981.html#L8' title='Defined at 8 in tests/eagain-common.h.'>min</a> =
+<a id='L553' name='L553'></a>            <a href='../D/2832.html' title='Multiple defined in 10 places.'>MIN</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.record_recv_buffer.byte_length, total);
+<a id='L554' name='L554'></a>        <strong class='reserved'>if</strong> (<a href='../S/4981.html#L8' title='Defined at 8 in tests/eagain-common.h.'>min</a> &gt; 0) <em class='brace'>{</em>
+<a id='L555' name='L555'></a>                <em class='comment'>/* if we have enough buffered data</em>
+<a id='L556' name='L556'></a><em class='comment'>                 * then just return them.</em>
+<a id='L557' name='L557'></a><em class='comment'>                 */</em>
+<a id='L558' name='L558'></a>                <strong class='reserved'>if</strong> (<a href='../S/4981.html#L8' title='Defined at 8 in tests/eagain-common.h.'>min</a> == total) <em class='brace'>{</em>
+<a id='L559' name='L559'></a>                        <strong class='reserved'>return</strong> <a href='../S/4981.html#L8' title='Defined at 8 in tests/eagain-common.h.'>min</a>;
+<a id='L560' name='L560'></a>                <em class='brace'>}</em>
+<a id='L561' name='L561'></a>        <em class='brace'>}</em>
+<a id='L562' name='L562'></a>
+<a id='L563' name='L563'></a>        <em class='comment'>/* min is over zero. recvdata is the data we must</em>
+<a id='L564' name='L564'></a><em class='comment'>         * receive in order to return the requested data.</em>
+<a id='L565' name='L565'></a><em class='comment'>         */</em>
+<a id='L566' name='L566'></a>        recvdata = total - <a href='../S/4981.html#L8' title='Defined at 8 in tests/eagain-common.h.'>min</a>;
+<a id='L567' name='L567'></a>        readsize = recvdata;
+<a id='L568' name='L568'></a>
+<a id='L569' name='L569'></a>        <em class='comment'>/* Check if the previously read data plus the new data to</em>
+<a id='L570' name='L570'></a><em class='comment'>         * receive are longer than the maximum receive buffer size.</em>
+<a id='L571' name='L571'></a><em class='comment'>         */</em>
+<a id='L572' name='L572'></a>        <strong class='reserved'>if</strong> ((<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.record_recv_buffer.byte_length +
+<a id='L573' name='L573'></a>             recvdata) &gt; <a href='../S/5295.html#L51' title='Defined at 51 in lib/record.h.'>max_record_recv_size</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)) <em class='brace'>{</em>
+<a id='L574' name='L574'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();        <em class='comment'>/* internal error */</em>
+<a id='L575' name='L575'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L576' name='L576'></a>        <em class='brace'>}</em>
+<a id='L577' name='L577'></a>
+<a id='L578' name='L578'></a>        <em class='comment'>/* READ DATA</em>
+<a id='L579' name='L579'></a><em class='comment'>         */</em>
+<a id='L580' name='L580'></a>        <strong class='reserved'>if</strong> (readsize &gt; 0) <em class='brace'>{</em>
+<a id='L581' name='L581'></a>                ret =
+<a id='L582' name='L582'></a>                    <a href='../S/5984.html#L419' title='Defined at 419 in lib/buffers.c.'>_gnutls_read</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;bufel, readsize,
+<a id='L583' name='L583'></a>                                 <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.<a href='../D/10998.html' title='Multiple defined in 2 places.'>pull_func</a>, ms);
+<a id='L584' name='L584'></a>
+<a id='L585' name='L585'></a>                <em class='comment'>/* return immediately if we got an interrupt or eagain</em>
+<a id='L586' name='L586'></a><em class='comment'>                 * error.</em>
+<a id='L587' name='L587'></a><em class='comment'>                 */</em>
+<a id='L588' name='L588'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L589' name='L589'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L590' name='L590'></a>                <em class='brace'>}</em>
+<a id='L591' name='L591'></a>
+<a id='L592' name='L592'></a>                <strong class='reserved'>if</strong> (ret == 0)   <em class='comment'>/* EOF */</em>
+<a id='L593' name='L593'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(0);
+<a id='L594' name='L594'></a>
+<a id='L595' name='L595'></a>                <em class='comment'>/* copy fresh data to our buffer.</em>
+<a id='L596' name='L596'></a><em class='comment'>                 */</em>
+<a id='L597' name='L597'></a>                <a href='../D/6192.html' title='Multiple defined in 2 places.'>_gnutls_read_log</a>
+<a id='L598' name='L598'></a>                    ("RB: Have %d bytes into buffer. Adding %d bytes.\n",
+<a id='L599' name='L599'></a>                     (<strong class='reserved'>int</strong>) <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.record_recv_buffer.
+<a id='L600' name='L600'></a>                     byte_length, (<strong class='reserved'>int</strong>) ret);
+<a id='L601' name='L601'></a>                <a href='../D/6192.html' title='Multiple defined in 2 places.'>_gnutls_read_log</a>("RB: Requested %d bytes\n", (<strong class='reserved'>int</strong>) total);
+<a id='L602' name='L602'></a>
+<a id='L603' name='L603'></a>                <a href='../S/5396.html#L84' title='Defined at 84 in lib/mbuffers.c.'>_mbuffer_enqueue</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.record_recv_buffer,
+<a id='L604' name='L604'></a>                                 bufel);
+<a id='L605' name='L605'></a>
+<a id='L606' name='L606'></a>                <strong class='reserved'>if</strong> (<a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>))
+<a id='L607' name='L607'></a>                        ret =
+<a id='L608' name='L608'></a>                            <a href='../D/2832.html' title='Multiple defined in 10 places.'>MIN</a>(total,
+<a id='L609' name='L609'></a>                                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.record_recv_buffer.
+<a id='L610' name='L610'></a>                                byte_length);
+<a id='L611' name='L611'></a>                <strong class='reserved'>else</strong>
+<a id='L612' name='L612'></a>                        ret =
+<a id='L613' name='L613'></a>                            <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.record_recv_buffer.
+<a id='L614' name='L614'></a>                            byte_length;
+<a id='L615' name='L615'></a>
+<a id='L616' name='L616'></a>                <strong class='reserved'>if</strong> ((ret &gt; 0) &amp;&amp; ((<a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a>) ret &lt; total))        <em class='comment'>/* Short Read */</em>
+<a id='L617' name='L617'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_AGAIN);
+<a id='L618' name='L618'></a>                <strong class='reserved'>else</strong>
+<a id='L619' name='L619'></a>                        <strong class='reserved'>return</strong> ret;
+<a id='L620' name='L620'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong>
+<a id='L621' name='L621'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(0);
+<a id='L622' name='L622'></a><em class='brace'>}</em>
+<a id='L623' name='L623'></a>
+<a id='L624' name='L624'></a><em class='comment'>/* This function is like write. But it does not return -1 on error.</em>
+<a id='L625' name='L625'></a><em class='comment'> * It does return gnutls_errno instead.</em>
+<a id='L626' name='L626'></a><em class='comment'> *</em>
+<a id='L627' name='L627'></a><em class='comment'> * This function takes full responsibility of freeing msg-&gt;data.</em>
+<a id='L628' name='L628'></a><em class='comment'> *</em>
+<a id='L629' name='L629'></a><em class='comment'> * In case of E_AGAIN and E_INTERRUPTED errors, you must call</em>
+<a id='L630' name='L630'></a><em class='comment'> * gnutls_write_flush(), until it returns ok (0).</em>
+<a id='L631' name='L631'></a><em class='comment'> *</em>
+<a id='L632' name='L632'></a><em class='comment'> * We need to push exactly the data in msg-&gt;size, since we cannot send</em>
+<a id='L633' name='L633'></a><em class='comment'> * less data. In TLS the peer must receive the whole packet in order</em>
+<a id='L634' name='L634'></a><em class='comment'> * to decrypt and verify the integrity.</em>
+<a id='L635' name='L635'></a><em class='comment'> *</em>
+<a id='L636' name='L636'></a><em class='comment'> */</em>
+<a id='L637' name='L637'></a><a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a>
+<a id='L638' name='L638'></a><a href='../R/5187.html' title='Multiple referred from 2 places.'>_gnutls_io_write_buffered</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L639' name='L639'></a>                          <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> * bufel, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> mflag)
+<a id='L640' name='L640'></a><em class='brace'>{</em>
+<a id='L641' name='L641'></a>        <a href='../D/10275.html' title='Multiple defined in 2 places.'>mbuffer_head_st</a> *<strong class='reserved'>const</strong> send_buffer =
+<a id='L642' name='L642'></a>            &amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.record_send_buffer;
+<a id='L643' name='L643'></a>
+<a id='L644' name='L644'></a>        <em class='comment'>/* to know where the procedure was interrupted.</em>
+<a id='L645' name='L645'></a><em class='comment'>         */</em>
+<a id='L646' name='L646'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.direction = 1;
+<a id='L647' name='L647'></a>
+<a id='L648' name='L648'></a>        <a href='../S/5396.html#L84' title='Defined at 84 in lib/mbuffers.c.'>_mbuffer_enqueue</a>(send_buffer, bufel);
+<a id='L649' name='L649'></a>
+<a id='L650' name='L650'></a>        <a href='../D/6368.html' title='Multiple defined in 2 places.'>_gnutls_write_log</a>
+<a id='L651' name='L651'></a>            ("WRITE: enqueued %d bytes for %p. Total %d bytes.\n",
+<a id='L652' name='L652'></a>             (<strong class='reserved'>int</strong>) bufel-&gt;msg.size, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.transport_recv_ptr,
+<a id='L653' name='L653'></a>             (<strong class='reserved'>int</strong>) send_buffer-&gt;byte_length);
+<a id='L654' name='L654'></a>
+<a id='L655' name='L655'></a>        <strong class='reserved'>if</strong> (mflag == <a href='../S/6033.html#L28' title='Defined at 28 in lib/buffers.h.'>MBUFFER_FLUSH</a>)
+<a id='L656' name='L656'></a>                <strong class='reserved'>return</strong> <a href='../S/5984.html#L667' title='Defined at 667 in lib/buffers.c.'>_gnutls_io_write_flush</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L657' name='L657'></a>        <strong class='reserved'>else</strong>
+<a id='L658' name='L658'></a>                <strong class='reserved'>return</strong> bufel-&gt;msg.size;
+<a id='L659' name='L659'></a><em class='brace'>}</em>
+<a id='L660' name='L660'></a>
+<a id='L661' name='L661'></a><strong class='reserved'>typedef</strong> <a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a>(*send_func) (gnutls_session_t, <strong class='reserved'>const</strong> giovec_t *, <strong class='reserved'>int</strong>);
+<a id='L662' name='L662'></a>
+<a id='L663' name='L663'></a><em class='comment'>/* This function writes the data that are left in the</em>
+<a id='L664' name='L664'></a><em class='comment'> * TLS write buffer (ie. because the previous write was</em>
+<a id='L665' name='L665'></a><em class='comment'> * interrupted.</em>
+<a id='L666' name='L666'></a><em class='comment'> */</em>
+<a id='L667' name='L667'></a><a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a> <a href='../R/5188.html' title='Multiple referred from 10 places.'>_gnutls_io_write_flush</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L668' name='L668'></a><em class='brace'>{</em>
+<a id='L669' name='L669'></a>        gnutls_datum_t msg;
+<a id='L670' name='L670'></a>        <a href='../D/10275.html' title='Multiple defined in 2 places.'>mbuffer_head_st</a> *send_buffer =
+<a id='L671' name='L671'></a>            &amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.record_send_buffer;
+<a id='L672' name='L672'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L673' name='L673'></a>        <a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a> sent = 0, tosend = 0;
+<a id='L674' name='L674'></a>        giovec_t <a href='../D/10040.html' title='Multiple defined in 2 places.'>iovec</a>[<a href='../S/5984.html#L63' title='Defined at 63 in lib/buffers.c.'>MAX_QUEUE</a>];
+<a id='L675' name='L675'></a>        <strong class='reserved'>int</strong> i = 0;
+<a id='L676' name='L676'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *cur;
+<a id='L677' name='L677'></a>
+<a id='L678' name='L678'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.direction = 1;
+<a id='L679' name='L679'></a>        <a href='../D/6368.html' title='Multiple defined in 2 places.'>_gnutls_write_log</a>("WRITE FLUSH: %d bytes in buffer.\n",
+<a id='L680' name='L680'></a>                          (<strong class='reserved'>int</strong>) send_buffer-&gt;byte_length);
+<a id='L681' name='L681'></a>
+<a id='L682' name='L682'></a>        <strong class='reserved'>for</strong> (cur = <a href='../S/5396.html#L173' title='Defined at 173 in lib/mbuffers.c.'>_mbuffer_head_get_first</a>(send_buffer, &amp;msg);
+<a id='L683' name='L683'></a>             cur != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>; cur = <a href='../S/5396.html#L196' title='Defined at 196 in lib/mbuffers.c.'>_mbuffer_head_get_next</a>(cur, &amp;msg)) <em class='brace'>{</em>
+<a id='L684' name='L684'></a>                <a href='../D/10040.html' title='Multiple defined in 2 places.'>iovec</a>[i].iov_base = msg.data;
+<a id='L685' name='L685'></a>                <a href='../D/10040.html' title='Multiple defined in 2 places.'>iovec</a>[i++].iov_len = msg.size;
+<a id='L686' name='L686'></a>                tosend += msg.size;
+<a id='L687' name='L687'></a>
+<a id='L688' name='L688'></a>                <em class='comment'>/* we buffer up to MAX_QUEUE messages */</em>
+<a id='L689' name='L689'></a>                <strong class='reserved'>if</strong> (i &gt;= <a href='../S/5984.html#L63' title='Defined at 63 in lib/buffers.c.'>MAX_QUEUE</a>) <em class='brace'>{</em>
+<a id='L690' name='L690'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L691' name='L691'></a>                        <strong class='reserved'>return</strong> GNUTLS_E_INTERNAL_ERROR;
+<a id='L692' name='L692'></a>                <em class='brace'>}</em>
+<a id='L693' name='L693'></a>        <em class='brace'>}</em>
+<a id='L694' name='L694'></a>
+<a id='L695' name='L695'></a>        <strong class='reserved'>if</strong> (tosend == 0) <em class='brace'>{</em>
+<a id='L696' name='L696'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L697' name='L697'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L698' name='L698'></a>        <em class='brace'>}</em>
+<a id='L699' name='L699'></a>
+<a id='L700' name='L700'></a>        ret = <a href='../S/5984.html#L483' title='Defined at 483 in lib/buffers.c.'>_gnutls_writev</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/10040.html' title='Multiple defined in 2 places.'>iovec</a>, i, tosend);
+<a id='L701' name='L701'></a>        <strong class='reserved'>if</strong> (ret &gt;= 0) <em class='brace'>{</em>
+<a id='L702' name='L702'></a>                <a href='../S/5396.html#L240' title='Defined at 240 in lib/mbuffers.c.'>_mbuffer_head_remove_bytes</a>(send_buffer, ret);
+<a id='L703' name='L703'></a>                <a href='../D/6368.html' title='Multiple defined in 2 places.'>_gnutls_write_log</a>
+<a id='L704' name='L704'></a>                    ("WRITE: wrote %d bytes, %d bytes left.\n", ret,
+<a id='L705' name='L705'></a>                     (<strong class='reserved'>int</strong>) send_buffer-&gt;byte_length);
+<a id='L706' name='L706'></a>
+<a id='L707' name='L707'></a>                sent += ret;
+<a id='L708' name='L708'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (ret == GNUTLS_E_INTERRUPTED || ret == GNUTLS_E_AGAIN) <em class='brace'>{</em>
+<a id='L709' name='L709'></a>                <a href='../D/6368.html' title='Multiple defined in 2 places.'>_gnutls_write_log</a>("WRITE interrupted: %d bytes left.\n",
+<a id='L710' name='L710'></a>                                  (<strong class='reserved'>int</strong>) send_buffer-&gt;byte_length);
+<a id='L711' name='L711'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L712' name='L712'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (ret == GNUTLS_E_LARGE_PACKET) <em class='brace'>{</em>
+<a id='L713' name='L713'></a>                <a href='../S/5396.html#L240' title='Defined at 240 in lib/mbuffers.c.'>_mbuffer_head_remove_bytes</a>(send_buffer, tosend);
+<a id='L714' name='L714'></a>                <a href='../D/6368.html' title='Multiple defined in 2 places.'>_gnutls_write_log</a>
+<a id='L715' name='L715'></a>                    ("WRITE cannot send large packet (%u bytes).\n",
+<a id='L716' name='L716'></a>                     (<strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong>) tosend);
+<a id='L717' name='L717'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L718' name='L718'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L719' name='L719'></a>                <a href='../D/6368.html' title='Multiple defined in 2 places.'>_gnutls_write_log</a>("WRITE error: code %d, %d bytes left.\n",
+<a id='L720' name='L720'></a>                                  ret, (<strong class='reserved'>int</strong>) send_buffer-&gt;byte_length);
+<a id='L721' name='L721'></a>
+<a id='L722' name='L722'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L723' name='L723'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L724' name='L724'></a>        <em class='brace'>}</em>
+<a id='L725' name='L725'></a>
+<a id='L726' name='L726'></a>        <strong class='reserved'>if</strong> (sent &lt; tosend) <em class='brace'>{</em>
+<a id='L727' name='L727'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_AGAIN);
+<a id='L728' name='L728'></a>        <em class='brace'>}</em>
+<a id='L729' name='L729'></a>
+<a id='L730' name='L730'></a>        <strong class='reserved'>return</strong> sent;
+<a id='L731' name='L731'></a><em class='brace'>}</em>
+<a id='L732' name='L732'></a>
+<a id='L733' name='L733'></a><em class='comment'>/* Checks whether there are received data within</em>
+<a id='L734' name='L734'></a><em class='comment'> * a timeframe.</em>
+<a id='L735' name='L735'></a><em class='comment'> *</em>
+<a id='L736' name='L736'></a><em class='comment'> * Returns 0 if data were received, GNUTLS_E_TIMEDOUT</em>
+<a id='L737' name='L737'></a><em class='comment'> * on timeout and a negative error code on error.</em>
+<a id='L738' name='L738'></a><em class='comment'> */</em>
+<a id='L739' name='L739'></a><strong class='reserved'>int</strong> <a href='../R/5185.html' title='Multiple referred from 8 places.'>_gnutls_io_check_recv</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> ms)
+<a id='L740' name='L740'></a><em class='brace'>{</em>
+<a id='L741' name='L741'></a>        gnutls_transport_ptr_t fd = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.transport_recv_ptr;
+<a id='L742' name='L742'></a>        <strong class='reserved'>int</strong> ret = 0, err;
+<a id='L743' name='L743'></a>
+<a id='L744' name='L744'></a>        <strong class='reserved'>if</strong> (<a href='../S/6033.html#L40' title='Defined at 40 in lib/buffers.h.'>NO_TIMEOUT_FUNC_SET</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)) <em class='brace'>{</em>
+<a id='L745' name='L745'></a>                <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>("The pull function has been replaced but not the pull timeout.\n");
+<a id='L746' name='L746'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_PULL_ERROR);
+<a id='L747' name='L747'></a>        <em class='brace'>}</em>
+<a id='L748' name='L748'></a>
+<a id='L749' name='L749'></a>        <a href='../S/5984.html#L196' title='Defined at 196 in lib/buffers.c.'>reset_errno</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L750' name='L750'></a>
+<a id='L751' name='L751'></a>        ret = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.<a href='../D/10999.html' title='Multiple defined in 3 places.'>pull_timeout_func</a>(fd, ms);
+<a id='L752' name='L752'></a>        <strong class='reserved'>if</strong> (ret == -1) <em class='brace'>{</em>
+<a id='L753' name='L753'></a>                err = <a href='../S/5984.html#L201' title='Defined at 201 in lib/buffers.c.'>get_errno</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L754' name='L754'></a>                <a href='../D/6192.html' title='Multiple defined in 2 places.'>_gnutls_read_log</a>
+<a id='L755' name='L755'></a>                    ("READ_TIMEOUT: %d returned from %p, errno=%d (timeout: %u)\n",
+<a id='L756' name='L756'></a>                     (<strong class='reserved'>int</strong>) ret, fd, err, ms);
+<a id='L757' name='L757'></a>                <strong class='reserved'>return</strong> <a href='../S/5984.html#L215' title='Defined at 215 in lib/buffers.c.'>errno_to_gerr</a>(err, <a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>));
+<a id='L758' name='L758'></a>        <em class='brace'>}</em>
+<a id='L759' name='L759'></a>
+<a id='L760' name='L760'></a>        <strong class='reserved'>if</strong> (ret &gt; 0)
+<a id='L761' name='L761'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L762' name='L762'></a>        <strong class='reserved'>else</strong>
+<a id='L763' name='L763'></a>                <strong class='reserved'>return</strong> GNUTLS_E_TIMEDOUT;
+<a id='L764' name='L764'></a><em class='brace'>}</em>
+<a id='L765' name='L765'></a>
+<a id='L766' name='L766'></a><em class='comment'>/* HANDSHAKE buffers part</em>
+<a id='L767' name='L767'></a><em class='comment'> */</em>
+<a id='L768' name='L768'></a>
+<a id='L769' name='L769'></a><em class='comment'>/* This function writes the data that are left in the</em>
+<a id='L770' name='L770'></a><em class='comment'> * Handshake write buffer (ie. because the previous write was</em>
+<a id='L771' name='L771'></a><em class='comment'> * interrupted.</em>
+<a id='L772' name='L772'></a><em class='comment'> *</em>
+<a id='L773' name='L773'></a><em class='comment'> */</em>
+<a id='L774' name='L774'></a><a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a> <a href='../R/5123.html' title='Multiple referred from 5 places.'>_gnutls_handshake_io_write_flush</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L775' name='L775'></a><em class='brace'>{</em>
+<a id='L776' name='L776'></a>        <a href='../D/10275.html' title='Multiple defined in 2 places.'>mbuffer_head_st</a> *<strong class='reserved'>const</strong> send_buffer =
+<a id='L777' name='L777'></a>            &amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_send_buffer;
+<a id='L778' name='L778'></a>        gnutls_datum_t msg;
+<a id='L779' name='L779'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L780' name='L780'></a>        <a href='../D/12095.html' title='Multiple defined in 8 places.'>uint16_t</a> epoch;
+<a id='L781' name='L781'></a>        <a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a> total = 0;
+<a id='L782' name='L782'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *cur;
+<a id='L783' name='L783'></a>
+<a id='L784' name='L784'></a>        <a href='../D/6368.html' title='Multiple defined in 2 places.'>_gnutls_write_log</a>("HWRITE FLUSH: %d bytes in buffer.\n",
+<a id='L785' name='L785'></a>                          (<strong class='reserved'>int</strong>) send_buffer-&gt;byte_length);
+<a id='L786' name='L786'></a>
+<a id='L787' name='L787'></a>        <strong class='reserved'>if</strong> (<a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>))
+<a id='L788' name='L788'></a>                <strong class='reserved'>return</strong> <a href='../S/6022.html#L223' title='Defined at 223 in lib/dtls.c.'>_dtls_transmit</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L789' name='L789'></a>
+<a id='L790' name='L790'></a>        <strong class='reserved'>for</strong> (cur = <a href='../S/5396.html#L173' title='Defined at 173 in lib/mbuffers.c.'>_mbuffer_head_get_first</a>(send_buffer, &amp;msg);
+<a id='L791' name='L791'></a>             cur != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>; cur = <a href='../S/5396.html#L173' title='Defined at 173 in lib/mbuffers.c.'>_mbuffer_head_get_first</a>(send_buffer, &amp;msg))
+<a id='L792' name='L792'></a>        <em class='brace'>{</em>
+<a id='L793' name='L793'></a>                epoch = cur-&gt;epoch;
+<a id='L794' name='L794'></a>
+<a id='L795' name='L795'></a>                ret = <a href='../S/5295.html#L38' title='Defined at 38 in lib/record.h.'>_gnutls_send_int</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, cur-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>,
+<a id='L796' name='L796'></a>                                       cur-&gt;htype,
+<a id='L797' name='L797'></a>                                       epoch, msg.data, msg.size, 0);
+<a id='L798' name='L798'></a>
+<a id='L799' name='L799'></a>                <strong class='reserved'>if</strong> (ret &gt;= 0) <em class='brace'>{</em>
+<a id='L800' name='L800'></a>                        total += ret;
+<a id='L801' name='L801'></a>
+<a id='L802' name='L802'></a>                        ret = <a href='../S/5396.html#L240' title='Defined at 240 in lib/mbuffers.c.'>_mbuffer_head_remove_bytes</a>(send_buffer, ret);
+<a id='L803' name='L803'></a>                        <em class='comment'>/* for each queued message we send, ensure that</em>
+<a id='L804' name='L804'></a><em class='comment'>                         * we drop the epoch refcount set in _gnutls_handshake_io_cache_int(). */</em>
+<a id='L805' name='L805'></a>                        <strong class='reserved'>if</strong> (ret == 1)
+<a id='L806' name='L806'></a>                                <a href='../S/5991.html#L81' title='Defined at 81 in lib/constate.h.'>_gnutls_epoch_refcount_dec</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, epoch);
+<a id='L807' name='L807'></a>
+<a id='L808' name='L808'></a>                        <a href='../D/6368.html' title='Multiple defined in 2 places.'>_gnutls_write_log</a>
+<a id='L809' name='L809'></a>                            ("HWRITE: wrote %d bytes, %d bytes left.\n",
+<a id='L810' name='L810'></a>                             ret, (<strong class='reserved'>int</strong>) send_buffer-&gt;byte_length);
+<a id='L811' name='L811'></a>
+<a id='L812' name='L812'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L813' name='L813'></a>                        <a href='../D/6368.html' title='Multiple defined in 2 places.'>_gnutls_write_log</a>
+<a id='L814' name='L814'></a>                            ("HWRITE error: code %d, %d bytes left.\n",
+<a id='L815' name='L815'></a>                             ret, (<strong class='reserved'>int</strong>) send_buffer-&gt;byte_length);
+<a id='L816' name='L816'></a>
+<a id='L817' name='L817'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L818' name='L818'></a>                        <strong class='reserved'>return</strong> ret;
+<a id='L819' name='L819'></a>                <em class='brace'>}</em>
+<a id='L820' name='L820'></a>        <em class='brace'>}</em>
+<a id='L821' name='L821'></a>
+<a id='L822' name='L822'></a>        <strong class='reserved'>return</strong> <a href='../S/5984.html#L667' title='Defined at 667 in lib/buffers.c.'>_gnutls_io_write_flush</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L823' name='L823'></a><em class='brace'>}</em>
+<a id='L824' name='L824'></a>
+<a id='L825' name='L825'></a>
+<a id='L826' name='L826'></a><em class='comment'>/* This is a send function for the gnutls handshake</em>
+<a id='L827' name='L827'></a><em class='comment'> * protocol. Just makes sure that all data have been sent.</em>
+<a id='L828' name='L828'></a><em class='comment'> *</em>
+<a id='L829' name='L829'></a><em class='comment'> */</em>
+<a id='L830' name='L830'></a><strong class='reserved'>int</strong>
+<a id='L831' name='L831'></a><a href='../R/5121.html' title='Multiple referred from 3 places.'>_gnutls_handshake_io_cache_int</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L832' name='L832'></a>                               gnutls_handshake_description_t htype,
+<a id='L833' name='L833'></a>                               <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> * bufel)
+<a id='L834' name='L834'></a><em class='brace'>{</em>
+<a id='L835' name='L835'></a>        <a href='../D/10275.html' title='Multiple defined in 2 places.'>mbuffer_head_st</a> *send_buffer;
+<a id='L836' name='L836'></a>
+<a id='L837' name='L837'></a>        <strong class='reserved'>if</strong> (<a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)) <em class='brace'>{</em>
+<a id='L838' name='L838'></a>                bufel-&gt;handshake_sequence =
+<a id='L839' name='L839'></a>                    <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.dtls.hsk_write_seq - 1;
+<a id='L840' name='L840'></a>        <em class='brace'>}</em>
+<a id='L841' name='L841'></a>
+<a id='L842' name='L842'></a>        send_buffer = &amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_send_buffer;
+<a id='L843' name='L843'></a>
+<a id='L844' name='L844'></a>        <em class='comment'>/* ensure that our epoch does not get garbage collected</em>
+<a id='L845' name='L845'></a><em class='comment'>         * before we send all queued messages with it */</em>
+<a id='L846' name='L846'></a>        bufel-&gt;epoch =
+<a id='L847' name='L847'></a>            (<a href='../D/12095.html' title='Multiple defined in 8 places.'>uint16_t</a>) <a href='../S/5991.html#L66' title='Defined at 66 in lib/constate.h.'>_gnutls_epoch_refcount_inc</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L848' name='L848'></a>                                                  <a href='../S/5822.html#L862' title='Defined at 862 in lib/gnutls_int.h.'>EPOCH_WRITE_CURRENT</a>);
+<a id='L849' name='L849'></a>        bufel-&gt;htype = htype;
+<a id='L850' name='L850'></a>        <strong class='reserved'>if</strong> (bufel-&gt;htype == GNUTLS_HANDSHAKE_CHANGE_CIPHER_SPEC)
+<a id='L851' name='L851'></a>                bufel-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L369' title='Defined at 369 in lib/gnutls_int.h.'>GNUTLS_CHANGE_CIPHER_SPEC</a>;
+<a id='L852' name='L852'></a>        <strong class='reserved'>else</strong>
+<a id='L853' name='L853'></a>                bufel-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = <a href='../S/5822.html#L370' title='Defined at 370 in lib/gnutls_int.h.'>GNUTLS_HANDSHAKE</a>;
+<a id='L854' name='L854'></a>
+<a id='L855' name='L855'></a>        <a href='../S/5396.html#L84' title='Defined at 84 in lib/mbuffers.c.'>_mbuffer_enqueue</a>(send_buffer, bufel);
+<a id='L856' name='L856'></a>
+<a id='L857' name='L857'></a>        <a href='../D/6368.html' title='Multiple defined in 2 places.'>_gnutls_write_log</a>
+<a id='L858' name='L858'></a>            ("HWRITE: enqueued [%s] %d. Total %d bytes.\n",
+<a id='L859' name='L859'></a>             <a href='../S/5626.html#L27' title='Defined at 27 in lib/debug.h.'>_gnutls_handshake2str</a>(bufel-&gt;htype), (<strong class='reserved'>int</strong>) bufel-&gt;msg.size,
+<a id='L860' name='L860'></a>             (<strong class='reserved'>int</strong>) send_buffer-&gt;byte_length);
+<a id='L861' name='L861'></a>
+<a id='L862' name='L862'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L863' name='L863'></a><em class='brace'>}</em>
+<a id='L864' name='L864'></a>
+<a id='L865' name='L865'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5984.html#L1377' title='Referred from 1377 in lib/buffers.c.'>handshake_compare</a>(<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *_e1, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *_e2)
+<a id='L866' name='L866'></a><em class='brace'>{</em>
+<a id='L867' name='L867'></a>        <strong class='reserved'>const</strong> <a href='../S/5822.html#L408' title='Defined at 408 in lib/gnutls_int.h.'>handshake_buffer_st</a> *e1 = _e1;
+<a id='L868' name='L868'></a>        <strong class='reserved'>const</strong> <a href='../S/5822.html#L408' title='Defined at 408 in lib/gnutls_int.h.'>handshake_buffer_st</a> *e2 = _e2;
+<a id='L869' name='L869'></a>
+<a id='L870' name='L870'></a>        <strong class='reserved'>if</strong> (e1-&gt;sequence &lt;= e2-&gt;sequence)
+<a id='L871' name='L871'></a>                <strong class='reserved'>return</strong> 1;
+<a id='L872' name='L872'></a>        <strong class='reserved'>else</strong>
+<a id='L873' name='L873'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L874' name='L874'></a><em class='brace'>}</em>
+<a id='L875' name='L875'></a>
+<a id='L876' name='L876'></a><em class='sharp'>#define</em> <a href='../S/5984.html#L897' title='Referred from 897 in lib/buffers.c.'>SSL2_HEADERS</a> 1
+<a id='L877' name='L877'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L878' name='L878'></a><a href='../R/9611.html' title='Multiple referred from 2 places.'>parse_handshake_header</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> * bufel,
+<a id='L879' name='L879'></a>                       <a href='../S/5822.html#L408' title='Defined at 408 in lib/gnutls_int.h.'>handshake_buffer_st</a> * hsk)
+<a id='L880' name='L880'></a><em class='brace'>{</em>
+<a id='L881' name='L881'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *dataptr = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;        <em class='comment'>/* for realloc */</em>
+<a id='L882' name='L882'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> handshake_header_size =
+<a id='L883' name='L883'></a>            <a href='../S/5822.html#L204' title='Defined at 204 in lib/gnutls_int.h.'>HANDSHAKE_HEADER_SIZE</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>), data_size, frag_size;
+<a id='L884' name='L884'></a>
+<a id='L885' name='L885'></a>        <em class='comment'>/* Note: SSL2_HEADERS == 1 */</em>
+<a id='L886' name='L886'></a>        <strong class='reserved'>if</strong> (<a href='../S/5459.html#L79' title='Defined at 79 in lib/mbuffers.h.'>_mbuffer_get_udata_size</a>(bufel) &lt; handshake_header_size)
+<a id='L887' name='L887'></a>                <strong class='reserved'>return</strong>
+<a id='L888' name='L888'></a>                    <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_UNEXPECTED_PACKET_LENGTH);
+<a id='L889' name='L889'></a>
+<a id='L890' name='L890'></a>        dataptr = <a href='../S/5459.html#L61' title='Defined at 61 in lib/mbuffers.h.'>_mbuffer_get_udata_ptr</a>(bufel);
+<a id='L891' name='L891'></a>
+<a id='L892' name='L892'></a>        <em class='comment'>/* if reading a client hello of SSLv2 */</em>
+<a id='L893' name='L893'></a><em class='sharp'>#ifdef</em> ENABLE_SSL2
+<a id='L894' name='L894'></a>        <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>
+<a id='L895' name='L895'></a>            (!<a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L896' name='L896'></a>             &amp;&amp; bufel-&gt;htype == GNUTLS_HANDSHAKE_CLIENT_HELLO_V2)) <em class='brace'>{</em>
+<a id='L897' name='L897'></a>                handshake_header_size = <a href='../S/5984.html#L876' title='Defined at 876 in lib/buffers.c.'>SSL2_HEADERS</a>;   <em class='comment'>/* we've already read one byte */</em>
+<a id='L898' name='L898'></a>
+<a id='L899' name='L899'></a>                frag_size = <a href='../S/5459.html#L79' title='Defined at 79 in lib/mbuffers.h.'>_mbuffer_get_udata_size</a>(bufel) - handshake_header_size;     <em class='comment'>/* we've read the first byte */</em>
+<a id='L900' name='L900'></a>
+<a id='L901' name='L901'></a>                <strong class='reserved'>if</strong> (dataptr[0] != GNUTLS_HANDSHAKE_CLIENT_HELLO)
+<a id='L902' name='L902'></a>                        <strong class='reserved'>return</strong>
+<a id='L903' name='L903'></a>                            <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_UNEXPECTED_PACKET);
+<a id='L904' name='L904'></a>
+<a id='L905' name='L905'></a>                hsk-&gt;rtype = hsk-&gt;htype = GNUTLS_HANDSHAKE_CLIENT_HELLO_V2;
+<a id='L906' name='L906'></a>
+<a id='L907' name='L907'></a>                hsk-&gt;sequence = 0;
+<a id='L908' name='L908'></a>                hsk-&gt;start_offset = 0;
+<a id='L909' name='L909'></a>                hsk-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> = frag_size;
+<a id='L910' name='L910'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong>
+<a id='L911' name='L911'></a><em class='sharp'>#endif</em>
+<a id='L912' name='L912'></a>        <em class='brace'>{</em>       <em class='comment'>/* TLS or DTLS handshake headers */</em>
+<a id='L913' name='L913'></a>
+<a id='L914' name='L914'></a>
+<a id='L915' name='L915'></a>                hsk-&gt;rtype = hsk-&gt;htype = dataptr[0];
+<a id='L916' name='L916'></a>
+<a id='L917' name='L917'></a>                <em class='comment'>/* we do not use DECR_LEN because we know</em>
+<a id='L918' name='L918'></a><em class='comment'>                 * that the packet has enough data.</em>
+<a id='L919' name='L919'></a><em class='comment'>                 */</em>
+<a id='L920' name='L920'></a>                hsk-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> = <a href='../S/5268.html#L32' title='Defined at 32 in lib/num.h.'>_gnutls_read_uint24</a>(&amp;dataptr[1]);
+<a id='L921' name='L921'></a>
+<a id='L922' name='L922'></a>                <strong class='reserved'>if</strong> (<a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)) <em class='brace'>{</em>
+<a id='L923' name='L923'></a>                        hsk-&gt;sequence = <a href='../S/5268.html#L83' title='Defined at 83 in lib/num.h.'>_gnutls_read_uint16</a>(&amp;dataptr[4]);
+<a id='L924' name='L924'></a>                        hsk-&gt;start_offset =
+<a id='L925' name='L925'></a>                            <a href='../S/5268.html#L32' title='Defined at 32 in lib/num.h.'>_gnutls_read_uint24</a>(&amp;dataptr[6]);
+<a id='L926' name='L926'></a>                        frag_size =
+<a id='L927' name='L927'></a>                            <a href='../S/5268.html#L32' title='Defined at 32 in lib/num.h.'>_gnutls_read_uint24</a>(&amp;dataptr[9]);
+<a id='L928' name='L928'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L929' name='L929'></a>                        hsk-&gt;sequence = 0;
+<a id='L930' name='L930'></a>                        hsk-&gt;start_offset = 0;
+<a id='L931' name='L931'></a>                        frag_size =
+<a id='L932' name='L932'></a>                            <a href='../D/2832.html' title='Multiple defined in 10 places.'>MIN</a>((<a href='../S/5459.html#L79' title='Defined at 79 in lib/mbuffers.h.'>_mbuffer_get_udata_size</a>(bufel) -
+<a id='L933' name='L933'></a>                                 handshake_header_size), hsk-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L934' name='L934'></a>                <em class='brace'>}</em>
+<a id='L935' name='L935'></a>
+<a id='L936' name='L936'></a>                <em class='comment'>/* TLS1.3: distinguish server hello versus hello retry request.</em>
+<a id='L937' name='L937'></a><em class='comment'>                 * The epitome of slick protocol design. */</em>
+<a id='L938' name='L938'></a>                <strong class='reserved'>if</strong> (hsk-&gt;htype == GNUTLS_HANDSHAKE_SERVER_HELLO &amp;&amp; hsk-&gt;start_offset == 0 &amp;&amp; !<a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)) <em class='brace'>{</em>
+<a id='L939' name='L939'></a>                        <strong class='reserved'>if</strong> (<a href='../S/5459.html#L79' title='Defined at 79 in lib/mbuffers.h.'>_mbuffer_get_udata_size</a>(bufel) &gt; handshake_header_size+2+<a href='../S/5822.html#L120' title='Defined at 120 in lib/gnutls_int.h.'>GNUTLS_RANDOM_SIZE</a> &amp;&amp;
+<a id='L940' name='L940'></a>                            memcmp(dataptr+handshake_header_size+2, <a href='../S/6035.html#L40' title='Defined at 40 in lib/handshake-defs.h.'>HRR_RANDOM</a>, <a href='../S/5822.html#L120' title='Defined at 120 in lib/gnutls_int.h.'>GNUTLS_RANDOM_SIZE</a>) == 0) <em class='brace'>{</em>
+<a id='L941' name='L941'></a>                                hsk-&gt;htype = GNUTLS_HANDSHAKE_HELLO_RETRY_REQUEST;
+<a id='L942' name='L942'></a>                        <em class='brace'>}</em>
+<a id='L943' name='L943'></a>                <em class='brace'>}</em>
+<a id='L944' name='L944'></a>        <em class='brace'>}</em>
+<a id='L945' name='L945'></a>        data_size = <a href='../S/5459.html#L79' title='Defined at 79 in lib/mbuffers.h.'>_mbuffer_get_udata_size</a>(bufel) - handshake_header_size;
+<a id='L946' name='L946'></a>
+<a id='L947' name='L947'></a>        <strong class='reserved'>if</strong> (frag_size &gt; 0)
+<a id='L948' name='L948'></a>                hsk-&gt;end_offset = hsk-&gt;start_offset + frag_size - 1;
+<a id='L949' name='L949'></a>        <strong class='reserved'>else</strong>
+<a id='L950' name='L950'></a>                hsk-&gt;end_offset = 0;
+<a id='L951' name='L951'></a>
+<a id='L952' name='L952'></a>        <a href='../D/5914.html' title='Multiple defined in 2 places.'>_gnutls_handshake_log</a>
+<a id='L953' name='L953'></a>            ("HSK[%p]: %s (%u) was received. Length %d[%d], frag offset %d, frag length: %d, sequence: %d\n",
+<a id='L954' name='L954'></a>             <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../S/5626.html#L27' title='Defined at 27 in lib/debug.h.'>_gnutls_handshake2str</a>(hsk-&gt;htype),
+<a id='L955' name='L955'></a>             (<strong class='reserved'>unsigned</strong>) hsk-&gt;htype, (<strong class='reserved'>int</strong>) hsk-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, (<strong class='reserved'>int</strong>) data_size,
+<a id='L956' name='L956'></a>             hsk-&gt;start_offset, (<strong class='reserved'>int</strong>) frag_size,
+<a id='L957' name='L957'></a>             (<strong class='reserved'>int</strong>) hsk-&gt;sequence);
+<a id='L958' name='L958'></a>
+<a id='L959' name='L959'></a>        hsk-&gt;header_size = handshake_header_size;
+<a id='L960' name='L960'></a>        memcpy(hsk-&gt;<a href='../D/9917.html' title='Multiple defined in 2 places.'>header</a>, <a href='../S/5459.html#L61' title='Defined at 61 in lib/mbuffers.h.'>_mbuffer_get_udata_ptr</a>(bufel),
+<a id='L961' name='L961'></a>               handshake_header_size);
+<a id='L962' name='L962'></a>
+<a id='L963' name='L963'></a>        <strong class='reserved'>if</strong> (hsk-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> &gt; 0 &amp;&amp; (frag_size &gt; data_size ||
+<a id='L964' name='L964'></a>                                (frag_size &gt; 0 &amp;&amp;
+<a id='L965' name='L965'></a>                                 hsk-&gt;end_offset &gt;= hsk-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>))) <em class='brace'>{</em>
+<a id='L966' name='L966'></a>                <strong class='reserved'>return</strong>
+<a id='L967' name='L967'></a>                    <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_UNEXPECTED_PACKET_LENGTH);
+<a id='L968' name='L968'></a>        <em class='brace'>}</em>
+<a id='L969' name='L969'></a>        <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (hsk-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> == 0 &amp;&amp; hsk-&gt;end_offset != 0
+<a id='L970' name='L970'></a>                 &amp;&amp; hsk-&gt;start_offset != 0)
+<a id='L971' name='L971'></a>                <strong class='reserved'>return</strong>
+<a id='L972' name='L972'></a>                    <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_UNEXPECTED_PACKET_LENGTH);
+<a id='L973' name='L973'></a>
+<a id='L974' name='L974'></a>        <strong class='reserved'>return</strong> handshake_header_size;
+<a id='L975' name='L975'></a><em class='brace'>}</em>
+<a id='L976' name='L976'></a>
+<a id='L977' name='L977'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/5116.html' title='Multiple referred from 3 places.'>_gnutls_handshake_buffer_move</a>(<a href='../S/5822.html#L408' title='Defined at 408 in lib/gnutls_int.h.'>handshake_buffer_st</a> * dst,
+<a id='L978' name='L978'></a>                                          <a href='../S/5822.html#L408' title='Defined at 408 in lib/gnutls_int.h.'>handshake_buffer_st</a> * src)
+<a id='L979' name='L979'></a><em class='brace'>{</em>
+<a id='L980' name='L980'></a>        memcpy(dst, src, <strong class='reserved'>sizeof</strong>(*dst));
+<a id='L981' name='L981'></a>        memset(src, 0, <strong class='reserved'>sizeof</strong>(*src));
+<a id='L982' name='L982'></a>        src-&gt;htype = -1;
+<a id='L983' name='L983'></a><em class='brace'>}</em>
+<a id='L984' name='L984'></a>
+<a id='L985' name='L985'></a><em class='comment'>/* will merge the given handshake_buffer_st to the handshake_recv_buffer</em>
+<a id='L986' name='L986'></a><em class='comment'> * list. The given hsk packet will be released in any case (success or failure).</em>
+<a id='L987' name='L987'></a><em class='comment'> * Only used in DTLS.</em>
+<a id='L988' name='L988'></a><em class='comment'> */</em>
+<a id='L989' name='L989'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5984.html#L1352' title='Referred from 1352 in lib/buffers.c.'>merge_handshake_packet</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L990' name='L990'></a>                                  <a href='../S/5822.html#L408' title='Defined at 408 in lib/gnutls_int.h.'>handshake_buffer_st</a> * hsk)
+<a id='L991' name='L991'></a><em class='brace'>{</em>
+<a id='L992' name='L992'></a>        <strong class='reserved'>int</strong> exists = 0, i, pos = 0;
+<a id='L993' name='L993'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L994' name='L994'></a>
+<a id='L995' name='L995'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer_size; i++) <em class='brace'>{</em>
+<a id='L996' name='L996'></a>                <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer[i].htype ==
+<a id='L997' name='L997'></a>                    hsk-&gt;htype) <em class='brace'>{</em>
+<a id='L998' name='L998'></a>                        exists = 1;
+<a id='L999' name='L999'></a>                        pos = i;
+<a id='L1000' name='L1000'></a>                        <strong class='reserved'>break</strong>;
+<a id='L1001' name='L1001'></a>                <em class='brace'>}</em>
+<a id='L1002' name='L1002'></a>        <em class='brace'>}</em>
+<a id='L1003' name='L1003'></a>
+<a id='L1004' name='L1004'></a>        <strong class='reserved'>if</strong> (!exists)
+<a id='L1005' name='L1005'></a>                pos = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer_size;
+<a id='L1006' name='L1006'></a>
+<a id='L1007' name='L1007'></a>        <strong class='reserved'>if</strong> (pos &gt;= <a href='../S/5822.html#L385' title='Defined at 385 in lib/gnutls_int.h.'>MAX_HANDSHAKE_MSGS</a>)
+<a id='L1008' name='L1008'></a>                <strong class='reserved'>return</strong>
+<a id='L1009' name='L1009'></a>                    <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_TOO_MANY_HANDSHAKE_PACKETS);
+<a id='L1010' name='L1010'></a>
+<a id='L1011' name='L1011'></a>        <strong class='reserved'>if</strong> (!exists) <em class='brace'>{</em>
+<a id='L1012' name='L1012'></a>                <strong class='reserved'>if</strong> (hsk-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> &gt; 0 &amp;&amp; hsk-&gt;end_offset &gt; 0
+<a id='L1013' name='L1013'></a>                    &amp;&amp; hsk-&gt;end_offset - hsk-&gt;start_offset + 1 !=
+<a id='L1014' name='L1014'></a>                    hsk-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>) <em class='brace'>{</em>
+<a id='L1015' name='L1015'></a>                        ret =
+<a id='L1016' name='L1016'></a>                            <a href='../S/5806.html#L157' title='Defined at 157 in lib/str.c.'>_gnutls_buffer_resize</a>(&amp;hsk-&gt;data, hsk-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L1017' name='L1017'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1018' name='L1018'></a>                                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L1019' name='L1019'></a>
+<a id='L1020' name='L1020'></a>                        hsk-&gt;data.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> = hsk-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L1021' name='L1021'></a>
+<a id='L1022' name='L1022'></a>                        memmove(&amp;hsk-&gt;data.data[hsk-&gt;start_offset],
+<a id='L1023' name='L1023'></a>                                hsk-&gt;data.data,
+<a id='L1024' name='L1024'></a>                                hsk-&gt;end_offset - hsk-&gt;start_offset + 1);
+<a id='L1025' name='L1025'></a>                <em class='brace'>}</em>
+<a id='L1026' name='L1026'></a>
+<a id='L1027' name='L1027'></a>                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer_size++;
+<a id='L1028' name='L1028'></a>
+<a id='L1029' name='L1029'></a>                <em class='comment'>/* rewrite headers to make them look as each packet came as a single fragment */</em>
+<a id='L1030' name='L1030'></a>                <a href='../S/5268.html#L56' title='Defined at 56 in lib/num.h.'>_gnutls_write_uint24</a>(hsk-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, &amp;hsk-&gt;<a href='../D/9917.html' title='Multiple defined in 2 places.'>header</a>[1]);
+<a id='L1031' name='L1031'></a>                <a href='../S/5268.html#L56' title='Defined at 56 in lib/num.h.'>_gnutls_write_uint24</a>(0, &amp;hsk-&gt;<a href='../D/9917.html' title='Multiple defined in 2 places.'>header</a>[6]);
+<a id='L1032' name='L1032'></a>                <a href='../S/5268.html#L56' title='Defined at 56 in lib/num.h.'>_gnutls_write_uint24</a>(hsk-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, &amp;hsk-&gt;<a href='../D/9917.html' title='Multiple defined in 2 places.'>header</a>[9]);
+<a id='L1033' name='L1033'></a>
+<a id='L1034' name='L1034'></a>                <a href='../S/5984.html#L977' title='Defined at 977 in lib/buffers.c.'>_gnutls_handshake_buffer_move</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1035' name='L1035'></a>                                              handshake_recv_buffer[pos],
+<a id='L1036' name='L1036'></a>                                              hsk);
+<a id='L1037' name='L1037'></a>
+<a id='L1038' name='L1038'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L1039' name='L1039'></a>                <strong class='reserved'>if</strong> (hsk-&gt;start_offset &lt;
+<a id='L1040' name='L1040'></a>                    <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer[pos].
+<a id='L1041' name='L1041'></a>                    start_offset
+<a id='L1042' name='L1042'></a>                    &amp;&amp; hsk-&gt;end_offset + 1 &gt;=
+<a id='L1043' name='L1043'></a>                    <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer[pos].
+<a id='L1044' name='L1044'></a>                    start_offset) <em class='brace'>{</em>
+<a id='L1045' name='L1045'></a>                        memcpy(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1046' name='L1046'></a>                               handshake_recv_buffer[pos].data.data[hsk-&gt;
+<a id='L1047' name='L1047'></a>                                                                    start_offset],
+<a id='L1048' name='L1048'></a>                               hsk-&gt;data.data, hsk-&gt;data.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L1049' name='L1049'></a>                        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer[pos].
+<a id='L1050' name='L1050'></a>                            start_offset = hsk-&gt;start_offset;
+<a id='L1051' name='L1051'></a>                        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer[pos].
+<a id='L1052' name='L1052'></a>                            end_offset =
+<a id='L1053' name='L1053'></a>                            <a href='../D/2832.html' title='Multiple defined in 10 places.'>MIN</a>(hsk-&gt;end_offset,
+<a id='L1054' name='L1054'></a>                                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1055' name='L1055'></a>                                handshake_recv_buffer[pos].end_offset);
+<a id='L1056' name='L1056'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (hsk-&gt;end_offset &gt;
+<a id='L1057' name='L1057'></a>                           <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer[pos].
+<a id='L1058' name='L1058'></a>                           end_offset
+<a id='L1059' name='L1059'></a>                           &amp;&amp; hsk-&gt;start_offset &lt;=
+<a id='L1060' name='L1060'></a>                           <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer[pos].
+<a id='L1061' name='L1061'></a>                           end_offset + 1) <em class='brace'>{</em>
+<a id='L1062' name='L1062'></a>                        memcpy(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1063' name='L1063'></a>                               handshake_recv_buffer[pos].data.data[hsk-&gt;
+<a id='L1064' name='L1064'></a>                                                                    start_offset],
+<a id='L1065' name='L1065'></a>                               hsk-&gt;data.data, hsk-&gt;data.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L1066' name='L1066'></a>
+<a id='L1067' name='L1067'></a>                        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer[pos].
+<a id='L1068' name='L1068'></a>                            end_offset = hsk-&gt;end_offset;
+<a id='L1069' name='L1069'></a>                        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer[pos].
+<a id='L1070' name='L1070'></a>                            start_offset =
+<a id='L1071' name='L1071'></a>                            <a href='../D/2832.html' title='Multiple defined in 10 places.'>MIN</a>(hsk-&gt;start_offset,
+<a id='L1072' name='L1072'></a>                                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1073' name='L1073'></a>                                handshake_recv_buffer[pos].start_offset);
+<a id='L1074' name='L1074'></a>                <em class='brace'>}</em>
+<a id='L1075' name='L1075'></a>                <a href='../S/6033.html#L85' title='Defined at 85 in lib/buffers.h.'>_gnutls_handshake_buffer_clear</a>(hsk);
+<a id='L1076' name='L1076'></a>        <em class='brace'>}</em>
+<a id='L1077' name='L1077'></a>
+<a id='L1078' name='L1078'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L1079' name='L1079'></a><em class='brace'>}</em>
+<a id='L1080' name='L1080'></a>
+<a id='L1081' name='L1081'></a><em class='comment'>/* returns non-zero on match and zero on mismatch</em>
+<a id='L1082' name='L1082'></a><em class='comment'> */</em>
+<a id='L1083' name='L1083'></a><strong class='reserved'>inline</strong> <strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5984.html#L1157' title='Referred from 1157 in lib/buffers.c.'>cmp_hsk_types</a>(gnutls_handshake_description_t expected,
+<a id='L1084' name='L1084'></a>                                gnutls_handshake_description_t recvd)
+<a id='L1085' name='L1085'></a><em class='brace'>{</em>
+<a id='L1086' name='L1086'></a>        <strong class='reserved'>if</strong> (expected == GNUTLS_HANDSHAKE_ANY)
+<a id='L1087' name='L1087'></a>                <strong class='reserved'>return</strong> 1;
+<a id='L1088' name='L1088'></a>
+<a id='L1089' name='L1089'></a><em class='sharp'>#ifdef</em> ENABLE_SSL2
+<a id='L1090' name='L1090'></a>        <strong class='reserved'>if</strong> (expected == GNUTLS_HANDSHAKE_CLIENT_HELLO
+<a id='L1091' name='L1091'></a>             &amp;&amp; recvd == GNUTLS_HANDSHAKE_CLIENT_HELLO_V2)
+<a id='L1092' name='L1092'></a>                <strong class='reserved'>return</strong> 1;
+<a id='L1093' name='L1093'></a><em class='sharp'>#endif</em>
+<a id='L1094' name='L1094'></a>        <strong class='reserved'>if</strong> (expected != recvd)
+<a id='L1095' name='L1095'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L1096' name='L1096'></a>
+<a id='L1097' name='L1097'></a>        <strong class='reserved'>return</strong> 1;
+<a id='L1098' name='L1098'></a><em class='brace'>}</em>
+<a id='L1099' name='L1099'></a>
+<a id='L1100' name='L1100'></a><em class='sharp'>#define</em> <a href='../R/2216.html' title='Multiple referred from 11 places.'>LAST_ELEMENT</a> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer_size-1)
+<a id='L1101' name='L1101'></a>
+<a id='L1102' name='L1102'></a><em class='comment'>/* returns the last stored handshake packet.</em>
+<a id='L1103' name='L1103'></a><em class='comment'> */</em>
+<a id='L1104' name='L1104'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../R/7220.html' title='Multiple referred from 3 places.'>get_last_packet</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L1105' name='L1105'></a>                           gnutls_handshake_description_t htype,
+<a id='L1106' name='L1106'></a>                           <a href='../S/5822.html#L408' title='Defined at 408 in lib/gnutls_int.h.'>handshake_buffer_st</a> * hsk,
+<a id='L1107' name='L1107'></a>                           <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> optional)
+<a id='L1108' name='L1108'></a><em class='brace'>{</em>
+<a id='L1109' name='L1109'></a>        <a href='../S/5822.html#L408' title='Defined at 408 in lib/gnutls_int.h.'>handshake_buffer_st</a> *recv_buf =
+<a id='L1110' name='L1110'></a>            <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer;
+<a id='L1111' name='L1111'></a>
+<a id='L1112' name='L1112'></a>        <strong class='reserved'>if</strong> (<a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)) <em class='brace'>{</em>
+<a id='L1113' name='L1113'></a>                <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer_size == 0 ||
+<a id='L1114' name='L1114'></a>                    (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.dtls.hsk_read_seq !=
+<a id='L1115' name='L1115'></a>                     recv_buf[<a href='../S/5984.html#L1100' title='Defined at 1100 in lib/buffers.c.'>LAST_ELEMENT</a>].sequence))
+<a id='L1116' name='L1116'></a>                        <strong class='reserved'>goto</strong> timeout;
+<a id='L1117' name='L1117'></a>
+<a id='L1118' name='L1118'></a>                <strong class='reserved'>if</strong> (htype != recv_buf[<a href='../S/5984.html#L1100' title='Defined at 1100 in lib/buffers.c.'>LAST_ELEMENT</a>].htype) <em class='brace'>{</em>
+<a id='L1119' name='L1119'></a>                        <strong class='reserved'>if</strong> (optional == 0)
+<a id='L1120' name='L1120'></a>                                <a href='../S/5298.html#L718' title='Defined at 718 in lib/errors.c.'>_gnutls_audit_log</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L1121' name='L1121'></a>                                                  "Received unexpected handshake message '%s' (%d). Expected '%s' (%d)\n",
+<a id='L1122' name='L1122'></a>                                                  <a href='../S/5626.html#L27' title='Defined at 27 in lib/debug.h.'>_gnutls_handshake2str</a>
+<a id='L1123' name='L1123'></a>                                                  (recv_buf[0].htype),
+<a id='L1124' name='L1124'></a>                                                  (<strong class='reserved'>int</strong>) recv_buf[0].htype,
+<a id='L1125' name='L1125'></a>                                                  <a href='../S/5626.html#L27' title='Defined at 27 in lib/debug.h.'>_gnutls_handshake2str</a>
+<a id='L1126' name='L1126'></a>                                                  (htype), (<strong class='reserved'>int</strong>) htype);
+<a id='L1127' name='L1127'></a>
+<a id='L1128' name='L1128'></a>                        <strong class='reserved'>return</strong>
+<a id='L1129' name='L1129'></a>                            <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>
+<a id='L1130' name='L1130'></a>                            (GNUTLS_E_UNEXPECTED_HANDSHAKE_PACKET);
+<a id='L1131' name='L1131'></a>                <em class='brace'>}</em>
+<a id='L1132' name='L1132'></a>
+<a id='L1133' name='L1133'></a>                <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> ((recv_buf[<a href='../S/5984.html#L1100' title='Defined at 1100 in lib/buffers.c.'>LAST_ELEMENT</a>].start_offset == 0 &amp;&amp;
+<a id='L1134' name='L1134'></a>                          recv_buf[<a href='../S/5984.html#L1100' title='Defined at 1100 in lib/buffers.c.'>LAST_ELEMENT</a>].end_offset ==
+<a id='L1135' name='L1135'></a>                          recv_buf[<a href='../S/5984.html#L1100' title='Defined at 1100 in lib/buffers.c.'>LAST_ELEMENT</a>].<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> - 1)
+<a id='L1136' name='L1136'></a>                         || recv_buf[<a href='../S/5984.html#L1100' title='Defined at 1100 in lib/buffers.c.'>LAST_ELEMENT</a>].<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> == 0) <em class='brace'>{</em>
+<a id='L1137' name='L1137'></a>                        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.dtls.hsk_read_seq++;
+<a id='L1138' name='L1138'></a>                        <a href='../S/5984.html#L977' title='Defined at 977 in lib/buffers.c.'>_gnutls_handshake_buffer_move</a>(hsk,
+<a id='L1139' name='L1139'></a>                                                      &amp;recv_buf
+<a id='L1140' name='L1140'></a>                                                      [<a href='../S/5984.html#L1100' title='Defined at 1100 in lib/buffers.c.'>LAST_ELEMENT</a>]);
+<a id='L1141' name='L1141'></a>                        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer_size--;
+<a id='L1142' name='L1142'></a>                        <strong class='reserved'>return</strong> 0;
+<a id='L1143' name='L1143'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L1144' name='L1144'></a>                        <em class='comment'>/* if we don't have a complete handshake message, but we</em>
+<a id='L1145' name='L1145'></a><em class='comment'>                         * have queued data waiting, try again to reconstruct the</em>
+<a id='L1146' name='L1146'></a><em class='comment'>                         * handshake packet, using the queued */</em>
+<a id='L1147' name='L1147'></a>                        <strong class='reserved'>if</strong> (recv_buf[<a href='../S/5984.html#L1100' title='Defined at 1100 in lib/buffers.c.'>LAST_ELEMENT</a>].end_offset != recv_buf[<a href='../S/5984.html#L1100' title='Defined at 1100 in lib/buffers.c.'>LAST_ELEMENT</a>].<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> - 1 &amp;&amp;
+<a id='L1148' name='L1148'></a>                            <a href='../S/6033.html#L53' title='Defined at 53 in lib/buffers.h.'>record_check_unprocessed</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>) &gt; 0)
+<a id='L1149' name='L1149'></a>                                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INT_CHECK_AGAIN);
+<a id='L1150' name='L1150'></a>                        <strong class='reserved'>else</strong>
+<a id='L1151' name='L1151'></a>                                <strong class='reserved'>goto</strong> timeout;
+<a id='L1152' name='L1152'></a>                <em class='brace'>}</em>
+<a id='L1153' name='L1153'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>                <em class='comment'>/* TLS */</em>
+<a id='L1154' name='L1154'></a>
+<a id='L1155' name='L1155'></a>                <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer_size &gt; 0
+<a id='L1156' name='L1156'></a>                    &amp;&amp; recv_buf[0].<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> == recv_buf[0].data.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>) <em class='brace'>{</em>
+<a id='L1157' name='L1157'></a>                        <strong class='reserved'>if</strong> (<a href='../S/5984.html#L1083' title='Defined at 1083 in lib/buffers.c.'>cmp_hsk_types</a>(htype, recv_buf[0].htype) == 0) <em class='brace'>{</em>
+<a id='L1158' name='L1158'></a>                                <strong class='reserved'>return</strong>
+<a id='L1159' name='L1159'></a>                                    <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>
+<a id='L1160' name='L1160'></a>                                    (GNUTLS_E_UNEXPECTED_HANDSHAKE_PACKET);
+<a id='L1161' name='L1161'></a>                        <em class='brace'>}</em>
+<a id='L1162' name='L1162'></a>
+<a id='L1163' name='L1163'></a>                        <a href='../S/5984.html#L977' title='Defined at 977 in lib/buffers.c.'>_gnutls_handshake_buffer_move</a>(hsk, &amp;recv_buf[0]);
+<a id='L1164' name='L1164'></a>                        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer_size--;
+<a id='L1165' name='L1165'></a>                        <strong class='reserved'>return</strong> 0;
+<a id='L1166' name='L1166'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong>
+<a id='L1167' name='L1167'></a>                        <strong class='reserved'>return</strong>
+<a id='L1168' name='L1168'></a>                            <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>
+<a id='L1169' name='L1169'></a>                            (GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE);
+<a id='L1170' name='L1170'></a>        <em class='brace'>}</em>
+<a id='L1171' name='L1171'></a>
+<a id='L1172' name='L1172'></a>      timeout:
+<a id='L1173' name='L1173'></a>        <a href='../S/5264.html#L40' title='Defined at 40 in lib/dtls.h.'>RETURN_DTLS_EAGAIN_OR_TIMEOUT</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, 0);
+<a id='L1174' name='L1174'></a><em class='brace'>}</em>
+<a id='L1175' name='L1175'></a>
+<a id='L1176' name='L1176'></a><em class='comment'>/* This is a receive function for the gnutls handshake</em>
+<a id='L1177' name='L1177'></a><em class='comment'> * protocol. Makes sure that we have received all data.</em>
+<a id='L1178' name='L1178'></a><em class='comment'> *</em>
+<a id='L1179' name='L1179'></a><em class='comment'> * htype is the next handshake packet expected.</em>
+<a id='L1180' name='L1180'></a><em class='comment'> */</em>
+<a id='L1181' name='L1181'></a><strong class='reserved'>int</strong> <a href='../R/5303.html' title='Multiple referred from 4 places.'>_gnutls_parse_record_buffered_msgs</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L1182' name='L1182'></a><em class='brace'>{</em>
+<a id='L1183' name='L1183'></a>        gnutls_datum_t msg;
+<a id='L1184' name='L1184'></a>        <a href='../D/10276.html' title='Multiple defined in 2 places.'>mbuffer_st</a> *bufel = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, *prev = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L1185' name='L1185'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L1186' name='L1186'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> data_size;
+<a id='L1187' name='L1187'></a>        <a href='../S/5822.html#L408' title='Defined at 408 in lib/gnutls_int.h.'>handshake_buffer_st</a> *recv_buf =
+<a id='L1188' name='L1188'></a>            <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer;
+<a id='L1189' name='L1189'></a>
+<a id='L1190' name='L1190'></a>        bufel =
+<a id='L1191' name='L1191'></a>            <a href='../S/5396.html#L173' title='Defined at 173 in lib/mbuffers.c.'>_mbuffer_head_get_first</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.record_buffer,
+<a id='L1192' name='L1192'></a>                                    &amp;msg);
+<a id='L1193' name='L1193'></a>        <strong class='reserved'>if</strong> (bufel == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L1194' name='L1194'></a>                <strong class='reserved'>return</strong> GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE;
+<a id='L1195' name='L1195'></a>
+<a id='L1196' name='L1196'></a>        <strong class='reserved'>if</strong> (!<a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)) <em class='brace'>{</em>
+<a id='L1197' name='L1197'></a>                <a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a> <a href='../D/6814.html' title='Multiple defined in 5 places.'>append</a>, header_size;
+<a id='L1198' name='L1198'></a>
+<a id='L1199' name='L1199'></a>                <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L1200' name='L1200'></a>                        <strong class='reserved'>if</strong> (bufel-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> != <a href='../S/5822.html#L370' title='Defined at 370 in lib/gnutls_int.h.'>GNUTLS_HANDSHAKE</a>)
+<a id='L1201' name='L1201'></a>                                <strong class='reserved'>return</strong>
+<a id='L1202' name='L1202'></a>                                    <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>
+<a id='L1203' name='L1203'></a>                                    (GNUTLS_E_UNEXPECTED_PACKET);
+<a id='L1204' name='L1204'></a>
+<a id='L1205' name='L1205'></a>                        <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>
+<a id='L1206' name='L1206'></a>                            (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer_size == 0 &amp;&amp;
+<a id='L1207' name='L1207'></a>                             msg.size &lt; <a href='../S/5822.html#L204' title='Defined at 204 in lib/gnutls_int.h.'>HANDSHAKE_HEADER_SIZE</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>) &amp;&amp;
+<a id='L1208' name='L1208'></a>                             <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_header_recv_buffer.byte_length &lt;
+<a id='L1209' name='L1209'></a>                             <a href='../S/5822.html#L204' title='Defined at 204 in lib/gnutls_int.h.'>HANDSHAKE_HEADER_SIZE</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>) - msg.size)) <em class='brace'>{</em>
+<a id='L1210' name='L1210'></a>                                bufel = <a href='../S/5396.html#L155' title='Defined at 155 in lib/mbuffers.c.'>_mbuffer_head_pop_first</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.record_buffer);
+<a id='L1211' name='L1211'></a>                                <a href='../S/5396.html#L84' title='Defined at 84 in lib/mbuffers.c.'>_mbuffer_enqueue</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_header_recv_buffer,
+<a id='L1212' name='L1212'></a>                                                 bufel);
+<a id='L1213' name='L1213'></a>                                <strong class='reserved'>break</strong>;
+<a id='L1214' name='L1214'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer_size &gt;
+<a id='L1215' name='L1215'></a>                                   0 &amp;&amp; recv_buf[0].<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> &gt; recv_buf[0].data.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>) <em class='brace'>{</em>
+<a id='L1216' name='L1216'></a>                                <em class='comment'>/* this is the rest of a previous message */</em>
+<a id='L1217' name='L1217'></a>                                <a href='../D/6814.html' title='Multiple defined in 5 places.'>append</a> = <a href='../D/2832.html' title='Multiple defined in 10 places.'>MIN</a>(msg.size,
+<a id='L1218' name='L1218'></a>                                             recv_buf[0].<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> -
+<a id='L1219' name='L1219'></a>                                             recv_buf[0].data.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>);
+<a id='L1220' name='L1220'></a>
+<a id='L1221' name='L1221'></a>                                ret =
+<a id='L1222' name='L1222'></a>                                    <a href='../S/5333.html#L107' title='Defined at 107 in lib/str.h.'>_gnutls_buffer_append_data</a>(&amp;recv_buf
+<a id='L1223' name='L1223'></a>                                                               [0].data,
+<a id='L1224' name='L1224'></a>                                                               msg.data,
+<a id='L1225' name='L1225'></a>                                                               <a href='../D/6814.html' title='Multiple defined in 5 places.'>append</a>);
+<a id='L1226' name='L1226'></a>                                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1227' name='L1227'></a>                                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L1228' name='L1228'></a>
+<a id='L1229' name='L1229'></a>                                <a href='../S/5396.html#L240' title='Defined at 240 in lib/mbuffers.c.'>_mbuffer_head_remove_bytes</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;
+<a id='L1230' name='L1230'></a>                                                           internals.
+<a id='L1231' name='L1231'></a>                                                           record_buffer,
+<a id='L1232' name='L1232'></a>                                                           <a href='../D/6814.html' title='Multiple defined in 5 places.'>append</a>);
+<a id='L1233' name='L1233'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>        <em class='comment'>/* received new message */</em>
+<a id='L1234' name='L1234'></a>                                <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>
+<a id='L1235' name='L1235'></a>                                    (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1236' name='L1236'></a>                                     handshake_header_recv_buffer.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> &gt; 0)) <em class='brace'>{</em>
+<a id='L1237' name='L1237'></a>                                        bufel = <a href='../S/5396.html#L155' title='Defined at 155 in lib/mbuffers.c.'>_mbuffer_head_pop_first</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1238' name='L1238'></a>                                                                        record_buffer);
+<a id='L1239' name='L1239'></a>                                        <a href='../S/5396.html#L84' title='Defined at 84 in lib/mbuffers.c.'>_mbuffer_enqueue</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1240' name='L1240'></a>                                                         handshake_header_recv_buffer,
+<a id='L1241' name='L1241'></a>                                                         bufel);
+<a id='L1242' name='L1242'></a>                                        ret = <a href='../D/6526.html' title='Multiple defined in 2 places.'>_mbuffer_linearize_align16</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1243' name='L1243'></a>                                                                         handshake_header_recv_buffer,
+<a id='L1244' name='L1244'></a>                                                                         <a href='../S/5295.html#L81' title='Defined at 81 in lib/record.h.'>get_total_headers</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>));
+<a id='L1245' name='L1245'></a>                                        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1246' name='L1246'></a>                                                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L1247' name='L1247'></a>                                        bufel = <a href='../S/5396.html#L155' title='Defined at 155 in lib/mbuffers.c.'>_mbuffer_head_pop_first</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1248' name='L1248'></a>                                                                        handshake_header_recv_buffer);
+<a id='L1249' name='L1249'></a>                                        <a href='../S/5396.html#L133' title='Defined at 133 in lib/mbuffers.c.'>_mbuffer_head_push_first</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1250' name='L1250'></a>                                                                 record_buffer,
+<a id='L1251' name='L1251'></a>                                                                 bufel);
+<a id='L1252' name='L1252'></a>                                <em class='brace'>}</em>
+<a id='L1253' name='L1253'></a>
+<a id='L1254' name='L1254'></a>                                ret =
+<a id='L1255' name='L1255'></a>                                    <a href='../S/5984.html#L878' title='Defined at 878 in lib/buffers.c.'>parse_handshake_header</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, bufel,
+<a id='L1256' name='L1256'></a>                                                           &amp;recv_buf[0]);
+<a id='L1257' name='L1257'></a>                                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1258' name='L1258'></a>                                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L1259' name='L1259'></a>
+<a id='L1260' name='L1260'></a>                                header_size = ret;
+<a id='L1261' name='L1261'></a>                                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1262' name='L1262'></a>                                    handshake_recv_buffer_size = 1;
+<a id='L1263' name='L1263'></a>
+<a id='L1264' name='L1264'></a>                                <a href='../S/5459.html#L102' title='Defined at 102 in lib/mbuffers.h.'>_mbuffer_set_uhead_size</a>(bufel,
+<a id='L1265' name='L1265'></a>                                                        header_size);
+<a id='L1266' name='L1266'></a>
+<a id='L1267' name='L1267'></a>                                data_size =
+<a id='L1268' name='L1268'></a>                                    <a href='../D/2832.html' title='Multiple defined in 10 places.'>MIN</a>(recv_buf[0].<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>,
+<a id='L1269' name='L1269'></a>                                        <a href='../S/5459.html#L79' title='Defined at 79 in lib/mbuffers.h.'>_mbuffer_get_udata_size</a>(bufel));
+<a id='L1270' name='L1270'></a>                                ret =
+<a id='L1271' name='L1271'></a>                                    <a href='../S/5333.html#L107' title='Defined at 107 in lib/str.h.'>_gnutls_buffer_append_data</a>(&amp;recv_buf
+<a id='L1272' name='L1272'></a>                                                               [0].data,
+<a id='L1273' name='L1273'></a>                                                               <a href='../S/5459.html#L61' title='Defined at 61 in lib/mbuffers.h.'>_mbuffer_get_udata_ptr</a>
+<a id='L1274' name='L1274'></a>                                                               (bufel),
+<a id='L1275' name='L1275'></a>                                                               data_size);
+<a id='L1276' name='L1276'></a>                                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1277' name='L1277'></a>                                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L1278' name='L1278'></a>                                <a href='../S/5459.html#L102' title='Defined at 102 in lib/mbuffers.h.'>_mbuffer_set_uhead_size</a>(bufel, 0);
+<a id='L1279' name='L1279'></a>                                <a href='../S/5396.html#L240' title='Defined at 240 in lib/mbuffers.c.'>_mbuffer_head_remove_bytes</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;
+<a id='L1280' name='L1280'></a>                                                           internals.
+<a id='L1281' name='L1281'></a>                                                           record_buffer,
+<a id='L1282' name='L1282'></a>                                                           data_size +
+<a id='L1283' name='L1283'></a>                                                           header_size);
+<a id='L1284' name='L1284'></a>                        <em class='brace'>}</em>
+<a id='L1285' name='L1285'></a>
+<a id='L1286' name='L1286'></a>                        <em class='comment'>/* if packet is complete then return it</em>
+<a id='L1287' name='L1287'></a><em class='comment'>                         */</em>
+<a id='L1288' name='L1288'></a>                        <strong class='reserved'>if</strong> (recv_buf[0].<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> == recv_buf[0].data.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>) <em class='brace'>{</em>
+<a id='L1289' name='L1289'></a>                                <strong class='reserved'>return</strong> 0;
+<a id='L1290' name='L1290'></a>                        <em class='brace'>}</em>
+<a id='L1291' name='L1291'></a>                        bufel =
+<a id='L1292' name='L1292'></a>                            <a href='../S/5396.html#L173' title='Defined at 173 in lib/mbuffers.c.'>_mbuffer_head_get_first</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1293' name='L1293'></a>                                                    record_buffer, &amp;msg);
+<a id='L1294' name='L1294'></a>                <em class='brace'>}</em>
+<a id='L1295' name='L1295'></a>                <strong class='reserved'>while</strong> (bufel != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L1296' name='L1296'></a>
+<a id='L1297' name='L1297'></a>                <em class='comment'>/* if we are here it means that the received packets were not</em>
+<a id='L1298' name='L1298'></a><em class='comment'>                 * enough to complete the handshake packet.</em>
+<a id='L1299' name='L1299'></a><em class='comment'>                 */</em>
+<a id='L1300' name='L1300'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_AGAIN);
+<a id='L1301' name='L1301'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>                <em class='comment'>/* DTLS */</em>
+<a id='L1302' name='L1302'></a>
+<a id='L1303' name='L1303'></a>                <a href='../S/5822.html#L408' title='Defined at 408 in lib/gnutls_int.h.'>handshake_buffer_st</a> tmp;
+<a id='L1304' name='L1304'></a>
+<a id='L1305' name='L1305'></a>                <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L1306' name='L1306'></a>                        <em class='comment'>/* we now</em>
+<a id='L1307' name='L1307'></a><em class='comment'>                         * 0. parse headers</em>
+<a id='L1308' name='L1308'></a><em class='comment'>                         * 1. insert to handshake_recv_buffer</em>
+<a id='L1309' name='L1309'></a><em class='comment'>                         * 2. sort handshake_recv_buffer on sequence numbers</em>
+<a id='L1310' name='L1310'></a><em class='comment'>                         * 3. return first packet if completed or GNUTLS_E_AGAIN.</em>
+<a id='L1311' name='L1311'></a><em class='comment'>                         */</em>
+<a id='L1312' name='L1312'></a>                        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L1313' name='L1313'></a>                                <strong class='reserved'>if</strong> (bufel-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> != <a href='../S/5822.html#L370' title='Defined at 370 in lib/gnutls_int.h.'>GNUTLS_HANDSHAKE</a>) <em class='brace'>{</em>
+<a id='L1314' name='L1314'></a>                                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1315' name='L1315'></a>                                        <strong class='reserved'>goto</strong> next;      <em class='comment'>/* ignore packet */</em>
+<a id='L1316' name='L1316'></a>                                <em class='brace'>}</em>
+<a id='L1317' name='L1317'></a>
+<a id='L1318' name='L1318'></a>                                <a href='../S/6033.html#L92' title='Defined at 92 in lib/buffers.h.'>_gnutls_handshake_buffer_init</a>(&amp;tmp);
+<a id='L1319' name='L1319'></a>
+<a id='L1320' name='L1320'></a>                                ret =
+<a id='L1321' name='L1321'></a>                                    <a href='../S/5984.html#L878' title='Defined at 878 in lib/buffers.c.'>parse_handshake_header</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, bufel,
+<a id='L1322' name='L1322'></a>                                                           &amp;tmp);
+<a id='L1323' name='L1323'></a>                                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1324' name='L1324'></a>                                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1325' name='L1325'></a>                                        <a href='../S/5298.html#L718' title='Defined at 718 in lib/errors.c.'>_gnutls_audit_log</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L1326' name='L1326'></a>                                                          "Invalid handshake packet headers. Discarding.\n");
+<a id='L1327' name='L1327'></a>                                        <strong class='reserved'>break</strong>;
+<a id='L1328' name='L1328'></a>                                <em class='brace'>}</em>
+<a id='L1329' name='L1329'></a>
+<a id='L1330' name='L1330'></a>                                <a href='../S/5459.html#L86' title='Defined at 86 in lib/mbuffers.h.'>_mbuffer_consume</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1331' name='L1331'></a>                                                 record_buffer, bufel,
+<a id='L1332' name='L1332'></a>                                                 ret);
+<a id='L1333' name='L1333'></a>
+<a id='L1334' name='L1334'></a>                                data_size =
+<a id='L1335' name='L1335'></a>                                    <a href='../D/2832.html' title='Multiple defined in 10 places.'>MIN</a>(tmp.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>,
+<a id='L1336' name='L1336'></a>                                        tmp.end_offset - tmp.start_offset +
+<a id='L1337' name='L1337'></a>                                        1);
+<a id='L1338' name='L1338'></a>
+<a id='L1339' name='L1339'></a>                                ret =
+<a id='L1340' name='L1340'></a>                                    <a href='../S/5333.html#L107' title='Defined at 107 in lib/str.h.'>_gnutls_buffer_append_data</a>(&amp;tmp.data,
+<a id='L1341' name='L1341'></a>                                                               <a href='../S/5459.html#L61' title='Defined at 61 in lib/mbuffers.h.'>_mbuffer_get_udata_ptr</a>
+<a id='L1342' name='L1342'></a>                                                               (bufel),
+<a id='L1343' name='L1343'></a>                                                               data_size);
+<a id='L1344' name='L1344'></a>                                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1345' name='L1345'></a>                                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L1346' name='L1346'></a>
+<a id='L1347' name='L1347'></a>                                <a href='../S/5459.html#L86' title='Defined at 86 in lib/mbuffers.h.'>_mbuffer_consume</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1348' name='L1348'></a>                                                 record_buffer, bufel,
+<a id='L1349' name='L1349'></a>                                                 data_size);
+<a id='L1350' name='L1350'></a>
+<a id='L1351' name='L1351'></a>                                ret =
+<a id='L1352' name='L1352'></a>                                    <a href='../S/5984.html#L989' title='Defined at 989 in lib/buffers.c.'>merge_handshake_packet</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;tmp);
+<a id='L1353' name='L1353'></a>                                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1354' name='L1354'></a>                                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L1355' name='L1355'></a>
+<a id='L1356' name='L1356'></a>                        <em class='brace'>}</em>
+<a id='L1357' name='L1357'></a>                        <strong class='reserved'>while</strong> (<a href='../S/5459.html#L79' title='Defined at 79 in lib/mbuffers.h.'>_mbuffer_get_udata_size</a>(bufel) &gt; 0);
+<a id='L1358' name='L1358'></a>
+<a id='L1359' name='L1359'></a>                        prev = bufel;
+<a id='L1360' name='L1360'></a>                        bufel =
+<a id='L1361' name='L1361'></a>                            <a href='../S/5396.html#L105' title='Defined at 105 in lib/mbuffers.c.'>_mbuffer_dequeue</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1362' name='L1362'></a>                                             record_buffer, bufel);
+<a id='L1363' name='L1363'></a>
+<a id='L1364' name='L1364'></a>                        <a href='../S/5459.html#L185' title='Defined at 185 in lib/mbuffers.h.'>_mbuffer_xfree</a>(&amp;prev);
+<a id='L1365' name='L1365'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L1366' name='L1366'></a>
+<a id='L1367' name='L1367'></a>                      next:
+<a id='L1368' name='L1368'></a>                        bufel = <a href='../S/5396.html#L196' title='Defined at 196 in lib/mbuffers.c.'>_mbuffer_head_get_next</a>(bufel, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L1369' name='L1369'></a>                <em class='brace'>}</em>
+<a id='L1370' name='L1370'></a>                <strong class='reserved'>while</strong> (bufel != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L1371' name='L1371'></a>
+<a id='L1372' name='L1372'></a>                <em class='comment'>/* sort in descending order */</em>
+<a id='L1373' name='L1373'></a>                <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer_size &gt; 1)
+<a id='L1374' name='L1374'></a>                        qsort(recv_buf,
+<a id='L1375' name='L1375'></a>                              <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.
+<a id='L1376' name='L1376'></a>                              handshake_recv_buffer_size,
+<a id='L1377' name='L1377'></a>                              <strong class='reserved'>sizeof</strong>(recv_buf[0]), <a href='../S/5984.html#L865' title='Defined at 865 in lib/buffers.c.'>handshake_compare</a>);
+<a id='L1378' name='L1378'></a>
+<a id='L1379' name='L1379'></a>                <strong class='reserved'>while</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer_size &gt; 0 &amp;&amp;
+<a id='L1380' name='L1380'></a>                       recv_buf[<a href='../S/5984.html#L1100' title='Defined at 1100 in lib/buffers.c.'>LAST_ELEMENT</a>].sequence &lt;
+<a id='L1381' name='L1381'></a>                       <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.dtls.hsk_read_seq) <em class='brace'>{</em>
+<a id='L1382' name='L1382'></a>                        <a href='../S/5298.html#L718' title='Defined at 718 in lib/errors.c.'>_gnutls_audit_log</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L1383' name='L1383'></a>                                          "Discarded replayed handshake packet with sequence %d\n",
+<a id='L1384' name='L1384'></a>                                          recv_buf[<a href='../S/5984.html#L1100' title='Defined at 1100 in lib/buffers.c.'>LAST_ELEMENT</a>].sequence);
+<a id='L1385' name='L1385'></a>                        <a href='../S/6033.html#L85' title='Defined at 85 in lib/buffers.h.'>_gnutls_handshake_buffer_clear</a>(&amp;recv_buf
+<a id='L1386' name='L1386'></a>                                                       [<a href='../S/5984.html#L1100' title='Defined at 1100 in lib/buffers.c.'>LAST_ELEMENT</a>]);
+<a id='L1387' name='L1387'></a>                        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.handshake_recv_buffer_size--;
+<a id='L1388' name='L1388'></a>                <em class='brace'>}</em>
+<a id='L1389' name='L1389'></a>
+<a id='L1390' name='L1390'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L1391' name='L1391'></a>        <em class='brace'>}</em>
+<a id='L1392' name='L1392'></a><em class='brace'>}</em>
+<a id='L1393' name='L1393'></a>
+<a id='L1394' name='L1394'></a><em class='comment'>/* This is a receive function for the gnutls handshake</em>
+<a id='L1395' name='L1395'></a><em class='comment'> * protocol. Makes sure that we have received all data.</em>
+<a id='L1396' name='L1396'></a><em class='comment'> */</em>
+<a id='L1397' name='L1397'></a><a href='../D/11549.html' title='Multiple defined in 2 places.'>ssize_t</a>
+<a id='L1398' name='L1398'></a><a href='../R/5122.html' title='Multiple referred from 3 places.'>_gnutls_handshake_io_recv_int</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L1399' name='L1399'></a>                              gnutls_handshake_description_t htype,
+<a id='L1400' name='L1400'></a>                              <a href='../S/5822.html#L408' title='Defined at 408 in lib/gnutls_int.h.'>handshake_buffer_st</a> * hsk,
+<a id='L1401' name='L1401'></a>                              <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> optional)
+<a id='L1402' name='L1402'></a><em class='brace'>{</em>
+<a id='L1403' name='L1403'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L1404' name='L1404'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> tleft = 0;
+<a id='L1405' name='L1405'></a>        <strong class='reserved'>int</strong> retries = 7;
+<a id='L1406' name='L1406'></a>
+<a id='L1407' name='L1407'></a>        ret = <a href='../S/5984.html#L1104' title='Defined at 1104 in lib/buffers.c.'>get_last_packet</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, htype, hsk, optional);
+<a id='L1408' name='L1408'></a>        <strong class='reserved'>if</strong> (ret != GNUTLS_E_AGAIN &amp;&amp; ret != GNUTLS_E_INTERRUPTED &amp;&amp;
+<a id='L1409' name='L1409'></a>            ret != GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE &amp;&amp;
+<a id='L1410' name='L1410'></a>            ret != GNUTLS_E_INT_CHECK_AGAIN) <em class='brace'>{</em>
+<a id='L1411' name='L1411'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L1412' name='L1412'></a>        <em class='brace'>}</em>
+<a id='L1413' name='L1413'></a>
+<a id='L1414' name='L1414'></a>        <em class='comment'>/* try using the already existing records before</em>
+<a id='L1415' name='L1415'></a><em class='comment'>         * trying to receive.</em>
+<a id='L1416' name='L1416'></a><em class='comment'>         */</em>
+<a id='L1417' name='L1417'></a>        ret = <a href='../S/5984.html#L1181' title='Defined at 1181 in lib/buffers.c.'>_gnutls_parse_record_buffered_msgs</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L1418' name='L1418'></a>
+<a id='L1419' name='L1419'></a>        <strong class='reserved'>if</strong> (ret == 0) <em class='brace'>{</em>
+<a id='L1420' name='L1420'></a>                ret = <a href='../S/5984.html#L1104' title='Defined at 1104 in lib/buffers.c.'>get_last_packet</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, htype, hsk, optional);
+<a id='L1421' name='L1421'></a>        <em class='brace'>}</em>
+<a id='L1422' name='L1422'></a>
+<a id='L1423' name='L1423'></a>        <strong class='reserved'>if</strong> (<a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)) <em class='brace'>{</em>
+<a id='L1424' name='L1424'></a>                <strong class='reserved'>if</strong> (ret &gt;= 0)
+<a id='L1425' name='L1425'></a>                        <strong class='reserved'>return</strong> ret;
+<a id='L1426' name='L1426'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L1427' name='L1427'></a>                <strong class='reserved'>if</strong> ((ret != GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE
+<a id='L1428' name='L1428'></a>                     &amp;&amp; ret &lt; 0) || ret &gt;= 0)
+<a id='L1429' name='L1429'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L1430' name='L1430'></a>        <em class='brace'>}</em>
+<a id='L1431' name='L1431'></a>
+<a id='L1432' name='L1432'></a>        <strong class='reserved'>if</strong> (htype != (gnutls_handshake_description_t) -1) <em class='brace'>{</em>
+<a id='L1433' name='L1433'></a>                ret = <a href='../S/5744.html#L116' title='Defined at 116 in lib/handshake.h.'>handshake_remaining_time</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L1434' name='L1434'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1435' name='L1435'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L1436' name='L1436'></a>                tleft = ret;
+<a id='L1437' name='L1437'></a>        <em class='brace'>}</em>
+<a id='L1438' name='L1438'></a>
+<a id='L1439' name='L1439'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L1440' name='L1440'></a>                <em class='comment'>/* if we don't have a complete message waiting for us, try</em>
+<a id='L1441' name='L1441'></a><em class='comment'>                 * receiving more */</em>
+<a id='L1442' name='L1442'></a>                ret =
+<a id='L1443' name='L1443'></a>                    <a href='../S/5258.html#L1264' title='Defined at 1264 in lib/record.c.'>_gnutls_recv_in_buffers</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../S/5822.html#L370' title='Defined at 370 in lib/gnutls_int.h.'>GNUTLS_HANDSHAKE</a>, htype,
+<a id='L1444' name='L1444'></a>                                            tleft);
+<a id='L1445' name='L1445'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1446' name='L1446'></a>                        <strong class='reserved'>return</strong> <a href='../S/5996.html#L144' title='Defined at 144 in lib/errors.h.'>gnutls_assert_val_fatal</a>(ret);
+<a id='L1447' name='L1447'></a>
+<a id='L1448' name='L1448'></a>                ret = <a href='../S/5984.html#L1181' title='Defined at 1181 in lib/buffers.c.'>_gnutls_parse_record_buffered_msgs</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L1449' name='L1449'></a>                <strong class='reserved'>if</strong> (ret == 0) <em class='brace'>{</em>
+<a id='L1450' name='L1450'></a>                        ret = <a href='../S/5984.html#L1104' title='Defined at 1104 in lib/buffers.c.'>get_last_packet</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, htype, hsk, optional);
+<a id='L1451' name='L1451'></a>                <em class='brace'>}</em>
+<a id='L1452' name='L1452'></a>                <em class='comment'>/* we put an upper limit (retries) to the number of partial handshake</em>
+<a id='L1453' name='L1453'></a><em class='comment'>                 * messages in a record packet. */</em>
+<a id='L1454' name='L1454'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong>(<a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>) &amp;&amp; ret == GNUTLS_E_INT_CHECK_AGAIN &amp;&amp; retries-- &gt; 0);
+<a id='L1455' name='L1455'></a>
+<a id='L1456' name='L1456'></a>        <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>(<a href='../S/5822.html#L178' title='Defined at 178 in lib/gnutls_int.h.'>IS_DTLS</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>) &amp;&amp; ret == GNUTLS_E_INT_CHECK_AGAIN)) <em class='brace'>{</em>
+<a id='L1457' name='L1457'></a>                ret = <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_TOO_MANY_HANDSHAKE_PACKETS);
+<a id='L1458' name='L1458'></a>        <em class='brace'>}</em>
+<a id='L1459' name='L1459'></a>
+<a id='L1460' name='L1460'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L1461' name='L1461'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L69'>[^]</a><a href='#L1398'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

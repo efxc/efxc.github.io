@@ -1,0 +1,700 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src/benchmark-tls.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6496.html'>src</a>/benchmark-tls.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L272'>[^]</a><a href='#L609'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L272' title='Defined at 272.'>tls_log_func</a></li>
+<li><a href='#L277' title='Defined at 277.'>test_ciphersuite</a></li>
+<li><a href='#L404' title='Defined at 404.'>calc_avg</a></li>
+<li><a href='#L418' title='Defined at 418.'>calc_svar</a></li>
+<li><a href='#L439' title='Defined at 439.'>test_ciphersuite_kx</a></li>
+<li><a href='#L609' title='Defined at 609.'>benchmark_tls</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2011-2012 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> * Copyright (C) 2017 Red Hat, Inc.</em>
+<a id='L4' name='L4'></a><em class='comment'> *</em>
+<a id='L5' name='L5'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L8' name='L8'></a><em class='comment'> *</em>
+<a id='L9' name='L9'></a><em class='comment'> * GnuTLS is free software; you can redistribute it and/or modify it</em>
+<a id='L10' name='L10'></a><em class='comment'> * under the terms of the GNU General Public License as published by</em>
+<a id='L11' name='L11'></a><em class='comment'> * the Free Software Foundation; either version 3 of the License, or</em>
+<a id='L12' name='L12'></a><em class='comment'> * (at your option) any later version.</em>
+<a id='L13' name='L13'></a><em class='comment'> *</em>
+<a id='L14' name='L14'></a><em class='comment'> * GnuTLS is distributed in the hope that it will be useful, but</em>
+<a id='L15' name='L15'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L16' name='L16'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L17' name='L17'></a><em class='comment'> * General Public License for more details.</em>
+<a id='L18' name='L18'></a><em class='comment'> *</em>
+<a id='L19' name='L19'></a><em class='comment'> * You should have received a copy of the GNU General Public License</em>
+<a id='L20' name='L20'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;.</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#ifdef</em> HAVE_CONFIG_H
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L25' name='L25'></a><em class='sharp'>#endif</em>
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;gnutls/gnutls.h&gt;
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> &lt;<a href='../I/579.html'>gnutls/crypto.h</a>&gt;
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;math.h&gt;
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='sharp'>#define</em> <a href='../R/6951.html' title='Multiple referred from 3562 places.'>fail</a>(...) \
+<a id='L36' name='L36'></a>        <em class='brace'>{</em> \
+<a id='L37' name='L37'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, __VA_ARGS__); \
+<a id='L38' name='L38'></a>                exit(1); \
+<a id='L39' name='L39'></a>        <em class='brace'>}</em>
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> "<a href='4981.html'>../tests/eagain-common.h</a>"
+<a id='L42' name='L42'></a><em class='sharp'>#include</em> "<a href='3999.html'>benchmark.h</a>"
+<a id='L43' name='L43'></a>
+<a id='L44' name='L44'></a><strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *side = "";
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a><em class='sharp'>#define</em> <a href='../S/4176.html#L654' title='Referred from 654 in src/benchmark-tls.c.'>PRIO_DHE_RSA</a> "NONE:+VERS-TLS1.3:+AES-128-GCM:+AEAD:+SIGN-ALL:+COMP-NULL:+DHE-RSA:+GROUP-FFDHE3072"
+<a id='L47' name='L47'></a><em class='sharp'>#define</em> <a href='../S/4176.html#L656' title='Referred from 656 in src/benchmark-tls.c.'>PRIO_ECDH</a> "NONE:+VERS-TLS1.3:+AES-128-GCM:+AEAD:+SIGN-ALL:+COMP-NULL:+ECDHE-RSA:+CURVE-SECP256R1"
+<a id='L48' name='L48'></a><em class='sharp'>#define</em> <a href='../S/4176.html#L657' title='Referred from 657 in src/benchmark-tls.c.'>PRIO_ECDH_X25519</a> "NONE:+VERS-TLS1.3:+AES-128-GCM:+AEAD:+SIGN-ALL:+COMP-NULL:+ECDHE-RSA:+CURVE-X25519"
+<a id='L49' name='L49'></a><em class='sharp'>#define</em> <a href='../S/4176.html#L658' title='Referred from 658 in src/benchmark-tls.c.'>PRIO_ECDHE_ECDSA</a> "NONE:+VERS-TLS1.3:+AES-128-GCM:+AEAD:+SIGN-ALL:+COMP-NULL:+ECDHE-ECDSA:+CURVE-SECP256R1"
+<a id='L50' name='L50'></a><em class='sharp'>#define</em> <a href='../S/4176.html#L659' title='Referred from 659 in src/benchmark-tls.c.'>PRIO_ECDH_X25519_ECDSA</a> "NONE:+VERS-TLS1.3:+AES-128-GCM:+AEAD:+SIGN-ALL:+COMP-NULL:+ECDHE-ECDSA:+CURVE-X25519"
+<a id='L51' name='L51'></a><em class='sharp'>#define</em> <a href='../S/4176.html#L660' title='Referred from 660 in src/benchmark-tls.c.'>PRIO_ECDH_X25519_EDDSA</a> "NONE:+VERS-TLS1.3:+AES-128-GCM:+AEAD:+SIGN-EDDSA-ED25519:+COMP-NULL:+ECDHE-ECDSA:+CURVE-X25519"
+<a id='L52' name='L52'></a><em class='sharp'>#define</em> <a href='../S/4176.html#L661' title='Referred from 661 in src/benchmark-tls.c.'>PRIO_RSA</a> "NONE:+VERS-TLS1.2:+AES-128-GCM:+AEAD:+SIGN-ALL:+COMP-NULL:+RSA"
+<a id='L53' name='L53'></a><em class='sharp'>#define</em> <a href='../S/4176.html#L655' title='Referred from 655 in src/benchmark-tls.c.'>PRIO_ECDH_RSA_PSS</a> "NONE:+VERS-TLS1.3:+AES-128-GCM:+AEAD:+SIGN-RSA-PSS-SHA256:+COMP-NULL:+ECDHE-RSA:+CURVE-SECP256R1"
+<a id='L54' name='L54'></a>
+<a id='L55' name='L55'></a>
+<a id='L56' name='L56'></a><em class='sharp'>#define</em> <a href='../R/2865.html' title='Multiple referred from 2 places.'>PRIO_AES_CBC_SHA1</a> "NONE:+VERS-TLS1.0:+AES-128-CBC:+SHA1:+SIGN-ALL:+COMP-NULL:+RSA"
+<a id='L57' name='L57'></a><em class='sharp'>#define</em> <a href='../R/2884.html' title='Multiple referred from 2 places.'>PRIO_TLS12_AES_GCM</a> "NONE:+VERS-TLS1.2:+AES-128-GCM:+AEAD:+SIGN-ALL:+COMP-NULL:+RSA"
+<a id='L58' name='L58'></a><em class='sharp'>#define</em> <a href='../R/2867.html' title='Multiple referred from 2 places.'>PRIO_AES_GCM</a> "NONE:+VERS-TLS1.3:+AES-128-GCM:+AEAD:+SIGN-ALL:+COMP-NULL:+GROUP-ALL"
+<a id='L59' name='L59'></a><em class='sharp'>#define</em> <a href='../R/2883.html' title='Multiple referred from 2 places.'>PRIO_TLS12_AES_CCM</a> "NONE:+VERS-TLS1.2:+AES-128-CCM:+AEAD:+SIGN-ALL:+COMP-NULL:+RSA"
+<a id='L60' name='L60'></a><em class='sharp'>#define</em> <a href='../R/2866.html' title='Multiple referred from 2 places.'>PRIO_AES_CCM</a> "NONE:+VERS-TLS1.3:+AES-128-CCM:+AEAD:+SIGN-ALL:+COMP-NULL:+GROUP-ALL"
+<a id='L61' name='L61'></a><em class='sharp'>#define</em> <a href='../R/2885.html' title='Multiple referred from 2 places.'>PRIO_TLS12_CHACHA_POLY1305</a> "NONE:+VERS-TLS1.2:+CHACHA20-POLY1305:+AEAD:+SIGN-ALL:+COMP-NULL:+ECDHE-RSA:+CURVE-ALL"
+<a id='L62' name='L62'></a><em class='sharp'>#define</em> <a href='../R/2869.html' title='Multiple referred from 2 places.'>PRIO_CHACHA_POLY1305</a> "NONE:+VERS-TLS1.3:+CHACHA20-POLY1305:+AEAD:+SIGN-ALL:+COMP-NULL:+ECDHE-RSA:+CURVE-ALL"
+<a id='L63' name='L63'></a><em class='sharp'>#define</em> <a href='../R/2868.html' title='Multiple referred from 2 places.'>PRIO_CAMELLIA_CBC_SHA1</a> "NONE:+VERS-TLS1.0:+CAMELLIA-128-CBC:+SHA1:+SIGN-ALL:+COMP-NULL:+RSA"
+<a id='L64' name='L64'></a><em class='sharp'>#define</em> <a href='../R/2877.html' title='Multiple referred from 3 places.'>PRIO_GOST_CNT</a> "NONE:+VERS-TLS1.2:+GOST28147-TC26Z-CNT:+GOST28147-TC26Z-IMIT:+SIGN-ALL:+SIGN-GOSTR341012-256:+COMP-NULL:+VKO-GOST-12:+GROUP-GOST-ALL"
+<a id='L65' name='L65'></a>
+<a id='L66' name='L66'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <strong class='reserved'>int</strong> rsa_bits = 3072, ec_bits = 256;
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> server_rsa_pss_cert_pem[] =
+<a id='L69' name='L69'></a>        "-----BEGIN CERTIFICATE-----\n"
+<a id='L70' name='L70'></a>        "MIIErTCCAuWgAwIBAgIIWTZrqjOeCfIwPQYJKoZIhvcNAQEKMDCgDTALBglghkgB\n"
+<a id='L71' name='L71'></a>        "ZQMEAgGhGjAYBgkqhkiG9w0BAQgwCwYJYIZIAWUDBAIBogMCASAwFzEVMBMGA1UE\n"
+<a id='L72' name='L72'></a>        "AxMMcnNhLXBzcyBjZXJ0MCAXDTE3MDYwNjA4NDUzMVoYDzk5OTkxMjMxMjM1OTU5\n"
+<a id='L73' name='L73'></a>        "WjAXMRUwEwYDVQQDEwxyc2EtcHNzIGNlcnQwggHSMD0GCSqGSIb3DQEBCjAwoA0w\n"
+<a id='L74' name='L74'></a>        "CwYJYIZIAWUDBAIBoRowGAYJKoZIhvcNAQEIMAsGCWCGSAFlAwQCAaIDAgEgA4IB\n"
+<a id='L75' name='L75'></a>        "jwAwggGKAoIBgQDswF+JIWGcyu+JfjTcM8UDRKaxOuLVY0SODV1uaXPB5ZW9nEX/\n"
+<a id='L76' name='L76'></a>        "FFYIG+ldSKCyz5JF5ThrdvwqO+GVByuvETJdM7N4i8fzGHU8WIsj/CABAV+SaDT/\n"
+<a id='L77' name='L77'></a>        "xb+h1ar9dIehKelBmXQADVFX+xvu9OM5Ft3P/wyO9gWWrR7e/MU/SVzWzMT69+5Y\n"
+<a id='L78' name='L78'></a>        "oE4QkrYYCuEBtlVHDo2mmNWGSQ5tUVIWARgXbqsmj4voWkutE/CiT0+g6GQilMAR\n"
+<a id='L79' name='L79'></a>        "kROElIhO5NH+u3/Lt2wRQO5tEP1JmSoqvrMOmF16txze8qMzvKg1Eafijv9DR4Nc\n"
+<a id='L80' name='L80'></a>        "Cc6s8+g+CZbyODSdAybiyKsC7JCIrQjsnAjgPKKBLuZ1NTmu5liuXO05XsdcBoKD\n"
+<a id='L81' name='L81'></a>        "bKNAQdJCz4uxfqTr4CGFgHQk48Nhmq01EGmpwAeA/BOCB5qsWzqURtMX8EVB1Zdo\n"
+<a id='L82' name='L82'></a>        "3LD5Vwz18mm+ZdeLPlYy3L/FBpVPDbYoZlFgINUNCQvGgvzqGJAQrKR4w8X/Y6HH\n"
+<a id='L83' name='L83'></a>        "9R8sv+U8kNtQI90CAwEAAaNrMGkwDAYDVR0TAQH/BAIwADAUBgNVHREEDTALggls\n"
+<a id='L84' name='L84'></a>        "b2NhbGhvc3QwEwYDVR0lBAwwCgYIKwYBBQUHAwEwDwYDVR0PAQH/BAUDAweAADAd\n"
+<a id='L85' name='L85'></a>        "BgNVHQ4EFgQU1TmyUrkZZn4yMf4asV5OKq8bZ1gwPQYJKoZIhvcNAQEKMDCgDTAL\n"
+<a id='L86' name='L86'></a>        "BglghkgBZQMEAgGhGjAYBgkqhkiG9w0BAQgwCwYJYIZIAWUDBAIBogMCASADggGB\n"
+<a id='L87' name='L87'></a>        "AGxMPB+Z6pgmWNRw5NjIJgnvJfdMWmQib0II5kdU9I1UybrVRUGpI6tFjIB/pRWU\n"
+<a id='L88' name='L88'></a>        "SiD8wTZpxfTHkRHUn+Wyhh14XOg2Pdad5Ek2XU/QblL2k4kh1sHdOcCRFbDzP5k8\n"
+<a id='L89' name='L89'></a>        "LKIzFcndgnKTRun5368H+NLcXRx/KAi7s9zi4swp9dPxRvNvp8HjQyVhdFi5pK6n\n"
+<a id='L90' name='L90'></a>        "pN1Sw/QD22CE1fRVJ3OYxq4sqCEZANhRv6h/M3AcetGt4LR8ErwuzP1fdtuXeumw\n"
+<a id='L91' name='L91'></a>        "T0deQ2hhSYZmbkk/S+qHA8as6J224ry7Zr5bhB9hr52yum9yC9SjFy0XEV/895jJ\n"
+<a id='L92' name='L92'></a>        "0MDIM33DmPUdnn90Btt+Oq+bgZqTIolifSmcs0sPH10SuxDOnXwkbR44Wu9NbCzx\n"
+<a id='L93' name='L93'></a>        "h3VzhlxAdgcnOYSmJnXKWXog4N1BPFrB4rFqXWFF0Avqs4euK81W4IQ4Sk7fYT7C\n"
+<a id='L94' name='L94'></a>        "tyrDILPqBhN80Q9Me70y7KRsek6yFn4Jd0Lok6vetaeWtSW0929bhU49b1hkdSzt\n"
+<a id='L95' name='L95'></a>        "kw==\n"
+<a id='L96' name='L96'></a>        "-----END CERTIFICATE-----\n";
+<a id='L97' name='L97'></a>
+<a id='L98' name='L98'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> server_cert_pem[] =
+<a id='L99' name='L99'></a>    "-----BEGIN CERTIFICATE-----\n"
+<a id='L100' name='L100'></a>    "MIIEOjCCAqKgAwIBAgIMU+I+KjQZpH+ZdjOlMA0GCSqGSIb3DQEBCwUAMA8xDTAL\n"
+<a id='L101' name='L101'></a>    "BgNVBAMTBENBLTAwIhgPMjAxNDA4MDYxNDM5MzhaGA85OTk5MTIzMTIzNTk1OVow\n"
+<a id='L102' name='L102'></a>    "EzERMA8GA1UEAxMIc2VydmVyLTEwggGiMA0GCSqGSIb3DQEBAQUAA4IBjwAwggGK\n"
+<a id='L103' name='L103'></a>    "AoIBgQDswF+JIWGcyu+JfjTcM8UDRKaxOuLVY0SODV1uaXPB5ZW9nEX/FFYIG+ld\n"
+<a id='L104' name='L104'></a>    "SKCyz5JF5ThrdvwqO+GVByuvETJdM7N4i8fzGHU8WIsj/CABAV+SaDT/xb+h1ar9\n"
+<a id='L105' name='L105'></a>    "dIehKelBmXQADVFX+xvu9OM5Ft3P/wyO9gWWrR7e/MU/SVzWzMT69+5YoE4QkrYY\n"
+<a id='L106' name='L106'></a>    "CuEBtlVHDo2mmNWGSQ5tUVIWARgXbqsmj4voWkutE/CiT0+g6GQilMARkROElIhO\n"
+<a id='L107' name='L107'></a>    "5NH+u3/Lt2wRQO5tEP1JmSoqvrMOmF16txze8qMzvKg1Eafijv9DR4NcCc6s8+g+\n"
+<a id='L108' name='L108'></a>    "CZbyODSdAybiyKsC7JCIrQjsnAjgPKKBLuZ1NTmu5liuXO05XsdcBoKDbKNAQdJC\n"
+<a id='L109' name='L109'></a>    "z4uxfqTr4CGFgHQk48Nhmq01EGmpwAeA/BOCB5qsWzqURtMX8EVB1Zdo3LD5Vwz1\n"
+<a id='L110' name='L110'></a>    "8mm+ZdeLPlYy3L/FBpVPDbYoZlFgINUNCQvGgvzqGJAQrKR4w8X/Y6HH9R8sv+U8\n"
+<a id='L111' name='L111'></a>    "kNtQI90CAwEAAaOBjTCBijAMBgNVHRMBAf8EAjAAMBQGA1UdEQQNMAuCCWxvY2Fs\n"
+<a id='L112' name='L112'></a>    "aG9zdDATBgNVHSUEDDAKBggrBgEFBQcDATAPBgNVHQ8BAf8EBQMDB6AAMB0GA1Ud\n"
+<a id='L113' name='L113'></a>    "DgQWBBTVObJSuRlmfjIx/hqxXk4qrxtnWDAfBgNVHSMEGDAWgBQ5vvRl/1WhIqpf\n"
+<a id='L114' name='L114'></a>    "ZFiHs89kf3N3OTANBgkqhkiG9w0BAQsFAAOCAYEAC0KQNPASZ7adSMMM3qx0Ny8Z\n"
+<a id='L115' name='L115'></a>    "AkcVAtohkjlwCwhoutcavZVyTjdpGydte6nfyTWOjs6ATBV2GhpyH+nvRJaYQFAh\n"
+<a id='L116' name='L116'></a>    "7uksjJxptSlaQuJqUI12urzx6BX0kenwh7nNwnLOngSBRqYwQqQdbnZf0w1DAdac\n"
+<a id='L117' name='L117'></a>    "vSa/Y1PrDpcXyPHpk7pDrtI9Mj24rIbvjeWM1RfgkNQYLPkZBDQqKkc5UrCA5y3v\n"
+<a id='L118' name='L118'></a>    "3motWyTdfvVYL7KWcEmGeKsWaTDkahd8Xhx29WvE4P740AOvXm/nkrE+PkHODbXi\n"
+<a id='L119' name='L119'></a>    "iD0a4cO2FPjjVt5ji+iaJTaXBEd9GHklKE6ZTZhj5az9ygQj1m6HZ2i3shWtG2ks\n"
+<a id='L120' name='L120'></a>    "AjgnGzsA8Wm/5X6YyR8UND41rS/lAc9yx8Az9Hqzfg8aOyvixYVPNKoTEPAMmypA\n"
+<a id='L121' name='L121'></a>    "oQT6g4b989lZFcjrwnLCrwz83jPD683p5IenCnRI5yhuFoQauy2tgHIbC1FRgs0C\n"
+<a id='L122' name='L122'></a>    "dyiOeDh80u1fekMVjRztIAwavuwxI6XgRzPSHhWR\n"
+<a id='L123' name='L123'></a>    "-----END CERTIFICATE-----\n";
+<a id='L124' name='L124'></a>
+<a id='L125' name='L125'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> server_key_pem[] =
+<a id='L126' name='L126'></a>    "-----BEGIN RSA PRIVATE KEY-----\n"
+<a id='L127' name='L127'></a>    "MIIG5gIBAAKCAYEA7MBfiSFhnMrviX403DPFA0SmsTri1WNEjg1dbmlzweWVvZxF\n"
+<a id='L128' name='L128'></a>    "/xRWCBvpXUigss+SReU4a3b8KjvhlQcrrxEyXTOzeIvH8xh1PFiLI/wgAQFfkmg0\n"
+<a id='L129' name='L129'></a>    "/8W/odWq/XSHoSnpQZl0AA1RV/sb7vTjORbdz/8MjvYFlq0e3vzFP0lc1szE+vfu\n"
+<a id='L130' name='L130'></a>    "WKBOEJK2GArhAbZVRw6NppjVhkkObVFSFgEYF26rJo+L6FpLrRPwok9PoOhkIpTA\n"
+<a id='L131' name='L131'></a>    "EZEThJSITuTR/rt/y7dsEUDubRD9SZkqKr6zDphdercc3vKjM7yoNRGn4o7/Q0eD\n"
+<a id='L132' name='L132'></a>    "XAnOrPPoPgmW8jg0nQMm4sirAuyQiK0I7JwI4DyigS7mdTU5ruZYrlztOV7HXAaC\n"
+<a id='L133' name='L133'></a>    "g2yjQEHSQs+LsX6k6+AhhYB0JOPDYZqtNRBpqcAHgPwTggearFs6lEbTF/BFQdWX\n"
+<a id='L134' name='L134'></a>    "aNyw+VcM9fJpvmXXiz5WMty/xQaVTw22KGZRYCDVDQkLxoL86hiQEKykeMPF/2Oh\n"
+<a id='L135' name='L135'></a>    "x/UfLL/lPJDbUCPdAgMBAAECggGBAOZzh0sjbDHENBBhAjFKTz6UJ7IigMR3oTao\n"
+<a id='L136' name='L136'></a>    "+cZM7XnS8cQkhtn5wJiaGrlLxejoNhjFO/sXUfQGX9nBphr+IUkp10vCvHn717pK\n"
+<a id='L137' name='L137'></a>    "8f2wILL51D7eIqDJq3RrWMroEFGnSz8okQqv6/s5GgKq6zcZ9AXP3TiXb+8wSvmB\n"
+<a id='L138' name='L138'></a>    "kLq+vZj0r9UfWyl3uSVWuduDU2xoQHAvUWDWKhpRqLJuUvnKTNoaRoz9c5FTu5AY\n"
+<a id='L139' name='L139'></a>    "9cX4b6lQLJCgvKkcz6PhNSGeiG5tsONi89sNuF3MYO+a4JBpD3l/lj1inHDEhlpd\n"
+<a id='L140' name='L140'></a>    "xHdbXNv4vw2rJECt5O8Ff3aT3g3voenP0xbfrQ5m6dIrEscU1KMkYIg+wCVV+oNj\n"
+<a id='L141' name='L141'></a>    "4OhmBvdN/mXKEFpxKNk6C78feA1+ZygNWeBhgY0hiA98oI77H9kN8iuKaOaxYbEG\n"
+<a id='L142' name='L142'></a>    "qCwHrPbL+fVcLKouN6i3E3kpDIp5HMx4bYWyzotXXrpAWj7D/5saBCdErH0ab4Sb\n"
+<a id='L143' name='L143'></a>    "2I3tZ49qDIfcKl0bdpTiidbGKasL/QKBwQD+Qlo4m2aZLYSfBxygqiLv42vpeZAB\n"
+<a id='L144' name='L144'></a>    "4//MeAFnxFcdF+JL6Lo3gfzP3bJ8EEq2b+psmk5yofiNDVaHTb4iOS3DX/JCmnmj\n"
+<a id='L145' name='L145'></a>    "+zAEfMCVLljYJlACVnyPb+8h+T0UEsQWMiFWZxsv+AbHs/cnpVtdnvO0Hg8VRrHu\n"
+<a id='L146' name='L146'></a>    "dpKOauuhPkpFxtbbkxJWIapvYr/jqD8m+fDSMWJuxMGKmgKiefy+pS2N7hrbNZF4\n"
+<a id='L147' name='L147'></a>    "OD/TdCim5qDVuSwj/g2Y7WOTf3UJ5Jo4CmMCgcEA7l9VnhEb3UrAHhGe7bAgZ4Wm\n"
+<a id='L148' name='L148'></a>    "1ncFVOWc9X/tju3QUpNEow6I0skav2i3A/ZA36Iy/w4Sf8RAQC+77NzBEIKyLjK1\n"
+<a id='L149' name='L149'></a>    "PfwXPoH2hrtD3WSQlAFG4u8DsRWt4GZY3OAzmqWenhQcUoJ1zgTyRwOFfX1R38NF\n"
+<a id='L150' name='L150'></a>    "8QeHck5KUUNoi56Vc7BCo/ypacz33RqzVEj6z5ScogTqC8nNn1a+/rfpTKzotJqc\n"
+<a id='L151' name='L151'></a>    "PJHMXTduAB6x4QHerpzGJQYucAJSD1VJbFwEWUy/AoHBAIvKb1AwIHiXThMhFdw/\n"
+<a id='L152' name='L152'></a>    "rnW1097JtyNS95CzahJjIIIeX4zcp4VdMmIWwcr0Kh+j6H9NV1QvOThT3P8G/0JR\n"
+<a id='L153' name='L153'></a>    "rZd9aPS1eaturzfIXxmmIbK1XcfrRRCXuiIzpiEjMCwD49BdX9U/yHqDt59Uiqcu\n"
+<a id='L154' name='L154'></a>    "fU7KOAC6nZk+F9W1c1dzp+I1MGwIsEwqtkoHQPkpx47mXEE0ZaoBA2fwxQIPj6ZB\n"
+<a id='L155' name='L155'></a>    "qooeHyXmjdRLGMxpUPByXHslE9+2DkPGQLkXmoGV7jRhgQKBwQDL+LnbgwpT5pXU\n"
+<a id='L156' name='L156'></a>    "ZQGYpABmdQAZPklKpxwTGr+dcTO0pR2zZUmBDOKdbS5F7p7+fd2jUFhWCglsoyvs\n"
+<a id='L157' name='L157'></a>    "d82goiVz0KI0AxWkwDLCgVWGCXqJmzocD6gaDNH3VbyubA7cQuIipFTD6ayCeMsU\n"
+<a id='L158' name='L158'></a>    "JxhAFE9N6NtdbzLghcukE8lOx4ldMDMl/Zq91M033pQbCEPOAn2xSgE3yxvvP5w5\n"
+<a id='L159' name='L159'></a>    "fAffO4n4mOAeGChGj5rJ8XoGbsIsqiwHHG36HJI5WqJ0XZy/CSMCgcEA4M05digH\n"
+<a id='L160' name='L160'></a>    "VZE5T/eKLFNEnUB1W9tWAzj+BAqmR1rlwQt5O3fC8F7XqkSowhcRTDHUdoOkdVz/\n"
+<a id='L161' name='L161'></a>    "jMgRqGs0O+cl8tLImD6d1mFR6Yxu0PHwXUwQVklW8txGGOKv0+2MFMlkFjuwCbNN\n"
+<a id='L162' name='L162'></a>    "XZ2rmZq/JywCJmVAH0wToXZyEqhilLZ9TLs6m2d2+2hlxJM6XmXjc7A/fC089bSX\n"
+<a id='L163' name='L163'></a>    "W+lG+lHYAA3tjkBWvb7YAPriahcFrRBvQb5zx4L4NXMHlXMUnA/KlMW2\n"
+<a id='L164' name='L164'></a>    "-----END RSA PRIVATE KEY-----\n";
+<a id='L165' name='L165'></a>
+<a id='L166' name='L166'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> server_ecc_key_pem[] =
+<a id='L167' name='L167'></a>    "-----BEGIN EC PRIVATE KEY-----\n"
+<a id='L168' name='L168'></a>    "MHgCAQEEIQDrAKCAbdMKPngHu4zdSQ2Pghob8PhyrbUpWAR8V07E+qAKBggqhkjO\n"
+<a id='L169' name='L169'></a>    "PQMBB6FEA0IABDfo4YLPkO4pBpQamtObIV3J6l92vI+RkyNtaQ9gtSWDj20w/aBC\n"
+<a id='L170' name='L170'></a>    "WlbcTsRZ2itEpJ6GdLsGOW4RRfmiubzC9JU=\n"
+<a id='L171' name='L171'></a>    "-----END EC PRIVATE KEY-----\n";
+<a id='L172' name='L172'></a>
+<a id='L173' name='L173'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> server_ecc_cert_pem[] =
+<a id='L174' name='L174'></a>    "-----BEGIN CERTIFICATE-----\n"
+<a id='L175' name='L175'></a>    "MIIBrjCCAVSgAwIBAgIMU+I+axGZmBD/YL96MAoGCCqGSM49BAMCMA8xDTALBgNV\n"
+<a id='L176' name='L176'></a>    "BAMTBENBLTAwIhgPMjAxNDA4MDYxNDQwNDNaGA85OTk5MTIzMTIzNTk1OVowEzER\n"
+<a id='L177' name='L177'></a>    "MA8GA1UEAxMIc2VydmVyLTEwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQ36OGC\n"
+<a id='L178' name='L178'></a>    "z5DuKQaUGprTmyFdyepfdryPkZMjbWkPYLUlg49tMP2gQlpW3E7EWdorRKSehnS7\n"
+<a id='L179' name='L179'></a>    "BjluEUX5orm8wvSVo4GNMIGKMAwGA1UdEwEB/wQCMAAwFAYDVR0RBA0wC4IJbG9j\n"
+<a id='L180' name='L180'></a>    "YWxob3N0MBMGA1UdJQQMMAoGCCsGAQUFBwMBMA8GA1UdDwEB/wQFAwMHgAAwHQYD\n"
+<a id='L181' name='L181'></a>    "VR0OBBYEFOuSntH2To0gJLH79Ow4wNpBuhmEMB8GA1UdIwQYMBaAFMZ1miRvZAYr\n"
+<a id='L182' name='L182'></a>    "nBEymOtPjbfTrnblMAoGCCqGSM49BAMCA0gAMEUCIQCMP3aBcCxSPbCUhihOsUmH\n"
+<a id='L183' name='L183'></a>    "G04AgT1PKw8z4LgZ4VGTVAIgYw3IFwS5sSYEAHRZAH8eaTXTz7XFmWmnkve9EBkN\n"
+<a id='L184' name='L184'></a>    "cBE=\n"
+<a id='L185' name='L185'></a>    "-----END CERTIFICATE-----\n";
+<a id='L186' name='L186'></a>
+<a id='L187' name='L187'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> server_ed25519_key_pem[] =
+<a id='L188' name='L188'></a>        "-----BEGIN PRIVATE KEY-----\n"
+<a id='L189' name='L189'></a>        "MC4CAQAwBQYDK2VwBCIEIOXDJXOU6J6XdXx4WfcyPILPYJDH5bRfm9em+DYMkllw\n"
+<a id='L190' name='L190'></a>        "-----END PRIVATE KEY-----\n";
+<a id='L191' name='L191'></a>
+<a id='L192' name='L192'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> server_ed25519_cert_pem[] =
+<a id='L193' name='L193'></a>        "-----BEGIN CERTIFICATE-----\n"
+<a id='L194' name='L194'></a>        "MIIBwTCCAWagAwIBAgIIWTZasQWGNVEwCgYIKoZIzj0EAwIwfTELMAkGA1UEBhMC\n"
+<a id='L195' name='L195'></a>        "QkUxDzANBgNVBAoTBkdudVRMUzElMCMGA1UECxMcR251VExTIGNlcnRpZmljYXRl\n"
+<a id='L196' name='L196'></a>        "IGF1dGhvcml0eTEPMA0GA1UECBMGTGV1dmVuMSUwIwYDVQQDExxHbnVUTFMgY2Vy\n"
+<a id='L197' name='L197'></a>        "dGlmaWNhdGUgYXV0aG9yaXR5MCAXDTE3MDYwNjA3MzMwNVoYDzk5OTkxMjMxMjM1\n"
+<a id='L198' name='L198'></a>        "OTU5WjAZMRcwFQYDVQQDEw5FZDI1NTE5IHNpZ25lcjAqMAUGAytlcAMhAPMF++lz\n"
+<a id='L199' name='L199'></a>        "LIzfyCX0v0B7LIabZWZ/dePW9HexIbW3tYmHo2EwXzAMBgNVHRMBAf8EAjAAMA8G\n"
+<a id='L200' name='L200'></a>        "A1UdDwEB/wQFAwMHgAAwHQYDVR0OBBYEFONSSnOdGLzpv3xNcci8ZiKKqzyqMB8G\n"
+<a id='L201' name='L201'></a>        "A1UdIwQYMBaAFPC0gf6YEr+1KLlkQAPLzB9mTigDMAoGCCqGSM49BAMCA0kAMEYC\n"
+<a id='L202' name='L202'></a>        "IQDHGfSgM44DVZfrP5CF8LSNlFN55ti3Z69YJ0SK8Fy9eQIhAN2UKeX3l8A9Ckcm\n"
+<a id='L203' name='L203'></a>        "7barRoh+qx7ZVYpe+5w3JYuxy16w\n"
+<a id='L204' name='L204'></a>        "-----END CERTIFICATE-----\n";
+<a id='L205' name='L205'></a>
+<a id='L206' name='L206'></a><em class='sharp'>#ifdef</em> ENABLE_GOST
+<a id='L207' name='L207'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> server_gost12_256_key_pem[] =
+<a id='L208' name='L208'></a>        "-----BEGIN PRIVATE KEY-----\n"
+<a id='L209' name='L209'></a>        "MEgCAQAwHwYIKoUDBwEBAQEwEwYHKoUDAgIkAAYIKoUDBwEBAgIEIgQg0+JttJEV\n"
+<a id='L210' name='L210'></a>        "Ud+XBzX9q13ByKK+j2b+mEmNIo1yB0wGleo=\n"
+<a id='L211' name='L211'></a>        "-----END PRIVATE KEY-----\n";
+<a id='L212' name='L212'></a>
+<a id='L213' name='L213'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> server_gost12_256_cert_pem[] =
+<a id='L214' name='L214'></a>        "-----BEGIN CERTIFICATE-----\n"
+<a id='L215' name='L215'></a>        "MIIC8DCCAVigAwIBAgIIWcZKgxkCMvcwDQYJKoZIhvcNAQELBQAwDzENMAsGA1UE\n"
+<a id='L216' name='L216'></a>        "AxMEQ0EtMzAgFw0xOTEwMDgxMDQ4MTZaGA85OTk5MTIzMTIzNTk1OVowDTELMAkG\n"
+<a id='L217' name='L217'></a>        "A1UEAxMCR1IwZjAfBggqhQMHAQEBATATBgcqhQMCAiQABggqhQMHAQECAgNDAARA\n"
+<a id='L218' name='L218'></a>        "J9sMEEx0JW9QsT5bDqyc0TNcjVg9ZSdp4GkMtShM+OOgyBGrWK3zLP5IzHYSXja8\n"
+<a id='L219' name='L219'></a>        "373QrJOUvdX7T7TUk5yU5aOBjTCBijAMBgNVHRMBAf8EAjAAMBQGA1UdEQQNMAuC\n"
+<a id='L220' name='L220'></a>        "CWxvY2FsaG9zdDATBgNVHSUEDDAKBggrBgEFBQcDATAPBgNVHQ8BAf8EBQMDB4AA\n"
+<a id='L221' name='L221'></a>        "MB0GA1UdDgQWBBQYSEtdwsYrtnOq6Ya3nt8DgFPCQjAfBgNVHSMEGDAWgBT5qIYZ\n"
+<a id='L222' name='L222'></a>        "Y7akFBNgdg8BmjU27/G0rzANBgkqhkiG9w0BAQsFAAOCAYEAR0xtx7MWEP1KyIzM\n"
+<a id='L223' name='L223'></a>        "4lXKdTyU4Nve5RcgqF82yR/0odqT5MPoaZDvLuRWEcQryztZD3kmRUmPmn1ujSfc\n"
+<a id='L224' name='L224'></a>        "BbPfRnSutDXcf6imq0/U1/TV/BF3vpS1plltzetvibf8MYetHVFQHUBJDZJHh9h7\n"
+<a id='L225' name='L225'></a>        "PGwA9SnmnGKFIxFdV6bVOLkPR54Gob9zN3E17KslL19lNtht1pxk9pshwTn35oRY\n"
+<a id='L226' name='L226'></a>        "uOdxof9F4XjpI/4WbC8kp15QeG8XyZd5JWSl+niNOqYK31+ilQdVBr4RiZSDIcAg\n"
+<a id='L227' name='L227'></a>        "twS5yV9Ap+R8rM8TLbeT2io4rhdUgmDllUf49zV3t6AbVvbsQfkqXmHXW8uW2WBu\n"
+<a id='L228' name='L228'></a>        "A8FiXEbIIOb+QIW0ZGwk3BVQ7wdiw1M5w6kYtz5kBtNPxBmc+eu1+e6EAfYbFNr3\n"
+<a id='L229' name='L229'></a>        "pkxtMk3veYWHb5s3dHZ4/t2Rn85hWqh03CWwCkKTN3qmEs4/XpybbXE/UE49e7u1\n"
+<a id='L230' name='L230'></a>        "FkpM1bT/0gUNsNt5h3pyUzQZdiB0XbdGGFta3tB3+inIO45h\n"
+<a id='L231' name='L231'></a>        "-----END CERTIFICATE-----\n";
+<a id='L232' name='L232'></a>
+<a id='L233' name='L233'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> gnutls_datum_t server_gost12_256_key = <em class='brace'>{</em> server_gost12_256_key_pem,
+<a id='L234' name='L234'></a>        <strong class='reserved'>sizeof</strong>(server_gost12_256_key_pem)-1
+<a id='L235' name='L235'></a><em class='brace'>}</em>;
+<a id='L236' name='L236'></a>
+<a id='L237' name='L237'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> gnutls_datum_t server_gost12_256_cert = <em class='brace'>{</em> server_gost12_256_cert_pem,
+<a id='L238' name='L238'></a>        <strong class='reserved'>sizeof</strong>(server_gost12_256_cert_pem)-1
+<a id='L239' name='L239'></a><em class='brace'>}</em>;
+<a id='L240' name='L240'></a><em class='sharp'>#endif</em>
+<a id='L241' name='L241'></a>
+<a id='L242' name='L242'></a><strong class='reserved'>const</strong> gnutls_datum_t server_cert = <em class='brace'>{</em> server_cert_pem,
+<a id='L243' name='L243'></a>        <strong class='reserved'>sizeof</strong>(server_cert_pem)
+<a id='L244' name='L244'></a><em class='brace'>}</em>;
+<a id='L245' name='L245'></a>
+<a id='L246' name='L246'></a><strong class='reserved'>const</strong> gnutls_datum_t server_rsa_pss_cert = <em class='brace'>{</em> server_rsa_pss_cert_pem,
+<a id='L247' name='L247'></a>        <strong class='reserved'>sizeof</strong>(server_rsa_pss_cert_pem)
+<a id='L248' name='L248'></a><em class='brace'>}</em>;
+<a id='L249' name='L249'></a>
+<a id='L250' name='L250'></a><strong class='reserved'>const</strong> gnutls_datum_t server_key = <em class='brace'>{</em> server_key_pem,
+<a id='L251' name='L251'></a>        <strong class='reserved'>sizeof</strong>(server_key_pem)
+<a id='L252' name='L252'></a><em class='brace'>}</em>;
+<a id='L253' name='L253'></a>
+<a id='L254' name='L254'></a><strong class='reserved'>const</strong> gnutls_datum_t server_ecc_cert = <em class='brace'>{</em> server_ecc_cert_pem,
+<a id='L255' name='L255'></a>        <strong class='reserved'>sizeof</strong>(server_ecc_cert_pem)
+<a id='L256' name='L256'></a><em class='brace'>}</em>;
+<a id='L257' name='L257'></a>
+<a id='L258' name='L258'></a><strong class='reserved'>const</strong> gnutls_datum_t server_ecc_key = <em class='brace'>{</em> server_ecc_key_pem,
+<a id='L259' name='L259'></a>        <strong class='reserved'>sizeof</strong>(server_ecc_key_pem)
+<a id='L260' name='L260'></a><em class='brace'>}</em>;
+<a id='L261' name='L261'></a>
+<a id='L262' name='L262'></a><strong class='reserved'>const</strong> gnutls_datum_t server_ed25519_cert = <em class='brace'>{</em> server_ed25519_cert_pem,
+<a id='L263' name='L263'></a>        <strong class='reserved'>sizeof</strong>(server_ed25519_cert_pem)
+<a id='L264' name='L264'></a><em class='brace'>}</em>;
+<a id='L265' name='L265'></a>
+<a id='L266' name='L266'></a><strong class='reserved'>const</strong> gnutls_datum_t server_ed25519_key = <em class='brace'>{</em> server_ed25519_key_pem,
+<a id='L267' name='L267'></a>        <strong class='reserved'>sizeof</strong>(server_ed25519_key_pem)
+<a id='L268' name='L268'></a><em class='brace'>}</em>;
+<a id='L269' name='L269'></a>
+<a id='L270' name='L270'></a><strong class='reserved'>char</strong> <a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>[64 * 1024];
+<a id='L271' name='L271'></a>
+<a id='L272' name='L272'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/10917.html' title='Multiple referred from 309 places.'>tls_log_func</a>(<strong class='reserved'>int</strong> level, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str)
+<a id='L273' name='L273'></a><em class='brace'>{</em>
+<a id='L274' name='L274'></a>        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "%s|&lt;%d&gt;| %s", side, level, str);
+<a id='L275' name='L275'></a><em class='brace'>}</em>
+<a id='L276' name='L276'></a>
+<a id='L277' name='L277'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/10748.html' title='Multiple referred from 18 places.'>test_ciphersuite</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *cipher_prio, <strong class='reserved'>int</strong> size)
+<a id='L278' name='L278'></a><em class='brace'>{</em>
+<a id='L279' name='L279'></a>        <em class='comment'>/* Server stuff. */</em>
+<a id='L280' name='L280'></a>        gnutls_anon_server_credentials_t s_anoncred;
+<a id='L281' name='L281'></a>        gnutls_certificate_credentials_t c_certcred, s_certcred;
+<a id='L282' name='L282'></a>        gnutls_session_t <a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>;
+<a id='L283' name='L283'></a>        <strong class='reserved'>int</strong> sret, cret;
+<a id='L284' name='L284'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str;
+<a id='L285' name='L285'></a>        <em class='comment'>/* Client stuff. */</em>
+<a id='L286' name='L286'></a>        gnutls_anon_client_credentials_t c_anoncred;
+<a id='L287' name='L287'></a>        gnutls_session_t <a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>;
+<a id='L288' name='L288'></a>        <em class='comment'>/* Need to enable anonymous KX specifically. */</em>
+<a id='L289' name='L289'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L290' name='L290'></a>        <strong class='reserved'>struct</strong> <a href='../S/3999.html#L51' title='Defined at 51 in src/benchmark.h.'>benchmark_st</a> st;
+<a id='L291' name='L291'></a>        gnutls_packet_t packet;
+<a id='L292' name='L292'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>;
+<a id='L293' name='L293'></a>
+<a id='L294' name='L294'></a>        <em class='comment'>/* Init server */</em>
+<a id='L295' name='L295'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L296' name='L296'></a>        <a href='../S/5394.html#L58' title='Defined at 58 in lib/anon_cred.c.'>gnutls_anon_allocate_server_credentials</a>(&amp;s_anoncred);
+<a id='L297' name='L297'></a><em class='sharp'>#endif</em>
+<a id='L298' name='L298'></a>        <a href='../S/5463.html#L418' title='Defined at 418 in lib/cert-cred.c.'>gnutls_certificate_allocate_credentials</a>(&amp;s_certcred);
+<a id='L299' name='L299'></a>
+<a id='L300' name='L300'></a>        <a href='../S/5456.html#L635' title='Defined at 635 in lib/cert-cred-x509.c.'>gnutls_certificate_set_x509_key_mem</a>(s_certcred, &amp;server_cert,
+<a id='L301' name='L301'></a>                                            &amp;server_key,
+<a id='L302' name='L302'></a>                                            GNUTLS_X509_FMT_PEM);
+<a id='L303' name='L303'></a>        <a href='../S/5456.html#L635' title='Defined at 635 in lib/cert-cred-x509.c.'>gnutls_certificate_set_x509_key_mem</a>(s_certcred, &amp;server_ecc_cert,
+<a id='L304' name='L304'></a>                                            &amp;server_ecc_key,
+<a id='L305' name='L305'></a>                                            GNUTLS_X509_FMT_PEM);
+<a id='L306' name='L306'></a><em class='sharp'>#ifdef</em> ENABLE_GOST
+<a id='L307' name='L307'></a>        <a href='../S/5456.html#L635' title='Defined at 635 in lib/cert-cred-x509.c.'>gnutls_certificate_set_x509_key_mem</a>(s_certcred, &amp;server_gost12_256_cert,
+<a id='L308' name='L308'></a>                                            &amp;server_gost12_256_key,
+<a id='L309' name='L309'></a>                                            GNUTLS_X509_FMT_PEM);
+<a id='L310' name='L310'></a><em class='sharp'>#endif</em>
+<a id='L311' name='L311'></a>
+<a id='L312' name='L312'></a>        <a href='../S/5625.html#L475' title='Defined at 475 in lib/state.c.'>gnutls_init</a>(&amp;<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, GNUTLS_SERVER);
+<a id='L313' name='L313'></a>        ret = <a href='../S/5260.html#L2335' title='Defined at 2335 in lib/priority.c.'>gnutls_priority_set_direct</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, cipher_prio, &amp;str);
+<a id='L314' name='L314'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L315' name='L315'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Error in %s\n", str);
+<a id='L316' name='L316'></a>                exit(1);
+<a id='L317' name='L317'></a>        <em class='brace'>}</em>
+<a id='L318' name='L318'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L319' name='L319'></a>        <a href='../S/5749.html#L94' title='Defined at 94 in lib/auth.c.'>gnutls_credentials_set</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, GNUTLS_CRD_ANON, s_anoncred);
+<a id='L320' name='L320'></a><em class='sharp'>#endif</em>
+<a id='L321' name='L321'></a>        <a href='../S/5749.html#L94' title='Defined at 94 in lib/auth.c.'>gnutls_credentials_set</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, GNUTLS_CRD_CERTIFICATE, s_certcred);
+<a id='L322' name='L322'></a>        <a href='../S/5813.html#L147' title='Defined at 147 in lib/system_override.c.'>gnutls_transport_set_push_function</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, <a href='../D/11326.html' title='Multiple defined in 3 places.'>server_push</a>);
+<a id='L323' name='L323'></a>        <a href='../S/5813.html#L82' title='Defined at 82 in lib/system_override.c.'>gnutls_transport_set_pull_function</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, <a href='../D/11323.html' title='Multiple defined in 2 places.'>server_pull</a>);
+<a id='L324' name='L324'></a>        <a href='../S/5258.html#L101' title='Defined at 101 in lib/record.c.'>gnutls_transport_set_ptr</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, (gnutls_transport_ptr_t) <a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>);
+<a id='L325' name='L325'></a>        <a href='../D/11121.html' title='Multiple defined in 2 places.'>reset_buffers</a>();
+<a id='L326' name='L326'></a>
+<a id='L327' name='L327'></a>        <em class='comment'>/* Init client */</em>
+<a id='L328' name='L328'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L329' name='L329'></a>        <a href='../S/5394.html#L92' title='Defined at 92 in lib/anon_cred.c.'>gnutls_anon_allocate_client_credentials</a>(&amp;c_anoncred);
+<a id='L330' name='L330'></a><em class='sharp'>#endif</em>
+<a id='L331' name='L331'></a>        <a href='../S/5463.html#L418' title='Defined at 418 in lib/cert-cred.c.'>gnutls_certificate_allocate_credentials</a>(&amp;c_certcred);
+<a id='L332' name='L332'></a>        <a href='../S/5625.html#L475' title='Defined at 475 in lib/state.c.'>gnutls_init</a>(&amp;<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, GNUTLS_CLIENT);
+<a id='L333' name='L333'></a>
+<a id='L334' name='L334'></a>        ret = <a href='../S/5260.html#L2335' title='Defined at 2335 in lib/priority.c.'>gnutls_priority_set_direct</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, cipher_prio, &amp;str);
+<a id='L335' name='L335'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L336' name='L336'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Error in %s\n", str);
+<a id='L337' name='L337'></a>                exit(1);
+<a id='L338' name='L338'></a>        <em class='brace'>}</em>
+<a id='L339' name='L339'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L340' name='L340'></a>        <a href='../S/5749.html#L94' title='Defined at 94 in lib/auth.c.'>gnutls_credentials_set</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, GNUTLS_CRD_ANON, c_anoncred);
+<a id='L341' name='L341'></a><em class='sharp'>#endif</em>
+<a id='L342' name='L342'></a>        <a href='../S/5749.html#L94' title='Defined at 94 in lib/auth.c.'>gnutls_credentials_set</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, GNUTLS_CRD_CERTIFICATE, c_certcred);
+<a id='L343' name='L343'></a>        <a href='../S/5813.html#L147' title='Defined at 147 in lib/system_override.c.'>gnutls_transport_set_push_function</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, <a href='../D/7237.html' title='Multiple defined in 3 places.'>client_push</a>);
+<a id='L344' name='L344'></a>        <a href='../S/5813.html#L82' title='Defined at 82 in lib/system_override.c.'>gnutls_transport_set_pull_function</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, <a href='../D/7234.html' title='Multiple defined in 3 places.'>client_pull</a>);
+<a id='L345' name='L345'></a>        <a href='../S/5258.html#L101' title='Defined at 101 in lib/record.c.'>gnutls_transport_set_ptr</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, (gnutls_transport_ptr_t) <a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>);
+<a id='L346' name='L346'></a>
+<a id='L347' name='L347'></a>        <a href='../D/2105.html' title='Multiple defined in 2 places.'>HANDSHAKE</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, <a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>);
+<a id='L348' name='L348'></a>
+<a id='L349' name='L349'></a>        <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = <a href='../S/5256.html#L449' title='Defined at 449 in lib/algorithms/ciphers.c.'>gnutls_cipher_get_name</a>(<a href='../S/5625.html#L81' title='Defined at 81 in lib/state.c.'>gnutls_cipher_get</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>));
+<a id='L350' name='L350'></a>        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stdout, "%30s - %s  ", <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, <a href='../S/5246.html#L408' title='Defined at 408 in lib/algorithms/protocols.c.'>gnutls_protocol_get_name</a>(
+<a id='L351' name='L351'></a>                <a href='../S/5625.html#L1336' title='Defined at 1336 in lib/state.c.'>gnutls_protocol_get_version</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>)));
+<a id='L352' name='L352'></a>        <a href='../D/7820.html' title='Multiple defined in 4 places.'>fflush</a>(stdout);
+<a id='L353' name='L353'></a>
+<a id='L354' name='L354'></a>        ret = <a href='../D/9220.html' title='Multiple defined in 6 places.'>gnutls_rnd</a>(GNUTLS_RND_NONCE, <a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>, <strong class='reserved'>sizeof</strong>(<a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>));
+<a id='L355' name='L355'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L356' name='L356'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Error in %s\n", str);
+<a id='L357' name='L357'></a>                exit(1);
+<a id='L358' name='L358'></a>        <em class='brace'>}</em>
+<a id='L359' name='L359'></a>
+<a id='L360' name='L360'></a>        <a href='../S/3996.html#L76' title='Defined at 76 in src/benchmark.c.'>start_benchmark</a>(&amp;st);
+<a id='L361' name='L361'></a>
+<a id='L362' name='L362'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L363' name='L363'></a>                <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L364' name='L364'></a>                        ret = <a href='../S/5258.html#L1958' title='Defined at 1958 in lib/record.c.'>gnutls_record_send</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, <a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>, size);
+<a id='L365' name='L365'></a>                <em class='brace'>}</em>
+<a id='L366' name='L366'></a>                <strong class='reserved'>while</strong> (ret == GNUTLS_E_AGAIN);
+<a id='L367' name='L367'></a>
+<a id='L368' name='L368'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L369' name='L369'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Failed sending to server\n");
+<a id='L370' name='L370'></a>                        exit(1);
+<a id='L371' name='L371'></a>                <em class='brace'>}</em>
+<a id='L372' name='L372'></a>
+<a id='L373' name='L373'></a>                <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L374' name='L374'></a>                        ret =
+<a id='L375' name='L375'></a>                            <a href='../S/5258.html#L1872' title='Defined at 1872 in lib/record.c.'>gnutls_record_recv_packet</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, &amp;packet);
+<a id='L376' name='L376'></a>                <em class='brace'>}</em>
+<a id='L377' name='L377'></a>                <strong class='reserved'>while</strong> (ret == GNUTLS_E_AGAIN);
+<a id='L378' name='L378'></a>
+<a id='L379' name='L379'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L380' name='L380'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Failed receiving from client: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L381' name='L381'></a>                        exit(1);
+<a id='L382' name='L382'></a>                <em class='brace'>}</em>
+<a id='L383' name='L383'></a>
+<a id='L384' name='L384'></a>                st.size += size;
+<a id='L385' name='L385'></a>                <a href='../S/5258.html#L1824' title='Defined at 1824 in lib/record.c.'>gnutls_packet_deinit</a>(packet);
+<a id='L386' name='L386'></a>        <em class='brace'>}</em>
+<a id='L387' name='L387'></a>        <strong class='reserved'>while</strong> (benchmark_must_finish == 0);
+<a id='L388' name='L388'></a>
+<a id='L389' name='L389'></a>        <a href='../S/3996.html#L113' title='Defined at 113 in src/benchmark.c.'>stop_benchmark</a>(&amp;st, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 1);
+<a id='L390' name='L390'></a>
+<a id='L391' name='L391'></a>        <a href='../S/5258.html#L285' title='Defined at 285 in lib/record.c.'>gnutls_bye</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, GNUTLS_SHUT_WR);
+<a id='L392' name='L392'></a>        <a href='../S/5258.html#L285' title='Defined at 285 in lib/record.c.'>gnutls_bye</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, GNUTLS_SHUT_WR);
+<a id='L393' name='L393'></a>
+<a id='L394' name='L394'></a>        <a href='../S/5625.html#L659' title='Defined at 659 in lib/state.c.'>gnutls_deinit</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>);
+<a id='L395' name='L395'></a>        <a href='../S/5625.html#L659' title='Defined at 659 in lib/state.c.'>gnutls_deinit</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>);
+<a id='L396' name='L396'></a>
+<a id='L397' name='L397'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L398' name='L398'></a>        <a href='../S/5394.html#L75' title='Defined at 75 in lib/anon_cred.c.'>gnutls_anon_free_client_credentials</a>(c_anoncred);
+<a id='L399' name='L399'></a>        <a href='../S/5394.html#L41' title='Defined at 41 in lib/anon_cred.c.'>gnutls_anon_free_server_credentials</a>(s_anoncred);
+<a id='L400' name='L400'></a><em class='sharp'>#endif</em>
+<a id='L401' name='L401'></a><em class='brace'>}</em>
+<a id='L402' name='L402'></a>
+<a id='L403' name='L403'></a><strong class='reserved'>static</strong>
+<a id='L404' name='L404'></a><strong class='reserved'>double</strong> <a href='../S/4176.html#L582' title='Referred from 582 in src/benchmark-tls.c.'>calc_avg</a>(<a href='../D/12097.html' title='Multiple defined in 19 places.'>uint64_t</a> *diffs, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> diffs_size)
+<a id='L405' name='L405'></a><em class='brace'>{</em>
+<a id='L406' name='L406'></a>        <strong class='reserved'>double</strong> avg = 0;
+<a id='L407' name='L407'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> i;
+<a id='L408' name='L408'></a>
+<a id='L409' name='L409'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; diffs_size; i++)
+<a id='L410' name='L410'></a>                avg += diffs[i];
+<a id='L411' name='L411'></a>
+<a id='L412' name='L412'></a>        avg /= diffs_size;
+<a id='L413' name='L413'></a>
+<a id='L414' name='L414'></a>        <strong class='reserved'>return</strong> avg;
+<a id='L415' name='L415'></a><em class='brace'>}</em>
+<a id='L416' name='L416'></a>
+<a id='L417' name='L417'></a><strong class='reserved'>static</strong>
+<a id='L418' name='L418'></a><strong class='reserved'>double</strong> <a href='../S/4176.html#L598' title='Referred from 598 in src/benchmark-tls.c.'>calc_svar</a>(<a href='../D/12097.html' title='Multiple defined in 19 places.'>uint64_t</a> *diffs, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> diffs_size,
+<a id='L419' name='L419'></a>                   <strong class='reserved'>double</strong> avg)
+<a id='L420' name='L420'></a><em class='brace'>{</em>
+<a id='L421' name='L421'></a>        <strong class='reserved'>double</strong> <a href='../S/5546.html#L67' title='Defined at 67 in lib/nettle/ecc/ecc-dup-jj.c.'>sum</a> = 0, <a href='../D/7382.html' title='Multiple defined in 2 places.'>d</a>;
+<a id='L422' name='L422'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> i;
+<a id='L423' name='L423'></a>
+<a id='L424' name='L424'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; diffs_size; i++) <em class='brace'>{</em>
+<a id='L425' name='L425'></a>                <a href='../D/7382.html' title='Multiple defined in 2 places.'>d</a> = ((<strong class='reserved'>double</strong>) diffs[i] - avg);
+<a id='L426' name='L426'></a>                <a href='../D/7382.html' title='Multiple defined in 2 places.'>d</a> *= <a href='../D/7382.html' title='Multiple defined in 2 places.'>d</a>;
+<a id='L427' name='L427'></a>
+<a id='L428' name='L428'></a>                <a href='../S/5546.html#L67' title='Defined at 67 in lib/nettle/ecc/ecc-dup-jj.c.'>sum</a> += <a href='../D/7382.html' title='Multiple defined in 2 places.'>d</a>;
+<a id='L429' name='L429'></a>        <em class='brace'>}</em>
+<a id='L430' name='L430'></a>        <a href='../S/5546.html#L67' title='Defined at 67 in lib/nettle/ecc/ecc-dup-jj.c.'>sum</a> /= diffs_size - 1;
+<a id='L431' name='L431'></a>
+<a id='L432' name='L432'></a>        <strong class='reserved'>return</strong> <a href='../S/5546.html#L67' title='Defined at 67 in lib/nettle/ecc/ecc-dup-jj.c.'>sum</a>;
+<a id='L433' name='L433'></a><em class='brace'>}</em>
+<a id='L434' name='L434'></a>
+<a id='L435' name='L435'></a>
+<a id='L436' name='L436'></a><a href='../D/12097.html' title='Multiple defined in 19 places.'>uint64_t</a> total_diffs[32 * 1024];
+<a id='L437' name='L437'></a><strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> total_diffs_size = 0;
+<a id='L438' name='L438'></a>
+<a id='L439' name='L439'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/10749.html' title='Multiple referred from 9 places.'>test_ciphersuite_kx</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *cipher_prio, <strong class='reserved'>unsigned</strong> pk)
+<a id='L440' name='L440'></a><em class='brace'>{</em>
+<a id='L441' name='L441'></a>        <em class='comment'>/* Server stuff. */</em>
+<a id='L442' name='L442'></a>        gnutls_anon_server_credentials_t s_anoncred;
+<a id='L443' name='L443'></a>        gnutls_session_t <a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>;
+<a id='L444' name='L444'></a>        <strong class='reserved'>int</strong> sret, cret, ret;
+<a id='L445' name='L445'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str;
+<a id='L446' name='L446'></a>        <strong class='reserved'>char</strong> *suite = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L447' name='L447'></a>        gnutls_anon_client_credentials_t c_anoncred;
+<a id='L448' name='L448'></a>        gnutls_certificate_credentials_t c_certcred, s_certcred;
+<a id='L449' name='L449'></a>        gnutls_session_t <a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>;
+<a id='L450' name='L450'></a>        <strong class='reserved'>unsigned</strong> i;
+<a id='L451' name='L451'></a>        <strong class='reserved'>struct</strong> <a href='../S/3999.html#L51' title='Defined at 51 in src/benchmark.h.'>benchmark_st</a> st;
+<a id='L452' name='L452'></a>        <strong class='reserved'>struct</strong> <a href='../D/11905.html' title='Multiple defined in 6 places.'>timespec</a> tr_start, tr_stop;
+<a id='L453' name='L453'></a>        <strong class='reserved'>double</strong> avg, svar;
+<a id='L454' name='L454'></a>        gnutls_priority_t priority_cache;
+<a id='L455' name='L455'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *scale;
+<a id='L456' name='L456'></a>
+<a id='L457' name='L457'></a>        total_diffs_size = 0;
+<a id='L458' name='L458'></a>
+<a id='L459' name='L459'></a>        <em class='comment'>/* Init server */</em>
+<a id='L460' name='L460'></a>        <a href='../S/5463.html#L418' title='Defined at 418 in lib/cert-cred.c.'>gnutls_certificate_allocate_credentials</a>(&amp;s_certcred);
+<a id='L461' name='L461'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L462' name='L462'></a>        <a href='../S/5394.html#L58' title='Defined at 58 in lib/anon_cred.c.'>gnutls_anon_allocate_server_credentials</a>(&amp;s_anoncred);
+<a id='L463' name='L463'></a><em class='sharp'>#endif</em>
+<a id='L464' name='L464'></a>
+<a id='L465' name='L465'></a>        ret = 0;
+<a id='L466' name='L466'></a>        <strong class='reserved'>if</strong> (pk == GNUTLS_PK_RSA_PSS)
+<a id='L467' name='L467'></a>                ret = <a href='../S/5456.html#L635' title='Defined at 635 in lib/cert-cred-x509.c.'>gnutls_certificate_set_x509_key_mem</a>(s_certcred, &amp;server_rsa_pss_cert,
+<a id='L468' name='L468'></a>                                                    &amp;server_key,
+<a id='L469' name='L469'></a>                                                    GNUTLS_X509_FMT_PEM);
+<a id='L470' name='L470'></a>        <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (pk == GNUTLS_PK_RSA)
+<a id='L471' name='L471'></a>                ret = <a href='../S/5456.html#L635' title='Defined at 635 in lib/cert-cred-x509.c.'>gnutls_certificate_set_x509_key_mem</a>(s_certcred, &amp;server_cert,
+<a id='L472' name='L472'></a>                                                    &amp;server_key,
+<a id='L473' name='L473'></a>                                                    GNUTLS_X509_FMT_PEM);
+<a id='L474' name='L474'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L475' name='L475'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Error in %d: %s\n", __LINE__,
+<a id='L476' name='L476'></a>                        <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L477' name='L477'></a>                exit(1);
+<a id='L478' name='L478'></a>        <em class='brace'>}</em>
+<a id='L479' name='L479'></a>
+<a id='L480' name='L480'></a>        ret = 0;
+<a id='L481' name='L481'></a>        <strong class='reserved'>if</strong> (pk == GNUTLS_PK_ECDSA)
+<a id='L482' name='L482'></a>                ret = <a href='../S/5456.html#L635' title='Defined at 635 in lib/cert-cred-x509.c.'>gnutls_certificate_set_x509_key_mem</a>(s_certcred, &amp;server_ecc_cert,
+<a id='L483' name='L483'></a>                                                    &amp;server_ecc_key,
+<a id='L484' name='L484'></a>                                                    GNUTLS_X509_FMT_PEM);
+<a id='L485' name='L485'></a>        <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (pk == GNUTLS_PK_EDDSA_ED25519)
+<a id='L486' name='L486'></a>                ret = <a href='../S/5456.html#L635' title='Defined at 635 in lib/cert-cred-x509.c.'>gnutls_certificate_set_x509_key_mem</a>(s_certcred, &amp;server_ed25519_cert,
+<a id='L487' name='L487'></a>                                                    &amp;server_ed25519_key,
+<a id='L488' name='L488'></a>                                                    GNUTLS_X509_FMT_PEM);
+<a id='L489' name='L489'></a><em class='sharp'>#ifdef</em> ENABLE_GOST
+<a id='L490' name='L490'></a>        <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (pk == GNUTLS_PK_GOST_12_256)
+<a id='L491' name='L491'></a>                ret = <a href='../S/5456.html#L635' title='Defined at 635 in lib/cert-cred-x509.c.'>gnutls_certificate_set_x509_key_mem</a>(s_certcred, &amp;server_gost12_256_cert,
+<a id='L492' name='L492'></a>                                                    &amp;server_gost12_256_key,
+<a id='L493' name='L493'></a>                                                    GNUTLS_X509_FMT_PEM);
+<a id='L494' name='L494'></a><em class='sharp'>#endif</em>
+<a id='L495' name='L495'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L496' name='L496'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Error in %d: %s\n", __LINE__,
+<a id='L497' name='L497'></a>                        <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L498' name='L498'></a>                exit(1);
+<a id='L499' name='L499'></a>        <em class='brace'>}</em>
+<a id='L500' name='L500'></a>
+<a id='L501' name='L501'></a>        <em class='comment'>/* Init client */</em>
+<a id='L502' name='L502'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L503' name='L503'></a>        <a href='../S/5394.html#L92' title='Defined at 92 in lib/anon_cred.c.'>gnutls_anon_allocate_client_credentials</a>(&amp;c_anoncred);
+<a id='L504' name='L504'></a><em class='sharp'>#endif</em>
+<a id='L505' name='L505'></a>        <a href='../S/5463.html#L418' title='Defined at 418 in lib/cert-cred.c.'>gnutls_certificate_allocate_credentials</a>(&amp;c_certcred);
+<a id='L506' name='L506'></a>
+<a id='L507' name='L507'></a>        <a href='../S/3996.html#L76' title='Defined at 76 in src/benchmark.c.'>start_benchmark</a>(&amp;st);
+<a id='L508' name='L508'></a>
+<a id='L509' name='L509'></a>        ret = <a href='../S/5260.html#L1978' title='Defined at 1978 in lib/priority.c.'>gnutls_priority_init</a>(&amp;priority_cache, cipher_prio, &amp;str);
+<a id='L510' name='L510'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L511' name='L511'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Error in %s\n", str);
+<a id='L512' name='L512'></a>                exit(1);
+<a id='L513' name='L513'></a>        <em class='brace'>}</em>
+<a id='L514' name='L514'></a>
+<a id='L515' name='L515'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L516' name='L516'></a>
+<a id='L517' name='L517'></a>                <a href='../S/5625.html#L475' title='Defined at 475 in lib/state.c.'>gnutls_init</a>(&amp;<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, GNUTLS_SERVER);
+<a id='L518' name='L518'></a>                ret =
+<a id='L519' name='L519'></a>                    <a href='../S/5260.html#L641' title='Defined at 641 in lib/priority.c.'>gnutls_priority_set</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, priority_cache);
+<a id='L520' name='L520'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L521' name='L521'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Error in setting priority: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L522' name='L522'></a>                        exit(1);
+<a id='L523' name='L523'></a>                <em class='brace'>}</em>
+<a id='L524' name='L524'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L525' name='L525'></a>                <a href='../S/5749.html#L94' title='Defined at 94 in lib/auth.c.'>gnutls_credentials_set</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, GNUTLS_CRD_ANON,
+<a id='L526' name='L526'></a>                                       s_anoncred);
+<a id='L527' name='L527'></a><em class='sharp'>#endif</em>
+<a id='L528' name='L528'></a>                <a href='../S/5749.html#L94' title='Defined at 94 in lib/auth.c.'>gnutls_credentials_set</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, GNUTLS_CRD_CERTIFICATE,
+<a id='L529' name='L529'></a>                                       s_certcred);
+<a id='L530' name='L530'></a>                <a href='../S/5813.html#L147' title='Defined at 147 in lib/system_override.c.'>gnutls_transport_set_push_function</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, <a href='../D/11326.html' title='Multiple defined in 3 places.'>server_push</a>);
+<a id='L531' name='L531'></a>                <a href='../S/5813.html#L82' title='Defined at 82 in lib/system_override.c.'>gnutls_transport_set_pull_function</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>, <a href='../D/11323.html' title='Multiple defined in 2 places.'>server_pull</a>);
+<a id='L532' name='L532'></a>                <a href='../S/5258.html#L101' title='Defined at 101 in lib/record.c.'>gnutls_transport_set_ptr</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>,
+<a id='L533' name='L533'></a>                                         (gnutls_transport_ptr_t) <a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>);
+<a id='L534' name='L534'></a>                <a href='../D/11121.html' title='Multiple defined in 2 places.'>reset_buffers</a>();
+<a id='L535' name='L535'></a>
+<a id='L536' name='L536'></a>                <a href='../S/5625.html#L475' title='Defined at 475 in lib/state.c.'>gnutls_init</a>(&amp;<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, GNUTLS_CLIENT);
+<a id='L537' name='L537'></a>
+<a id='L538' name='L538'></a>                ret =
+<a id='L539' name='L539'></a>                    <a href='../S/5260.html#L641' title='Defined at 641 in lib/priority.c.'>gnutls_priority_set</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, priority_cache);
+<a id='L540' name='L540'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L541' name='L541'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Error in setting priority: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L542' name='L542'></a>                        exit(1);
+<a id='L543' name='L543'></a>                <em class='brace'>}</em>
+<a id='L544' name='L544'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L545' name='L545'></a>                <a href='../S/5749.html#L94' title='Defined at 94 in lib/auth.c.'>gnutls_credentials_set</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, GNUTLS_CRD_ANON,
+<a id='L546' name='L546'></a>                                       c_anoncred);
+<a id='L547' name='L547'></a><em class='sharp'>#endif</em>
+<a id='L548' name='L548'></a>                <a href='../S/5749.html#L94' title='Defined at 94 in lib/auth.c.'>gnutls_credentials_set</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, GNUTLS_CRD_CERTIFICATE,
+<a id='L549' name='L549'></a>                                       c_certcred);
+<a id='L550' name='L550'></a>
+<a id='L551' name='L551'></a>                <a href='../S/5813.html#L147' title='Defined at 147 in lib/system_override.c.'>gnutls_transport_set_push_function</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, <a href='../D/7237.html' title='Multiple defined in 3 places.'>client_push</a>);
+<a id='L552' name='L552'></a>                <a href='../S/5813.html#L82' title='Defined at 82 in lib/system_override.c.'>gnutls_transport_set_pull_function</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, <a href='../D/7234.html' title='Multiple defined in 3 places.'>client_pull</a>);
+<a id='L553' name='L553'></a>                <a href='../S/5258.html#L101' title='Defined at 101 in lib/record.c.'>gnutls_transport_set_ptr</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>,
+<a id='L554' name='L554'></a>                                         (gnutls_transport_ptr_t) <a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>);
+<a id='L555' name='L555'></a>
+<a id='L556' name='L556'></a>                <a href='../D/8198.html' title='Multiple defined in 4 places.'>gettime</a>(&amp;tr_start);
+<a id='L557' name='L557'></a>
+<a id='L558' name='L558'></a>                <a href='../D/2105.html' title='Multiple defined in 2 places.'>HANDSHAKE</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>, <a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>);
+<a id='L559' name='L559'></a>
+<a id='L560' name='L560'></a>                <a href='../D/8198.html' title='Multiple defined in 4 places.'>gettime</a>(&amp;tr_stop);
+<a id='L561' name='L561'></a>
+<a id='L562' name='L562'></a>                <strong class='reserved'>if</strong> (suite == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L563' name='L563'></a>                        suite =
+<a id='L564' name='L564'></a>                            <a href='../S/5303.html#L362' title='Defined at 362 in lib/session.c.'>gnutls_session_get_desc</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>);
+<a id='L565' name='L565'></a>
+<a id='L566' name='L566'></a>                <a href='../S/5625.html#L659' title='Defined at 659 in lib/state.c.'>gnutls_deinit</a>(<a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>);
+<a id='L567' name='L567'></a>                <a href='../S/5625.html#L659' title='Defined at 659 in lib/state.c.'>gnutls_deinit</a>(<a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>);
+<a id='L568' name='L568'></a>
+<a id='L569' name='L569'></a>                total_diffs[total_diffs_size++] = <a href='../S/3999.html#L75' title='Defined at 75 in src/benchmark.h.'>timespec_sub_ns</a>(&amp;tr_stop, &amp;tr_start);
+<a id='L570' name='L570'></a>                <strong class='reserved'>if</strong> (total_diffs_size &gt; <strong class='reserved'>sizeof</strong>(total_diffs)/<strong class='reserved'>sizeof</strong>(total_diffs[0]))
+<a id='L571' name='L571'></a>                        abort();
+<a id='L572' name='L572'></a>
+<a id='L573' name='L573'></a>                st.size += 1;
+<a id='L574' name='L574'></a>        <em class='brace'>}</em>
+<a id='L575' name='L575'></a>        <strong class='reserved'>while</strong> (benchmark_must_finish == 0);
+<a id='L576' name='L576'></a>
+<a id='L577' name='L577'></a>        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stdout, "%s\n - ", suite);
+<a id='L578' name='L578'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(suite);
+<a id='L579' name='L579'></a>        <a href='../S/3996.html#L113' title='Defined at 113 in src/benchmark.c.'>stop_benchmark</a>(&amp;st, "transactions", 1);
+<a id='L580' name='L580'></a>        <a href='../S/5260.html#L2294' title='Defined at 2294 in lib/priority.c.'>gnutls_priority_deinit</a>(priority_cache);
+<a id='L581' name='L581'></a>
+<a id='L582' name='L582'></a>        avg = <a href='../S/4176.html#L404' title='Defined at 404 in src/benchmark-tls.c.'>calc_avg</a>(total_diffs, total_diffs_size);
+<a id='L583' name='L583'></a>
+<a id='L584' name='L584'></a>        <strong class='reserved'>if</strong> (avg &lt; 1000) <em class='brace'>{</em>
+<a id='L585' name='L585'></a>                scale = "ns";
+<a id='L586' name='L586'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (avg &lt; 1000000) <em class='brace'>{</em>
+<a id='L587' name='L587'></a>                scale = "\u00B5s";
+<a id='L588' name='L588'></a>                avg /= 1000;
+<a id='L589' name='L589'></a>                <strong class='reserved'>for</strong> (i=0;i&lt;total_diffs_size;i++)
+<a id='L590' name='L590'></a>                        total_diffs[i] /= 1000;
+<a id='L591' name='L591'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L592' name='L592'></a>                scale = "ms";
+<a id='L593' name='L593'></a>                avg /= 1000*1000;
+<a id='L594' name='L594'></a>                <strong class='reserved'>for</strong> (i=0;i&lt;total_diffs_size;i++)
+<a id='L595' name='L595'></a>                        total_diffs[i] /= 1000*1000;
+<a id='L596' name='L596'></a>        <em class='brace'>}</em>
+<a id='L597' name='L597'></a>
+<a id='L598' name='L598'></a>        svar = <a href='../S/4176.html#L418' title='Defined at 418 in src/benchmark-tls.c.'>calc_svar</a>(total_diffs, total_diffs_size, avg);
+<a id='L599' name='L599'></a>
+<a id='L600' name='L600'></a>        <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>(" - avg. handshake time: %.2f %s\n - standard deviation: %.2f %s\n\n",
+<a id='L601' name='L601'></a>               avg, scale, sqrt(svar), scale);
+<a id='L602' name='L602'></a>
+<a id='L603' name='L603'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L604' name='L604'></a>        <a href='../S/5394.html#L75' title='Defined at 75 in lib/anon_cred.c.'>gnutls_anon_free_client_credentials</a>(c_anoncred);
+<a id='L605' name='L605'></a>        <a href='../S/5394.html#L41' title='Defined at 41 in lib/anon_cred.c.'>gnutls_anon_free_server_credentials</a>(s_anoncred);
+<a id='L606' name='L606'></a><em class='sharp'>#endif</em>
+<a id='L607' name='L607'></a><em class='brace'>}</em>
+<a id='L608' name='L608'></a>
+<a id='L609' name='L609'></a><strong class='reserved'>void</strong> <a href='../R/6078.html' title='Multiple referred from 3 places.'>benchmark_tls</a>(<strong class='reserved'>int</strong> debug_level, <strong class='reserved'>int</strong> ciphers)
+<a id='L610' name='L610'></a><em class='brace'>{</em>
+<a id='L611' name='L611'></a>        <strong class='reserved'>int</strong> size;
+<a id='L612' name='L612'></a>
+<a id='L613' name='L613'></a>        <a href='../S/6039.html#L104' title='Defined at 104 in lib/global.c.'>gnutls_global_set_log_function</a>(<a href='../D/11934.html' title='Multiple defined in 223 places.'>tls_log_func</a>);
+<a id='L614' name='L614'></a>        <a href='../S/6039.html#L155' title='Defined at 155 in lib/global.c.'>gnutls_global_set_log_level</a>(debug_level);
+<a id='L615' name='L615'></a>        <a href='../S/6039.html#L222' title='Defined at 222 in lib/global.c.'>gnutls_global_init</a>();
+<a id='L616' name='L616'></a>
+<a id='L617' name='L617'></a>        <strong class='reserved'>if</strong> (ciphers != 0) <em class='brace'>{</em>
+<a id='L618' name='L618'></a>                size = 1400;
+<a id='L619' name='L619'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>
+<a id='L620' name='L620'></a>                    ("Testing throughput in cipher/MAC combinations (payload: %d bytes)\n",
+<a id='L621' name='L621'></a>                     size);
+<a id='L622' name='L622'></a>
+<a id='L623' name='L623'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L57' title='Defined at 57 in src/benchmark-tls.c.'>PRIO_TLS12_AES_GCM</a>, size);
+<a id='L624' name='L624'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L58' title='Defined at 58 in src/benchmark-tls.c.'>PRIO_AES_GCM</a>, size);
+<a id='L625' name='L625'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L59' title='Defined at 59 in src/benchmark-tls.c.'>PRIO_TLS12_AES_CCM</a>, size);
+<a id='L626' name='L626'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L60' title='Defined at 60 in src/benchmark-tls.c.'>PRIO_AES_CCM</a>, size);
+<a id='L627' name='L627'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L61' title='Defined at 61 in src/benchmark-tls.c.'>PRIO_TLS12_CHACHA_POLY1305</a>, size);
+<a id='L628' name='L628'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L62' title='Defined at 62 in src/benchmark-tls.c.'>PRIO_CHACHA_POLY1305</a>, size);
+<a id='L629' name='L629'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L56' title='Defined at 56 in src/benchmark-tls.c.'>PRIO_AES_CBC_SHA1</a>, size);
+<a id='L630' name='L630'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L63' title='Defined at 63 in src/benchmark-tls.c.'>PRIO_CAMELLIA_CBC_SHA1</a>, size);
+<a id='L631' name='L631'></a><em class='sharp'>#ifdef</em> ENABLE_GOST
+<a id='L632' name='L632'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L64' title='Defined at 64 in src/benchmark-tls.c.'>PRIO_GOST_CNT</a>, size);
+<a id='L633' name='L633'></a><em class='sharp'>#endif</em>
+<a id='L634' name='L634'></a>
+<a id='L635' name='L635'></a>                size = 16 * 1024;
+<a id='L636' name='L636'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>
+<a id='L637' name='L637'></a>                    ("\nTesting throughput in cipher/MAC combinations (payload: %d bytes)\n",
+<a id='L638' name='L638'></a>                     size);
+<a id='L639' name='L639'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L57' title='Defined at 57 in src/benchmark-tls.c.'>PRIO_TLS12_AES_GCM</a>, size);
+<a id='L640' name='L640'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L58' title='Defined at 58 in src/benchmark-tls.c.'>PRIO_AES_GCM</a>, size);
+<a id='L641' name='L641'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L59' title='Defined at 59 in src/benchmark-tls.c.'>PRIO_TLS12_AES_CCM</a>, size);
+<a id='L642' name='L642'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L60' title='Defined at 60 in src/benchmark-tls.c.'>PRIO_AES_CCM</a>, size);
+<a id='L643' name='L643'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L61' title='Defined at 61 in src/benchmark-tls.c.'>PRIO_TLS12_CHACHA_POLY1305</a>, size);
+<a id='L644' name='L644'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L62' title='Defined at 62 in src/benchmark-tls.c.'>PRIO_CHACHA_POLY1305</a>, size);
+<a id='L645' name='L645'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L56' title='Defined at 56 in src/benchmark-tls.c.'>PRIO_AES_CBC_SHA1</a>, size);
+<a id='L646' name='L646'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L63' title='Defined at 63 in src/benchmark-tls.c.'>PRIO_CAMELLIA_CBC_SHA1</a>, size);
+<a id='L647' name='L647'></a><em class='sharp'>#ifdef</em> ENABLE_GOST
+<a id='L648' name='L648'></a>                <a href='../S/4176.html#L277' title='Defined at 277 in src/benchmark-tls.c.'>test_ciphersuite</a>(<a href='../S/4176.html#L64' title='Defined at 64 in src/benchmark-tls.c.'>PRIO_GOST_CNT</a>, size);
+<a id='L649' name='L649'></a><em class='sharp'>#endif</em>
+<a id='L650' name='L650'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L651' name='L651'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>
+<a id='L652' name='L652'></a>                    ("Testing key exchanges (RSA/DH bits: %d, EC bits: %d)\n\n",
+<a id='L653' name='L653'></a>                     rsa_bits, ec_bits);
+<a id='L654' name='L654'></a>                <a href='../S/4176.html#L439' title='Defined at 439 in src/benchmark-tls.c.'>test_ciphersuite_kx</a>(<a href='../S/4176.html#L46' title='Defined at 46 in src/benchmark-tls.c.'>PRIO_DHE_RSA</a>, GNUTLS_PK_RSA);
+<a id='L655' name='L655'></a>                <a href='../S/4176.html#L439' title='Defined at 439 in src/benchmark-tls.c.'>test_ciphersuite_kx</a>(<a href='../S/4176.html#L53' title='Defined at 53 in src/benchmark-tls.c.'>PRIO_ECDH_RSA_PSS</a>, GNUTLS_PK_RSA_PSS);
+<a id='L656' name='L656'></a>                <a href='../S/4176.html#L439' title='Defined at 439 in src/benchmark-tls.c.'>test_ciphersuite_kx</a>(<a href='../S/4176.html#L47' title='Defined at 47 in src/benchmark-tls.c.'>PRIO_ECDH</a>, GNUTLS_PK_RSA);
+<a id='L657' name='L657'></a>                <a href='../S/4176.html#L439' title='Defined at 439 in src/benchmark-tls.c.'>test_ciphersuite_kx</a>(<a href='../S/4176.html#L48' title='Defined at 48 in src/benchmark-tls.c.'>PRIO_ECDH_X25519</a>, GNUTLS_PK_RSA);
+<a id='L658' name='L658'></a>                <a href='../S/4176.html#L439' title='Defined at 439 in src/benchmark-tls.c.'>test_ciphersuite_kx</a>(<a href='../S/4176.html#L49' title='Defined at 49 in src/benchmark-tls.c.'>PRIO_ECDHE_ECDSA</a>, GNUTLS_PK_ECC);
+<a id='L659' name='L659'></a>                <a href='../S/4176.html#L439' title='Defined at 439 in src/benchmark-tls.c.'>test_ciphersuite_kx</a>(<a href='../S/4176.html#L50' title='Defined at 50 in src/benchmark-tls.c.'>PRIO_ECDH_X25519_ECDSA</a>, GNUTLS_PK_ECC);
+<a id='L660' name='L660'></a>                <a href='../S/4176.html#L439' title='Defined at 439 in src/benchmark-tls.c.'>test_ciphersuite_kx</a>(<a href='../S/4176.html#L51' title='Defined at 51 in src/benchmark-tls.c.'>PRIO_ECDH_X25519_EDDSA</a>, GNUTLS_PK_EDDSA_ED25519);
+<a id='L661' name='L661'></a>                <a href='../S/4176.html#L439' title='Defined at 439 in src/benchmark-tls.c.'>test_ciphersuite_kx</a>(<a href='../S/4176.html#L52' title='Defined at 52 in src/benchmark-tls.c.'>PRIO_RSA</a>, GNUTLS_PK_RSA);
+<a id='L662' name='L662'></a><em class='sharp'>#ifdef</em> ENABLE_GOST
+<a id='L663' name='L663'></a>                <a href='../S/4176.html#L439' title='Defined at 439 in src/benchmark-tls.c.'>test_ciphersuite_kx</a>(<a href='../S/4176.html#L64' title='Defined at 64 in src/benchmark-tls.c.'>PRIO_GOST_CNT</a>, GNUTLS_PK_GOST_12_256);
+<a id='L664' name='L664'></a><em class='sharp'>#endif</em>
+<a id='L665' name='L665'></a>        <em class='brace'>}</em>
+<a id='L666' name='L666'></a>
+<a id='L667' name='L667'></a>        <a href='../S/6039.html#L467' title='Defined at 467 in lib/global.c.'>gnutls_global_deinit</a>();
+<a id='L668' name='L668'></a>
+<a id='L669' name='L669'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L272'>[^]</a><a href='#L609'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

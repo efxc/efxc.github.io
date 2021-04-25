@@ -1,0 +1,467 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>gl/stat-w32.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6458.html'>gl</a>/stat-w32.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L66'>[^]</a><a href='#L139'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L66' title='Defined at 66.'>initialize</a></li>
+<li><a href='#L91' title='Defined at 91.'>_gl_convert_FILETIME_to_timespec</a></li>
+<li><a href='#L116' title='Defined at 116.'>_gl_convert_FILETIME_to_POSIX</a></li>
+<li><a href='#L139' title='Defined at 139.'>_gl_fstat_by_handle</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* Core of implementation of fstat and stat for native Windows.</em>
+<a id='L2' name='L2'></a><em class='comment'>   Copyright (C) 2017-2020 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'></em>
+<a id='L4' name='L4'></a><em class='comment'>   This program is free software: you can redistribute it and/or modify</em>
+<a id='L5' name='L5'></a><em class='comment'>   it under the terms of the GNU Lesser General Public License as published by</em>
+<a id='L6' name='L6'></a><em class='comment'>   the Free Software Foundation; either version 2.1 of the License, or</em>
+<a id='L7' name='L7'></a><em class='comment'>   (at your option) any later version.</em>
+<a id='L8' name='L8'></a><em class='comment'></em>
+<a id='L9' name='L9'></a><em class='comment'>   This program is distributed in the hope that it will be useful,</em>
+<a id='L10' name='L10'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L11' name='L11'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</em>
+<a id='L12' name='L12'></a><em class='comment'>   GNU Lesser General Public License for more details.</em>
+<a id='L13' name='L13'></a><em class='comment'></em>
+<a id='L14' name='L14'></a><em class='comment'>   You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L15' name='L15'></a><em class='comment'>   along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;.  */</em>
+<a id='L16' name='L16'></a>
+<a id='L17' name='L17'></a><em class='comment'>/* Written by Bruno Haible.  */</em>
+<a id='L18' name='L18'></a>
+<a id='L19' name='L19'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L20' name='L20'></a>
+<a id='L21' name='L21'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong> _WIN32 &amp;&amp; ! <strong class='reserved'>defined</strong> __CYGWIN__
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='comment'>/* Ensure that &lt;windows.h&gt; defines FILE_ID_INFO.  */</em>
+<a id='L24' name='L24'></a><em class='sharp'>#if</em> !<strong class='reserved'>defined</strong> <a href='../D/5269.html' title='Multiple defined in 8 places.'>_WIN32_WINNT</a> || (<a href='../D/5269.html' title='Multiple defined in 8 places.'>_WIN32_WINNT</a> &lt; _WIN32_WINNT_WIN8)
+<a id='L25' name='L25'></a><em class='sharp'># undef</em> <a href='../R/4535.html' title='Multiple referred from 13 places.'>_WIN32_WINNT</a>
+<a id='L26' name='L26'></a><em class='sharp'># define</em> <a href='../R/4535.html' title='Multiple referred from 13 places.'>_WIN32_WINNT</a> _WIN32_WINNT_WIN8
+<a id='L27' name='L27'></a><em class='sharp'>#endif</em>
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;sys/types.h&gt;
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;sys/stat.h&gt;
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> &lt;limits.h&gt;
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L34' name='L34'></a><em class='sharp'>#include</em> &lt;unistd.h&gt;
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> &lt;windows.h&gt;
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a><em class='comment'>/* Specification.  */</em>
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> "<a href='../I/158.html'>stat-w32.h</a>"
+<a id='L39' name='L39'></a>
+<a id='L40' name='L40'></a><em class='sharp'>#include</em> "<a href='../I/143.html'>pathmax.h</a>"
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> "<a href='../I/412.html'>verify.h</a>"
+<a id='L42' name='L42'></a>
+<a id='L43' name='L43'></a><em class='sharp'>#if</em> !(<a href='../D/5269.html' title='Multiple defined in 8 places.'>_WIN32_WINNT</a> &gt;= _WIN32_WINNT_VISTA)
+<a id='L44' name='L44'></a>
+<a id='L45' name='L45'></a><em class='comment'>/* Avoid warnings from gcc -Wcast-function-type.  */</em>
+<a id='L46' name='L46'></a><em class='sharp'># define</em> <a href='../R/1814.html' title='Multiple referred from 26 places.'>GetProcAddress</a> \
+<a id='L47' name='L47'></a>   (<strong class='reserved'>void</strong> *) <a href='../D/2100.html' title='Multiple defined in 7 places.'>GetProcAddress</a>
+<a id='L48' name='L48'></a>
+<a id='L49' name='L49'></a><em class='sharp'># if</em> <a href='../D/5193.html' title='Multiple defined in 3 places.'>_GL_WINDOWS_STAT_INODES</a> == 2
+<a id='L50' name='L50'></a><em class='comment'>/* GetFileInformationByHandleEx was introduced only in Windows Vista.  */</em>
+<a id='L51' name='L51'></a><strong class='reserved'>typedef</strong> DWORD (<a href='../S/5450.html#L35' title='Defined at 35 in lib/system.h.'>WINAPI</a> * GetFileInformationByHandleExFuncType) (HANDLE hFile,
+<a id='L52' name='L52'></a>                                                               FILE_INFO_BY_HANDLE_CLASS fiClass,
+<a id='L53' name='L53'></a>                                                               LPVOID lpBuffer,
+<a id='L54' name='L54'></a>                                                               DWORD dwBufferSize);
+<a id='L55' name='L55'></a><strong class='reserved'>static</strong> GetFileInformationByHandleExFuncType <a href='../D/2098.html' title='Multiple defined in 2 places.'>GetFileInformationByHandleExFunc</a> = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L56' name='L56'></a><em class='sharp'># endif</em>
+<a id='L57' name='L57'></a><em class='comment'>/* GetFinalPathNameByHandle was introduced only in Windows Vista.  */</em>
+<a id='L58' name='L58'></a><strong class='reserved'>typedef</strong> DWORD (<a href='../S/5450.html#L35' title='Defined at 35 in lib/system.h.'>WINAPI</a> * GetFinalPathNameByHandleFuncType) (HANDLE hFile,
+<a id='L59' name='L59'></a>                                                           LPSTR lpFilePath,
+<a id='L60' name='L60'></a>                                                           DWORD lenFilePath,
+<a id='L61' name='L61'></a>                                                           DWORD dwFlags);
+<a id='L62' name='L62'></a><strong class='reserved'>static</strong> GetFinalPathNameByHandleFuncType <a href='../D/2099.html' title='Multiple defined in 2 places.'>GetFinalPathNameByHandleFunc</a> = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L63' name='L63'></a><strong class='reserved'>static</strong> BOOL initialized = <a href='../D/1035.html' title='Multiple defined in 2 places.'>FALSE</a>;
+<a id='L64' name='L64'></a>
+<a id='L65' name='L65'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L66' name='L66'></a><a href='../R/9038.html' title='Multiple referred from 4 places.'>initialize</a> (<strong class='reserved'>void</strong>)
+<a id='L67' name='L67'></a><em class='brace'>{</em>
+<a id='L68' name='L68'></a>  HMODULE kernel32 = LoadLibrary ("kernel32.dll");
+<a id='L69' name='L69'></a>  <strong class='reserved'>if</strong> (kernel32 != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L70' name='L70'></a>    <em class='brace'>{</em>
+<a id='L71' name='L71'></a><em class='sharp'># if</em> <a href='../D/5193.html' title='Multiple defined in 3 places.'>_GL_WINDOWS_STAT_INODES</a> == 2
+<a id='L72' name='L72'></a>      <a href='../D/2098.html' title='Multiple defined in 2 places.'>GetFileInformationByHandleExFunc</a> =
+<a id='L73' name='L73'></a>        (GetFileInformationByHandleExFuncType) <a href='../D/2100.html' title='Multiple defined in 7 places.'>GetProcAddress</a> (kernel32, "GetFileInformationByHandleEx");
+<a id='L74' name='L74'></a><em class='sharp'># endif</em>
+<a id='L75' name='L75'></a>      <a href='../D/2099.html' title='Multiple defined in 2 places.'>GetFinalPathNameByHandleFunc</a> =
+<a id='L76' name='L76'></a>        (GetFinalPathNameByHandleFuncType) <a href='../D/2100.html' title='Multiple defined in 7 places.'>GetProcAddress</a> (kernel32, "GetFinalPathNameByHandleA");
+<a id='L77' name='L77'></a>    <em class='brace'>}</em>
+<a id='L78' name='L78'></a>  initialized = <a href='../D/4590.html' title='Multiple defined in 2 places.'>TRUE</a>;
+<a id='L79' name='L79'></a><em class='brace'>}</em>
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a><em class='sharp'>#else</em>
+<a id='L82' name='L82'></a>
+<a id='L83' name='L83'></a><em class='sharp'># define</em> <a href='../R/1812.html' title='Multiple referred from 8 places.'>GetFileInformationByHandleExFunc</a> GetFileInformationByHandleEx
+<a id='L84' name='L84'></a><em class='sharp'># define</em> <a href='../R/1813.html' title='Multiple referred from 8 places.'>GetFinalPathNameByHandleFunc</a> GetFinalPathNameByHandle
+<a id='L85' name='L85'></a>
+<a id='L86' name='L86'></a><em class='sharp'>#endif</em>
+<a id='L87' name='L87'></a>
+<a id='L88' name='L88'></a><em class='comment'>/* Converts a FILETIME to GMT time since 1970-01-01 00:00:00.  */</em>
+<a id='L89' name='L89'></a><em class='sharp'>#if</em> <a href='../D/5194.html' title='Multiple defined in 2 places.'>_GL_WINDOWS_STAT_TIMESPEC</a>
+<a id='L90' name='L90'></a><strong class='reserved'>struct</strong> <a href='../D/11905.html' title='Multiple defined in 6 places.'>timespec</a>
+<a id='L91' name='L91'></a><a href='../R/4784.html' title='Multiple referred from 14 places.'>_gl_convert_FILETIME_to_timespec</a> (<strong class='reserved'>const</strong> FILETIME *ft)
+<a id='L92' name='L92'></a><em class='brace'>{</em>
+<a id='L93' name='L93'></a>  <strong class='reserved'>struct</strong> <a href='../D/11905.html' title='Multiple defined in 6 places.'>timespec</a> result;
+<a id='L94' name='L94'></a>  <em class='comment'>/* FILETIME: &lt;https://docs.microsoft.com/en-us/windows/desktop/api/minwinbase/ns-minwinbase-filetime&gt; */</em>
+<a id='L95' name='L95'></a>  <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong> since_1601 =
+<a id='L96' name='L96'></a>    ((<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong>) ft-&gt;dwHighDateTime &lt;&lt; 32)
+<a id='L97' name='L97'></a>    | (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong>) ft-&gt;dwLowDateTime;
+<a id='L98' name='L98'></a>  <strong class='reserved'>if</strong> (since_1601 == 0)
+<a id='L99' name='L99'></a>    <em class='brace'>{</em>
+<a id='L100' name='L100'></a>      result.tv_sec = 0;
+<a id='L101' name='L101'></a>      result.tv_nsec = 0;
+<a id='L102' name='L102'></a>    <em class='brace'>}</em>
+<a id='L103' name='L103'></a>  <strong class='reserved'>else</strong>
+<a id='L104' name='L104'></a>    <em class='brace'>{</em>
+<a id='L105' name='L105'></a>      <em class='comment'>/* Between 1601-01-01 and 1970-01-01 there were 280 normal years and 89</em>
+<a id='L106' name='L106'></a><em class='comment'>         leap years, in total 134774 days.  */</em>
+<a id='L107' name='L107'></a>      <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong> since_1970 =
+<a id='L108' name='L108'></a>        since_1601 - (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong>) 134774 * (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong>) 86400 * (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong>) 10000000;
+<a id='L109' name='L109'></a>      result.tv_sec = since_1970 / (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong>) 10000000;
+<a id='L110' name='L110'></a>      result.tv_nsec = (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong>) (since_1970 % (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong>) 10000000) * 100;
+<a id='L111' name='L111'></a>    <em class='brace'>}</em>
+<a id='L112' name='L112'></a>  <strong class='reserved'>return</strong> result;
+<a id='L113' name='L113'></a><em class='brace'>}</em>
+<a id='L114' name='L114'></a><em class='sharp'>#else</em>
+<a id='L115' name='L115'></a>time_t
+<a id='L116' name='L116'></a><a href='../R/4783.html' title='Multiple referred from 14 places.'>_gl_convert_FILETIME_to_POSIX</a> (<strong class='reserved'>const</strong> FILETIME *ft)
+<a id='L117' name='L117'></a><em class='brace'>{</em>
+<a id='L118' name='L118'></a>  <em class='comment'>/* FILETIME: &lt;https://docs.microsoft.com/en-us/windows/desktop/api/minwinbase/ns-minwinbase-filetime&gt; */</em>
+<a id='L119' name='L119'></a>  <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong> since_1601 =
+<a id='L120' name='L120'></a>    ((<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong>) ft-&gt;dwHighDateTime &lt;&lt; 32)
+<a id='L121' name='L121'></a>    | (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong>) ft-&gt;dwLowDateTime;
+<a id='L122' name='L122'></a>  <strong class='reserved'>if</strong> (since_1601 == 0)
+<a id='L123' name='L123'></a>    <strong class='reserved'>return</strong> 0;
+<a id='L124' name='L124'></a>  <strong class='reserved'>else</strong>
+<a id='L125' name='L125'></a>    <em class='brace'>{</em>
+<a id='L126' name='L126'></a>      <em class='comment'>/* Between 1601-01-01 and 1970-01-01 there were 280 normal years and 89</em>
+<a id='L127' name='L127'></a><em class='comment'>         leap years, in total 134774 days.  */</em>
+<a id='L128' name='L128'></a>      <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong> since_1970 =
+<a id='L129' name='L129'></a>        since_1601 - (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong>) 134774 * (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong>) 86400 * (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong>) 10000000;
+<a id='L130' name='L130'></a>      <strong class='reserved'>return</strong> since_1970 / (<strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>long</strong>) 10000000;
+<a id='L131' name='L131'></a>    <em class='brace'>}</em>
+<a id='L132' name='L132'></a><em class='brace'>}</em>
+<a id='L133' name='L133'></a><em class='sharp'>#endif</em>
+<a id='L134' name='L134'></a>
+<a id='L135' name='L135'></a><em class='comment'>/* Fill *BUF with information about the file designated by H.</em>
+<a id='L136' name='L136'></a><em class='comment'>   PATH is the file name, if known, otherwise NULL.</em>
+<a id='L137' name='L137'></a><em class='comment'>   Return 0 if successful, or -1 with errno set upon failure.  */</em>
+<a id='L138' name='L138'></a><strong class='reserved'>int</strong>
+<a id='L139' name='L139'></a><a href='../R/4786.html' title='Multiple referred from 6 places.'>_gl_fstat_by_handle</a> (HANDLE <a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *path, <strong class='reserved'>struct</strong> <a href='../D/11566.html' title='Multiple defined in 15 places.'>stat</a> *buf)
+<a id='L140' name='L140'></a><em class='brace'>{</em>
+<a id='L141' name='L141'></a>  <em class='comment'>/* GetFileType</em>
+<a id='L142' name='L142'></a><em class='comment'>     &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/nf-fileapi-getfiletype&gt; */</em>
+<a id='L143' name='L143'></a>  DWORD <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = GetFileType (<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>);
+<a id='L144' name='L144'></a>  <strong class='reserved'>if</strong> (<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> == FILE_TYPE_DISK)
+<a id='L145' name='L145'></a>    <em class='brace'>{</em>
+<a id='L146' name='L146'></a><em class='sharp'>#if</em> !(<a href='../D/5269.html' title='Multiple defined in 8 places.'>_WIN32_WINNT</a> &gt;= _WIN32_WINNT_VISTA)
+<a id='L147' name='L147'></a>      <strong class='reserved'>if</strong> (!initialized)
+<a id='L148' name='L148'></a>        <a href='../D/9997.html' title='Multiple defined in 4 places.'>initialize</a> ();
+<a id='L149' name='L149'></a><em class='sharp'>#endif</em>
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a>      <em class='comment'>/* st_mode can be determined through</em>
+<a id='L152' name='L152'></a><em class='comment'>         GetFileAttributesEx</em>
+<a id='L153' name='L153'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/nf-fileapi-getfileattributesexa&gt;</em>
+<a id='L154' name='L154'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/ns-fileapi-_win32_file_attribute_data&gt;</em>
+<a id='L155' name='L155'></a><em class='comment'>         or through</em>
+<a id='L156' name='L156'></a><em class='comment'>         GetFileInformationByHandle</em>
+<a id='L157' name='L157'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/nf-fileapi-getfileinformationbyhandle&gt;</em>
+<a id='L158' name='L158'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/ns-fileapi-_by_handle_file_information&gt;</em>
+<a id='L159' name='L159'></a><em class='comment'>         or through</em>
+<a id='L160' name='L160'></a><em class='comment'>         GetFileInformationByHandleEx with argument FileBasicInfo</em>
+<a id='L161' name='L161'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/winbase/nf-winbase-getfileinformationbyhandleex&gt;</em>
+<a id='L162' name='L162'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/winbase/ns-winbase-_file_basic_info&gt;</em>
+<a id='L163' name='L163'></a><em class='comment'>         The latter requires -D_WIN32_WINNT=_WIN32_WINNT_VISTA or higher.  */</em>
+<a id='L164' name='L164'></a>      BY_HANDLE_FILE_INFORMATION info;
+<a id='L165' name='L165'></a>      <strong class='reserved'>if</strong> (! GetFileInformationByHandle (<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, &amp;info))
+<a id='L166' name='L166'></a>        <strong class='reserved'>goto</strong> <a href='../S/6322.html#L52' title='Defined at 52 in gl/tests/test-select.h.'>failed</a>;
+<a id='L167' name='L167'></a>
+<a id='L168' name='L168'></a>      <em class='comment'>/* Test for error conditions before starting to fill *buf.  */</em>
+<a id='L169' name='L169'></a>      <strong class='reserved'>if</strong> (<strong class='reserved'>sizeof</strong> (buf-&gt;st_size) &lt;= 4 &amp;&amp; info.nFileSizeHigh &gt; 0)
+<a id='L170' name='L170'></a>        <em class='brace'>{</em>
+<a id='L171' name='L171'></a>          errno = <a href='../D/957.html' title='Multiple defined in 6 places.'>EOVERFLOW</a>;
+<a id='L172' name='L172'></a>          <strong class='reserved'>return</strong> -1;
+<a id='L173' name='L173'></a>        <em class='brace'>}</em>
+<a id='L174' name='L174'></a>
+<a id='L175' name='L175'></a><em class='sharp'>#if</em> <a href='../D/5193.html' title='Multiple defined in 3 places.'>_GL_WINDOWS_STAT_INODES</a>
+<a id='L176' name='L176'></a>      <em class='comment'>/* st_ino can be determined through</em>
+<a id='L177' name='L177'></a><em class='comment'>         GetFileInformationByHandle</em>
+<a id='L178' name='L178'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/nf-fileapi-getfileinformationbyhandle&gt;</em>
+<a id='L179' name='L179'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/ns-fileapi-_by_handle_file_information&gt;</em>
+<a id='L180' name='L180'></a><em class='comment'>         as 64 bits, or through</em>
+<a id='L181' name='L181'></a><em class='comment'>         GetFileInformationByHandleEx with argument FileIdInfo</em>
+<a id='L182' name='L182'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/winbase/nf-winbase-getfileinformationbyhandleex&gt;</em>
+<a id='L183' name='L183'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/winbase/ns-winbase-_file_id_info&gt;</em>
+<a id='L184' name='L184'></a><em class='comment'>         as 128 bits.</em>
+<a id='L185' name='L185'></a><em class='comment'>         The latter requires -D_WIN32_WINNT=_WIN32_WINNT_WIN8 or higher.  */</em>
+<a id='L186' name='L186'></a>      <em class='comment'>/* Experiments show that GetFileInformationByHandleEx does not provide</em>
+<a id='L187' name='L187'></a><em class='comment'>         much more information than GetFileInformationByHandle:</em>
+<a id='L188' name='L188'></a><em class='comment'>           * The dwVolumeSerialNumber from GetFileInformationByHandle is equal</em>
+<a id='L189' name='L189'></a><em class='comment'>             to the low 32 bits of the 64-bit VolumeSerialNumber from</em>
+<a id='L190' name='L190'></a><em class='comment'>             GetFileInformationByHandleEx, and is apparently sufficient for</em>
+<a id='L191' name='L191'></a><em class='comment'>             identifying the device.</em>
+<a id='L192' name='L192'></a><em class='comment'>           * The nFileIndex from GetFileInformationByHandle is equal to the low</em>
+<a id='L193' name='L193'></a><em class='comment'>             64 bits of the 128-bit FileId from GetFileInformationByHandleEx,</em>
+<a id='L194' name='L194'></a><em class='comment'>             and the high 64 bits of this 128-bit FileId are zero.</em>
+<a id='L195' name='L195'></a><em class='comment'>           * On a FAT file system, GetFileInformationByHandleEx fails with error</em>
+<a id='L196' name='L196'></a><em class='comment'>             ERROR_INVALID_PARAMETER, whereas GetFileInformationByHandle</em>
+<a id='L197' name='L197'></a><em class='comment'>             succeeds.</em>
+<a id='L198' name='L198'></a><em class='comment'>           * On a CIFS/SMB file system, GetFileInformationByHandleEx fails with</em>
+<a id='L199' name='L199'></a><em class='comment'>             error ERROR_INVALID_LEVEL, whereas GetFileInformationByHandle</em>
+<a id='L200' name='L200'></a><em class='comment'>             succeeds.  */</em>
+<a id='L201' name='L201'></a><em class='sharp'># if</em> <a href='../D/5193.html' title='Multiple defined in 3 places.'>_GL_WINDOWS_STAT_INODES</a> == 2
+<a id='L202' name='L202'></a>      <strong class='reserved'>if</strong> (<a href='../D/2098.html' title='Multiple defined in 2 places.'>GetFileInformationByHandleExFunc</a> != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L203' name='L203'></a>        <em class='brace'>{</em>
+<a id='L204' name='L204'></a>          FILE_ID_INFO id;
+<a id='L205' name='L205'></a>          <strong class='reserved'>if</strong> (<a href='../D/2098.html' title='Multiple defined in 2 places.'>GetFileInformationByHandleExFunc</a> (<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, FileIdInfo, &amp;id, <strong class='reserved'>sizeof</strong> (id)))
+<a id='L206' name='L206'></a>            <em class='brace'>{</em>
+<a id='L207' name='L207'></a>              buf-&gt;st_dev = id.VolumeSerialNumber;
+<a id='L208' name='L208'></a>              <a href='../D/12154.html' title='Multiple defined in 5 places.'>verify</a> (<strong class='reserved'>sizeof</strong> (<a href='../D/10007.html' title='Multiple defined in 12 places.'>ino_t</a>) == <strong class='reserved'>sizeof</strong> (id.FileId));
+<a id='L209' name='L209'></a>              memcpy (&amp;buf-&gt;st_ino, &amp;id.FileId, <strong class='reserved'>sizeof</strong> (<a href='../D/10007.html' title='Multiple defined in 12 places.'>ino_t</a>));
+<a id='L210' name='L210'></a>              <strong class='reserved'>goto</strong> ino_done;
+<a id='L211' name='L211'></a>            <em class='brace'>}</em>
+<a id='L212' name='L212'></a>          <strong class='reserved'>else</strong>
+<a id='L213' name='L213'></a>            <em class='brace'>{</em>
+<a id='L214' name='L214'></a>              <strong class='reserved'>switch</strong> (GetLastError ())
+<a id='L215' name='L215'></a>                <em class='brace'>{</em>
+<a id='L216' name='L216'></a>                <strong class='reserved'>case</strong> ERROR_INVALID_PARAMETER: <em class='comment'>/* older Windows version, or FAT */</em>
+<a id='L217' name='L217'></a>                <strong class='reserved'>case</strong> ERROR_INVALID_LEVEL: <em class='comment'>/* CIFS/SMB file system */</em>
+<a id='L218' name='L218'></a>                  <strong class='reserved'>goto</strong> fallback;
+<a id='L219' name='L219'></a>                <strong class='reserved'>default</strong>:
+<a id='L220' name='L220'></a>                  <strong class='reserved'>goto</strong> <a href='../S/6322.html#L52' title='Defined at 52 in gl/tests/test-select.h.'>failed</a>;
+<a id='L221' name='L221'></a>                <em class='brace'>}</em>
+<a id='L222' name='L222'></a>            <em class='brace'>}</em>
+<a id='L223' name='L223'></a>        <em class='brace'>}</em>
+<a id='L224' name='L224'></a>     fallback: ;
+<a id='L225' name='L225'></a>      <em class='comment'>/* Fallback for older Windows versions.  */</em>
+<a id='L226' name='L226'></a>      buf-&gt;st_dev = info.dwVolumeSerialNumber;
+<a id='L227' name='L227'></a>      buf-&gt;st_ino._gl_ino[0] = ((ULONGLONG) info.nFileIndexHigh &lt;&lt; 32) | (ULONGLONG) info.nFileIndexLow;
+<a id='L228' name='L228'></a>      buf-&gt;st_ino._gl_ino[1] = 0;
+<a id='L229' name='L229'></a>     ino_done: ;
+<a id='L230' name='L230'></a><em class='sharp'># else</em> <em class='comment'>/* _GL_WINDOWS_STAT_INODES == 1 */</em>
+<a id='L231' name='L231'></a>      buf-&gt;st_dev = info.dwVolumeSerialNumber;
+<a id='L232' name='L232'></a>      buf-&gt;st_ino = ((ULONGLONG) info.nFileIndexHigh &lt;&lt; 32) | (ULONGLONG) info.nFileIndexLow;
+<a id='L233' name='L233'></a><em class='sharp'># endif</em>
+<a id='L234' name='L234'></a><em class='sharp'>#else</em>
+<a id='L235' name='L235'></a>      <em class='comment'>/* st_ino is not wide enough for identifying a file on a device.</em>
+<a id='L236' name='L236'></a><em class='comment'>         Without st_ino, st_dev is pointless.  */</em>
+<a id='L237' name='L237'></a>      buf-&gt;st_dev = 0;
+<a id='L238' name='L238'></a>      buf-&gt;st_ino = 0;
+<a id='L239' name='L239'></a><em class='sharp'>#endif</em>
+<a id='L240' name='L240'></a>
+<a id='L241' name='L241'></a>      <em class='comment'>/* st_mode.  */</em>
+<a id='L242' name='L242'></a>      <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> mode =
+<a id='L243' name='L243'></a>        <em class='comment'>/* XXX How to handle FILE_ATTRIBUTE_REPARSE_POINT ?  */</em>
+<a id='L244' name='L244'></a>        ((info.dwFileAttributes &amp; FILE_ATTRIBUTE_DIRECTORY) ? _S_IFDIR | <a href='../D/4422.html' title='Multiple defined in 2 places.'>S_IEXEC_UGO</a> : _S_IFREG)
+<a id='L245' name='L245'></a>        | <a href='../D/4427.html' title='Multiple defined in 2 places.'>S_IREAD_UGO</a>
+<a id='L246' name='L246'></a>        | ((info.dwFileAttributes &amp; FILE_ATTRIBUTE_READONLY) ? 0 : <a href='../D/4458.html' title='Multiple defined in 2 places.'>S_IWRITE_UGO</a>);
+<a id='L247' name='L247'></a>      <strong class='reserved'>if</strong> (!(info.dwFileAttributes &amp; FILE_ATTRIBUTE_DIRECTORY))
+<a id='L248' name='L248'></a>        <em class='brace'>{</em>
+<a id='L249' name='L249'></a>          <em class='comment'>/* Determine whether the file is executable by looking at the file</em>
+<a id='L250' name='L250'></a><em class='comment'>             name suffix.</em>
+<a id='L251' name='L251'></a><em class='comment'>             If the file name is already known, use it. Otherwise, for</em>
+<a id='L252' name='L252'></a><em class='comment'>             non-empty files, it can be determined through</em>
+<a id='L253' name='L253'></a><em class='comment'>             GetFinalPathNameByHandle</em>
+<a id='L254' name='L254'></a><em class='comment'>             &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/nf-fileapi-getfinalpathnamebyhandlea&gt;</em>
+<a id='L255' name='L255'></a><em class='comment'>             or through</em>
+<a id='L256' name='L256'></a><em class='comment'>             GetFileInformationByHandleEx with argument FileNameInfo</em>
+<a id='L257' name='L257'></a><em class='comment'>             &lt;https://docs.microsoft.com/en-us/windows/desktop/api/winbase/nf-winbase-getfileinformationbyhandleex&gt;</em>
+<a id='L258' name='L258'></a><em class='comment'>             &lt;https://docs.microsoft.com/en-us/windows/desktop/api/winbase/ns-winbase-_file_name_info&gt;</em>
+<a id='L259' name='L259'></a><em class='comment'>             Both require -D_WIN32_WINNT=_WIN32_WINNT_VISTA or higher.  */</em>
+<a id='L260' name='L260'></a>          <strong class='reserved'>if</strong> (info.nFileSizeHigh &gt; 0 || info.nFileSizeLow &gt; 0)
+<a id='L261' name='L261'></a>            <em class='brace'>{</em>
+<a id='L262' name='L262'></a>              <strong class='reserved'>char</strong> fpath[<a href='../D/3178.html' title='Multiple defined in 11 places.'>PATH_MAX</a>];
+<a id='L263' name='L263'></a>              <strong class='reserved'>if</strong> (path != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>
+<a id='L264' name='L264'></a>                  || (<a href='../D/2099.html' title='Multiple defined in 2 places.'>GetFinalPathNameByHandleFunc</a> != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>
+<a id='L265' name='L265'></a>                      &amp;&amp; <a href='../D/2099.html' title='Multiple defined in 2 places.'>GetFinalPathNameByHandleFunc</a> (<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, fpath, <strong class='reserved'>sizeof</strong> (fpath), VOLUME_NAME_NONE)
+<a id='L266' name='L266'></a>                         &lt; <strong class='reserved'>sizeof</strong> (fpath)
+<a id='L267' name='L267'></a>                      &amp;&amp; (path = fpath, 1)))
+<a id='L268' name='L268'></a>                <em class='brace'>{</em>
+<a id='L269' name='L269'></a>                  <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *last_dot = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L270' name='L270'></a>                  <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *p;
+<a id='L271' name='L271'></a>                  <strong class='reserved'>for</strong> (p = path; *p != '\0'; p++)
+<a id='L272' name='L272'></a>                    <strong class='reserved'>if</strong> (*p == '.')
+<a id='L273' name='L273'></a>                      last_dot = p;
+<a id='L274' name='L274'></a>                  <strong class='reserved'>if</strong> (last_dot != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L275' name='L275'></a>                    <em class='brace'>{</em>
+<a id='L276' name='L276'></a>                      <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *suffix = last_dot + 1;
+<a id='L277' name='L277'></a>                      <strong class='reserved'>if</strong> (_stricmp (suffix, "exe") == 0
+<a id='L278' name='L278'></a>                          || _stricmp (suffix, "bat") == 0
+<a id='L279' name='L279'></a>                          || _stricmp (suffix, "cmd") == 0
+<a id='L280' name='L280'></a>                          || _stricmp (suffix, "com") == 0)
+<a id='L281' name='L281'></a>                        mode |= <a href='../D/4422.html' title='Multiple defined in 2 places.'>S_IEXEC_UGO</a>;
+<a id='L282' name='L282'></a>                    <em class='brace'>}</em>
+<a id='L283' name='L283'></a>                <em class='brace'>}</em>
+<a id='L284' name='L284'></a>              <strong class='reserved'>else</strong>
+<a id='L285' name='L285'></a>                <em class='comment'>/* Cannot determine file name.  Pretend that it is executable.  */</em>
+<a id='L286' name='L286'></a>                mode |= <a href='../D/4422.html' title='Multiple defined in 2 places.'>S_IEXEC_UGO</a>;
+<a id='L287' name='L287'></a>            <em class='brace'>}</em>
+<a id='L288' name='L288'></a>        <em class='brace'>}</em>
+<a id='L289' name='L289'></a>      buf-&gt;st_mode = mode;
+<a id='L290' name='L290'></a>
+<a id='L291' name='L291'></a>      <em class='comment'>/* st_nlink can be determined through</em>
+<a id='L292' name='L292'></a><em class='comment'>         GetFileInformationByHandle</em>
+<a id='L293' name='L293'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/nf-fileapi-getfileinformationbyhandle&gt;</em>
+<a id='L294' name='L294'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/ns-fileapi-_by_handle_file_information&gt;</em>
+<a id='L295' name='L295'></a><em class='comment'>         or through</em>
+<a id='L296' name='L296'></a><em class='comment'>         GetFileInformationByHandleEx with argument FileStandardInfo</em>
+<a id='L297' name='L297'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/winbase/nf-winbase-getfileinformationbyhandleex&gt;</em>
+<a id='L298' name='L298'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/winbase/ns-winbase-_file_standard_info&gt;</em>
+<a id='L299' name='L299'></a><em class='comment'>         The latter requires -D_WIN32_WINNT=_WIN32_WINNT_VISTA or higher.  */</em>
+<a id='L300' name='L300'></a>      buf-&gt;st_nlink = (info.nNumberOfLinks &gt; SHRT_MAX ? SHRT_MAX : info.nNumberOfLinks);
+<a id='L301' name='L301'></a>
+<a id='L302' name='L302'></a>      <em class='comment'>/* There's no easy way to map the Windows SID concept to an integer.  */</em>
+<a id='L303' name='L303'></a>      buf-&gt;st_uid = 0;
+<a id='L304' name='L304'></a>      buf-&gt;st_gid = 0;
+<a id='L305' name='L305'></a>
+<a id='L306' name='L306'></a>      <em class='comment'>/* st_rdev is irrelevant for normal files and directories.  */</em>
+<a id='L307' name='L307'></a>      buf-&gt;st_rdev = 0;
+<a id='L308' name='L308'></a>
+<a id='L309' name='L309'></a>      <em class='comment'>/* st_size can be determined through</em>
+<a id='L310' name='L310'></a><em class='comment'>         GetFileSizeEx</em>
+<a id='L311' name='L311'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/nf-fileapi-getfilesizeex&gt;</em>
+<a id='L312' name='L312'></a><em class='comment'>         or through</em>
+<a id='L313' name='L313'></a><em class='comment'>         GetFileAttributesEx</em>
+<a id='L314' name='L314'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/nf-fileapi-getfileattributesexa&gt;</em>
+<a id='L315' name='L315'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/ns-fileapi-_win32_file_attribute_data&gt;</em>
+<a id='L316' name='L316'></a><em class='comment'>         or through</em>
+<a id='L317' name='L317'></a><em class='comment'>         GetFileInformationByHandle</em>
+<a id='L318' name='L318'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/nf-fileapi-getfileinformationbyhandle&gt;</em>
+<a id='L319' name='L319'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/ns-fileapi-_by_handle_file_information&gt;</em>
+<a id='L320' name='L320'></a><em class='comment'>         or through</em>
+<a id='L321' name='L321'></a><em class='comment'>         GetFileInformationByHandleEx with argument FileStandardInfo</em>
+<a id='L322' name='L322'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/winbase/nf-winbase-getfileinformationbyhandleex&gt;</em>
+<a id='L323' name='L323'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/winbase/ns-winbase-_file_standard_info&gt;</em>
+<a id='L324' name='L324'></a><em class='comment'>         The latter requires -D_WIN32_WINNT=_WIN32_WINNT_VISTA or higher.  */</em>
+<a id='L325' name='L325'></a>      <strong class='reserved'>if</strong> (<strong class='reserved'>sizeof</strong> (buf-&gt;st_size) &lt;= 4)
+<a id='L326' name='L326'></a>        <em class='comment'>/* Range check already done above.  */</em>
+<a id='L327' name='L327'></a>        buf-&gt;st_size = info.nFileSizeLow;
+<a id='L328' name='L328'></a>      <strong class='reserved'>else</strong>
+<a id='L329' name='L329'></a>        buf-&gt;st_size = ((<strong class='reserved'>long</strong> <strong class='reserved'>long</strong>) info.nFileSizeHigh &lt;&lt; 32) | (<strong class='reserved'>long</strong> <strong class='reserved'>long</strong>) info.nFileSizeLow;
+<a id='L330' name='L330'></a>
+<a id='L331' name='L331'></a>      <em class='comment'>/* st_atime, st_mtime, st_ctime can be determined through</em>
+<a id='L332' name='L332'></a><em class='comment'>         GetFileTime</em>
+<a id='L333' name='L333'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/nf-fileapi-getfiletime&gt;</em>
+<a id='L334' name='L334'></a><em class='comment'>         or through</em>
+<a id='L335' name='L335'></a><em class='comment'>         GetFileAttributesEx</em>
+<a id='L336' name='L336'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/nf-fileapi-getfileattributesexa&gt;</em>
+<a id='L337' name='L337'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/ns-fileapi-_win32_file_attribute_data&gt;</em>
+<a id='L338' name='L338'></a><em class='comment'>         or through</em>
+<a id='L339' name='L339'></a><em class='comment'>         GetFileInformationByHandle</em>
+<a id='L340' name='L340'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/nf-fileapi-getfileinformationbyhandle&gt;</em>
+<a id='L341' name='L341'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/fileapi/ns-fileapi-_by_handle_file_information&gt;</em>
+<a id='L342' name='L342'></a><em class='comment'>         or through</em>
+<a id='L343' name='L343'></a><em class='comment'>         GetFileInformationByHandleEx with argument FileBasicInfo</em>
+<a id='L344' name='L344'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/winbase/nf-winbase-getfileinformationbyhandleex&gt;</em>
+<a id='L345' name='L345'></a><em class='comment'>         &lt;https://docs.microsoft.com/en-us/windows/desktop/api/winbase/ns-winbase-_file_basic_info&gt;</em>
+<a id='L346' name='L346'></a><em class='comment'>         The latter requires -D_WIN32_WINNT=_WIN32_WINNT_VISTA or higher.  */</em>
+<a id='L347' name='L347'></a><em class='sharp'>#if</em> <a href='../D/5194.html' title='Multiple defined in 2 places.'>_GL_WINDOWS_STAT_TIMESPEC</a>
+<a id='L348' name='L348'></a>      buf-&gt;st_atim = <a href='../D/5573.html' title='Multiple defined in 2 places.'>_gl_convert_FILETIME_to_timespec</a> (&amp;info.ftLastAccessTime);
+<a id='L349' name='L349'></a>      buf-&gt;st_mtim = <a href='../D/5573.html' title='Multiple defined in 2 places.'>_gl_convert_FILETIME_to_timespec</a> (&amp;info.ftLastWriteTime);
+<a id='L350' name='L350'></a>      buf-&gt;st_ctim = <a href='../D/5573.html' title='Multiple defined in 2 places.'>_gl_convert_FILETIME_to_timespec</a> (&amp;info.ftCreationTime);
+<a id='L351' name='L351'></a><em class='sharp'>#else</em>
+<a id='L352' name='L352'></a>      buf-&gt;<a href='../D/11552.html' title='Multiple defined in 2 places.'>st_atime</a> = <a href='../D/5572.html' title='Multiple defined in 2 places.'>_gl_convert_FILETIME_to_POSIX</a> (&amp;info.ftLastAccessTime);
+<a id='L353' name='L353'></a>      buf-&gt;<a href='../D/11554.html' title='Multiple defined in 2 places.'>st_mtime</a> = <a href='../D/5572.html' title='Multiple defined in 2 places.'>_gl_convert_FILETIME_to_POSIX</a> (&amp;info.ftLastWriteTime);
+<a id='L354' name='L354'></a>      buf-&gt;<a href='../D/11553.html' title='Multiple defined in 2 places.'>st_ctime</a> = <a href='../D/5572.html' title='Multiple defined in 2 places.'>_gl_convert_FILETIME_to_POSIX</a> (&amp;info.ftCreationTime);
+<a id='L355' name='L355'></a><em class='sharp'>#endif</em>
+<a id='L356' name='L356'></a>
+<a id='L357' name='L357'></a>      <strong class='reserved'>return</strong> 0;
+<a id='L358' name='L358'></a>    <em class='brace'>}</em>
+<a id='L359' name='L359'></a>  <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> == FILE_TYPE_CHAR || <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> == FILE_TYPE_PIPE)
+<a id='L360' name='L360'></a>    <em class='brace'>{</em>
+<a id='L361' name='L361'></a>      buf-&gt;st_dev = 0;
+<a id='L362' name='L362'></a><em class='sharp'>#if</em> <a href='../D/5193.html' title='Multiple defined in 3 places.'>_GL_WINDOWS_STAT_INODES</a> == 2
+<a id='L363' name='L363'></a>      buf-&gt;st_ino._gl_ino[0] = buf-&gt;st_ino._gl_ino[1] = 0;
+<a id='L364' name='L364'></a><em class='sharp'>#else</em>
+<a id='L365' name='L365'></a>      buf-&gt;st_ino = 0;
+<a id='L366' name='L366'></a><em class='sharp'>#endif</em>
+<a id='L367' name='L367'></a>      buf-&gt;st_mode = (<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> == FILE_TYPE_PIPE ? _S_IFIFO : _S_IFCHR);
+<a id='L368' name='L368'></a>      buf-&gt;st_nlink = 1;
+<a id='L369' name='L369'></a>      buf-&gt;st_uid = 0;
+<a id='L370' name='L370'></a>      buf-&gt;st_gid = 0;
+<a id='L371' name='L371'></a>      buf-&gt;st_rdev = 0;
+<a id='L372' name='L372'></a>      <strong class='reserved'>if</strong> (<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> == FILE_TYPE_PIPE)
+<a id='L373' name='L373'></a>        <em class='brace'>{</em>
+<a id='L374' name='L374'></a>          <em class='comment'>/* PeekNamedPipe</em>
+<a id='L375' name='L375'></a><em class='comment'>             &lt;https://msdn.microsoft.com/en-us/library/aa365779.aspx&gt; */</em>
+<a id='L376' name='L376'></a>          DWORD bytes_available;
+<a id='L377' name='L377'></a>          <strong class='reserved'>if</strong> (PeekNamedPipe (<a href='../S/5549.html#L75' title='Defined at 75 in lib/nettle/ecc/ecc-add-jja.c.'>h</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, &amp;bytes_available, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>))
+<a id='L378' name='L378'></a>            buf-&gt;st_size = bytes_available;
+<a id='L379' name='L379'></a>          <strong class='reserved'>else</strong>
+<a id='L380' name='L380'></a>            buf-&gt;st_size = 0;
+<a id='L381' name='L381'></a>        <em class='brace'>}</em>
+<a id='L382' name='L382'></a>      <strong class='reserved'>else</strong>
+<a id='L383' name='L383'></a>        buf-&gt;st_size = 0;
+<a id='L384' name='L384'></a><em class='sharp'>#if</em> <a href='../D/5194.html' title='Multiple defined in 2 places.'>_GL_WINDOWS_STAT_TIMESPEC</a>
+<a id='L385' name='L385'></a>      buf-&gt;st_atim.tv_sec = 0; buf-&gt;st_atim.tv_nsec = 0;
+<a id='L386' name='L386'></a>      buf-&gt;st_mtim.tv_sec = 0; buf-&gt;st_mtim.tv_nsec = 0;
+<a id='L387' name='L387'></a>      buf-&gt;st_ctim.tv_sec = 0; buf-&gt;st_ctim.tv_nsec = 0;
+<a id='L388' name='L388'></a><em class='sharp'>#else</em>
+<a id='L389' name='L389'></a>      buf-&gt;<a href='../D/11552.html' title='Multiple defined in 2 places.'>st_atime</a> = 0;
+<a id='L390' name='L390'></a>      buf-&gt;<a href='../D/11554.html' title='Multiple defined in 2 places.'>st_mtime</a> = 0;
+<a id='L391' name='L391'></a>      buf-&gt;<a href='../D/11553.html' title='Multiple defined in 2 places.'>st_ctime</a> = 0;
+<a id='L392' name='L392'></a><em class='sharp'>#endif</em>
+<a id='L393' name='L393'></a>      <strong class='reserved'>return</strong> 0;
+<a id='L394' name='L394'></a>    <em class='brace'>}</em>
+<a id='L395' name='L395'></a>  <strong class='reserved'>else</strong>
+<a id='L396' name='L396'></a>    <em class='brace'>{</em>
+<a id='L397' name='L397'></a>      errno = ENOENT;
+<a id='L398' name='L398'></a>      <strong class='reserved'>return</strong> -1;
+<a id='L399' name='L399'></a>    <em class='brace'>}</em>
+<a id='L400' name='L400'></a>
+<a id='L401' name='L401'></a> <a href='../S/6322.html#L52' title='Defined at 52 in gl/tests/test-select.h.'>failed</a>:
+<a id='L402' name='L402'></a>  <em class='brace'>{</em>
+<a id='L403' name='L403'></a>    DWORD error = GetLastError ();
+<a id='L404' name='L404'></a><em class='sharp'>    #if</em> 0
+<a id='L405' name='L405'></a>    <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a> (stderr, "_gl_fstat_by_handle error 0x%x\n", (<strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong>) error);
+<a id='L406' name='L406'></a><em class='sharp'>    #endif</em>
+<a id='L407' name='L407'></a>    <strong class='reserved'>switch</strong> (error)
+<a id='L408' name='L408'></a>      <em class='brace'>{</em>
+<a id='L409' name='L409'></a>      <strong class='reserved'>case</strong> ERROR_ACCESS_DENIED:
+<a id='L410' name='L410'></a>      <strong class='reserved'>case</strong> ERROR_SHARING_VIOLATION:
+<a id='L411' name='L411'></a>        errno = EACCES;
+<a id='L412' name='L412'></a>        <strong class='reserved'>break</strong>;
+<a id='L413' name='L413'></a>
+<a id='L414' name='L414'></a>      <strong class='reserved'>case</strong> ERROR_OUTOFMEMORY:
+<a id='L415' name='L415'></a>        errno = ENOMEM;
+<a id='L416' name='L416'></a>        <strong class='reserved'>break</strong>;
+<a id='L417' name='L417'></a>
+<a id='L418' name='L418'></a>      <strong class='reserved'>case</strong> ERROR_WRITE_FAULT:
+<a id='L419' name='L419'></a>      <strong class='reserved'>case</strong> ERROR_READ_FAULT:
+<a id='L420' name='L420'></a>      <strong class='reserved'>case</strong> ERROR_GEN_FAILURE:
+<a id='L421' name='L421'></a>        errno = EIO;
+<a id='L422' name='L422'></a>        <strong class='reserved'>break</strong>;
+<a id='L423' name='L423'></a>
+<a id='L424' name='L424'></a>      <strong class='reserved'>default</strong>:
+<a id='L425' name='L425'></a>        errno = EINVAL;
+<a id='L426' name='L426'></a>        <strong class='reserved'>break</strong>;
+<a id='L427' name='L427'></a>      <em class='brace'>}</em>
+<a id='L428' name='L428'></a>    <strong class='reserved'>return</strong> -1;
+<a id='L429' name='L429'></a>  <em class='brace'>}</em>
+<a id='L430' name='L430'></a><em class='brace'>}</em>
+<a id='L431' name='L431'></a>
+<a id='L432' name='L432'></a><em class='sharp'>#else</em>
+<a id='L433' name='L433'></a>
+<a id='L434' name='L434'></a><em class='comment'>/* This declaration is solely to ensure that after preprocessing</em>
+<a id='L435' name='L435'></a><em class='comment'>   this file is never empty.  */</em>
+<a id='L436' name='L436'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>int</strong> <a href='../R/6718.html' title='Multiple referred from 21 places.'>dummy</a>;
+<a id='L437' name='L437'></a>
+<a id='L438' name='L438'></a><em class='sharp'>#endif</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L66'>[^]</a><a href='#L139'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

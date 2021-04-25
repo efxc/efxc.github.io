@@ -1,0 +1,296 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>ccm.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/ccm.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L91'>[^]</a><a href='#L250'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L91' title='Defined at 91.'>ccm_pad</a></li>
+<li><a href='#L98' title='Defined at 98.'>ccm_build_iv</a></li>
+<li><a href='#L120' title='Defined at 120.'>ccm_set_nonce</a></li>
+<li><a href='#L164' title='Defined at 164.'>ccm_update</a></li>
+<li><a href='#L201' title='Defined at 201.'>ccm_encrypt</a></li>
+<li><a href='#L215' title='Defined at 215.'>ccm_decrypt</a></li>
+<li><a href='#L224' title='Defined at 224.'>ccm_digest</a></li>
+<li><a href='#L235' title='Defined at 235.'>ccm_encrypt_message</a></li>
+<li><a href='#L250' title='Defined at 250.'>ccm_decrypt_message</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* ccm.c</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Counter with CBC-MAC mode, specified by NIST,</em>
+<a id='L4' name='L4'></a><em class='comment'>   http://csrc.nist.gov/publications/nistpubs/800-38C/SP800-38C_updated-July20_2007.pdf</em>
+<a id='L5' name='L5'></a><em class='comment'></em>
+<a id='L6' name='L6'></a><em class='comment'>   Copyright (C) 2014 Exegin Technologies Limited</em>
+<a id='L7' name='L7'></a><em class='comment'>   Copyright (C) 2014 Owen Kirby</em>
+<a id='L8' name='L8'></a><em class='comment'></em>
+<a id='L9' name='L9'></a><em class='comment'>   This file is part of GNU Nettle.</em>
+<a id='L10' name='L10'></a><em class='comment'></em>
+<a id='L11' name='L11'></a><em class='comment'>   GNU Nettle is free software: you can redistribute it and/or</em>
+<a id='L12' name='L12'></a><em class='comment'>   modify it under the terms of either:</em>
+<a id='L13' name='L13'></a><em class='comment'></em>
+<a id='L14' name='L14'></a><em class='comment'>     * the GNU Lesser General Public License as published by the Free</em>
+<a id='L15' name='L15'></a><em class='comment'>       Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L16' name='L16'></a><em class='comment'>       option) any later version.</em>
+<a id='L17' name='L17'></a><em class='comment'></em>
+<a id='L18' name='L18'></a><em class='comment'>   or</em>
+<a id='L19' name='L19'></a><em class='comment'></em>
+<a id='L20' name='L20'></a><em class='comment'>     * the GNU General Public License as published by the Free</em>
+<a id='L21' name='L21'></a><em class='comment'>       Software Foundation; either version 2 of the License, or (at your</em>
+<a id='L22' name='L22'></a><em class='comment'>       option) any later version.</em>
+<a id='L23' name='L23'></a><em class='comment'></em>
+<a id='L24' name='L24'></a><em class='comment'>   or both in parallel, as here.</em>
+<a id='L25' name='L25'></a><em class='comment'></em>
+<a id='L26' name='L26'></a><em class='comment'>   GNU Nettle is distributed in the hope that it will be useful,</em>
+<a id='L27' name='L27'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L28' name='L28'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L29' name='L29'></a><em class='comment'>   General Public License for more details.</em>
+<a id='L30' name='L30'></a><em class='comment'></em>
+<a id='L31' name='L31'></a><em class='comment'>   You should have received copies of the GNU General Public License and</em>
+<a id='L32' name='L32'></a><em class='comment'>   the GNU Lesser General Public License along with this program.  If</em>
+<a id='L33' name='L33'></a><em class='comment'>   not, see http://www.gnu.org/licenses/.</em>
+<a id='L34' name='L34'></a><em class='comment'>*/</em>
+<a id='L35' name='L35'></a>
+<a id='L36' name='L36'></a><em class='sharp'>#if</em> HAVE_CONFIG_H
+<a id='L37' name='L37'></a><em class='sharp'># include</em> "config.h"
+<a id='L38' name='L38'></a><em class='sharp'>#endif</em>
+<a id='L39' name='L39'></a>
+<a id='L40' name='L40'></a><em class='sharp'>#include</em> &lt;assert.h&gt;
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L42' name='L42'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L43' name='L43'></a>
+<a id='L44' name='L44'></a><em class='sharp'>#include</em> "<a href='311.html'>ccm.h</a>"
+<a id='L45' name='L45'></a><em class='sharp'>#include</em> "<a href='685.html'>ctr.h</a>"
+<a id='L46' name='L46'></a>
+<a id='L47' name='L47'></a><em class='sharp'>#include</em> "<a href='307.html'>memops.h</a>"
+<a id='L48' name='L48'></a><em class='sharp'>#include</em> "<a href='88.html'>nettle-internal.h</a>"
+<a id='L49' name='L49'></a><em class='sharp'>#include</em> "<a href='251.html'>macros.h</a>"
+<a id='L50' name='L50'></a>
+<a id='L51' name='L51'></a><em class='comment'>/*</em>
+<a id='L52' name='L52'></a><em class='comment'> * The format of the CCM IV (for both CTR and CBC-MAC) is: flags | nonce | count</em>
+<a id='L53' name='L53'></a><em class='comment'> *  flags = 1 octet</em>
+<a id='L54' name='L54'></a><em class='comment'> *  nonce = N octets</em>
+<a id='L55' name='L55'></a><em class='comment'> *  count &gt;= 1 octet</em>
+<a id='L56' name='L56'></a><em class='comment'> *</em>
+<a id='L57' name='L57'></a><em class='comment'> * such that:</em>
+<a id='L58' name='L58'></a><em class='comment'> *  sizeof(flags) + sizeof(nonce) + sizeof(count) == 1 block</em>
+<a id='L59' name='L59'></a><em class='comment'> */</em>
+<a id='L60' name='L60'></a><em class='sharp'>#define</em> <a href='../R/99.html' title='Multiple referred from 2 places.'>CCM_FLAG_L</a>          0x07
+<a id='L61' name='L61'></a><em class='sharp'>#define</em> <a href='../S/326.html#L66' title='Referred from 66 in ccm.c.'>CCM_FLAG_M</a>          0x38
+<a id='L62' name='L62'></a><em class='sharp'>#define</em> <a href='../S/326.html#L136' title='Referred from 136 in ccm.c.'>CCM_FLAG_ADATA</a>      0x40
+<a id='L63' name='L63'></a><em class='sharp'>#define</em> CCM_FLAG_RESERVED   0x80
+<a id='L64' name='L64'></a><em class='sharp'>#define</em> <a href='../S/326.html#L227' title='Referred from 227 in ccm.c.'>CCM_FLAG_GET_L</a>(_x_) (((_x_) &amp; <a href='../S/326.html#L60' title='Defined at 60 in ccm.c.'>CCM_FLAG_L</a>) + 1)
+<a id='L65' name='L65'></a><em class='sharp'>#define</em> <a href='../S/326.html#L108' title='Referred from 108 in ccm.c.'>CCM_FLAG_SET_L</a>(_x_) (((_x_) - 1) &amp; <a href='../S/326.html#L60' title='Defined at 60 in ccm.c.'>CCM_FLAG_L</a>)
+<a id='L66' name='L66'></a><em class='sharp'>#define</em> <a href='../S/326.html#L126' title='Referred from 126 in ccm.c.'>CCM_FLAG_SET_M</a>(_x_) ((((_x_) - 2) &lt;&lt; 2) &amp; <a href='../S/326.html#L61' title='Defined at 61 in ccm.c.'>CCM_FLAG_M</a>)
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a><em class='sharp'>#define</em> <a href='../R/106.html' title='Multiple referred from 3 places.'>CCM_OFFSET_FLAGS</a>    0
+<a id='L69' name='L69'></a><em class='sharp'>#define</em> <a href='../R/107.html' title='Multiple referred from 3 places.'>CCM_OFFSET_NONCE</a>    1
+<a id='L70' name='L70'></a><em class='sharp'>#define</em> <a href='../S/326.html#L108' title='Referred from 108 in ccm.c.'>CCM_L_SIZE</a>(_nlen_)  (<a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a> - <a href='../S/326.html#L69' title='Defined at 69 in ccm.c.'>CCM_OFFSET_NONCE</a> - (_nlen_))
+<a id='L71' name='L71'></a>
+<a id='L72' name='L72'></a><em class='comment'>/*</em>
+<a id='L73' name='L73'></a><em class='comment'> * The data input to the CBC-MAC: L(a) | adata | padding | plaintext | padding</em>
+<a id='L74' name='L74'></a><em class='comment'> *</em>
+<a id='L75' name='L75'></a><em class='comment'> * blength is the length of data that has been added to the CBC-MAC modulus the</em>
+<a id='L76' name='L76'></a><em class='comment'> * cipher block size. If the value of blength is non-zero then some data has</em>
+<a id='L77' name='L77'></a><em class='comment'> * been XOR'ed into the CBC-MAC, and we will need to pad the block (XOR with 0),</em>
+<a id='L78' name='L78'></a><em class='comment'> * and iterate the cipher one more time.</em>
+<a id='L79' name='L79'></a><em class='comment'> *</em>
+<a id='L80' name='L80'></a><em class='comment'> * The end of adata is detected implicitly by the first call to the encrypt()</em>
+<a id='L81' name='L81'></a><em class='comment'> * and decrypt() functions, and will call ccm_pad() to insert the padding if</em>
+<a id='L82' name='L82'></a><em class='comment'> * necessary. Because of the underlying CTR encryption, the encrypt() and</em>
+<a id='L83' name='L83'></a><em class='comment'> * decrypt() functions must be called with a multiple of the block size and</em>
+<a id='L84' name='L84'></a><em class='comment'> * therefore blength should be zero on all but the first call.</em>
+<a id='L85' name='L85'></a><em class='comment'> *</em>
+<a id='L86' name='L86'></a><em class='comment'> * Likewise, the end of the plaintext is implicitly determined by the first call</em>
+<a id='L87' name='L87'></a><em class='comment'> * to the digest() function, which will pad if the final CTR encryption was not</em>
+<a id='L88' name='L88'></a><em class='comment'> * a multiple of the block size.</em>
+<a id='L89' name='L89'></a><em class='comment'> */</em>
+<a id='L90' name='L90'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L91' name='L91'></a><a href='../R/1158.html' title='Multiple referred from 3 places.'>ccm_pad</a>(<strong class='reserved'>struct</strong> <a href='../S/311.html#L105' title='Defined at 105 in ccm.h.'>ccm_ctx</a> *ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *cipher, <a href='../S/122.html#L88' title='Defined at 88 in nettle-types.h.'>nettle_cipher_func</a> *f)
+<a id='L92' name='L92'></a><em class='brace'>{</em>
+<a id='L93' name='L93'></a>    <strong class='reserved'>if</strong> (ctx-&gt;blength) f(cipher, <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a>, ctx-&gt;tag.b, ctx-&gt;tag.b);
+<a id='L94' name='L94'></a>    ctx-&gt;blength = 0;
+<a id='L95' name='L95'></a><em class='brace'>}</em>
+<a id='L96' name='L96'></a>
+<a id='L97' name='L97'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L98' name='L98'></a><a href='../R/1151.html' title='Multiple referred from 2 places.'>ccm_build_iv</a>(uint8_t *iv, size_t noncelen, <strong class='reserved'>const</strong> uint8_t *nonce,
+<a id='L99' name='L99'></a>             uint8_t flags, size_t count)
+<a id='L100' name='L100'></a><em class='brace'>{</em>
+<a id='L101' name='L101'></a>  <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L102' name='L102'></a>
+<a id='L103' name='L103'></a>  <em class='comment'>/* Sanity check the nonce length. */</em>
+<a id='L104' name='L104'></a>  assert(noncelen &gt;= <a href='../S/311.html#L93' title='Defined at 93 in ccm.h.'>CCM_MIN_NONCE_SIZE</a>);
+<a id='L105' name='L105'></a>  assert(noncelen &lt;= <a href='../S/311.html#L94' title='Defined at 94 in ccm.h.'>CCM_MAX_NONCE_SIZE</a>);
+<a id='L106' name='L106'></a>
+<a id='L107' name='L107'></a>  <em class='comment'>/* Generate the IV */</em>
+<a id='L108' name='L108'></a>  iv[<a href='../S/326.html#L68' title='Defined at 68 in ccm.c.'>CCM_OFFSET_FLAGS</a>] = flags | <a href='../S/326.html#L65' title='Defined at 65 in ccm.c.'>CCM_FLAG_SET_L</a>(<a href='../S/326.html#L70' title='Defined at 70 in ccm.c.'>CCM_L_SIZE</a>(noncelen));
+<a id='L109' name='L109'></a>  memcpy(&amp;iv[<a href='../S/326.html#L69' title='Defined at 69 in ccm.c.'>CCM_OFFSET_NONCE</a>], nonce, noncelen);
+<a id='L110' name='L110'></a>  <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>=(<a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a> - 1); <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &gt;= (<a href='../S/326.html#L69' title='Defined at 69 in ccm.c.'>CCM_OFFSET_NONCE</a> + noncelen); <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>--) <em class='brace'>{</em>
+<a id='L111' name='L111'></a>    iv[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>] = count &amp; 0xff;
+<a id='L112' name='L112'></a>    count &gt;&gt;= 8;
+<a id='L113' name='L113'></a>  <em class='brace'>}</em>
+<a id='L114' name='L114'></a>
+<a id='L115' name='L115'></a>  <em class='comment'>/* Ensure the count was not truncated. */</em>
+<a id='L116' name='L116'></a>  assert(!count);
+<a id='L117' name='L117'></a><em class='brace'>}</em>
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a><strong class='reserved'>void</strong>
+<a id='L120' name='L120'></a><a href='../R/1159.html' title='Multiple referred from 8 places.'>ccm_set_nonce</a>(<strong class='reserved'>struct</strong> <a href='../S/311.html#L105' title='Defined at 105 in ccm.h.'>ccm_ctx</a> *ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *cipher, <a href='../S/122.html#L88' title='Defined at 88 in nettle-types.h.'>nettle_cipher_func</a> *f,
+<a id='L121' name='L121'></a>              size_t length, <strong class='reserved'>const</strong> uint8_t *nonce,
+<a id='L122' name='L122'></a>              size_t authlen, size_t msglen, size_t taglen)
+<a id='L123' name='L123'></a><em class='brace'>{</em>
+<a id='L124' name='L124'></a>  <em class='comment'>/* Generate the IV for the CTR and CBC-MAC */</em>
+<a id='L125' name='L125'></a>  ctx-&gt;blength = 0;
+<a id='L126' name='L126'></a>  <a href='../S/326.html#L98' title='Defined at 98 in ccm.c.'>ccm_build_iv</a>(ctx-&gt;tag.b, length, nonce, <a href='../S/326.html#L66' title='Defined at 66 in ccm.c.'>CCM_FLAG_SET_M</a>(taglen), msglen);
+<a id='L127' name='L127'></a>  <a href='../S/326.html#L98' title='Defined at 98 in ccm.c.'>ccm_build_iv</a>(ctx-&gt;ctr.b, length, nonce, 0, 1);
+<a id='L128' name='L128'></a>
+<a id='L129' name='L129'></a>  <em class='comment'>/* If no auth data, encrypt B0 and skip L(a) */</em>
+<a id='L130' name='L130'></a>  <strong class='reserved'>if</strong> (!authlen) <em class='brace'>{</em>
+<a id='L131' name='L131'></a>    f(cipher, <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a>, ctx-&gt;tag.b, ctx-&gt;tag.b);
+<a id='L132' name='L132'></a>    <strong class='reserved'>return</strong>;
+<a id='L133' name='L133'></a>  <em class='brace'>}</em>
+<a id='L134' name='L134'></a>
+<a id='L135' name='L135'></a>  <em class='comment'>/* Encrypt B0 (with the adata flag), and input L(a) to the CBC-MAC. */</em>
+<a id='L136' name='L136'></a>  ctx-&gt;tag.b[<a href='../S/326.html#L68' title='Defined at 68 in ccm.c.'>CCM_OFFSET_FLAGS</a>] |= <a href='../S/326.html#L62' title='Defined at 62 in ccm.c.'>CCM_FLAG_ADATA</a>;
+<a id='L137' name='L137'></a>  f(cipher, <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a>, ctx-&gt;tag.b, ctx-&gt;tag.b);
+<a id='L138' name='L138'></a><em class='sharp'>#if</em> SIZEOF_SIZE_T &gt; 4
+<a id='L139' name='L139'></a>  <strong class='reserved'>if</strong> (authlen &gt;= (0x01ULL &lt;&lt; 32)) <em class='brace'>{</em>
+<a id='L140' name='L140'></a>    <em class='comment'>/* Encode L(a) as 0xff || 0xff || &lt;64-bit integer&gt; */</em>
+<a id='L141' name='L141'></a>    ctx-&gt;tag.b[ctx-&gt;blength++] ^= 0xff;
+<a id='L142' name='L142'></a>    ctx-&gt;tag.b[ctx-&gt;blength++] ^= 0xff;
+<a id='L143' name='L143'></a>    ctx-&gt;tag.b[ctx-&gt;blength++] ^= (authlen &gt;&gt; 56) &amp; 0xff;
+<a id='L144' name='L144'></a>    ctx-&gt;tag.b[ctx-&gt;blength++] ^= (authlen &gt;&gt; 48) &amp; 0xff;
+<a id='L145' name='L145'></a>    ctx-&gt;tag.b[ctx-&gt;blength++] ^= (authlen &gt;&gt; 40) &amp; 0xff;
+<a id='L146' name='L146'></a>    ctx-&gt;tag.b[ctx-&gt;blength++] ^= (authlen &gt;&gt; 32) &amp; 0xff;
+<a id='L147' name='L147'></a>    ctx-&gt;tag.b[ctx-&gt;blength++] ^= (authlen &gt;&gt; 24) &amp; 0xff;
+<a id='L148' name='L148'></a>    ctx-&gt;tag.b[ctx-&gt;blength++] ^= (authlen &gt;&gt; 16) &amp; 0xff;
+<a id='L149' name='L149'></a>  <em class='brace'>}</em>
+<a id='L150' name='L150'></a>  <strong class='reserved'>else</strong>
+<a id='L151' name='L151'></a><em class='sharp'>#endif</em>
+<a id='L152' name='L152'></a>    <strong class='reserved'>if</strong> (authlen &gt;= ((0x1ULL &lt;&lt; 16) - (0x1ULL &lt;&lt; 8))) <em class='brace'>{</em>
+<a id='L153' name='L153'></a>      <em class='comment'>/* Encode L(a) as 0xff || 0xfe || &lt;32-bit integer&gt; */</em>
+<a id='L154' name='L154'></a>      ctx-&gt;tag.b[ctx-&gt;blength++] ^= 0xff;
+<a id='L155' name='L155'></a>      ctx-&gt;tag.b[ctx-&gt;blength++] ^= 0xfe;
+<a id='L156' name='L156'></a>      ctx-&gt;tag.b[ctx-&gt;blength++] ^= (authlen &gt;&gt; 24) &amp; 0xff;
+<a id='L157' name='L157'></a>      ctx-&gt;tag.b[ctx-&gt;blength++] ^= (authlen &gt;&gt; 16) &amp; 0xff;
+<a id='L158' name='L158'></a>    <em class='brace'>}</em>
+<a id='L159' name='L159'></a>  ctx-&gt;tag.b[ctx-&gt;blength++] ^= (authlen &gt;&gt; 8) &amp; 0xff;
+<a id='L160' name='L160'></a>  ctx-&gt;tag.b[ctx-&gt;blength++] ^= (authlen &gt;&gt; 0) &amp; 0xff;
+<a id='L161' name='L161'></a><em class='brace'>}</em>
+<a id='L162' name='L162'></a>
+<a id='L163' name='L163'></a><strong class='reserved'>void</strong>
+<a id='L164' name='L164'></a><a href='../R/1160.html' title='Multiple referred from 10 places.'>ccm_update</a>(<strong class='reserved'>struct</strong> <a href='../S/311.html#L105' title='Defined at 105 in ccm.h.'>ccm_ctx</a> *ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *cipher, <a href='../S/122.html#L88' title='Defined at 88 in nettle-types.h.'>nettle_cipher_func</a> *f,
+<a id='L165' name='L165'></a>           size_t length, <strong class='reserved'>const</strong> uint8_t *data)
+<a id='L166' name='L166'></a><em class='brace'>{</em>
+<a id='L167' name='L167'></a>  <strong class='reserved'>const</strong> uint8_t *end = data + length;
+<a id='L168' name='L168'></a>
+<a id='L169' name='L169'></a>  <em class='comment'>/* If we don't have enough to fill a block, save the data for later. */</em>
+<a id='L170' name='L170'></a>  <strong class='reserved'>if</strong> ((ctx-&gt;blength + length) &lt; <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a>) <em class='brace'>{</em>
+<a id='L171' name='L171'></a>    <a href='../D/1877.html' title='Multiple defined in 2 places.'>memxor</a>(&amp;ctx-&gt;tag.b[ctx-&gt;blength], data, length);
+<a id='L172' name='L172'></a>    ctx-&gt;blength += length;
+<a id='L173' name='L173'></a>    <strong class='reserved'>return</strong>;
+<a id='L174' name='L174'></a>  <em class='brace'>}</em>
+<a id='L175' name='L175'></a>
+<a id='L176' name='L176'></a>  <em class='comment'>/* Process a partially filled block. */</em>
+<a id='L177' name='L177'></a>  <strong class='reserved'>if</strong> (ctx-&gt;blength) <em class='brace'>{</em>
+<a id='L178' name='L178'></a>    <a href='../D/1877.html' title='Multiple defined in 2 places.'>memxor</a>(&amp;ctx-&gt;tag.b[ctx-&gt;blength], data, <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a> - ctx-&gt;blength);
+<a id='L179' name='L179'></a>    data += (<a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a> - ctx-&gt;blength);
+<a id='L180' name='L180'></a>    f(cipher, <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a>, ctx-&gt;tag.b, ctx-&gt;tag.b);
+<a id='L181' name='L181'></a>  <em class='brace'>}</em>
+<a id='L182' name='L182'></a>
+<a id='L183' name='L183'></a>  <em class='comment'>/* Process full blocks. */</em>
+<a id='L184' name='L184'></a>  <strong class='reserved'>while</strong> ((data + <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a>) &lt; end) <em class='brace'>{</em>
+<a id='L185' name='L185'></a>    <a href='../D/1877.html' title='Multiple defined in 2 places.'>memxor</a>(ctx-&gt;tag.b, data, <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a>);
+<a id='L186' name='L186'></a>    f(cipher, <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a>, ctx-&gt;tag.b, ctx-&gt;tag.b);
+<a id='L187' name='L187'></a>    data += <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a>;
+<a id='L188' name='L188'></a>  <em class='brace'>}</em> <em class='comment'>/* while */</em>
+<a id='L189' name='L189'></a>
+<a id='L190' name='L190'></a>  <em class='comment'>/* Save leftovers for later. */</em>
+<a id='L191' name='L191'></a>  ctx-&gt;blength = (end - data);
+<a id='L192' name='L192'></a>  <strong class='reserved'>if</strong> (ctx-&gt;blength) <a href='../D/1877.html' title='Multiple defined in 2 places.'>memxor</a>(&amp;ctx-&gt;tag.b, data, ctx-&gt;blength);
+<a id='L193' name='L193'></a><em class='brace'>}</em>
+<a id='L194' name='L194'></a>
+<a id='L195' name='L195'></a><em class='comment'>/*</em>
+<a id='L196' name='L196'></a><em class='comment'> * Because of the underlying CTR mode encryption, when called multiple times</em>
+<a id='L197' name='L197'></a><em class='comment'> * the data in intermediate calls must be provided in multiples of the block</em>
+<a id='L198' name='L198'></a><em class='comment'> * size.</em>
+<a id='L199' name='L199'></a><em class='comment'> */</em>
+<a id='L200' name='L200'></a><strong class='reserved'>void</strong>
+<a id='L201' name='L201'></a><a href='../R/1156.html' title='Multiple referred from 6 places.'>ccm_encrypt</a>(<strong class='reserved'>struct</strong> <a href='../S/311.html#L105' title='Defined at 105 in ccm.h.'>ccm_ctx</a> *ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *cipher, <a href='../S/122.html#L88' title='Defined at 88 in nettle-types.h.'>nettle_cipher_func</a> *f,
+<a id='L202' name='L202'></a>            size_t length, uint8_t *dst, <strong class='reserved'>const</strong> uint8_t *src)
+<a id='L203' name='L203'></a><em class='brace'>{</em>
+<a id='L204' name='L204'></a>  <a href='../S/326.html#L91' title='Defined at 91 in ccm.c.'>ccm_pad</a>(ctx, cipher, f);
+<a id='L205' name='L205'></a>  <a href='../D/1346.html' title='Multiple defined in 2 places.'>ccm_update</a>(ctx, cipher, f, length, src);
+<a id='L206' name='L206'></a>  <a href='../D/1416.html' title='Multiple defined in 2 places.'>ctr_crypt</a>(cipher, f, <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a>, ctx-&gt;ctr.b, length, dst, src);
+<a id='L207' name='L207'></a><em class='brace'>}</em>
+<a id='L208' name='L208'></a>
+<a id='L209' name='L209'></a><em class='comment'>/*</em>
+<a id='L210' name='L210'></a><em class='comment'> * Because of the underlying CTR mode decryption, when called multiple times</em>
+<a id='L211' name='L211'></a><em class='comment'> * the data in intermediate calls must be provided in multiples of the block</em>
+<a id='L212' name='L212'></a><em class='comment'> * size.</em>
+<a id='L213' name='L213'></a><em class='comment'> */</em>
+<a id='L214' name='L214'></a><strong class='reserved'>void</strong>
+<a id='L215' name='L215'></a><a href='../R/1153.html' title='Multiple referred from 6 places.'>ccm_decrypt</a>(<strong class='reserved'>struct</strong> <a href='../S/311.html#L105' title='Defined at 105 in ccm.h.'>ccm_ctx</a> *ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *cipher, <a href='../S/122.html#L88' title='Defined at 88 in nettle-types.h.'>nettle_cipher_func</a> *f,
+<a id='L216' name='L216'></a>            size_t length, uint8_t *dst, <strong class='reserved'>const</strong> uint8_t *src)
+<a id='L217' name='L217'></a><em class='brace'>{</em>
+<a id='L218' name='L218'></a>  <a href='../D/1416.html' title='Multiple defined in 2 places.'>ctr_crypt</a>(cipher, f, <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a>, ctx-&gt;ctr.b, length, dst, src);
+<a id='L219' name='L219'></a>  <a href='../S/326.html#L91' title='Defined at 91 in ccm.c.'>ccm_pad</a>(ctx, cipher, f);
+<a id='L220' name='L220'></a>  <a href='../D/1346.html' title='Multiple defined in 2 places.'>ccm_update</a>(ctx, cipher, f, length, dst);
+<a id='L221' name='L221'></a><em class='brace'>}</em>
+<a id='L222' name='L222'></a>
+<a id='L223' name='L223'></a><strong class='reserved'>void</strong>
+<a id='L224' name='L224'></a><a href='../R/1155.html' title='Multiple referred from 8 places.'>ccm_digest</a>(<strong class='reserved'>struct</strong> <a href='../S/311.html#L105' title='Defined at 105 in ccm.h.'>ccm_ctx</a> *ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *cipher, <a href='../S/122.html#L88' title='Defined at 88 in nettle-types.h.'>nettle_cipher_func</a> *f,
+<a id='L225' name='L225'></a>           size_t length, uint8_t *digest)
+<a id='L226' name='L226'></a><em class='brace'>{</em>
+<a id='L227' name='L227'></a>  <strong class='reserved'>int</strong> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a> - <a href='../S/326.html#L64' title='Defined at 64 in ccm.c.'>CCM_FLAG_GET_L</a>(ctx-&gt;ctr.b[<a href='../S/326.html#L68' title='Defined at 68 in ccm.c.'>CCM_OFFSET_FLAGS</a>]);
+<a id='L228' name='L228'></a>  assert(length &lt;= <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a>);
+<a id='L229' name='L229'></a>  <strong class='reserved'>while</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &lt; <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a>)  ctx-&gt;ctr.b[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++] = 0;
+<a id='L230' name='L230'></a>  <a href='../S/326.html#L91' title='Defined at 91 in ccm.c.'>ccm_pad</a>(ctx, cipher, f);
+<a id='L231' name='L231'></a>  <a href='../D/1416.html' title='Multiple defined in 2 places.'>ctr_crypt</a>(cipher, f, <a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a>, ctx-&gt;ctr.b, length, digest, ctx-&gt;tag.b);
+<a id='L232' name='L232'></a><em class='brace'>}</em>
+<a id='L233' name='L233'></a>
+<a id='L234' name='L234'></a><strong class='reserved'>void</strong>
+<a id='L235' name='L235'></a><a href='../R/1157.html' title='Multiple referred from 5 places.'>ccm_encrypt_message</a>(<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *cipher, <a href='../S/122.html#L88' title='Defined at 88 in nettle-types.h.'>nettle_cipher_func</a> *f,
+<a id='L236' name='L236'></a>                    size_t nlength, <strong class='reserved'>const</strong> uint8_t *nonce,
+<a id='L237' name='L237'></a>                    size_t alength, <strong class='reserved'>const</strong> uint8_t *adata, size_t tlength,
+<a id='L238' name='L238'></a>                    size_t clength, uint8_t *dst, <strong class='reserved'>const</strong> uint8_t *src)
+<a id='L239' name='L239'></a><em class='brace'>{</em>
+<a id='L240' name='L240'></a>  <strong class='reserved'>struct</strong> <a href='../S/311.html#L105' title='Defined at 105 in ccm.h.'>ccm_ctx</a> ctx;
+<a id='L241' name='L241'></a>  uint8_t *tag = dst + (clength-tlength);
+<a id='L242' name='L242'></a>  assert(clength &gt;= tlength);
+<a id='L243' name='L243'></a>  <a href='../D/1345.html' title='Multiple defined in 2 places.'>ccm_set_nonce</a>(&amp;ctx, cipher, f, nlength, nonce, alength, clength-tlength, tlength);
+<a id='L244' name='L244'></a>  <a href='../D/1346.html' title='Multiple defined in 2 places.'>ccm_update</a>(&amp;ctx, cipher, f, alength, adata);
+<a id='L245' name='L245'></a>  <a href='../D/1342.html' title='Multiple defined in 2 places.'>ccm_encrypt</a>(&amp;ctx, cipher, f, clength-tlength, dst, src);
+<a id='L246' name='L246'></a>  <a href='../D/1341.html' title='Multiple defined in 2 places.'>ccm_digest</a>(&amp;ctx, cipher, f, tlength, tag);
+<a id='L247' name='L247'></a><em class='brace'>}</em>
+<a id='L248' name='L248'></a>
+<a id='L249' name='L249'></a><strong class='reserved'>int</strong>
+<a id='L250' name='L250'></a><a href='../R/1154.html' title='Multiple referred from 7 places.'>ccm_decrypt_message</a>(<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *cipher, <a href='../S/122.html#L88' title='Defined at 88 in nettle-types.h.'>nettle_cipher_func</a> *f,
+<a id='L251' name='L251'></a>                    size_t nlength, <strong class='reserved'>const</strong> uint8_t *nonce,
+<a id='L252' name='L252'></a>                    size_t alength, <strong class='reserved'>const</strong> uint8_t *adata, size_t tlength,
+<a id='L253' name='L253'></a>                    size_t mlength, uint8_t *dst, <strong class='reserved'>const</strong> uint8_t *src)
+<a id='L254' name='L254'></a><em class='brace'>{</em>
+<a id='L255' name='L255'></a>  <strong class='reserved'>struct</strong> <a href='../S/311.html#L105' title='Defined at 105 in ccm.h.'>ccm_ctx</a> ctx;
+<a id='L256' name='L256'></a>  uint8_t tag[<a href='../S/311.html#L91' title='Defined at 91 in ccm.h.'>CCM_BLOCK_SIZE</a>];
+<a id='L257' name='L257'></a>  <a href='../D/1345.html' title='Multiple defined in 2 places.'>ccm_set_nonce</a>(&amp;ctx, cipher, f, nlength, nonce, alength, mlength, tlength);
+<a id='L258' name='L258'></a>  <a href='../D/1346.html' title='Multiple defined in 2 places.'>ccm_update</a>(&amp;ctx, cipher, f, alength, adata);
+<a id='L259' name='L259'></a>  <a href='../D/1339.html' title='Multiple defined in 2 places.'>ccm_decrypt</a>(&amp;ctx, cipher, f, mlength, dst, src);
+<a id='L260' name='L260'></a>  <a href='../D/1341.html' title='Multiple defined in 2 places.'>ccm_digest</a>(&amp;ctx, cipher, f, tlength, tag);
+<a id='L261' name='L261'></a>  <strong class='reserved'>return</strong> <a href='../D/1875.html' title='Multiple defined in 2 places.'>memeql_sec</a>(tag, src + mlength, tlength);
+<a id='L262' name='L262'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L91'>[^]</a><a href='#L250'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

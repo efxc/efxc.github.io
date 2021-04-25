@@ -1,0 +1,777 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>src/danetool.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6496.html'>src</a>/danetool.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L74'>[^]</a><a href='#L676'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L74' title='Defined at 74.'>app_exit</a></li>
+<li><a href='#L83' title='Defined at 83.'>tls_log_func</a></li>
+<li><a href='#L88' title='Defined at 88.'>main</a></li>
+<li><a href='#L97' title='Defined at 97.'>cmd_parser</a></li>
+<li><a href='#L198' title='Defined at 198.'>dane_check</a></li>
+<li><a href='#L458' title='Defined at 458.'>dane_info</a></li>
+<li><a href='#L594' title='Defined at 594.'>cert_callback</a></li>
+<li><a href='#L631' title='Defined at 631.'>init_tls_session</a></li>
+<li><a href='#L663' title='Defined at 663.'>do_handshake</a></li>
+<li><a href='#L676' title='Defined at 676.'>obtain_cert</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2012 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * GnuTLS is free software: you can redistribute it and/or modify it</em>
+<a id='L7' name='L7'></a><em class='comment'> * under the terms of the GNU General Public License as published by</em>
+<a id='L8' name='L8'></a><em class='comment'> * the Free Software Foundation, either version 3 of the License, or</em>
+<a id='L9' name='L9'></a><em class='comment'> * (at your option) any later version.</em>
+<a id='L10' name='L10'></a><em class='comment'> *</em>
+<a id='L11' name='L11'></a><em class='comment'> * GnuTLS is distributed in the hope that it will be useful, but</em>
+<a id='L12' name='L12'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L13' name='L13'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L14' name='L14'></a><em class='comment'> * General Public License for more details.</em>
+<a id='L15' name='L15'></a><em class='comment'> *</em>
+<a id='L16' name='L16'></a><em class='comment'> * You should have received a copy of the GNU General Public License</em>
+<a id='L17' name='L17'></a><em class='comment'> * along with this program.  If not, see</em>
+<a id='L18' name='L18'></a><em class='comment'> * &lt;https://www.gnu.org/licenses/&gt;.</em>
+<a id='L19' name='L19'></a><em class='comment'> */</em>
+<a id='L20' name='L20'></a>
+<a id='L21' name='L21'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> &lt;gnutls/gnutls.h&gt;
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> &lt;<a href='../I/692.html'>gnutls/x509.h</a>&gt;
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> &lt;<a href='6013.html'>gnutls/openpgp.h</a>&gt;
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> &lt;<a href='6004.html'>gnutls/pkcs12.h</a>&gt;
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;<a href='6018.html'>gnutls/pkcs11.h</a>&gt;
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> &lt;<a href='6016.html'>gnutls/abstract.h</a>&gt;
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;<a href='../I/579.html'>gnutls/crypto.h</a>&gt;
+<a id='L30' name='L30'></a>
+<a id='L31' name='L31'></a><em class='sharp'>#ifdef</em> HAVE_DANE
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> &lt;<a href='6441.html'>gnutls/dane.h</a>&gt;
+<a id='L33' name='L33'></a><em class='sharp'>#endif</em>
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L37' name='L37'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> &lt;ctype.h&gt;
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> &lt;time.h&gt;
+<a id='L40' name='L40'></a><em class='sharp'>#include</em> &lt;unistd.h&gt;
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L42' name='L42'></a><em class='sharp'>#include</em> &lt;sys/types.h&gt;
+<a id='L43' name='L43'></a><em class='sharp'>#include</em> &lt;sys/stat.h&gt;
+<a id='L44' name='L44'></a><em class='sharp'>#include</em> &lt;fcntl.h&gt;
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a><em class='comment'>/* Gnulib portability files. */</em>
+<a id='L47' name='L47'></a><em class='sharp'>#include</em> &lt;<a href='../I/149.html'>read-file.h</a>&gt;
+<a id='L48' name='L48'></a><em class='sharp'>#include</em> &lt;<a href='../I/135.html'>minmax.h</a>&gt;
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a><em class='sharp'>#include</em> &lt;<a href='../I/3.html'>common.h</a>&gt;
+<a id='L51' name='L51'></a><em class='sharp'>#include</em> "danetool-args.h"
+<a id='L52' name='L52'></a><em class='sharp'>#include</em> "<a href='3985.html'>certtool-common.h</a>"
+<a id='L53' name='L53'></a><em class='sharp'>#include</em> "<a href='../I/687.html'>socket.h</a>"
+<a id='L54' name='L54'></a>
+<a id='L55' name='L55'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../S/4253.html#L676' title='Defined at 676 in src/danetool.c.'>obtain_cert</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *hostname, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *proto, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *service,
+<a id='L56' name='L56'></a>                                <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *app_proto, <strong class='reserved'>unsigned</strong> quiet);
+<a id='L57' name='L57'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../D/7270.html' title='Multiple defined in 8 places.'>cmd_parser</a>(<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv);
+<a id='L58' name='L58'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../S/4253.html#L458' title='Defined at 458 in src/danetool.c.'>dane_info</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *host, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *proto,
+<a id='L59' name='L59'></a>                      <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *service, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> ca,
+<a id='L60' name='L60'></a>                      <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> domain, <a href='../S/3985.html#L85' title='Defined at 85 in src/certtool-common.h.'>common_info_st</a> * cinfo);
+<a id='L61' name='L61'></a>
+<a id='L62' name='L62'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../S/4253.html#L198' title='Defined at 198 in src/danetool.c.'>dane_check</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *host, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *proto,
+<a id='L63' name='L63'></a>                       <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *service, <a href='../S/3985.html#L85' title='Defined at 85 in src/certtool-common.h.'>common_info_st</a> * cinfo);
+<a id='L64' name='L64'></a>
+<a id='L65' name='L65'></a>FILE *outfile;
+<a id='L66' name='L66'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *outfile_name = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L67' name='L67'></a><strong class='reserved'>static</strong> gnutls_digest_algorithm_t default_dig;
+<a id='L68' name='L68'></a>
+<a id='L69' name='L69'></a><em class='comment'>/* non interactive operation if set</em>
+<a id='L70' name='L70'></a><em class='comment'> */</em>
+<a id='L71' name='L71'></a><strong class='reserved'>int</strong> batch = 0;
+<a id='L72' name='L72'></a><strong class='reserved'>int</strong> ask_pass = 0;
+<a id='L73' name='L73'></a>
+<a id='L74' name='L74'></a><strong class='reserved'>void</strong> <a href='../R/5987.html' title='Multiple referred from 426 places.'>app_exit</a>(<strong class='reserved'>int</strong> val)
+<a id='L75' name='L75'></a><em class='brace'>{</em>
+<a id='L76' name='L76'></a>        <strong class='reserved'>if</strong> (val != 0) <em class='brace'>{</em>
+<a id='L77' name='L77'></a>                <strong class='reserved'>if</strong> (outfile_name)
+<a id='L78' name='L78'></a>                        (<strong class='reserved'>void</strong>)<a href='../D/11106.html' title='Multiple defined in 6 places.'>remove</a>(outfile_name);
+<a id='L79' name='L79'></a>        <em class='brace'>}</em>
+<a id='L80' name='L80'></a>        exit(val);
+<a id='L81' name='L81'></a><em class='brace'>}</em>
+<a id='L82' name='L82'></a>
+<a id='L83' name='L83'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/10917.html' title='Multiple referred from 309 places.'>tls_log_func</a>(<strong class='reserved'>int</strong> level, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str)
+<a id='L84' name='L84'></a><em class='brace'>{</em>
+<a id='L85' name='L85'></a>        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "|&lt;%d&gt;| %s", level, str);
+<a id='L86' name='L86'></a><em class='brace'>}</em>
+<a id='L87' name='L87'></a>
+<a id='L88' name='L88'></a><strong class='reserved'>int</strong> main(<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv)
+<a id='L89' name='L89'></a><em class='brace'>{</em>
+<a id='L90' name='L90'></a>        <a href='../S/3983.html#L73' title='Defined at 73 in src/certtool-common.c.'>fix_lbuffer</a>(0);
+<a id='L91' name='L91'></a>        <a href='../D/7270.html' title='Multiple defined in 8 places.'>cmd_parser</a>(argc, argv);
+<a id='L92' name='L92'></a>
+<a id='L93' name='L93'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L94' name='L94'></a><em class='brace'>}</em>
+<a id='L95' name='L95'></a>
+<a id='L96' name='L96'></a>
+<a id='L97' name='L97'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/6432.html' title='Multiple referred from 16 places.'>cmd_parser</a>(<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv)
+<a id='L98' name='L98'></a><em class='brace'>{</em>
+<a id='L99' name='L99'></a>        <strong class='reserved'>int</strong> ret, privkey_op = 0;
+<a id='L100' name='L100'></a>        <a href='../S/3985.html#L85' title='Defined at 85 in src/certtool-common.h.'>common_info_st</a> cinfo;
+<a id='L101' name='L101'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *proto = "tcp";
+<a id='L102' name='L102'></a>        <strong class='reserved'>char</strong> service[32] = "443";
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a>        <a href='../S/4187.html#L327' title='Defined at 327 in src/libopts/autoopts.c.'>optionProcess</a>(&amp;danetoolOptions, argc, argv);
+<a id='L105' name='L105'></a>
+<a id='L106' name='L106'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(<a href='../S/1420.html#L14' title='Defined at 14 in doc/examples/ex-pkcs12.c.'>OUTFILE</a>)) <em class='brace'>{</em>
+<a id='L107' name='L107'></a>                outfile = <a href='../S/3983.html#L92' title='Defined at 92 in src/certtool-common.c.'>safe_open_rw</a>(OPT_ARG(<a href='../S/1420.html#L14' title='Defined at 14 in doc/examples/ex-pkcs12.c.'>OUTFILE</a>), privkey_op);
+<a id='L108' name='L108'></a>                <strong class='reserved'>if</strong> (outfile == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L109' name='L109'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "%s", OPT_ARG(<a href='../S/1420.html#L14' title='Defined at 14 in doc/examples/ex-pkcs12.c.'>OUTFILE</a>));
+<a id='L110' name='L110'></a>                        <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(1);
+<a id='L111' name='L111'></a>                <em class='brace'>}</em>
+<a id='L112' name='L112'></a>                outfile_name = OPT_ARG(<a href='../S/1420.html#L14' title='Defined at 14 in doc/examples/ex-pkcs12.c.'>OUTFILE</a>);
+<a id='L113' name='L113'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong>
+<a id='L114' name='L114'></a>                outfile = stdout;
+<a id='L115' name='L115'></a>
+<a id='L116' name='L116'></a>        default_dig = GNUTLS_DIG_UNKNOWN;
+<a id='L117' name='L117'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(HASH)) <em class='brace'>{</em>
+<a id='L118' name='L118'></a>                <strong class='reserved'>if</strong> (<a href='../S/6087.html#L33' title='Defined at 33 in gl/strcasecmp.c.'>strcasecmp</a>(OPT_ARG(HASH), "md5") == 0) <em class='brace'>{</em>
+<a id='L119' name='L119'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr,
+<a id='L120' name='L120'></a>                                "Warning: MD5 is broken, and should not be used any more for digital signatures.\n");
+<a id='L121' name='L121'></a>                        default_dig = GNUTLS_DIG_MD5;
+<a id='L122' name='L122'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/6087.html#L33' title='Defined at 33 in gl/strcasecmp.c.'>strcasecmp</a>(OPT_ARG(HASH), "sha1") == 0)
+<a id='L123' name='L123'></a>                        default_dig = GNUTLS_DIG_SHA1;
+<a id='L124' name='L124'></a>                <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/6087.html#L33' title='Defined at 33 in gl/strcasecmp.c.'>strcasecmp</a>(OPT_ARG(HASH), "sha256") == 0)
+<a id='L125' name='L125'></a>                        default_dig = GNUTLS_DIG_SHA256;
+<a id='L126' name='L126'></a>                <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/6087.html#L33' title='Defined at 33 in gl/strcasecmp.c.'>strcasecmp</a>(OPT_ARG(HASH), "sha224") == 0)
+<a id='L127' name='L127'></a>                        default_dig = GNUTLS_DIG_SHA224;
+<a id='L128' name='L128'></a>                <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/6087.html#L33' title='Defined at 33 in gl/strcasecmp.c.'>strcasecmp</a>(OPT_ARG(HASH), "sha384") == 0)
+<a id='L129' name='L129'></a>                        default_dig = GNUTLS_DIG_SHA384;
+<a id='L130' name='L130'></a>                <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/6087.html#L33' title='Defined at 33 in gl/strcasecmp.c.'>strcasecmp</a>(OPT_ARG(HASH), "sha512") == 0)
+<a id='L131' name='L131'></a>                        default_dig = GNUTLS_DIG_SHA512;
+<a id='L132' name='L132'></a>                <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/6087.html#L33' title='Defined at 33 in gl/strcasecmp.c.'>strcasecmp</a>(OPT_ARG(HASH), "rmd160") == 0)
+<a id='L133' name='L133'></a>                        default_dig = GNUTLS_DIG_RMD160;
+<a id='L134' name='L134'></a>                <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L135' name='L135'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "invalid hash: %s", OPT_ARG(HASH));
+<a id='L136' name='L136'></a>                        <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(1);
+<a id='L137' name='L137'></a>                <em class='brace'>}</em>
+<a id='L138' name='L138'></a>        <em class='brace'>}</em>
+<a id='L139' name='L139'></a>
+<a id='L140' name='L140'></a>        <a href='../S/6039.html#L104' title='Defined at 104 in lib/global.c.'>gnutls_global_set_log_function</a>(<a href='../D/11934.html' title='Multiple defined in 223 places.'>tls_log_func</a>);
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(<a href='../D/700.html' title='Multiple defined in 3 places.'>DEBUG</a>)) <em class='brace'>{</em>
+<a id='L143' name='L143'></a>                <a href='../S/6039.html#L155' title='Defined at 155 in lib/global.c.'>gnutls_global_set_log_level</a>(OPT_VALUE_DEBUG);
+<a id='L144' name='L144'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("Setting log level to %d\n", (<strong class='reserved'>int</strong>) OPT_VALUE_DEBUG);
+<a id='L145' name='L145'></a>        <em class='brace'>}</em>
+<a id='L146' name='L146'></a>
+<a id='L147' name='L147'></a>        <strong class='reserved'>if</strong> ((ret = <a href='../S/6039.html#L222' title='Defined at 222 in lib/global.c.'>gnutls_global_init</a>()) &lt; 0) <em class='brace'>{</em>
+<a id='L148' name='L148'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "global_init: %s", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L149' name='L149'></a>                <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(1);
+<a id='L150' name='L150'></a>        <em class='brace'>}</em>
+<a id='L151' name='L151'></a><em class='sharp'>#ifdef</em> ENABLE_PKCS11
+<a id='L152' name='L152'></a>        <a href='../S/4179.html#L1214' title='Defined at 1214 in src/common.c.'>pkcs11_common</a>(<a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L153' name='L153'></a><em class='sharp'>#endif</em>
+<a id='L154' name='L154'></a>
+<a id='L155' name='L155'></a>        memset(&amp;cinfo, 0, <strong class='reserved'>sizeof</strong>(cinfo));
+<a id='L156' name='L156'></a>
+<a id='L157' name='L157'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(INDER) || HAVE_OPT(INRAW))
+<a id='L158' name='L158'></a>                cinfo.incert_format = GNUTLS_X509_FMT_DER;
+<a id='L159' name='L159'></a>        <strong class='reserved'>else</strong>
+<a id='L160' name='L160'></a>                cinfo.incert_format = GNUTLS_X509_FMT_PEM;
+<a id='L161' name='L161'></a>
+<a id='L162' name='L162'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(VERBOSE))
+<a id='L163' name='L163'></a>                cinfo.verbose = 1;
+<a id='L164' name='L164'></a>
+<a id='L165' name='L165'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(LOAD_PUBKEY))
+<a id='L166' name='L166'></a>                cinfo.pubkey = OPT_ARG(LOAD_PUBKEY);
+<a id='L167' name='L167'></a>
+<a id='L168' name='L168'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(LOAD_CERTIFICATE))
+<a id='L169' name='L169'></a>                cinfo.cert = OPT_ARG(LOAD_CERTIFICATE);
+<a id='L170' name='L170'></a>
+<a id='L171' name='L171'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(<a href='../D/3300.html' title='Multiple defined in 5 places.'>PORT</a>)) <em class='brace'>{</em>
+<a id='L172' name='L172'></a>                <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(service, <strong class='reserved'>sizeof</strong>(service), "%s", OPT_ARG(<a href='../D/3300.html' title='Multiple defined in 5 places.'>PORT</a>));
+<a id='L173' name='L173'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L174' name='L174'></a>                <strong class='reserved'>if</strong> (HAVE_OPT(STARTTLS_PROTO))
+<a id='L175' name='L175'></a>                        <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(service, <strong class='reserved'>sizeof</strong>(service), "%s", <a href='../S/3995.html#L341' title='Defined at 341 in src/socket.c.'>starttls_proto_to_service</a>(OPT_ARG(STARTTLS_PROTO)));
+<a id='L176' name='L176'></a>        <em class='brace'>}</em>
+<a id='L177' name='L177'></a>
+<a id='L178' name='L178'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(PROTO))
+<a id='L179' name='L179'></a>                proto = OPT_ARG(PROTO);
+<a id='L180' name='L180'></a>
+<a id='L181' name='L181'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(TLSA_RR))
+<a id='L182' name='L182'></a>                <a href='../S/4253.html#L458' title='Defined at 458 in src/danetool.c.'>dane_info</a>(OPT_ARG(HOST), proto, service,
+<a id='L183' name='L183'></a>                          HAVE_OPT(CA), ENABLED_OPT(DOMAIN), &amp;cinfo);
+<a id='L184' name='L184'></a>        <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (HAVE_OPT(<a href='../D/477.html' title='Multiple defined in 10 places.'>CHECK</a>))
+<a id='L185' name='L185'></a>                <a href='../S/4253.html#L198' title='Defined at 198 in src/danetool.c.'>dane_check</a>(OPT_ARG(<a href='../D/477.html' title='Multiple defined in 10 places.'>CHECK</a>), proto, service, &amp;cinfo);
+<a id='L186' name='L186'></a>        <strong class='reserved'>else</strong>
+<a id='L187' name='L187'></a>                USAGE(1);
+<a id='L188' name='L188'></a>
+<a id='L189' name='L189'></a>        <a href='../D/7814.html' title='Multiple defined in 4 places.'>fclose</a>(outfile);
+<a id='L190' name='L190'></a>
+<a id='L191' name='L191'></a><em class='sharp'>#ifdef</em> ENABLE_PKCS11
+<a id='L192' name='L192'></a>        <a href='../S/5802.html#L1087' title='Defined at 1087 in lib/pkcs11.c.'>gnutls_pkcs11_deinit</a>();
+<a id='L193' name='L193'></a><em class='sharp'>#endif</em>
+<a id='L194' name='L194'></a>        <a href='../S/6039.html#L467' title='Defined at 467 in lib/global.c.'>gnutls_global_deinit</a>();
+<a id='L195' name='L195'></a><em class='brace'>}</em>
+<a id='L196' name='L196'></a>
+<a id='L197' name='L197'></a><em class='sharp'>#define</em> <a href='../R/2357.html' title='Multiple referred from 2 places.'>MAX_CLIST_SIZE</a> 32
+<a id='L198' name='L198'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/6545.html' title='Multiple referred from 2 places.'>dane_check</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *host, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *proto,
+<a id='L199' name='L199'></a>                       <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *service, <a href='../S/3985.html#L85' title='Defined at 85 in src/certtool-common.h.'>common_info_st</a> * cinfo)
+<a id='L200' name='L200'></a><em class='brace'>{</em>
+<a id='L201' name='L201'></a><em class='sharp'>#ifdef</em> HAVE_DANE
+<a id='L202' name='L202'></a>        <a href='../S/6441.html#L90' title='Defined at 90 in libdane/includes/gnutls/dane.h.'>dane_state_t</a> <a href='../D/11231.html' title='Multiple defined in 2 places.'>s</a>;
+<a id='L203' name='L203'></a>        <a href='../S/6441.html#L91' title='Defined at 91 in libdane/includes/gnutls/dane.h.'>dane_query_t</a> q;
+<a id='L204' name='L204'></a>        <strong class='reserved'>int</strong> ret, retcode = 1;
+<a id='L205' name='L205'></a>        <strong class='reserved'>unsigned</strong> entries;
+<a id='L206' name='L206'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> flags = <a href='../S/6441.html#L102' title='Defined at 102 in libdane/includes/gnutls/dane.h.'>DANE_F_IGNORE_LOCAL_RESOLVER</a>, i;
+<a id='L207' name='L207'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> <a href='../S/1427.html#L284' title='Defined at 284 in doc/examples/tlsproxy/tlsproxy.c.'>usage</a>, <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>, match;
+<a id='L208' name='L208'></a>        gnutls_datum_t data, file;
+<a id='L209' name='L209'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> size;
+<a id='L210' name='L210'></a>        <strong class='reserved'>unsigned</strong> del = 0;
+<a id='L211' name='L211'></a>        <strong class='reserved'>unsigned</strong> vflags = <a href='../S/6441.html#L140' title='Defined at 140 in libdane/includes/gnutls/dane.h.'>DANE_VFLAG_FAIL_IF_NOT_CHECKED</a>;
+<a id='L212' name='L212'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *cstr;
+<a id='L213' name='L213'></a>        <strong class='reserved'>char</strong> *str;
+<a id='L214' name='L214'></a>        gnutls_x509_crt_t *clist = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L215' name='L215'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> clist_size = 0;
+<a id='L216' name='L216'></a>        gnutls_datum_t certs[<a href='../S/4253.html#L197' title='Defined at 197 in src/danetool.c.'>MAX_CLIST_SIZE</a>];
+<a id='L217' name='L217'></a>        <strong class='reserved'>int</strong> port = <a href='../S/3995.html#L670' title='Defined at 670 in src/socket.c.'>service_to_port</a>(service, proto);
+<a id='L218' name='L218'></a>
+<a id='L219' name='L219'></a>        <strong class='reserved'>if</strong> (ENABLED_OPT(LOCAL_DNS))
+<a id='L220' name='L220'></a>                flags = 0;
+<a id='L221' name='L221'></a>
+<a id='L222' name='L222'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(INSECURE))
+<a id='L223' name='L223'></a>                flags |= <a href='../S/6441.html#L103' title='Defined at 103 in libdane/includes/gnutls/dane.h.'>DANE_F_INSECURE</a>;
+<a id='L224' name='L224'></a>
+<a id='L225' name='L225'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(CHECK_EE))
+<a id='L226' name='L226'></a>                vflags |= <a href='../S/6441.html#L141' title='Defined at 141 in libdane/includes/gnutls/dane.h.'>DANE_VFLAG_ONLY_CHECK_EE_USAGE</a>;
+<a id='L227' name='L227'></a>
+<a id='L228' name='L228'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(CHECK_CA))
+<a id='L229' name='L229'></a>                vflags |= <a href='../S/6441.html#L142' title='Defined at 142 in libdane/includes/gnutls/dane.h.'>DANE_VFLAG_ONLY_CHECK_CA_USAGE</a>;
+<a id='L230' name='L230'></a>
+<a id='L231' name='L231'></a>        <strong class='reserved'>if</strong> (!cinfo-&gt;cert) <em class='brace'>{</em>
+<a id='L232' name='L232'></a>                <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *app_proto = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L233' name='L233'></a>                <strong class='reserved'>if</strong> (HAVE_OPT(STARTTLS_PROTO))
+<a id='L234' name='L234'></a>                        app_proto = OPT_ARG(STARTTLS_PROTO);
+<a id='L235' name='L235'></a>
+<a id='L236' name='L236'></a>                cinfo-&gt;cert = <a href='../S/4253.html#L676' title='Defined at 676 in src/danetool.c.'>obtain_cert</a>(host, proto, service, app_proto, HAVE_OPT(QUIET));
+<a id='L237' name='L237'></a>                del = 1;
+<a id='L238' name='L238'></a>        <em class='brace'>}</em>
+<a id='L239' name='L239'></a>
+<a id='L240' name='L240'></a>        <strong class='reserved'>if</strong> (!HAVE_OPT(QUIET))
+<a id='L241' name='L241'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "Querying DNS for %s (%s:%d)...\n", host, proto, port);
+<a id='L242' name='L242'></a>        ret = <a href='../S/6443.html#L233' title='Defined at 233 in libdane/dane.c.'>dane_state_init</a>(&amp;<a href='../D/11231.html' title='Multiple defined in 2 places.'>s</a>, flags);
+<a id='L243' name='L243'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L244' name='L244'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "dane_state_init: %s\n",
+<a id='L245' name='L245'></a>                        <a href='../S/6435.html#L86' title='Defined at 86 in libdane/errors.c.'>dane_strerror</a>(ret));
+<a id='L246' name='L246'></a>                retcode = 1;
+<a id='L247' name='L247'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L248' name='L248'></a>        <em class='brace'>}</em>
+<a id='L249' name='L249'></a>
+<a id='L250' name='L250'></a>        <strong class='reserved'>if</strong> (HAVE_OPT(DLV)) <em class='brace'>{</em>
+<a id='L251' name='L251'></a>                ret = <a href='../S/6443.html#L311' title='Defined at 311 in libdane/dane.c.'>dane_state_set_dlv_file</a>(<a href='../D/11231.html' title='Multiple defined in 2 places.'>s</a>, OPT_ARG(DLV));
+<a id='L252' name='L252'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L253' name='L253'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "dane_state_set_dlv_file: %s\n",
+<a id='L254' name='L254'></a>                                <a href='../S/6435.html#L86' title='Defined at 86 in libdane/errors.c.'>dane_strerror</a>(ret));
+<a id='L255' name='L255'></a>                        retcode = 1;
+<a id='L256' name='L256'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L257' name='L257'></a>                <em class='brace'>}</em>
+<a id='L258' name='L258'></a>        <em class='brace'>}</em>
+<a id='L259' name='L259'></a>
+<a id='L260' name='L260'></a>        ret = <a href='../S/6443.html#L426' title='Defined at 426 in libdane/dane.c.'>dane_query_tlsa</a>(<a href='../D/11231.html' title='Multiple defined in 2 places.'>s</a>, &amp;q, host, proto, port);
+<a id='L261' name='L261'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L262' name='L262'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "dane_query_tlsa: %s\n",
+<a id='L263' name='L263'></a>                        <a href='../S/6435.html#L86' title='Defined at 86 in libdane/errors.c.'>dane_strerror</a>(ret));
+<a id='L264' name='L264'></a>                retcode = 1;
+<a id='L265' name='L265'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L266' name='L266'></a>        <em class='brace'>}</em>
+<a id='L267' name='L267'></a>
+<a id='L268' name='L268'></a>        <strong class='reserved'>if</strong> (ENABLED_OPT(PRINT_RAW)) <em class='brace'>{</em>
+<a id='L269' name='L269'></a>                gnutls_datum_t t;
+<a id='L270' name='L270'></a>                <strong class='reserved'>char</strong> **dane_data;
+<a id='L271' name='L271'></a>                <strong class='reserved'>int</strong> *dane_data_len;
+<a id='L272' name='L272'></a>                <strong class='reserved'>int</strong> secure;
+<a id='L273' name='L273'></a>                <strong class='reserved'>int</strong> bogus;
+<a id='L274' name='L274'></a>
+<a id='L275' name='L275'></a>                ret = <a href='../S/6443.html#L162' title='Defined at 162 in libdane/dane.c.'>dane_query_to_raw_tlsa</a>(q, &amp;entries, &amp;dane_data,
+<a id='L276' name='L276'></a>                        &amp;dane_data_len, &amp;secure, &amp;bogus);
+<a id='L277' name='L277'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L278' name='L278'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "dane_query_to_raw_tlsa: %s\n",
+<a id='L279' name='L279'></a>                                <a href='../S/6435.html#L86' title='Defined at 86 in libdane/errors.c.'>dane_strerror</a>(ret));
+<a id='L280' name='L280'></a>                        retcode = 1;
+<a id='L281' name='L281'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L282' name='L282'></a>                <em class='brace'>}</em>
+<a id='L283' name='L283'></a>
+<a id='L284' name='L284'></a>                <strong class='reserved'>for</strong> (i=0;i&lt;entries;i++) <em class='brace'>{</em>
+<a id='L285' name='L285'></a>                        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> str_size;
+<a id='L286' name='L286'></a>                        t.data = (<strong class='reserved'>void</strong>*)dane_data[i];
+<a id='L287' name='L287'></a>                        t.size = dane_data_len[i];
+<a id='L288' name='L288'></a>
+<a id='L289' name='L289'></a>                        str_size = t.size * 2 + 1;
+<a id='L290' name='L290'></a>                        str = <a href='../S/5460.html#L95' title='Defined at 95 in lib/mem.c.'>gnutls_malloc</a>(str_size);
+<a id='L291' name='L291'></a>
+<a id='L292' name='L292'></a>                        ret = <a href='../S/5806.html#L611' title='Defined at 611 in lib/str.c.'>gnutls_hex_encode</a>(&amp;t, str, &amp;str_size);
+<a id='L293' name='L293'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L294' name='L294'></a>                                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "gnutls_hex_encode: %s\n",
+<a id='L295' name='L295'></a>                                        <a href='../S/6435.html#L86' title='Defined at 86 in libdane/errors.c.'>dane_strerror</a>(ret));
+<a id='L296' name='L296'></a>                                retcode = 1;
+<a id='L297' name='L297'></a>                                <strong class='reserved'>goto</strong> error;
+<a id='L298' name='L298'></a>                        <em class='brace'>}</em>
+<a id='L299' name='L299'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(outfile, "[%u]: %s\n", i, str);
+<a id='L300' name='L300'></a>                        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(str);
+<a id='L301' name='L301'></a>                <em class='brace'>}</em>
+<a id='L302' name='L302'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(outfile, "\n");
+<a id='L303' name='L303'></a>        <em class='brace'>}</em>
+<a id='L304' name='L304'></a>
+<a id='L305' name='L305'></a>        <strong class='reserved'>if</strong> (cinfo-&gt;cert) <em class='brace'>{</em>
+<a id='L306' name='L306'></a>                ret = <a href='../S/5745.html#L58' title='Defined at 58 in lib/file.c.'>gnutls_load_file</a>(cinfo-&gt;cert, &amp;file);
+<a id='L307' name='L307'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L308' name='L308'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "gnutls_load_file: %s\n",
+<a id='L309' name='L309'></a>                                <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L310' name='L310'></a>                        retcode = 1;
+<a id='L311' name='L311'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L312' name='L312'></a>                <em class='brace'>}</em>
+<a id='L313' name='L313'></a>
+<a id='L314' name='L314'></a>                ret =
+<a id='L315' name='L315'></a>                    <a href='../S/5349.html#L3700' title='Defined at 3700 in lib/x509/x509.c.'>gnutls_x509_crt_list_import2</a>(&amp;clist,
+<a id='L316' name='L316'></a>                                                 &amp;clist_size,
+<a id='L317' name='L317'></a>                                                 &amp;file,
+<a id='L318' name='L318'></a>                                                 cinfo-&gt;
+<a id='L319' name='L319'></a>                                                 incert_format, 0);
+<a id='L320' name='L320'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L321' name='L321'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr,
+<a id='L322' name='L322'></a>                                "gnutls_x509_crt_list_import2: %s\n",
+<a id='L323' name='L323'></a>                                <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L324' name='L324'></a>                        retcode = 1;
+<a id='L325' name='L325'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L326' name='L326'></a>                <em class='brace'>}</em>
+<a id='L327' name='L327'></a>
+<a id='L328' name='L328'></a>                <strong class='reserved'>if</strong> (clist_size &gt; 0) <em class='brace'>{</em>
+<a id='L329' name='L329'></a>                        <strong class='reserved'>for</strong> (i = 0; i &lt; <a href='../D/2832.html' title='Multiple defined in 10 places.'>MIN</a>(<a href='../S/4253.html#L197' title='Defined at 197 in src/danetool.c.'>MAX_CLIST_SIZE</a>,clist_size); i++) <em class='brace'>{</em>
+<a id='L330' name='L330'></a>                                ret =
+<a id='L331' name='L331'></a>                                    <a href='../S/5349.html#L2989' title='Defined at 2989 in lib/x509/x509.c.'>gnutls_x509_crt_export2</a>(clist
+<a id='L332' name='L332'></a>                                                            [i],
+<a id='L333' name='L333'></a>                                                            GNUTLS_X509_FMT_DER,
+<a id='L334' name='L334'></a>                                                            &amp;certs
+<a id='L335' name='L335'></a>                                                            [i]);
+<a id='L336' name='L336'></a>                                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L337' name='L337'></a>                                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr,
+<a id='L338' name='L338'></a>                                                "gnutls_x509_crt_export2: %s\n",
+<a id='L339' name='L339'></a>                                                <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>
+<a id='L340' name='L340'></a>                                                (ret));
+<a id='L341' name='L341'></a>                                        retcode = 1;
+<a id='L342' name='L342'></a>                                        <strong class='reserved'>goto</strong> error;
+<a id='L343' name='L343'></a>                                <em class='brace'>}</em>
+<a id='L344' name='L344'></a>                        <em class='brace'>}</em>
+<a id='L345' name='L345'></a>                <em class='brace'>}</em>
+<a id='L346' name='L346'></a>        <em class='brace'>}</em>
+<a id='L347' name='L347'></a>
+<a id='L348' name='L348'></a>        entries = <a href='../S/6443.html#L95' title='Defined at 95 in libdane/dane.c.'>dane_query_entries</a>(q);
+<a id='L349' name='L349'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; entries; i++) <em class='brace'>{</em>
+<a id='L350' name='L350'></a>                ret = <a href='../S/6443.html#L116' title='Defined at 116 in libdane/dane.c.'>dane_query_data</a>(q, i, &amp;<a href='../S/1427.html#L284' title='Defined at 284 in doc/examples/tlsproxy/tlsproxy.c.'>usage</a>, &amp;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>, &amp;match, &amp;data);
+<a id='L351' name='L351'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L352' name='L352'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "dane_query_data: %s\n",
+<a id='L353' name='L353'></a>                                <a href='../S/6435.html#L86' title='Defined at 86 in libdane/errors.c.'>dane_strerror</a>(ret));
+<a id='L354' name='L354'></a>                        retcode = 1;
+<a id='L355' name='L355'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L356' name='L356'></a>                <em class='brace'>}</em>
+<a id='L357' name='L357'></a>
+<a id='L358' name='L358'></a>                size = lbuffer_size;
+<a id='L359' name='L359'></a>                ret = <a href='../S/5806.html#L611' title='Defined at 611 in lib/str.c.'>gnutls_hex_encode</a>(&amp;data, (<strong class='reserved'>void</strong> *) lbuffer, &amp;size);
+<a id='L360' name='L360'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L361' name='L361'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "gnutls_hex_encode: %s\n",
+<a id='L362' name='L362'></a>                                <a href='../S/6435.html#L86' title='Defined at 86 in libdane/errors.c.'>dane_strerror</a>(ret));
+<a id='L363' name='L363'></a>                        retcode = 1;
+<a id='L364' name='L364'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L365' name='L365'></a>                <em class='brace'>}</em>
+<a id='L366' name='L366'></a>
+<a id='L367' name='L367'></a>                <strong class='reserved'>if</strong> (entries &gt; 1 &amp;&amp; !HAVE_OPT(QUIET))
+<a id='L368' name='L368'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(outfile, "\n==== Entry %d ====\n", i + 1);
+<a id='L369' name='L369'></a>
+<a id='L370' name='L370'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(outfile,
+<a id='L371' name='L371'></a>                        "_%u._%s.%s. IN TLSA ( %.2x %.2x %.2x %s )\n",
+<a id='L372' name='L372'></a>                        port, proto, host, <a href='../S/1427.html#L284' title='Defined at 284 in doc/examples/tlsproxy/tlsproxy.c.'>usage</a>, <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>, match, lbuffer);
+<a id='L373' name='L373'></a>
+<a id='L374' name='L374'></a>                <strong class='reserved'>if</strong> (!HAVE_OPT(QUIET)) <em class='brace'>{</em>
+<a id='L375' name='L375'></a>                        cstr = <a href='../S/6438.html#L126' title='Defined at 126 in libdane/dane-params.c.'>dane_cert_usage_name</a>(<a href='../S/1427.html#L284' title='Defined at 284 in doc/examples/tlsproxy/tlsproxy.c.'>usage</a>);
+<a id='L376' name='L376'></a>                        <strong class='reserved'>if</strong> (cstr == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) cstr= "Unknown";
+<a id='L377' name='L377'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(outfile, "Certificate usage: %s (%.2x)\n", cstr, <a href='../S/1427.html#L284' title='Defined at 284 in doc/examples/tlsproxy/tlsproxy.c.'>usage</a>);
+<a id='L378' name='L378'></a>
+<a id='L379' name='L379'></a>                        cstr = <a href='../S/6438.html#L82' title='Defined at 82 in libdane/dane-params.c.'>dane_cert_type_name</a>(<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>);
+<a id='L380' name='L380'></a>                        <strong class='reserved'>if</strong> (cstr == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) cstr= "Unknown";
+<a id='L381' name='L381'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(outfile, "Certificate type:  %s (%.2x)\n", cstr, <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>);
+<a id='L382' name='L382'></a>
+<a id='L383' name='L383'></a>                        cstr = <a href='../S/6438.html#L104' title='Defined at 104 in libdane/dane-params.c.'>dane_match_type_name</a>(match);
+<a id='L384' name='L384'></a>                        <strong class='reserved'>if</strong> (cstr == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) cstr= "Unknown";
+<a id='L385' name='L385'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(outfile, "Contents:       %s (%.2x)\n", cstr, match);
+<a id='L386' name='L386'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(outfile, "Data:       %s\n", lbuffer);
+<a id='L387' name='L387'></a>                <em class='brace'>}</em>
+<a id='L388' name='L388'></a>
+<a id='L389' name='L389'></a>                <em class='comment'>/* Verify the DANE data */</em>
+<a id='L390' name='L390'></a>                <strong class='reserved'>if</strong> (cinfo-&gt;cert) <em class='brace'>{</em>
+<a id='L391' name='L391'></a>                        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> status;
+<a id='L392' name='L392'></a>                        gnutls_datum_t out;
+<a id='L393' name='L393'></a>
+<a id='L394' name='L394'></a>                        ret =
+<a id='L395' name='L395'></a>                            <a href='../S/6443.html#L866' title='Defined at 866 in libdane/dane.c.'>dane_verify_crt</a>(<a href='../D/11231.html' title='Multiple defined in 2 places.'>s</a>, certs, clist_size,
+<a id='L396' name='L396'></a>                                            GNUTLS_CRT_X509, host,
+<a id='L397' name='L397'></a>                                            proto, port, 0, vflags,
+<a id='L398' name='L398'></a>                                            &amp;status);
+<a id='L399' name='L399'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L400' name='L400'></a>                                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr,
+<a id='L401' name='L401'></a>                                        "dane_verify_crt: %s\n",
+<a id='L402' name='L402'></a>                                        <a href='../S/6435.html#L86' title='Defined at 86 in libdane/errors.c.'>dane_strerror</a>(ret));
+<a id='L403' name='L403'></a>                                retcode = 1;
+<a id='L404' name='L404'></a>                                <strong class='reserved'>goto</strong> error;
+<a id='L405' name='L405'></a>                        <em class='brace'>}</em>
+<a id='L406' name='L406'></a>
+<a id='L407' name='L407'></a>                        ret =
+<a id='L408' name='L408'></a>                            <a href='../S/6443.html#L1041' title='Defined at 1041 in libdane/dane.c.'>dane_verification_status_print</a>(status,
+<a id='L409' name='L409'></a>                                                           &amp;out,
+<a id='L410' name='L410'></a>                                                           0);
+<a id='L411' name='L411'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L412' name='L412'></a>                                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr,
+<a id='L413' name='L413'></a>                                        "dane_verification_status_print: %s\n",
+<a id='L414' name='L414'></a>                                        <a href='../S/6435.html#L86' title='Defined at 86 in libdane/errors.c.'>dane_strerror</a>(ret));
+<a id='L415' name='L415'></a>                                retcode = 1;
+<a id='L416' name='L416'></a>                                <strong class='reserved'>goto</strong> error;
+<a id='L417' name='L417'></a>                        <em class='brace'>}</em>
+<a id='L418' name='L418'></a>
+<a id='L419' name='L419'></a>                        <strong class='reserved'>if</strong> (!HAVE_OPT(QUIET))
+<a id='L420' name='L420'></a>                                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(outfile, "\nVerification: %s\n", out.data);
+<a id='L421' name='L421'></a>                        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(out.data);
+<a id='L422' name='L422'></a>
+<a id='L423' name='L423'></a>                        <em class='comment'>/* if there is at least one correct accept */</em>
+<a id='L424' name='L424'></a>                        <strong class='reserved'>if</strong> (status == 0)
+<a id='L425' name='L425'></a>                                retcode = 0;
+<a id='L426' name='L426'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L427' name='L427'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr,
+<a id='L428' name='L428'></a>                                "\nCertificate could not be obtained. You can explicitly load the certificate using --load-certificate.\n");
+<a id='L429' name='L429'></a>                <em class='brace'>}</em>
+<a id='L430' name='L430'></a>        <em class='brace'>}</em>
+<a id='L431' name='L431'></a>
+<a id='L432' name='L432'></a>        <strong class='reserved'>if</strong> (clist_size &gt; 0) <em class='brace'>{</em>
+<a id='L433' name='L433'></a>                <strong class='reserved'>for</strong> (i = 0; i &lt; clist_size; i++) <em class='brace'>{</em>
+<a id='L434' name='L434'></a>                        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(certs[i].data);
+<a id='L435' name='L435'></a>                        <a href='../S/5349.html#L291' title='Defined at 291 in lib/x509/x509.c.'>gnutls_x509_crt_deinit</a>(clist[i]);
+<a id='L436' name='L436'></a>                <em class='brace'>}</em>
+<a id='L437' name='L437'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(clist);
+<a id='L438' name='L438'></a>        <em class='brace'>}</em>
+<a id='L439' name='L439'></a>
+<a id='L440' name='L440'></a>
+<a id='L441' name='L441'></a>
+<a id='L442' name='L442'></a>        <a href='../S/6443.html#L331' title='Defined at 331 in libdane/dane.c.'>dane_query_deinit</a>(q);
+<a id='L443' name='L443'></a>        <a href='../S/6443.html#L296' title='Defined at 296 in libdane/dane.c.'>dane_state_deinit</a>(<a href='../D/11231.html' title='Multiple defined in 2 places.'>s</a>);
+<a id='L444' name='L444'></a>
+<a id='L445' name='L445'></a> error:
+<a id='L446' name='L446'></a>        <strong class='reserved'>if</strong> (del != 0 &amp;&amp; cinfo-&gt;cert) <em class='brace'>{</em>
+<a id='L447' name='L447'></a>                (<strong class='reserved'>void</strong>)<a href='../D/11106.html' title='Multiple defined in 6 places.'>remove</a>(cinfo-&gt;cert);
+<a id='L448' name='L448'></a>        <em class='brace'>}</em>
+<a id='L449' name='L449'></a>
+<a id='L450' name='L450'></a>        <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(retcode);
+<a id='L451' name='L451'></a><em class='sharp'>#else</em>
+<a id='L452' name='L452'></a>        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr,
+<a id='L453' name='L453'></a>                "This functionality is disabled (GnuTLS was not compiled with support for DANE).\n");
+<a id='L454' name='L454'></a>        <strong class='reserved'>return</strong>;
+<a id='L455' name='L455'></a><em class='sharp'>#endif</em>
+<a id='L456' name='L456'></a><em class='brace'>}</em>
+<a id='L457' name='L457'></a>
+<a id='L458' name='L458'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/6546.html' title='Multiple referred from 2 places.'>dane_info</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *host, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *proto,
+<a id='L459' name='L459'></a>                      <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *service, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> ca,
+<a id='L460' name='L460'></a>                      <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> domain, <a href='../S/3985.html#L85' title='Defined at 85 in src/certtool-common.h.'>common_info_st</a> * cinfo)
+<a id='L461' name='L461'></a><em class='brace'>{</em>
+<a id='L462' name='L462'></a>        gnutls_pubkey_t pubkey;
+<a id='L463' name='L463'></a>        gnutls_x509_crt_t crt;
+<a id='L464' name='L464'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> digest[64];
+<a id='L465' name='L465'></a>        gnutls_datum_t t;
+<a id='L466' name='L466'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L467' name='L467'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> <a href='../S/1427.html#L284' title='Defined at 284 in doc/examples/tlsproxy/tlsproxy.c.'>usage</a>, selector, <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>;
+<a id='L468' name='L468'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> size;
+<a id='L469' name='L469'></a>        <strong class='reserved'>int</strong> port = <a href='../S/3995.html#L670' title='Defined at 670 in src/socket.c.'>service_to_port</a>(service, proto);
+<a id='L470' name='L470'></a>
+<a id='L471' name='L471'></a>        <strong class='reserved'>if</strong> (proto == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L472' name='L472'></a>                proto = "tcp";
+<a id='L473' name='L473'></a>
+<a id='L474' name='L474'></a>        crt = <a href='../D/10154.html' title='Multiple defined in 4 places.'>load_cert</a>(0, cinfo);
+<a id='L475' name='L475'></a>        <strong class='reserved'>if</strong> (crt != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> &amp;&amp; HAVE_OPT(<a href='../D/4917.html' title='Multiple defined in 2 places.'>X509</a>)) <em class='brace'>{</em>
+<a id='L476' name='L476'></a>                selector = 0;   <em class='comment'>/* X.509 */</em>
+<a id='L477' name='L477'></a>
+<a id='L478' name='L478'></a>                size = lbuffer_size;
+<a id='L479' name='L479'></a>                ret =
+<a id='L480' name='L480'></a>                    <a href='../S/5349.html#L2945' title='Defined at 2945 in lib/x509/x509.c.'>gnutls_x509_crt_export</a>(crt, GNUTLS_X509_FMT_DER,
+<a id='L481' name='L481'></a>                                           lbuffer, &amp;size);
+<a id='L482' name='L482'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L483' name='L483'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "export error: %s\n",
+<a id='L484' name='L484'></a>                                <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L485' name='L485'></a>                        <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(1);
+<a id='L486' name='L486'></a>                <em class='brace'>}</em>
+<a id='L487' name='L487'></a>
+<a id='L488' name='L488'></a>                <a href='../S/5349.html#L291' title='Defined at 291 in lib/x509/x509.c.'>gnutls_x509_crt_deinit</a>(crt);
+<a id='L489' name='L489'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>                <em class='comment'>/* use public key only */</em>
+<a id='L490' name='L490'></a>
+<a id='L491' name='L491'></a>                selector = 1;
+<a id='L492' name='L492'></a>
+<a id='L493' name='L493'></a>                ret = <a href='../S/5334.html#L127' title='Defined at 127 in lib/pubkey.c.'>gnutls_pubkey_init</a>(&amp;pubkey);
+<a id='L494' name='L494'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L495' name='L495'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "pubkey_init: %s\n",
+<a id='L496' name='L496'></a>                                <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L497' name='L497'></a>                        <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(1);
+<a id='L498' name='L498'></a>                <em class='brace'>}</em>
+<a id='L499' name='L499'></a>
+<a id='L500' name='L500'></a>                <strong class='reserved'>if</strong> (crt != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L501' name='L501'></a>
+<a id='L502' name='L502'></a>                        ret = <a href='../S/5334.html#L171' title='Defined at 171 in lib/pubkey.c.'>gnutls_pubkey_import_x509</a>(pubkey, crt, 0);
+<a id='L503' name='L503'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L504' name='L504'></a>                                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "pubkey_import_x509: %s\n",
+<a id='L505' name='L505'></a>                                        <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L506' name='L506'></a>                                <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(1);
+<a id='L507' name='L507'></a>                        <em class='brace'>}</em>
+<a id='L508' name='L508'></a>
+<a id='L509' name='L509'></a>                        size = lbuffer_size;
+<a id='L510' name='L510'></a>                        ret =
+<a id='L511' name='L511'></a>                            <a href='../S/5334.html#L620' title='Defined at 620 in lib/pubkey.c.'>gnutls_pubkey_export</a>(pubkey,
+<a id='L512' name='L512'></a>                                                 GNUTLS_X509_FMT_DER,
+<a id='L513' name='L513'></a>                                                 lbuffer, &amp;size);
+<a id='L514' name='L514'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L515' name='L515'></a>                                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "pubkey_export: %s\n",
+<a id='L516' name='L516'></a>                                        <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L517' name='L517'></a>                                <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(1);
+<a id='L518' name='L518'></a>                        <em class='brace'>}</em>
+<a id='L519' name='L519'></a>
+<a id='L520' name='L520'></a>                        <a href='../S/5349.html#L291' title='Defined at 291 in lib/x509/x509.c.'>gnutls_x509_crt_deinit</a>(crt);
+<a id='L521' name='L521'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L522' name='L522'></a>                        pubkey = <a href='../S/3983.html#L636' title='Defined at 636 in src/certtool-common.c.'>load_pubkey</a>(1, cinfo);
+<a id='L523' name='L523'></a>
+<a id='L524' name='L524'></a>                        size = lbuffer_size;
+<a id='L525' name='L525'></a>                        ret =
+<a id='L526' name='L526'></a>                            <a href='../S/5334.html#L620' title='Defined at 620 in lib/pubkey.c.'>gnutls_pubkey_export</a>(pubkey,
+<a id='L527' name='L527'></a>                                                 GNUTLS_X509_FMT_DER,
+<a id='L528' name='L528'></a>                                                 lbuffer, &amp;size);
+<a id='L529' name='L529'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L530' name='L530'></a>                                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "export error: %s\n",
+<a id='L531' name='L531'></a>                                        <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L532' name='L532'></a>                                <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(1);
+<a id='L533' name='L533'></a>                        <em class='brace'>}</em>
+<a id='L534' name='L534'></a>                <em class='brace'>}</em>
+<a id='L535' name='L535'></a>
+<a id='L536' name='L536'></a>                <a href='../S/5334.html#L148' title='Defined at 148 in lib/pubkey.c.'>gnutls_pubkey_deinit</a>(pubkey);
+<a id='L537' name='L537'></a>        <em class='brace'>}</em>
+<a id='L538' name='L538'></a>
+<a id='L539' name='L539'></a>        <strong class='reserved'>if</strong> (default_dig != GNUTLS_DIG_SHA256
+<a id='L540' name='L540'></a>            &amp;&amp; default_dig != GNUTLS_DIG_SHA512) <em class='brace'>{</em>
+<a id='L541' name='L541'></a>                <strong class='reserved'>if</strong> (default_dig != GNUTLS_DIG_UNKNOWN)
+<a id='L542' name='L542'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr,
+<a id='L543' name='L543'></a>                                "Unsupported digest. Assuming SHA256.\n");
+<a id='L544' name='L544'></a>                default_dig = GNUTLS_DIG_SHA256;
+<a id='L545' name='L545'></a>        <em class='brace'>}</em>
+<a id='L546' name='L546'></a>
+<a id='L547' name='L547'></a>        ret = <a href='../S/5805.html#L659' title='Defined at 659 in lib/crypto-api.c.'>gnutls_hash_fast</a>(default_dig, lbuffer, size, digest);
+<a id='L548' name='L548'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L549' name='L549'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "hash error: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L550' name='L550'></a>                <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(1);
+<a id='L551' name='L551'></a>        <em class='brace'>}</em>
+<a id='L552' name='L552'></a>
+<a id='L553' name='L553'></a>        <strong class='reserved'>if</strong> (default_dig == GNUTLS_DIG_SHA256)
+<a id='L554' name='L554'></a>                <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = 1;
+<a id='L555' name='L555'></a>        <strong class='reserved'>else</strong>
+<a id='L556' name='L556'></a>                <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = 2;
+<a id='L557' name='L557'></a>
+<a id='L558' name='L558'></a>        <em class='comment'>/* DANE certificate classification crap */</em>
+<a id='L559' name='L559'></a>        <strong class='reserved'>if</strong> (domain == 0) <em class='brace'>{</em>
+<a id='L560' name='L560'></a>                <strong class='reserved'>if</strong> (ca)
+<a id='L561' name='L561'></a>                        <a href='../S/1427.html#L284' title='Defined at 284 in doc/examples/tlsproxy/tlsproxy.c.'>usage</a> = 0;
+<a id='L562' name='L562'></a>                <strong class='reserved'>else</strong>
+<a id='L563' name='L563'></a>                        <a href='../S/1427.html#L284' title='Defined at 284 in doc/examples/tlsproxy/tlsproxy.c.'>usage</a> = 1;
+<a id='L564' name='L564'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L565' name='L565'></a>                <strong class='reserved'>if</strong> (ca)
+<a id='L566' name='L566'></a>                        <a href='../S/1427.html#L284' title='Defined at 284 in doc/examples/tlsproxy/tlsproxy.c.'>usage</a> = 2;
+<a id='L567' name='L567'></a>                <strong class='reserved'>else</strong>
+<a id='L568' name='L568'></a>                        <a href='../S/1427.html#L284' title='Defined at 284 in doc/examples/tlsproxy/tlsproxy.c.'>usage</a> = 3;
+<a id='L569' name='L569'></a>        <em class='brace'>}</em>
+<a id='L570' name='L570'></a>
+<a id='L571' name='L571'></a>        t.data = digest;
+<a id='L572' name='L572'></a>        t.size = <a href='../S/5805.html#L639' title='Defined at 639 in lib/crypto-api.c.'>gnutls_hash_get_len</a>(default_dig);
+<a id='L573' name='L573'></a>
+<a id='L574' name='L574'></a>        size = lbuffer_size;
+<a id='L575' name='L575'></a>        ret = <a href='../S/5806.html#L611' title='Defined at 611 in lib/str.c.'>gnutls_hex_encode</a>(&amp;t, (<strong class='reserved'>void</strong> *) lbuffer, &amp;size);
+<a id='L576' name='L576'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L577' name='L577'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "hex encode error: %s\n",
+<a id='L578' name='L578'></a>                        <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L579' name='L579'></a>                <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(1);
+<a id='L580' name='L580'></a>        <em class='brace'>}</em>
+<a id='L581' name='L581'></a>
+<a id='L582' name='L582'></a>        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(outfile, "_%u._%s.%s. IN TLSA ( %.2x %.2x %.2x %s )\n",
+<a id='L583' name='L583'></a>                port, proto, host, <a href='../S/1427.html#L284' title='Defined at 284 in doc/examples/tlsproxy/tlsproxy.c.'>usage</a>, selector, <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>, lbuffer);
+<a id='L584' name='L584'></a>
+<a id='L585' name='L585'></a><em class='brace'>}</em>
+<a id='L586' name='L586'></a>
+<a id='L587' name='L587'></a>
+<a id='L588' name='L588'></a><strong class='reserved'>struct</strong> <a href='../R/9855.html' title='Multiple referred from 15 places.'>priv_st</a> <em class='brace'>{</em>
+<a id='L589' name='L589'></a>        <strong class='reserved'>int</strong> fd;
+<a id='L590' name='L590'></a>        <strong class='reserved'>int</strong> found;
+<a id='L591' name='L591'></a><em class='brace'>}</em>;
+<a id='L592' name='L592'></a>
+<a id='L593' name='L593'></a><em class='sharp'>#ifdef</em> HAVE_DANE
+<a id='L594' name='L594'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../R/6190.html' title='Multiple referred from 12 places.'>cert_callback</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L595' name='L595'></a><em class='brace'>{</em>
+<a id='L596' name='L596'></a>        <strong class='reserved'>const</strong> gnutls_datum_t *cert_list;
+<a id='L597' name='L597'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> cert_list_size = 0;
+<a id='L598' name='L598'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L599' name='L599'></a>        <strong class='reserved'>unsigned</strong> i;
+<a id='L600' name='L600'></a>        gnutls_datum_t t;
+<a id='L601' name='L601'></a>        <strong class='reserved'>struct</strong> <a href='../D/10854.html' title='Multiple defined in 4 places.'>priv_st</a> *priv;
+<a id='L602' name='L602'></a>
+<a id='L603' name='L603'></a>        cert_list = <a href='../S/5395.html#L100' title='Defined at 100 in lib/cert-session.c.'>gnutls_certificate_get_peers</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;cert_list_size);
+<a id='L604' name='L604'></a>        <strong class='reserved'>if</strong> (cert_list_size == 0) <em class='brace'>{</em>
+<a id='L605' name='L605'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "no certificates sent by server!\n");
+<a id='L606' name='L606'></a>                <strong class='reserved'>return</strong> -1;
+<a id='L607' name='L607'></a>        <em class='brace'>}</em>
+<a id='L608' name='L608'></a>
+<a id='L609' name='L609'></a>        priv = <a href='../S/5625.html#L1080' title='Defined at 1080 in lib/state.c.'>gnutls_session_get_ptr</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L610' name='L610'></a>
+<a id='L611' name='L611'></a>        <strong class='reserved'>for</strong> (i=0;i&lt;cert_list_size;i++) <em class='brace'>{</em>
+<a id='L612' name='L612'></a>                ret = gnutls_pem_base64_encode_alloc("CERTIFICATE", &amp;cert_list[i], &amp;t);
+<a id='L613' name='L613'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L614' name='L614'></a>                        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "error[%d]: %s\n", __LINE__,
+<a id='L615' name='L615'></a>                                <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L616' name='L616'></a>                        <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(1);
+<a id='L617' name='L617'></a>                <em class='brace'>}</em>
+<a id='L618' name='L618'></a>
+<a id='L619' name='L619'></a>                <a href='../D/12376.html' title='Multiple defined in 5 places.'>write</a>(priv-&gt;fd, t.data, t.size);
+<a id='L620' name='L620'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(t.data);
+<a id='L621' name='L621'></a>        <em class='brace'>}</em>
+<a id='L622' name='L622'></a>        priv-&gt;found = 1;
+<a id='L623' name='L623'></a>
+<a id='L624' name='L624'></a>        <strong class='reserved'>return</strong> -1;
+<a id='L625' name='L625'></a><em class='brace'>}</em>
+<a id='L626' name='L626'></a>
+<a id='L627' name='L627'></a><strong class='reserved'>static</strong> gnutls_certificate_credentials_t xcred;
+<a id='L628' name='L628'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> file_fd = -1;
+<a id='L629' name='L629'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> udp = 0;
+<a id='L630' name='L630'></a>
+<a id='L631' name='L631'></a>gnutls_session_t <a href='../R/9037.html' title='Multiple referred from 2 places.'>init_tls_session</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *hostname)
+<a id='L632' name='L632'></a><em class='brace'>{</em>
+<a id='L633' name='L633'></a>        gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>;
+<a id='L634' name='L634'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L635' name='L635'></a>        <strong class='reserved'>static</strong> <strong class='reserved'>struct</strong> <a href='../D/10854.html' title='Multiple defined in 4 places.'>priv_st</a> priv;
+<a id='L636' name='L636'></a>
+<a id='L637' name='L637'></a>        priv.found = 0;
+<a id='L638' name='L638'></a>        priv.fd = file_fd;
+<a id='L639' name='L639'></a>
+<a id='L640' name='L640'></a>        ret = <a href='../S/5625.html#L475' title='Defined at 475 in lib/state.c.'>gnutls_init</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, (udp?GNUTLS_DATAGRAM:0)|GNUTLS_CLIENT);
+<a id='L641' name='L641'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L642' name='L642'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "error[%d]: %s\n", __LINE__,
+<a id='L643' name='L643'></a>                        <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L644' name='L644'></a>                <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(1);
+<a id='L645' name='L645'></a>        <em class='brace'>}</em>
+<a id='L646' name='L646'></a>        <a href='../S/5625.html#L1094' title='Defined at 1094 in lib/state.c.'>gnutls_session_set_ptr</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;priv);
+<a id='L647' name='L647'></a>
+<a id='L648' name='L648'></a>        ret = <a href='../S/5260.html#L2412' title='Defined at 2412 in lib/priority.c.'>gnutls_set_default_priority</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L649' name='L649'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L650' name='L650'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "error[%d]: %s\n", __LINE__,
+<a id='L651' name='L651'></a>                        <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L652' name='L652'></a>                <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(1);
+<a id='L653' name='L653'></a>        <em class='brace'>}</em>
+<a id='L654' name='L654'></a>
+<a id='L655' name='L655'></a>        <strong class='reserved'>if</strong> (hostname &amp;&amp; <a href='../S/4260.html#L90' title='Defined at 90 in src/common.h.'>is_ip</a>(hostname)==0) <em class='brace'>{</em>
+<a id='L656' name='L656'></a>                <a href='../S/5432.html#L316' title='Defined at 316 in lib/ext/server_name.c.'>gnutls_server_name_set</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_NAME_DNS, hostname, strlen(hostname));
+<a id='L657' name='L657'></a>        <em class='brace'>}</em>
+<a id='L658' name='L658'></a>        <a href='../S/5749.html#L94' title='Defined at 94 in lib/auth.c.'>gnutls_credentials_set</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_CERTIFICATE, xcred);
+<a id='L659' name='L659'></a>
+<a id='L660' name='L660'></a>        <strong class='reserved'>return</strong> <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>;
+<a id='L661' name='L661'></a><em class='brace'>}</em>
+<a id='L662' name='L662'></a>
+<a id='L663' name='L663'></a><strong class='reserved'>int</strong> <a href='../R/6670.html' title='Multiple referred from 6 places.'>do_handshake</a>(<a href='../S/4182.html#L39' title='Defined at 39 in src/socket.h.'>socket_st</a> * <a href='../D/11512.html' title='Multiple defined in 22 places.'>socket</a>)
+<a id='L664' name='L664'></a><em class='brace'>{</em>
+<a id='L665' name='L665'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L666' name='L666'></a>
+<a id='L667' name='L667'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L668' name='L668'></a>                ret = <a href='../S/5300.html#L2721' title='Defined at 2721 in lib/handshake.c.'>gnutls_handshake</a>(<a href='../D/11512.html' title='Multiple defined in 22 places.'>socket</a>-&gt;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L669' name='L669'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong>(ret == GNUTLS_E_INTERRUPTED || ret == GNUTLS_E_AGAIN || ret == GNUTLS_E_WARNING_ALERT_RECEIVED);
+<a id='L670' name='L670'></a>        <em class='comment'>/* we don't care on the result */</em>
+<a id='L671' name='L671'></a>
+<a id='L672' name='L672'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L673' name='L673'></a><em class='brace'>}</em>
+<a id='L674' name='L674'></a>
+<a id='L675' name='L675'></a>
+<a id='L676' name='L676'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../R/9449.html' title='Multiple referred from 2 places.'>obtain_cert</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *hostname, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *proto, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *service,
+<a id='L677' name='L677'></a>                                <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *app_proto, <strong class='reserved'>unsigned</strong> quiet)
+<a id='L678' name='L678'></a><em class='brace'>{</em>
+<a id='L679' name='L679'></a>        <a href='../S/4182.html#L39' title='Defined at 39 in src/socket.h.'>socket_st</a> hd;
+<a id='L680' name='L680'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *txt_service;
+<a id='L681' name='L681'></a>        <strong class='reserved'>static</strong> <strong class='reserved'>char</strong> <a href='../D/11952.html' title='Multiple defined in 4 places.'>tmpfile</a>[32];
+<a id='L682' name='L682'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L683' name='L683'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str = "Obtaining certificate from";
+<a id='L684' name='L684'></a>        <strong class='reserved'>int</strong> socket_flags = 0;
+<a id='L685' name='L685'></a>        <strong class='reserved'>struct</strong> <a href='../D/10854.html' title='Multiple defined in 4 places.'>priv_st</a> *priv;
+<a id='L686' name='L686'></a>
+<a id='L687' name='L687'></a>        ret = <a href='../S/5463.html#L418' title='Defined at 418 in lib/cert-cred.c.'>gnutls_certificate_allocate_credentials</a>(&amp;xcred);
+<a id='L688' name='L688'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L689' name='L689'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "error[%d]: %s\n", __LINE__,
+<a id='L690' name='L690'></a>                        <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L691' name='L691'></a>                <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(1);
+<a id='L692' name='L692'></a>        <em class='brace'>}</em>
+<a id='L693' name='L693'></a>        <a href='../S/5463.html#L878' title='Defined at 878 in lib/cert-cred.c.'>gnutls_certificate_set_verify_function</a>(xcred, <a href='../D/7028.html' title='Multiple defined in 11 places.'>cert_callback</a>);
+<a id='L694' name='L694'></a>
+<a id='L695' name='L695'></a>        <strong class='reserved'>if</strong> (strcmp(proto, "udp") == 0)
+<a id='L696' name='L696'></a>                udp = 1;
+<a id='L697' name='L697'></a>        <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (strcmp(proto, "tcp") != 0) <em class='brace'>{</em>
+<a id='L698' name='L698'></a>                <em class='comment'>/* we cannot handle this protocol */</em>
+<a id='L699' name='L699'></a>                <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L700' name='L700'></a>        <em class='brace'>}</em>
+<a id='L701' name='L701'></a>
+<a id='L702' name='L702'></a>        strcpy(<a href='../D/11952.html' title='Multiple defined in 4 places.'>tmpfile</a>, "danetool-certXXXXXX");
+<a id='L703' name='L703'></a>
+<a id='L704' name='L704'></a>        <a href='../S/4179.html#L1224' title='Defined at 1224 in src/common.c.'>sockets_init</a>();
+<a id='L705' name='L705'></a>        txt_service = <a href='../S/3995.html#L646' title='Defined at 646 in src/socket.c.'>port_to_service</a>(service, proto);
+<a id='L706' name='L706'></a>
+<a id='L707' name='L707'></a>        <strong class='reserved'>if</strong> (quiet)
+<a id='L708' name='L708'></a>                str = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L709' name='L709'></a>
+<a id='L710' name='L710'></a>        <strong class='reserved'>if</strong> (app_proto == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) app_proto = txt_service;
+<a id='L711' name='L711'></a>
+<a id='L712' name='L712'></a>        <strong class='reserved'>if</strong> (udp)
+<a id='L713' name='L713'></a>                socket_flags |= <a href='../S/4182.html#L7' title='Defined at 7 in src/socket.h.'>SOCKET_FLAG_UDP</a>;
+<a id='L714' name='L714'></a>        
+<a id='L715' name='L715'></a>
+<a id='L716' name='L716'></a>        umask(066);
+<a id='L717' name='L717'></a>        file_fd = <a href='../D/10311.html' title='Multiple defined in 4 places.'>mkstemp</a>(<a href='../D/11952.html' title='Multiple defined in 4 places.'>tmpfile</a>);
+<a id='L718' name='L718'></a>        <strong class='reserved'>if</strong> (file_fd == -1) <em class='brace'>{</em>
+<a id='L719' name='L719'></a>                <strong class='reserved'>int</strong> <a href='../S/5535.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-eh.c.'>e</a> = errno;
+<a id='L720' name='L720'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "error[%d]: %s\n", __LINE__,
+<a id='L721' name='L721'></a>                        <a href='../D/11613.html' title='Multiple defined in 8 places.'>strerror</a>(<a href='../S/5535.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-eh.c.'>e</a>));
+<a id='L722' name='L722'></a>                <a href='../D/6813.html' title='Multiple defined in 6 places.'>app_exit</a>(1);
+<a id='L723' name='L723'></a>        <em class='brace'>}</em>
+<a id='L724' name='L724'></a>
+<a id='L725' name='L725'></a>        <a href='../S/4182.html#L58' title='Defined at 58 in src/socket.h.'>socket_open</a>(&amp;hd, hostname, txt_service, app_proto, socket_flags|<a href='../S/4182.html#L9' title='Defined at 9 in src/socket.h.'>SOCKET_FLAG_STARTTLS</a>, str, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L726' name='L726'></a>
+<a id='L727' name='L727'></a>        <a href='../D/7245.html' title='Multiple defined in 25 places.'>close</a>(file_fd);
+<a id='L728' name='L728'></a>
+<a id='L729' name='L729'></a>        ret = 0;
+<a id='L730' name='L730'></a>        priv = <a href='../S/5625.html#L1080' title='Defined at 1080 in lib/state.c.'>gnutls_session_get_ptr</a>(hd.<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L731' name='L731'></a>        <strong class='reserved'>if</strong> (priv-&gt;found == 0)
+<a id='L732' name='L732'></a>                ret = -1;
+<a id='L733' name='L733'></a>
+<a id='L734' name='L734'></a>        <a href='../S/3995.html#L356' title='Defined at 356 in src/socket.c.'>socket_bye</a>(&amp;hd, 1);
+<a id='L735' name='L735'></a>        <a href='../S/5463.html#L391' title='Defined at 391 in lib/cert-cred.c.'>gnutls_certificate_free_credentials</a>(xcred);
+<a id='L736' name='L736'></a>
+<a id='L737' name='L737'></a>        <strong class='reserved'>if</strong> (ret == -1)
+<a id='L738' name='L738'></a>                <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L739' name='L739'></a>        <strong class='reserved'>else</strong>
+<a id='L740' name='L740'></a>                <strong class='reserved'>return</strong> <a href='../D/11952.html' title='Multiple defined in 4 places.'>tmpfile</a>;
+<a id='L741' name='L741'></a><em class='brace'>}</em>
+<a id='L742' name='L742'></a><em class='sharp'>#endif</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L74'>[^]</a><a href='#L676'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

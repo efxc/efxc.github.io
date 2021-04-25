@@ -1,0 +1,201 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>xts.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/xts.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L50'>[^]</a><a href='#L120'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L50' title='Defined at 50.'>check_length</a></li>
+<li><a href='#L63' title='Defined at 63.'>xts_encrypt_message</a></li>
+<li><a href='#L120' title='Defined at 120.'>xts_decrypt_message</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* xts.c</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   XEX-based tweaked-codebook mode with ciphertext stealing (XTS)</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   Copyright (C) 2018 Red Hat, Inc.</em>
+<a id='L6' name='L6'></a><em class='comment'></em>
+<a id='L7' name='L7'></a><em class='comment'>   This file is part of GNU Nettle.</em>
+<a id='L8' name='L8'></a><em class='comment'></em>
+<a id='L9' name='L9'></a><em class='comment'>   GNU Nettle is free software: you can redistribute it and/or</em>
+<a id='L10' name='L10'></a><em class='comment'>   modify it under the terms of either:</em>
+<a id='L11' name='L11'></a><em class='comment'></em>
+<a id='L12' name='L12'></a><em class='comment'>     * the GNU Lesser General Public License as published by the Free</em>
+<a id='L13' name='L13'></a><em class='comment'>       Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L14' name='L14'></a><em class='comment'>       option) any later version.</em>
+<a id='L15' name='L15'></a><em class='comment'></em>
+<a id='L16' name='L16'></a><em class='comment'>   or</em>
+<a id='L17' name='L17'></a><em class='comment'></em>
+<a id='L18' name='L18'></a><em class='comment'>     * the GNU General Public License as published by the Free</em>
+<a id='L19' name='L19'></a><em class='comment'>       Software Foundation; either version 2 of the License, or (at your</em>
+<a id='L20' name='L20'></a><em class='comment'>       option) any later version.</em>
+<a id='L21' name='L21'></a><em class='comment'></em>
+<a id='L22' name='L22'></a><em class='comment'>   or both in parallel, as here.</em>
+<a id='L23' name='L23'></a><em class='comment'></em>
+<a id='L24' name='L24'></a><em class='comment'>   GNU Nettle is distributed in the hope that it will be useful,</em>
+<a id='L25' name='L25'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L26' name='L26'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L27' name='L27'></a><em class='comment'>   General Public License for more details.</em>
+<a id='L28' name='L28'></a><em class='comment'></em>
+<a id='L29' name='L29'></a><em class='comment'>   You should have received copies of the GNU General Public License and</em>
+<a id='L30' name='L30'></a><em class='comment'>   the GNU Lesser General Public License along with this program.  If</em>
+<a id='L31' name='L31'></a><em class='comment'>   not, see http://www.gnu.org/licenses/.</em>
+<a id='L32' name='L32'></a><em class='comment'>*/</em>
+<a id='L33' name='L33'></a>
+<a id='L34' name='L34'></a><em class='sharp'>#if</em> HAVE_CONFIG_H
+<a id='L35' name='L35'></a><em class='sharp'># include</em> "config.h"
+<a id='L36' name='L36'></a><em class='sharp'>#endif</em>
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> &lt;assert.h&gt;
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L40' name='L40'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a><em class='sharp'>#include</em> "<a href='495.html'>xts.h</a>"
+<a id='L43' name='L43'></a>
+<a id='L44' name='L44'></a><em class='sharp'>#include</em> "<a href='251.html'>macros.h</a>"
+<a id='L45' name='L45'></a><em class='sharp'>#include</em> "<a href='193.html'>memxor.h</a>"
+<a id='L46' name='L46'></a><em class='sharp'>#include</em> "<a href='88.html'>nettle-internal.h</a>"
+<a id='L47' name='L47'></a><em class='sharp'>#include</em> "<a href='120.html'>block-internal.h</a>"
+<a id='L48' name='L48'></a>
+<a id='L49' name='L49'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L50' name='L50'></a><a href='../R/1186.html' title='Multiple referred from 2 places.'>check_length</a>(size_t length, uint8_t *dst)
+<a id='L51' name='L51'></a><em class='brace'>{</em>
+<a id='L52' name='L52'></a>  assert(length &gt;= <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>);
+<a id='L53' name='L53'></a>  <em class='comment'>/* asserts may be compiled out, try to save the user by zeroing the dst in</em>
+<a id='L54' name='L54'></a><em class='comment'>   * case the buffer contains sensitive data (like the clear text for inplace</em>
+<a id='L55' name='L55'></a><em class='comment'>   * encryption) */</em>
+<a id='L56' name='L56'></a>  <strong class='reserved'>if</strong> (length &lt; <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>)
+<a id='L57' name='L57'></a>    memset(dst, '\0', length);
+<a id='L58' name='L58'></a><em class='brace'>}</em>
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a><em class='comment'>/* works also for inplace encryption/decryption */</em>
+<a id='L61' name='L61'></a>
+<a id='L62' name='L62'></a><strong class='reserved'>void</strong>
+<a id='L63' name='L63'></a><a href='../R/2565.html' title='Multiple referred from 5 places.'>xts_encrypt_message</a>(<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *enc_ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *twk_ctx,
+<a id='L64' name='L64'></a>                    <a href='../S/122.html#L88' title='Defined at 88 in nettle-types.h.'>nettle_cipher_func</a> *encf,
+<a id='L65' name='L65'></a>                    <strong class='reserved'>const</strong> uint8_t *tweak, size_t length,
+<a id='L66' name='L66'></a>                    uint8_t *dst, <strong class='reserved'>const</strong> uint8_t *src)
+<a id='L67' name='L67'></a><em class='brace'>{</em>
+<a id='L68' name='L68'></a>  <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>;
+<a id='L69' name='L69'></a>  <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> <a href='../D/604.html' title='Multiple defined in 11 places.'>P</a>;
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a>  <a href='../S/556.html#L50' title='Defined at 50 in xts.c.'>check_length</a>(length, dst);
+<a id='L72' name='L72'></a>
+<a id='L73' name='L73'></a>  encf(twk_ctx, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>.b, tweak);
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a>  <em class='comment'>/* the zeroth power of alpha is the initial ciphertext value itself, so we</em>
+<a id='L76' name='L76'></a><em class='comment'>   * skip shifting and do it at the end of each block operation instead */</em>
+<a id='L77' name='L77'></a>  <strong class='reserved'>for</strong> (;length &gt;= 2 * <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a> || length == <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>;
+<a id='L78' name='L78'></a>       length -= <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>, src += <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>, dst += <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>)
+<a id='L79' name='L79'></a>    <em class='brace'>{</em>
+<a id='L80' name='L80'></a>      <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a>(<a href='../D/604.html' title='Multiple defined in 11 places.'>P</a>.b, src, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>.b, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>);   <em class='comment'>/* P -&gt; PP */</em>
+<a id='L81' name='L81'></a>      encf(enc_ctx, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>, dst, <a href='../D/604.html' title='Multiple defined in 11 places.'>P</a>.b);  <em class='comment'>/* CC */</em>
+<a id='L82' name='L82'></a>      <a href='../D/1877.html' title='Multiple defined in 2 places.'>memxor</a>(dst, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>.b, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>);         <em class='comment'>/* CC -&gt; C */</em>
+<a id='L83' name='L83'></a>
+<a id='L84' name='L84'></a>      <em class='comment'>/* shift T for next block if any */</em>
+<a id='L85' name='L85'></a>      <strong class='reserved'>if</strong> (length &gt; <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>)
+<a id='L86' name='L86'></a>          <a href='../D/1269.html' title='Multiple defined in 2 places.'>block16_mulx_le</a>(&amp;<a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>, &amp;<a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>);
+<a id='L87' name='L87'></a>    <em class='brace'>}</em>
+<a id='L88' name='L88'></a>
+<a id='L89' name='L89'></a>  <em class='comment'>/* if the last block is partial, handle via stealing */</em>
+<a id='L90' name='L90'></a>  <strong class='reserved'>if</strong> (length)
+<a id='L91' name='L91'></a>    <em class='brace'>{</em>
+<a id='L92' name='L92'></a>      <em class='comment'>/* S Holds the real C(n-1) (Whole last block to steal from) */</em>
+<a id='L93' name='L93'></a>      <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> <a href='../D/743.html' title='Multiple defined in 3 places.'>S</a>;
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a>      <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a>(<a href='../D/604.html' title='Multiple defined in 11 places.'>P</a>.b, src, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>.b, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>);   <em class='comment'>/* P -&gt; PP */</em>
+<a id='L96' name='L96'></a>      encf(enc_ctx, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>, <a href='../D/743.html' title='Multiple defined in 3 places.'>S</a>.b, <a href='../D/604.html' title='Multiple defined in 11 places.'>P</a>.b);  <em class='comment'>/* CC */</em>
+<a id='L97' name='L97'></a>      <a href='../D/1877.html' title='Multiple defined in 2 places.'>memxor</a>(<a href='../D/743.html' title='Multiple defined in 3 places.'>S</a>.b, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>.b, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>);         <em class='comment'>/* CC -&gt; S */</em>
+<a id='L98' name='L98'></a>
+<a id='L99' name='L99'></a>      <em class='comment'>/* shift T for next block */</em>
+<a id='L100' name='L100'></a>      <a href='../D/1269.html' title='Multiple defined in 2 places.'>block16_mulx_le</a>(&amp;<a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>, &amp;<a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>);
+<a id='L101' name='L101'></a>
+<a id='L102' name='L102'></a>      length -= <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>;
+<a id='L103' name='L103'></a>      src += <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>;
+<a id='L104' name='L104'></a>
+<a id='L105' name='L105'></a>      <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a>(<a href='../D/604.html' title='Multiple defined in 11 places.'>P</a>.b, src, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>.b, length);           <em class='comment'>/* P |.. */</em>
+<a id='L106' name='L106'></a>      <em class='comment'>/* steal ciphertext to complete block */</em>
+<a id='L107' name='L107'></a>      <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a>(<a href='../D/604.html' title='Multiple defined in 11 places.'>P</a>.b + length, <a href='../D/743.html' title='Multiple defined in 3 places.'>S</a>.b + length, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>.b + length,
+<a id='L108' name='L108'></a>              <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a> - length);         <em class='comment'>/* ..| S_2 -&gt; PP */</em>
+<a id='L109' name='L109'></a>
+<a id='L110' name='L110'></a>      encf(enc_ctx, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>, dst, <a href='../D/604.html' title='Multiple defined in 11 places.'>P</a>.b);  <em class='comment'>/* CC */</em>
+<a id='L111' name='L111'></a>      <a href='../D/1877.html' title='Multiple defined in 2 places.'>memxor</a>(dst, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>.b, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>);         <em class='comment'>/* CC -&gt; C(n-1) */</em>
+<a id='L112' name='L112'></a>
+<a id='L113' name='L113'></a>      <em class='comment'>/* Do this after we read src so inplace operations do not break */</em>
+<a id='L114' name='L114'></a>      dst += <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>;
+<a id='L115' name='L115'></a>      memcpy(dst, <a href='../D/743.html' title='Multiple defined in 3 places.'>S</a>.b, length);                 <em class='comment'>/* S_1 -&gt; C(n) */</em>
+<a id='L116' name='L116'></a>    <em class='brace'>}</em>
+<a id='L117' name='L117'></a><em class='brace'>}</em>
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a><strong class='reserved'>void</strong>
+<a id='L120' name='L120'></a><a href='../R/2564.html' title='Multiple referred from 5 places.'>xts_decrypt_message</a>(<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *dec_ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *twk_ctx,
+<a id='L121' name='L121'></a>                    <a href='../S/122.html#L88' title='Defined at 88 in nettle-types.h.'>nettle_cipher_func</a> *decf, <a href='../S/122.html#L88' title='Defined at 88 in nettle-types.h.'>nettle_cipher_func</a> *encf,
+<a id='L122' name='L122'></a>                    <strong class='reserved'>const</strong> uint8_t *tweak, size_t length,
+<a id='L123' name='L123'></a>                    uint8_t *dst, <strong class='reserved'>const</strong> uint8_t *src)
+<a id='L124' name='L124'></a><em class='brace'>{</em>
+<a id='L125' name='L125'></a>  <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>;
+<a id='L126' name='L126'></a>  <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> <a href='../D/99.html' title='Multiple defined in 6 places.'>C</a>;
+<a id='L127' name='L127'></a>
+<a id='L128' name='L128'></a>  <a href='../S/556.html#L50' title='Defined at 50 in xts.c.'>check_length</a>(length, dst);
+<a id='L129' name='L129'></a>
+<a id='L130' name='L130'></a>  encf(twk_ctx, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>.b, tweak);
+<a id='L131' name='L131'></a>
+<a id='L132' name='L132'></a>  <strong class='reserved'>for</strong> (;length &gt;= 2 * <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a> || length == <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>;
+<a id='L133' name='L133'></a>       length -= <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>, src += <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>, dst += <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>)
+<a id='L134' name='L134'></a>    <em class='brace'>{</em>
+<a id='L135' name='L135'></a>      <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a>(<a href='../D/99.html' title='Multiple defined in 6 places.'>C</a>.b, src, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>.b, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>);   <em class='comment'>/* c -&gt; CC */</em>
+<a id='L136' name='L136'></a>      decf(dec_ctx, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>, dst, <a href='../D/99.html' title='Multiple defined in 6 places.'>C</a>.b);  <em class='comment'>/* PP */</em>
+<a id='L137' name='L137'></a>      <a href='../D/1877.html' title='Multiple defined in 2 places.'>memxor</a>(dst, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>.b, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>);         <em class='comment'>/* PP -&gt; P */</em>
+<a id='L138' name='L138'></a>
+<a id='L139' name='L139'></a>      <em class='comment'>/* shift T for next block if any */</em>
+<a id='L140' name='L140'></a>      <strong class='reserved'>if</strong> (length &gt; <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>)
+<a id='L141' name='L141'></a>          <a href='../D/1269.html' title='Multiple defined in 2 places.'>block16_mulx_le</a>(&amp;<a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>, &amp;<a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>);
+<a id='L142' name='L142'></a>    <em class='brace'>}</em>
+<a id='L143' name='L143'></a>
+<a id='L144' name='L144'></a>  <em class='comment'>/* if the last block is partial, handle via stealing */</em>
+<a id='L145' name='L145'></a>  <strong class='reserved'>if</strong> (length)
+<a id='L146' name='L146'></a>    <em class='brace'>{</em>
+<a id='L147' name='L147'></a>      <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> T1;
+<a id='L148' name='L148'></a>      <em class='comment'>/* S Holds the real P(n) (with part of stolen ciphertext) */</em>
+<a id='L149' name='L149'></a>      <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> <a href='../D/743.html' title='Multiple defined in 3 places.'>S</a>;
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a>      <em class='comment'>/* we need the last T(n) and save the T(n-1) for later */</em>
+<a id='L152' name='L152'></a>      <a href='../D/1269.html' title='Multiple defined in 2 places.'>block16_mulx_le</a>(&amp;T1, &amp;<a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>);
+<a id='L153' name='L153'></a>
+<a id='L154' name='L154'></a>      <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a>(<a href='../D/99.html' title='Multiple defined in 6 places.'>C</a>.b, src, T1.b, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>);  <em class='comment'>/* C -&gt; CC */</em>
+<a id='L155' name='L155'></a>      decf(dec_ctx, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>, <a href='../D/743.html' title='Multiple defined in 3 places.'>S</a>.b, <a href='../D/99.html' title='Multiple defined in 6 places.'>C</a>.b);  <em class='comment'>/* PP */</em>
+<a id='L156' name='L156'></a>      <a href='../D/1877.html' title='Multiple defined in 2 places.'>memxor</a>(<a href='../D/743.html' title='Multiple defined in 3 places.'>S</a>.b, T1.b, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>);        <em class='comment'>/* PP -&gt; S */</em>
+<a id='L157' name='L157'></a>
+<a id='L158' name='L158'></a>      <em class='comment'>/* process next block (Pn-1) */</em>
+<a id='L159' name='L159'></a>      length -= <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>;
+<a id='L160' name='L160'></a>      src += <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>;
+<a id='L161' name='L161'></a>
+<a id='L162' name='L162'></a>      <em class='comment'>/* Prepare C, P holds the real P(n) */</em>
+<a id='L163' name='L163'></a>      <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a>(<a href='../D/99.html' title='Multiple defined in 6 places.'>C</a>.b, src, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>.b, length);           <em class='comment'>/* C_1 |.. */</em>
+<a id='L164' name='L164'></a>      <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a>(<a href='../D/99.html' title='Multiple defined in 6 places.'>C</a>.b + length, <a href='../D/743.html' title='Multiple defined in 3 places.'>S</a>.b + length, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>.b + length,
+<a id='L165' name='L165'></a>              <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a> - length);         <em class='comment'>/* ..| S_2 -&gt; CC */</em>
+<a id='L166' name='L166'></a>      decf(dec_ctx, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>, dst, <a href='../D/99.html' title='Multiple defined in 6 places.'>C</a>.b);  <em class='comment'>/* PP */</em>
+<a id='L167' name='L167'></a>      <a href='../D/1877.html' title='Multiple defined in 2 places.'>memxor</a>(dst, <a href='../D/885.html' title='Multiple defined in 4 places.'>T</a>.b, <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>);         <em class='comment'>/* PP -&gt; P(n-1) */</em>
+<a id='L168' name='L168'></a>
+<a id='L169' name='L169'></a>      <em class='comment'>/* Do this after we read src so inplace operations do not break */</em>
+<a id='L170' name='L170'></a>      dst += <a href='../S/495.html#L58' title='Defined at 58 in xts.h.'>XTS_BLOCK_SIZE</a>;
+<a id='L171' name='L171'></a>      memcpy(dst, <a href='../D/743.html' title='Multiple defined in 3 places.'>S</a>.b, length);                 <em class='comment'>/* S_1 -&gt; P(n) */</em>
+<a id='L172' name='L172'></a>    <em class='brace'>}</em>
+<a id='L173' name='L173'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L50'>[^]</a><a href='#L120'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

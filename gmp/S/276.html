@@ -1,0 +1,816 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>tests/mpz/reuse.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/2228.html'>tests</a>/<a href='../files/2235.html'>mpz</a>/reuse.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L43'>[^]</a><a href='#L769'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L43' title='Defined at 43.'>main</a></li>
+<li><a href='#L63' title='Defined at 63.'>mpz_xinvert</a></li>
+<li><a href='#L178' title='Defined at 178.'>realloc_if_reducing</a></li>
+<li><a href='#L208' title='Defined at 208.'>main</a></li>
+<li><a href='#L769' title='Defined at 769.'>dump</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* Test that routines allow reusing a source variable as destination.</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Test all relevant functions except:</em>
+<a id='L4' name='L4'></a><em class='comment'>        mpz_bin_ui</em>
+<a id='L5' name='L5'></a><em class='comment'>        mpz_nextprime</em>
+<a id='L6' name='L6'></a><em class='comment'>        mpz_mul_si</em>
+<a id='L7' name='L7'></a><em class='comment'>        mpz_addmul_ui (should this really allow a+=a*c?)</em>
+<a id='L8' name='L8'></a><em class='comment'></em>
+<a id='L9' name='L9'></a><em class='comment'>Copyright 1996, 1999-2002, 2009, 2012, 2013, 2016, 2020 Free Software</em>
+<a id='L10' name='L10'></a><em class='comment'>Foundation, Inc.</em>
+<a id='L11' name='L11'></a><em class='comment'></em>
+<a id='L12' name='L12'></a><em class='comment'>This file is part of the GNU MP Library test suite.</em>
+<a id='L13' name='L13'></a><em class='comment'></em>
+<a id='L14' name='L14'></a><em class='comment'>The GNU MP Library test suite is free software; you can redistribute it</em>
+<a id='L15' name='L15'></a><em class='comment'>and/or modify it under the terms of the GNU General Public License as</em>
+<a id='L16' name='L16'></a><em class='comment'>published by the Free Software Foundation; either version 3 of the License,</em>
+<a id='L17' name='L17'></a><em class='comment'>or (at your option) any later version.</em>
+<a id='L18' name='L18'></a><em class='comment'></em>
+<a id='L19' name='L19'></a><em class='comment'>The GNU MP Library test suite is distributed in the hope that it will be</em>
+<a id='L20' name='L20'></a><em class='comment'>useful, but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L21' name='L21'></a><em class='comment'>MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General</em>
+<a id='L22' name='L22'></a><em class='comment'>Public License for more details.</em>
+<a id='L23' name='L23'></a><em class='comment'></em>
+<a id='L24' name='L24'></a><em class='comment'>You should have received a copy of the GNU General Public License along with</em>
+<a id='L25' name='L25'></a><em class='comment'>the GNU MP Library test suite.  If not, see https://www.gnu.org/licenses/.  */</em>
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;unistd.h&gt;
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> "<a href='146.html'>gmp-impl.h</a>"
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> "<a href='184.html'>tests.h</a>"
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='sharp'>#if</em> __GMP_LIBGMP_DLL
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a><em class='comment'>/* FIXME: When linking to a DLL libgmp, mpz_add etc can't be used as</em>
+<a id='L38' name='L38'></a><em class='comment'>   initializers for global variables because they're effectively global</em>
+<a id='L39' name='L39'></a><em class='comment'>   variables (function pointers) themselves.  Perhaps calling a test</em>
+<a id='L40' name='L40'></a><em class='comment'>   function successively with mpz_add etc would be better.  */</em>
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a><strong class='reserved'>int</strong>
+<a id='L43' name='L43'></a>main (<strong class='reserved'>void</strong>)
+<a id='L44' name='L44'></a><em class='brace'>{</em>
+<a id='L45' name='L45'></a>  printf ("Test suppressed for windows DLL\n");
+<a id='L46' name='L46'></a>  exit (0);
+<a id='L47' name='L47'></a><em class='brace'>}</em>
+<a id='L48' name='L48'></a>
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a><em class='sharp'>#else</em> <em class='comment'>/* ! DLL_EXPORT */</em>
+<a id='L51' name='L51'></a>
+<a id='L52' name='L52'></a><strong class='reserved'>void</strong> <a href='../D/2398.html' title='Multiple defined in 3 places.'>dump</a> (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *, <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a>, <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a>, <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a>);
+<a id='L53' name='L53'></a>
+<a id='L54' name='L54'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> (*dss_func) (<a href='../D/3531.html' title='Multiple defined in 2 places.'>mpz_ptr</a>, <a href='../S/18.html#L80' title='Defined at 80 in mini-gmp/mini-gmp.h.'>mpz_srcptr</a>, <a href='../S/18.html#L80' title='Defined at 80 in mini-gmp/mini-gmp.h.'>mpz_srcptr</a>);
+<a id='L55' name='L55'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> (*dsi_func) (<a href='../D/3531.html' title='Multiple defined in 2 places.'>mpz_ptr</a>, <a href='../S/18.html#L80' title='Defined at 80 in mini-gmp/mini-gmp.h.'>mpz_srcptr</a>, <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>int</strong>);
+<a id='L56' name='L56'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>int</strong> (*dsi_div_func) (<a href='../D/3531.html' title='Multiple defined in 2 places.'>mpz_ptr</a>, <a href='../S/18.html#L80' title='Defined at 80 in mini-gmp/mini-gmp.h.'>mpz_srcptr</a>, <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>int</strong>);
+<a id='L57' name='L57'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>int</strong> (*ddsi_div_func) (<a href='../D/3531.html' title='Multiple defined in 2 places.'>mpz_ptr</a>, <a href='../D/3531.html' title='Multiple defined in 2 places.'>mpz_ptr</a>, <a href='../S/18.html#L80' title='Defined at 80 in mini-gmp/mini-gmp.h.'>mpz_srcptr</a>, <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>int</strong>);
+<a id='L58' name='L58'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> (*ddss_div_func) (<a href='../D/3531.html' title='Multiple defined in 2 places.'>mpz_ptr</a>, <a href='../D/3531.html' title='Multiple defined in 2 places.'>mpz_ptr</a>, <a href='../S/18.html#L80' title='Defined at 80 in mini-gmp/mini-gmp.h.'>mpz_srcptr</a>, <a href='../S/18.html#L80' title='Defined at 80 in mini-gmp/mini-gmp.h.'>mpz_srcptr</a>);
+<a id='L59' name='L59'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> (*ds_func) (<a href='../D/3531.html' title='Multiple defined in 2 places.'>mpz_ptr</a>, <a href='../S/18.html#L80' title='Defined at 80 in mini-gmp/mini-gmp.h.'>mpz_srcptr</a>);
+<a id='L60' name='L60'></a>
+<a id='L61' name='L61'></a>
+<a id='L62' name='L62'></a><strong class='reserved'>void</strong>
+<a id='L63' name='L63'></a><a href='../R/3302.html' title='Multiple referred from 2 places.'>mpz_xinvert</a> (<a href='../D/3531.html' title='Multiple defined in 2 places.'>mpz_ptr</a> r, <a href='../S/18.html#L80' title='Defined at 80 in mini-gmp/mini-gmp.h.'>mpz_srcptr</a> a, <a href='../S/18.html#L80' title='Defined at 80 in mini-gmp/mini-gmp.h.'>mpz_srcptr</a> b)
+<a id='L64' name='L64'></a><em class='brace'>{</em>
+<a id='L65' name='L65'></a>  <strong class='reserved'>int</strong> res;
+<a id='L66' name='L66'></a>  res = <a href='../D/3481.html' title='Multiple defined in 2 places.'>mpz_invert</a> (r, a, b);
+<a id='L67' name='L67'></a>  <strong class='reserved'>if</strong> (res == 0)
+<a id='L68' name='L68'></a>    <a href='../D/3556.html' title='Multiple defined in 2 places.'>mpz_set_ui</a> (r, 0);
+<a id='L69' name='L69'></a><em class='brace'>}</em>
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a><strong class='reserved'>struct</strong> <em class='brace'>{</em>
+<a id='L72' name='L72'></a>  dss_func fptr;
+<a id='L73' name='L73'></a>  <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *fname;
+<a id='L74' name='L74'></a>  <strong class='reserved'>int</strong> isdivision;
+<a id='L75' name='L75'></a>  <strong class='reserved'>int</strong> isslow;
+<a id='L76' name='L76'></a><em class='brace'>}</em> <strong class='reserved'>static</strong> dss[] =
+<a id='L77' name='L77'></a>  <em class='brace'>{</em> <em class='brace'>{</em> <a href='../S/21.html#L1985' title='Defined at 1985 in mini-gmp/mini-gmp.c.'>mpz_add</a>,     "mpz_add",     0, 0 <em class='brace'>}</em>,
+<a id='L78' name='L78'></a>    <em class='brace'>{</em> <a href='../S/21.html#L1998' title='Defined at 1998 in mini-gmp/mini-gmp.c.'>mpz_sub</a>,     "mpz_sub",     0, 0 <em class='brace'>}</em>,
+<a id='L79' name='L79'></a>    <em class='brace'>{</em> <a href='../D/3507.html' title='Multiple defined in 2 places.'>mpz_mul</a>,     "mpz_mul",     0, 0 <em class='brace'>}</em>,
+<a id='L80' name='L80'></a>    <em class='brace'>{</em> <a href='../D/3384.html' title='Multiple defined in 2 places.'>mpz_cdiv_q</a>,  "mpz_cdiv_q",  1, 0 <em class='brace'>}</em>,
+<a id='L81' name='L81'></a>    <em class='brace'>{</em> <a href='../D/3389.html' title='Multiple defined in 2 places.'>mpz_cdiv_r</a>,  "mpz_cdiv_r",  1, 0 <em class='brace'>}</em>,
+<a id='L82' name='L82'></a>    <em class='brace'>{</em> <a href='../D/3439.html' title='Multiple defined in 3 places.'>mpz_fdiv_q</a>,  "mpz_fdiv_q",  1, 0 <em class='brace'>}</em>,
+<a id='L83' name='L83'></a>    <em class='brace'>{</em> <a href='../D/3444.html' title='Multiple defined in 3 places.'>mpz_fdiv_r</a>,  "mpz_fdiv_r",  1, 0 <em class='brace'>}</em>,
+<a id='L84' name='L84'></a>    <em class='brace'>{</em> <a href='../D/3574.html' title='Multiple defined in 2 places.'>mpz_tdiv_q</a>,  "mpz_tdiv_q",  1, 0 <em class='brace'>}</em>,
+<a id='L85' name='L85'></a>    <em class='brace'>{</em> <a href='../D/3579.html' title='Multiple defined in 2 places.'>mpz_tdiv_r</a>,  "mpz_tdiv_r",  1, 0 <em class='brace'>}</em>,
+<a id='L86' name='L86'></a>    <em class='brace'>{</em> <a href='../D/3502.html' title='Multiple defined in 2 places.'>mpz_mod</a>,     "mpz_mod",     1, 0 <em class='brace'>}</em>,
+<a id='L87' name='L87'></a>    <em class='brace'>{</em> <a href='../D/3593.html' title='Multiple defined in 2 places.'>mpz_xinvert</a>, "mpz_xinvert", 1, 1 <em class='brace'>}</em>,
+<a id='L88' name='L88'></a>    <em class='brace'>{</em> <a href='../D/3454.html' title='Multiple defined in 2 places.'>mpz_gcd</a>,     "mpz_gcd",     0, 1 <em class='brace'>}</em>,
+<a id='L89' name='L89'></a>    <em class='brace'>{</em> <a href='../D/3488.html' title='Multiple defined in 2 places.'>mpz_lcm</a>,     "mpz_lcm",     0, 1 <em class='brace'>}</em>,
+<a id='L90' name='L90'></a>    <em class='brace'>{</em> <a href='../D/3377.html' title='Multiple defined in 2 places.'>mpz_and</a>,     "mpz_and",     0, 0 <em class='brace'>}</em>,
+<a id='L91' name='L91'></a>    <em class='brace'>{</em> <a href='../D/3484.html' title='Multiple defined in 2 places.'>mpz_ior</a>,     "mpz_ior",     0, 0 <em class='brace'>}</em>,
+<a id='L92' name='L92'></a>    <em class='brace'>{</em> <a href='../D/3594.html' title='Multiple defined in 2 places.'>mpz_xor</a>,     "mpz_xor",     0, 0 <em class='brace'>}</em>
+<a id='L93' name='L93'></a>  <em class='brace'>}</em>;
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a>
+<a id='L96' name='L96'></a><strong class='reserved'>struct</strong> <em class='brace'>{</em>
+<a id='L97' name='L97'></a>  dsi_func fptr;
+<a id='L98' name='L98'></a>  <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *fname;
+<a id='L99' name='L99'></a>  <strong class='reserved'>int</strong> <a href='../S/753.html#L59' title='Defined at 59 in mpz/powm_ui.c.'>mod</a>;
+<a id='L100' name='L100'></a><em class='brace'>}</em> <strong class='reserved'>static</strong> dsi[] =
+<a id='L101' name='L101'></a><em class='brace'>{</em>
+<a id='L102' name='L102'></a>  <em class='comment'>/* Don't change order here without changing the code in main(). */</em>
+<a id='L103' name='L103'></a>  <em class='brace'>{</em> <a href='../S/21.html#L1915' title='Defined at 1915 in mini-gmp/mini-gmp.c.'>mpz_add_ui</a>,         "mpz_add_ui",        0 <em class='brace'>}</em>,
+<a id='L104' name='L104'></a>  <em class='brace'>{</em> <a href='../S/21.html#L2025' title='Defined at 2025 in mini-gmp/mini-gmp.c.'>mpz_mul_ui</a>,         "mpz_mul_ui",        0 <em class='brace'>}</em>,
+<a id='L105' name='L105'></a>  <em class='brace'>{</em> <a href='../S/21.html#L1924' title='Defined at 1924 in mini-gmp/mini-gmp.c.'>mpz_sub_ui</a>,         "mpz_sub_ui",        0 <em class='brace'>}</em>,
+<a id='L106' name='L106'></a>  <em class='brace'>{</em> <a href='../D/3440.html' title='Multiple defined in 2 places.'>mpz_fdiv_q_2exp</a>,    "mpz_fdiv_q_2exp",   0x1000 <em class='brace'>}</em>,
+<a id='L107' name='L107'></a>  <em class='brace'>{</em> <a href='../D/3445.html' title='Multiple defined in 2 places.'>mpz_fdiv_r_2exp</a>,    "mpz_fdiv_r_2exp",   0x1000 <em class='brace'>}</em>,
+<a id='L108' name='L108'></a>  <em class='brace'>{</em> <a href='../D/3385.html' title='Multiple defined in 2 places.'>mpz_cdiv_q_2exp</a>,    "mpz_cdiv_q_2exp",   0x1000 <em class='brace'>}</em>,
+<a id='L109' name='L109'></a>  <em class='brace'>{</em> <a href='../D/3390.html' title='Multiple defined in 2 places.'>mpz_cdiv_r_2exp</a>,    "mpz_cdiv_r_2exp",   0x1000 <em class='brace'>}</em>,
+<a id='L110' name='L110'></a>  <em class='brace'>{</em> <a href='../D/3575.html' title='Multiple defined in 3 places.'>mpz_tdiv_q_2exp</a>,    "mpz_tdiv_q_2exp",   0x1000 <em class='brace'>}</em>,
+<a id='L111' name='L111'></a>  <em class='brace'>{</em> <a href='../D/3580.html' title='Multiple defined in 2 places.'>mpz_tdiv_r_2exp</a>,    "mpz_tdiv_r_2exp",   0x1000 <em class='brace'>}</em>,
+<a id='L112' name='L112'></a>  <em class='brace'>{</em> <a href='../D/3508.html' title='Multiple defined in 2 places.'>mpz_mul_2exp</a>,       "mpz_mul_2exp",      0x100 <em class='brace'>}</em>,
+<a id='L113' name='L113'></a>  <em class='brace'>{</em> <a href='../D/3523.html' title='Multiple defined in 2 places.'>mpz_pow_ui</a>,         "mpz_pow_ui",        0x10 <em class='brace'>}</em>
+<a id='L114' name='L114'></a><em class='brace'>}</em>;
+<a id='L115' name='L115'></a>
+<a id='L116' name='L116'></a><strong class='reserved'>struct</strong> <em class='brace'>{</em>
+<a id='L117' name='L117'></a>  dsi_div_func fptr;
+<a id='L118' name='L118'></a>  <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *fname;
+<a id='L119' name='L119'></a><em class='brace'>}</em> <strong class='reserved'>static</strong> dsi_div[] =
+<a id='L120' name='L120'></a><em class='brace'>{</em>
+<a id='L121' name='L121'></a>  <em class='brace'>{</em> <a href='../D/3386.html' title='Multiple defined in 2 places.'>mpz_cdiv_q_ui</a>,       "mpz_cdiv_q_ui" <em class='brace'>}</em>,
+<a id='L122' name='L122'></a>  <em class='brace'>{</em> <a href='../D/3391.html' title='Multiple defined in 2 places.'>mpz_cdiv_r_ui</a>,       "mpz_cdiv_r_ui" <em class='brace'>}</em>,
+<a id='L123' name='L123'></a>  <em class='brace'>{</em> <a href='../D/3441.html' title='Multiple defined in 2 places.'>mpz_fdiv_q_ui</a>,       "mpz_fdiv_q_ui" <em class='brace'>}</em>,
+<a id='L124' name='L124'></a>  <em class='brace'>{</em> <a href='../D/3446.html' title='Multiple defined in 2 places.'>mpz_fdiv_r_ui</a>,       "mpz_fdiv_r_ui" <em class='brace'>}</em>,
+<a id='L125' name='L125'></a>  <em class='brace'>{</em> <a href='../D/3576.html' title='Multiple defined in 2 places.'>mpz_tdiv_q_ui</a>,       "mpz_tdiv_q_ui" <em class='brace'>}</em>,
+<a id='L126' name='L126'></a>  <em class='brace'>{</em> <a href='../D/3581.html' title='Multiple defined in 2 places.'>mpz_tdiv_r_ui</a>,       "mpz_tdiv_r_ui" <em class='brace'>}</em>
+<a id='L127' name='L127'></a><em class='brace'>}</em>;
+<a id='L128' name='L128'></a>
+<a id='L129' name='L129'></a><strong class='reserved'>struct</strong> <em class='brace'>{</em>
+<a id='L130' name='L130'></a>  ddsi_div_func fptr;
+<a id='L131' name='L131'></a>  <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *fname;
+<a id='L132' name='L132'></a>  <strong class='reserved'>int</strong> isslow;
+<a id='L133' name='L133'></a><em class='brace'>}</em> <strong class='reserved'>static</strong> ddsi_div[] =
+<a id='L134' name='L134'></a><em class='brace'>{</em>
+<a id='L135' name='L135'></a>  <em class='brace'>{</em> <a href='../D/3388.html' title='Multiple defined in 2 places.'>mpz_cdiv_qr_ui</a>,     "mpz_cdiv_qr_ui",    0 <em class='brace'>}</em>,
+<a id='L136' name='L136'></a>  <em class='brace'>{</em> <a href='../D/3443.html' title='Multiple defined in 2 places.'>mpz_fdiv_qr_ui</a>,     "mpz_fdiv_qr_ui",    0 <em class='brace'>}</em>,
+<a id='L137' name='L137'></a>  <em class='brace'>{</em> <a href='../D/3578.html' title='Multiple defined in 2 places.'>mpz_tdiv_qr_ui</a>,     "mpz_tdiv_qr_ui",    0 <em class='brace'>}</em>,
+<a id='L138' name='L138'></a><em class='brace'>}</em>;
+<a id='L139' name='L139'></a>
+<a id='L140' name='L140'></a>
+<a id='L141' name='L141'></a><strong class='reserved'>struct</strong> <em class='brace'>{</em>
+<a id='L142' name='L142'></a>  ddss_div_func fptr;
+<a id='L143' name='L143'></a>  <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *fname;
+<a id='L144' name='L144'></a>  <strong class='reserved'>int</strong> isslow;
+<a id='L145' name='L145'></a><em class='brace'>}</em> <strong class='reserved'>static</strong> ddss_div[] =
+<a id='L146' name='L146'></a><em class='brace'>{</em>
+<a id='L147' name='L147'></a>  <em class='brace'>{</em> <a href='../D/3387.html' title='Multiple defined in 2 places.'>mpz_cdiv_qr</a>,  "mpz_cdiv_qr",    0 <em class='brace'>}</em>,
+<a id='L148' name='L148'></a>  <em class='brace'>{</em> <a href='../D/3442.html' title='Multiple defined in 2 places.'>mpz_fdiv_qr</a>,  "mpz_fdiv_qr",    0 <em class='brace'>}</em>,
+<a id='L149' name='L149'></a>  <em class='brace'>{</em> <a href='../D/3577.html' title='Multiple defined in 2 places.'>mpz_tdiv_qr</a>,  "mpz_tdiv_qr",    0 <em class='brace'>}</em>,
+<a id='L150' name='L150'></a><em class='brace'>}</em>;
+<a id='L151' name='L151'></a>
+<a id='L152' name='L152'></a><strong class='reserved'>struct</strong> <em class='brace'>{</em>
+<a id='L153' name='L153'></a>  ds_func fptr;
+<a id='L154' name='L154'></a>  <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *fname;
+<a id='L155' name='L155'></a>  <strong class='reserved'>int</strong> nonneg;
+<a id='L156' name='L156'></a><em class='brace'>}</em> <strong class='reserved'>static</strong> ds[] =
+<a id='L157' name='L157'></a><em class='brace'>{</em>
+<a id='L158' name='L158'></a>  <em class='brace'>{</em> <a href='../D/3367.html' title='Multiple defined in 2 places.'>mpz_abs</a>,    "mpz_abs",    0 <em class='brace'>}</em>,
+<a id='L159' name='L159'></a>  <em class='brace'>{</em> <a href='../D/3406.html' title='Multiple defined in 2 places.'>mpz_com</a>,    "mpz_com",    0 <em class='brace'>}</em>,
+<a id='L160' name='L160'></a>  <em class='brace'>{</em> <a href='../D/3512.html' title='Multiple defined in 2 places.'>mpz_neg</a>,    "mpz_neg",    0 <em class='brace'>}</em>,
+<a id='L161' name='L161'></a>  <em class='brace'>{</em> <a href='../D/3564.html' title='Multiple defined in 2 places.'>mpz_sqrt</a>,   "mpz_sqrt",   1 <em class='brace'>}</em>,
+<a id='L162' name='L162'></a><em class='brace'>}</em>;
+<a id='L163' name='L163'></a>
+<a id='L164' name='L164'></a><em class='sharp'>#define</em> <a href='../R/334.html' title='Multiple referred from 25 places.'>FAIL</a>(class,indx,op1,op2,op3)                                    \
+<a id='L165' name='L165'></a>  <strong class='reserved'>do</strong> <em class='brace'>{</em>                                                                  \
+<a id='L166' name='L166'></a>    <a href='../D/2398.html' title='Multiple defined in 3 places.'>dump</a> (class[indx].fname, op1, op2, op3);                            \
+<a id='L167' name='L167'></a>    exit (1);                                                           \
+<a id='L168' name='L168'></a>  <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L169' name='L169'></a>
+<a id='L170' name='L170'></a><em class='sharp'>#define</em> <a href='../R/335.html' title='Multiple referred from 49 places.'>FAIL2</a>(fname,op1,op2,op3)                                        \
+<a id='L171' name='L171'></a>  <strong class='reserved'>do</strong> <em class='brace'>{</em>                                                                  \
+<a id='L172' name='L172'></a>    <a href='../D/2398.html' title='Multiple defined in 3 places.'>dump</a> (#fname, op1, op2, op3);                                       \
+<a id='L173' name='L173'></a>    exit (1);                                                           \
+<a id='L174' name='L174'></a>  <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L175' name='L175'></a>
+<a id='L176' name='L176'></a>
+<a id='L177' name='L177'></a><strong class='reserved'>void</strong>
+<a id='L178' name='L178'></a><a href='../R/3399.html' title='Multiple referred from 6 places.'>realloc_if_reducing</a> (<a href='../D/3531.html' title='Multiple defined in 2 places.'>mpz_ptr</a> r)
+<a id='L179' name='L179'></a><em class='brace'>{</em>
+<a id='L180' name='L180'></a>  <strong class='reserved'>if</strong> (<a href='../S/146.html#L545' title='Defined at 545 in gmp-impl.h.'>ABSIZ</a>(r) &lt; <a href='../S/146.html#L549' title='Defined at 549 in gmp-impl.h.'>ALLOC</a>(r))
+<a id='L181' name='L181'></a>      <a href='../S/739.html#L37' title='Defined at 37 in mpz/realloc.c.'>_mpz_realloc</a> (r, <a href='../S/146.html#L545' title='Defined at 545 in gmp-impl.h.'>ABSIZ</a>(r));
+<a id='L182' name='L182'></a><em class='brace'>}</em>
+<a id='L183' name='L183'></a>
+<a id='L184' name='L184'></a><em class='sharp'>#define</em> <a href='../S/276.html#L378' title='Referred from 378 in tests/mpz/reuse.c.'>INVOKE_RRS</a>(desc,<a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a>,<a href='../D/3672.html' title='Multiple defined in 12 places.'>r2</a>,i1)                                       \
+<a id='L185' name='L185'></a>  <strong class='reserved'>do</strong> <em class='brace'>{</em>                                                                  \
+<a id='L186' name='L186'></a>    <strong class='reserved'>if</strong> (pass &amp; 1) <a href='../S/276.html#L178' title='Defined at 178 in tests/mpz/reuse.c.'>realloc_if_reducing</a> (<a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a>);                             \
+<a id='L187' name='L187'></a>    <strong class='reserved'>if</strong> (pass &amp; 2) <a href='../S/276.html#L178' title='Defined at 178 in tests/mpz/reuse.c.'>realloc_if_reducing</a> (<a href='../D/3672.html' title='Multiple defined in 12 places.'>r2</a>);                             \
+<a id='L188' name='L188'></a>    (desc).fptr (<a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a>, <a href='../D/3672.html' title='Multiple defined in 12 places.'>r2</a>, i1);                                           \
+<a id='L189' name='L189'></a>  <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L190' name='L190'></a><em class='sharp'>#define</em> <a href='../S/276.html#L361' title='Referred from 361 in tests/mpz/reuse.c.'>INVOKE_RS</a>(desc,<a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a>,i1)                                           \
+<a id='L191' name='L191'></a>  <strong class='reserved'>do</strong> <em class='brace'>{</em>                                                                  \
+<a id='L192' name='L192'></a>    <strong class='reserved'>if</strong> (pass &amp; 1) <a href='../S/276.html#L178' title='Defined at 178 in tests/mpz/reuse.c.'>realloc_if_reducing</a> (<a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a>);                             \
+<a id='L193' name='L193'></a>    (desc).fptr (<a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a>, i1);                                               \
+<a id='L194' name='L194'></a>  <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L195' name='L195'></a><em class='sharp'>#define</em> <a href='../R/513.html' title='Multiple referred from 4 places.'>INVOKE_RRSS</a>(desc,<a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a>,<a href='../D/3672.html' title='Multiple defined in 12 places.'>r2</a>,i1,i2)                                   \
+<a id='L196' name='L196'></a>  <strong class='reserved'>do</strong> <em class='brace'>{</em>                                                                  \
+<a id='L197' name='L197'></a>    <strong class='reserved'>if</strong> (pass &amp; 1) <a href='../S/276.html#L178' title='Defined at 178 in tests/mpz/reuse.c.'>realloc_if_reducing</a> (<a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a>);                             \
+<a id='L198' name='L198'></a>    <strong class='reserved'>if</strong> (pass &amp; 2) <a href='../S/276.html#L178' title='Defined at 178 in tests/mpz/reuse.c.'>realloc_if_reducing</a> (<a href='../D/3672.html' title='Multiple defined in 12 places.'>r2</a>);                             \
+<a id='L199' name='L199'></a>    (desc).fptr (<a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a>, <a href='../D/3672.html' title='Multiple defined in 12 places.'>r2</a>, i1, i2);                                       \
+<a id='L200' name='L200'></a>  <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L201' name='L201'></a><em class='sharp'>#define</em> <a href='../R/515.html' title='Multiple referred from 2 places.'>INVOKE_RSS</a>(desc,<a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a>,i1,i2)                                       \
+<a id='L202' name='L202'></a>  <strong class='reserved'>do</strong> <em class='brace'>{</em>                                                                  \
+<a id='L203' name='L203'></a>    <strong class='reserved'>if</strong> (pass &amp; 1) <a href='../S/276.html#L178' title='Defined at 178 in tests/mpz/reuse.c.'>realloc_if_reducing</a> (<a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a>);                             \
+<a id='L204' name='L204'></a>    (desc).fptr (<a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a>, i1, i2);                                           \
+<a id='L205' name='L205'></a>  <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L206' name='L206'></a>
+<a id='L207' name='L207'></a><strong class='reserved'>int</strong>
+<a id='L208' name='L208'></a>main (<strong class='reserved'>int</strong> argc, <strong class='reserved'>char</strong> **argv)
+<a id='L209' name='L209'></a><em class='brace'>{</em>
+<a id='L210' name='L210'></a>  <strong class='reserved'>int</strong> i;
+<a id='L211' name='L211'></a>  <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> pass, reps = 400;
+<a id='L212' name='L212'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> in1, in2, in3;
+<a id='L213' name='L213'></a>  <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>int</strong> in2i;
+<a id='L214' name='L214'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> res1, res2, res3;
+<a id='L215' name='L215'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> ref1, ref2, ref3;
+<a id='L216' name='L216'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>;
+<a id='L217' name='L217'></a>  <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> <strong class='reserved'>int</strong> <a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a>, <a href='../D/3672.html' title='Multiple defined in 12 places.'>r2</a>;
+<a id='L218' name='L218'></a>  <a href='../S/146.html#L1290' title='Defined at 1290 in gmp-impl.h.'>gmp_randstate_ptr</a> rands;
+<a id='L219' name='L219'></a>  <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> bs;
+<a id='L220' name='L220'></a>  <strong class='reserved'>unsigned</strong> <strong class='reserved'>long</strong> bsi, size_range;
+<a id='L221' name='L221'></a>
+<a id='L222' name='L222'></a>  <a href='../S/321.html#L49' title='Defined at 49 in tests/misc.c.'>tests_start</a> ();
+<a id='L223' name='L223'></a>  <a href='../S/184.html#L411' title='Defined at 411 in tests/tests.h.'>TESTS_REPS</a> (reps, argv, argc);
+<a id='L224' name='L224'></a>
+<a id='L225' name='L225'></a>  rands = <a href='../S/146.html#L1334' title='Defined at 1334 in gmp-impl.h.'>RANDS</a>;
+<a id='L226' name='L226'></a>
+<a id='L227' name='L227'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (bs);
+<a id='L228' name='L228'></a>
+<a id='L229' name='L229'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (in1);
+<a id='L230' name='L230'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (in2);
+<a id='L231' name='L231'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (in3);
+<a id='L232' name='L232'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (ref1);
+<a id='L233' name='L233'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (ref2);
+<a id='L234' name='L234'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (ref3);
+<a id='L235' name='L235'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (res1);
+<a id='L236' name='L236'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (res2);
+<a id='L237' name='L237'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (res3);
+<a id='L238' name='L238'></a>  <a href='../D/3469.html' title='Multiple defined in 2 places.'>mpz_init</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L239' name='L239'></a>
+<a id='L240' name='L240'></a>  <a href='../D/3556.html' title='Multiple defined in 2 places.'>mpz_set_ui</a> (res1, 1);         <em class='comment'>/* force allocation */</em>
+<a id='L241' name='L241'></a>  <a href='../D/3556.html' title='Multiple defined in 2 places.'>mpz_set_ui</a> (res2, 1);         <em class='comment'>/* force allocation */</em>
+<a id='L242' name='L242'></a>  <a href='../D/3556.html' title='Multiple defined in 2 places.'>mpz_set_ui</a> (res3, 1);         <em class='comment'>/* force allocation */</em>
+<a id='L243' name='L243'></a>
+<a id='L244' name='L244'></a>  <strong class='reserved'>for</strong> (pass = 1; pass &lt;= reps; pass++)
+<a id='L245' name='L245'></a>    <em class='brace'>{</em>
+<a id='L246' name='L246'></a><em class='sharp'>#ifndef</em> VERBOSE
+<a id='L247' name='L247'></a>      <strong class='reserved'>if</strong> (isatty (STDOUT_FILENO))
+<a id='L248' name='L248'></a>        <em class='brace'>{</em>
+<a id='L249' name='L249'></a>          printf ("\r%d/%d passes", pass, reps);
+<a id='L250' name='L250'></a>          fflush (stdout);
+<a id='L251' name='L251'></a>        <em class='brace'>}</em>
+<a id='L252' name='L252'></a><em class='sharp'>#endif</em>
+<a id='L253' name='L253'></a>
+<a id='L254' name='L254'></a>      <a href='../S/646.html#L36' title='Defined at 36 in mpz/urandomb.c.'>mpz_urandomb</a> (bs, rands, 32);
+<a id='L255' name='L255'></a>      <em class='comment'>/* Make size_range gradually bigger with each pass. */</em>
+<a id='L256' name='L256'></a>      size_range = <a href='../S/21.html#L1582' title='Defined at 1582 in mini-gmp/mini-gmp.c.'>mpz_get_ui</a> (bs) % (pass * 15 / reps + 1) + 8;
+<a id='L257' name='L257'></a>
+<a id='L258' name='L258'></a><em class='sharp'>#define</em> <a href='../R/601.html' title='Multiple referred from 3 places.'>MAKE_RANDOM_OP</a>(in, size_range, <a href='../S/1163.html#L83' title='Defined at 83 in mpn/generic/toom42_mulmid.c.'>s</a>)                               \
+<a id='L259' name='L259'></a>  <strong class='reserved'>do</strong> <em class='brace'>{</em>                                                                  \
+<a id='L260' name='L260'></a>    <a href='../S/646.html#L36' title='Defined at 36 in mpz/urandomb.c.'>mpz_urandomb</a> (bs, rands, size_range);                               \
+<a id='L261' name='L261'></a>    <strong class='reserved'>if</strong> (((pass &gt;&gt; <a href='../S/1163.html#L83' title='Defined at 83 in mpn/generic/toom42_mulmid.c.'>s</a>) &amp; 3) == 3) <em class='comment'>/* conditional exponential dist */</em>      \
+<a id='L262' name='L262'></a>      <a href='../S/646.html#L36' title='Defined at 36 in mpz/urandomb.c.'>mpz_urandomb</a> (bs, rands, <a href='../S/21.html#L1582' title='Defined at 1582 in mini-gmp/mini-gmp.c.'>mpz_get_ui</a> (bs) % (size_range - 7) + 7); \
+<a id='L263' name='L263'></a>    <a href='../S/617.html#L38' title='Defined at 38 in mpz/rrandomb.c.'>mpz_rrandomb</a> (in, rands, <a href='../S/21.html#L1582' title='Defined at 1582 in mini-gmp/mini-gmp.c.'>mpz_get_ui</a> (bs));                          \
+<a id='L264' name='L264'></a>  <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L265' name='L265'></a>
+<a id='L266' name='L266'></a>      <a href='../D/634.html' title='Multiple defined in 2 places.'>MAKE_RANDOM_OP</a> (in1, size_range, 0);
+<a id='L267' name='L267'></a>      <a href='../D/634.html' title='Multiple defined in 2 places.'>MAKE_RANDOM_OP</a> (in2, size_range, 2);
+<a id='L268' name='L268'></a>      <a href='../D/634.html' title='Multiple defined in 2 places.'>MAKE_RANDOM_OP</a> (in3, size_range, 4);
+<a id='L269' name='L269'></a><em class='sharp'>#undef</em> <a href='../R/601.html' title='Multiple referred from 3 places.'>MAKE_RANDOM_OP</a>
+<a id='L270' name='L270'></a>
+<a id='L271' name='L271'></a><em class='sharp'>#ifdef</em> VERBOSE
+<a id='L272' name='L272'></a>      printf("%9d%9d%8d\n",
+<a id='L273' name='L273'></a>             <a href='../D/3561.html' title='Multiple defined in 2 places.'>mpz_sizeinbase</a>(in1,2),
+<a id='L274' name='L274'></a>             <a href='../D/3561.html' title='Multiple defined in 2 places.'>mpz_sizeinbase</a>(in2,2),
+<a id='L275' name='L275'></a>             <a href='../D/3561.html' title='Multiple defined in 2 places.'>mpz_sizeinbase</a>(in3,2));
+<a id='L276' name='L276'></a><em class='sharp'>#endif</em>
+<a id='L277' name='L277'></a>
+<a id='L278' name='L278'></a>      <a href='../S/646.html#L36' title='Defined at 36 in mpz/urandomb.c.'>mpz_urandomb</a> (bs, rands, 3);
+<a id='L279' name='L279'></a>      bsi = <a href='../S/21.html#L1582' title='Defined at 1582 in mini-gmp/mini-gmp.c.'>mpz_get_ui</a> (bs);
+<a id='L280' name='L280'></a>      <strong class='reserved'>if</strong> ((bsi &amp; 1) != 0)
+<a id='L281' name='L281'></a>        <a href='../D/3512.html' title='Multiple defined in 2 places.'>mpz_neg</a> (in1, in1);
+<a id='L282' name='L282'></a>      <strong class='reserved'>if</strong> ((bsi &amp; 2) != 0)
+<a id='L283' name='L283'></a>        <a href='../D/3512.html' title='Multiple defined in 2 places.'>mpz_neg</a> (in2, in2);
+<a id='L284' name='L284'></a>      <strong class='reserved'>if</strong> ((bsi &amp; 4) != 0)
+<a id='L285' name='L285'></a>        <a href='../D/3512.html' title='Multiple defined in 2 places.'>mpz_neg</a> (in3, in3);
+<a id='L286' name='L286'></a>
+<a id='L287' name='L287'></a>      <strong class='reserved'>for</strong> (i = 0; i &lt; <a href='../D/3617.html' title='Multiple defined in 5 places.'>numberof</a> (dss); i++)
+<a id='L288' name='L288'></a>        <em class='brace'>{</em>
+<a id='L289' name='L289'></a>          <strong class='reserved'>if</strong> (dss[i].isdivision &amp;&amp; <a href='../D/3558.html' title='Multiple defined in 2 places.'>mpz_sgn</a> (in2) == 0)
+<a id='L290' name='L290'></a>            <strong class='reserved'>continue</strong>;
+<a id='L291' name='L291'></a>          <strong class='reserved'>if</strong> (dss[i].isslow &amp;&amp; size_range &gt; 19)
+<a id='L292' name='L292'></a>            <strong class='reserved'>continue</strong>;
+<a id='L293' name='L293'></a>
+<a id='L294' name='L294'></a>          (dss[i].fptr) (ref1, in1, in2);
+<a id='L295' name='L295'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L296' name='L296'></a>
+<a id='L297' name='L297'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L298' name='L298'></a>          <a href='../S/276.html#L201' title='Defined at 201 in tests/mpz/reuse.c.'>INVOKE_RSS</a> (dss[i], res1, res1, in2);
+<a id='L299' name='L299'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L300' name='L300'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0)
+<a id='L301' name='L301'></a>            <a href='../D/349.html' title='Multiple defined in 3 places.'>FAIL</a> (dss, i, in1, in2, NULL);
+<a id='L302' name='L302'></a>
+<a id='L303' name='L303'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in2);
+<a id='L304' name='L304'></a>          <a href='../S/276.html#L201' title='Defined at 201 in tests/mpz/reuse.c.'>INVOKE_RSS</a> (dss[i], res1, in1, res1);
+<a id='L305' name='L305'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L306' name='L306'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0)
+<a id='L307' name='L307'></a>            <a href='../D/349.html' title='Multiple defined in 3 places.'>FAIL</a> (dss, i, in1, in2, NULL);
+<a id='L308' name='L308'></a>        <em class='brace'>}</em>
+<a id='L309' name='L309'></a>
+<a id='L310' name='L310'></a>      <strong class='reserved'>for</strong> (i = 0; i &lt; <a href='../D/3617.html' title='Multiple defined in 5 places.'>numberof</a> (ddss_div); i++)
+<a id='L311' name='L311'></a>        <em class='brace'>{</em>
+<a id='L312' name='L312'></a>          <strong class='reserved'>if</strong> (<a href='../D/3558.html' title='Multiple defined in 2 places.'>mpz_sgn</a> (in2) == 0)
+<a id='L313' name='L313'></a>            <strong class='reserved'>continue</strong>;
+<a id='L314' name='L314'></a>
+<a id='L315' name='L315'></a>          (ddss_div[i].fptr) (ref1, ref2, in1, in2);
+<a id='L316' name='L316'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L317' name='L317'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref2);
+<a id='L318' name='L318'></a>
+<a id='L319' name='L319'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L320' name='L320'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res2);
+<a id='L321' name='L321'></a>          <a href='../S/276.html#L195' title='Defined at 195 in tests/mpz/reuse.c.'>INVOKE_RRSS</a> (ddss_div[i], res1, res2, res1, in2);
+<a id='L322' name='L322'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L323' name='L323'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res2);
+<a id='L324' name='L324'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref2, res2) != 0)
+<a id='L325' name='L325'></a>            <a href='../D/349.html' title='Multiple defined in 3 places.'>FAIL</a> (ddss_div, i, in1, in2, NULL);
+<a id='L326' name='L326'></a>
+<a id='L327' name='L327'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res1);
+<a id='L328' name='L328'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res2, in1);
+<a id='L329' name='L329'></a>          <a href='../S/276.html#L195' title='Defined at 195 in tests/mpz/reuse.c.'>INVOKE_RRSS</a> (ddss_div[i], res1, res2, res2, in2);
+<a id='L330' name='L330'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L331' name='L331'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res2);
+<a id='L332' name='L332'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref2, res2) != 0)
+<a id='L333' name='L333'></a>            <a href='../D/349.html' title='Multiple defined in 3 places.'>FAIL</a> (ddss_div, i, in1, in2, NULL);
+<a id='L334' name='L334'></a>
+<a id='L335' name='L335'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in2);
+<a id='L336' name='L336'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res2);
+<a id='L337' name='L337'></a>          <a href='../S/276.html#L195' title='Defined at 195 in tests/mpz/reuse.c.'>INVOKE_RRSS</a> (ddss_div[i], res1, res2, in1, res1);
+<a id='L338' name='L338'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L339' name='L339'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res2);
+<a id='L340' name='L340'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref2, res2) != 0)
+<a id='L341' name='L341'></a>            <a href='../D/349.html' title='Multiple defined in 3 places.'>FAIL</a> (ddss_div, i, in1, in2, NULL);
+<a id='L342' name='L342'></a>
+<a id='L343' name='L343'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res1);
+<a id='L344' name='L344'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res2, in2);
+<a id='L345' name='L345'></a>          <a href='../S/276.html#L195' title='Defined at 195 in tests/mpz/reuse.c.'>INVOKE_RRSS</a> (ddss_div[i], res1, res2, in1, res2);
+<a id='L346' name='L346'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L347' name='L347'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res2);
+<a id='L348' name='L348'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref2, res2) != 0)
+<a id='L349' name='L349'></a>            <a href='../D/349.html' title='Multiple defined in 3 places.'>FAIL</a> (ddss_div, i, in1, in2, NULL);
+<a id='L350' name='L350'></a>        <em class='brace'>}</em>
+<a id='L351' name='L351'></a>
+<a id='L352' name='L352'></a>      <strong class='reserved'>for</strong> (i = 0; i &lt; <a href='../D/3617.html' title='Multiple defined in 5 places.'>numberof</a> (ds); i++)
+<a id='L353' name='L353'></a>        <em class='brace'>{</em>
+<a id='L354' name='L354'></a>          <strong class='reserved'>if</strong> (ds[i].nonneg &amp;&amp; <a href='../D/3558.html' title='Multiple defined in 2 places.'>mpz_sgn</a> (in1) &lt; 0)
+<a id='L355' name='L355'></a>            <strong class='reserved'>continue</strong>;
+<a id='L356' name='L356'></a>
+<a id='L357' name='L357'></a>          (ds[i].fptr) (ref1, in1);
+<a id='L358' name='L358'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L359' name='L359'></a>
+<a id='L360' name='L360'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L361' name='L361'></a>          <a href='../S/276.html#L190' title='Defined at 190 in tests/mpz/reuse.c.'>INVOKE_RS</a> (ds[i], res1, res1);
+<a id='L362' name='L362'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L363' name='L363'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0)
+<a id='L364' name='L364'></a>            <a href='../D/349.html' title='Multiple defined in 3 places.'>FAIL</a> (ds, i, in1, in2, NULL);
+<a id='L365' name='L365'></a>        <em class='brace'>}</em>
+<a id='L366' name='L366'></a>
+<a id='L367' name='L367'></a>      in2i = <a href='../S/21.html#L1582' title='Defined at 1582 in mini-gmp/mini-gmp.c.'>mpz_get_ui</a> (in2);
+<a id='L368' name='L368'></a>
+<a id='L369' name='L369'></a>      <strong class='reserved'>for</strong> (i = 0; i &lt; <a href='../D/3617.html' title='Multiple defined in 5 places.'>numberof</a> (dsi); i++)
+<a id='L370' name='L370'></a>        <em class='brace'>{</em>
+<a id='L371' name='L371'></a>          <strong class='reserved'>if</strong> (dsi[i].<a href='../S/753.html#L59' title='Defined at 59 in mpz/powm_ui.c.'>mod</a> != 0)
+<a id='L372' name='L372'></a>            in2i = <a href='../S/21.html#L1582' title='Defined at 1582 in mini-gmp/mini-gmp.c.'>mpz_get_ui</a> (in2) % dsi[i].<a href='../S/753.html#L59' title='Defined at 59 in mpz/powm_ui.c.'>mod</a>;
+<a id='L373' name='L373'></a>
+<a id='L374' name='L374'></a>          (dsi[i].fptr) (ref1, in1, in2i);
+<a id='L375' name='L375'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L376' name='L376'></a>
+<a id='L377' name='L377'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L378' name='L378'></a>          <a href='../S/276.html#L184' title='Defined at 184 in tests/mpz/reuse.c.'>INVOKE_RRS</a> (dsi[i], res1, res1, in2i);
+<a id='L379' name='L379'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L380' name='L380'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0)
+<a id='L381' name='L381'></a>            <a href='../D/349.html' title='Multiple defined in 3 places.'>FAIL</a> (dsi, i, in1, in2, NULL);
+<a id='L382' name='L382'></a>        <em class='brace'>}</em>
+<a id='L383' name='L383'></a>
+<a id='L384' name='L384'></a>      <strong class='reserved'>if</strong> (in2i != 0)      <em class='comment'>/* Don't divide by 0.  */</em>
+<a id='L385' name='L385'></a>        <em class='brace'>{</em>
+<a id='L386' name='L386'></a>          <strong class='reserved'>for</strong> (i = 0; i &lt; <a href='../D/3617.html' title='Multiple defined in 5 places.'>numberof</a> (dsi_div); i++)
+<a id='L387' name='L387'></a>            <em class='brace'>{</em>
+<a id='L388' name='L388'></a>              <a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a> = (dsi_div[i].fptr) (ref1, in1, in2i);
+<a id='L389' name='L389'></a>              <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L390' name='L390'></a>
+<a id='L391' name='L391'></a>              <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L392' name='L392'></a>              <a href='../D/3672.html' title='Multiple defined in 12 places.'>r2</a> = (dsi_div[i].fptr) (res1, res1, in2i);
+<a id='L393' name='L393'></a>              <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L394' name='L394'></a>              <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || <a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a> != <a href='../D/3672.html' title='Multiple defined in 12 places.'>r2</a>)
+<a id='L395' name='L395'></a>                <a href='../D/349.html' title='Multiple defined in 3 places.'>FAIL</a> (dsi_div, i, in1, in2, NULL);
+<a id='L396' name='L396'></a>            <em class='brace'>}</em>
+<a id='L397' name='L397'></a>
+<a id='L398' name='L398'></a>          <strong class='reserved'>for</strong> (i = 0; i &lt; <a href='../D/3617.html' title='Multiple defined in 5 places.'>numberof</a> (ddsi_div); i++)
+<a id='L399' name='L399'></a>            <em class='brace'>{</em>
+<a id='L400' name='L400'></a>              <a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a> = (ddsi_div[i].fptr) (ref1, ref2, in1, in2i);
+<a id='L401' name='L401'></a>              <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L402' name='L402'></a>
+<a id='L403' name='L403'></a>              <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L404' name='L404'></a>              <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res2);
+<a id='L405' name='L405'></a>              <a href='../D/3672.html' title='Multiple defined in 12 places.'>r2</a> = (ddsi_div[i].fptr) (res1, res2, res1, in2i);
+<a id='L406' name='L406'></a>              <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L407' name='L407'></a>              <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref2, res2) != 0 || <a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a> != <a href='../D/3672.html' title='Multiple defined in 12 places.'>r2</a>)
+<a id='L408' name='L408'></a>                <a href='../D/349.html' title='Multiple defined in 3 places.'>FAIL</a> (ddsi_div, i, in1, in2, NULL);
+<a id='L409' name='L409'></a>
+<a id='L410' name='L410'></a>              <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res1);
+<a id='L411' name='L411'></a>              <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res2, in1);
+<a id='L412' name='L412'></a>              (ddsi_div[i].fptr) (res1, res2, res2, in2i);
+<a id='L413' name='L413'></a>              <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L414' name='L414'></a>              <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref2, res2) != 0 || <a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a> != <a href='../D/3672.html' title='Multiple defined in 12 places.'>r2</a>)
+<a id='L415' name='L415'></a>                <a href='../D/349.html' title='Multiple defined in 3 places.'>FAIL</a> (ddsi_div, i, in1, in2, NULL);
+<a id='L416' name='L416'></a>            <em class='brace'>}</em>
+<a id='L417' name='L417'></a>        <em class='brace'>}</em>
+<a id='L418' name='L418'></a>
+<a id='L419' name='L419'></a>      <strong class='reserved'>if</strong> (<a href='../D/3558.html' title='Multiple defined in 2 places.'>mpz_sgn</a> (in1) &gt;= 0)
+<a id='L420' name='L420'></a>        <em class='brace'>{</em>
+<a id='L421' name='L421'></a>          <a href='../D/3565.html' title='Multiple defined in 2 places.'>mpz_sqrtrem</a> (ref1, ref2, in1);
+<a id='L422' name='L422'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L423' name='L423'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref2);
+<a id='L424' name='L424'></a>
+<a id='L425' name='L425'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L426' name='L426'></a>          <a href='../D/3565.html' title='Multiple defined in 2 places.'>mpz_sqrtrem</a> (res1, res2, res1);
+<a id='L427' name='L427'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L428' name='L428'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res2);
+<a id='L429' name='L429'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref2, res2) != 0)
+<a id='L430' name='L430'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3565.html' title='Multiple defined in 2 places.'>mpz_sqrtrem</a>, in1, NULL, NULL);
+<a id='L431' name='L431'></a>
+<a id='L432' name='L432'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res2, in1);
+<a id='L433' name='L433'></a>          <a href='../D/3565.html' title='Multiple defined in 2 places.'>mpz_sqrtrem</a> (res1, res2, res2);
+<a id='L434' name='L434'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L435' name='L435'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res2);
+<a id='L436' name='L436'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref2, res2) != 0)
+<a id='L437' name='L437'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3565.html' title='Multiple defined in 2 places.'>mpz_sqrtrem</a>, in1, NULL, NULL);
+<a id='L438' name='L438'></a>
+<a id='L439' name='L439'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L440' name='L440'></a>          <a href='../D/3565.html' title='Multiple defined in 2 places.'>mpz_sqrtrem</a> (res1, res1, res1);
+<a id='L441' name='L441'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L442' name='L442'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref2, res1) != 0)
+<a id='L443' name='L443'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3565.html' title='Multiple defined in 2 places.'>mpz_sqrtrem</a>, in1, NULL, NULL);
+<a id='L444' name='L444'></a>        <em class='brace'>}</em>
+<a id='L445' name='L445'></a>
+<a id='L446' name='L446'></a>      <strong class='reserved'>if</strong> (<a href='../D/3558.html' title='Multiple defined in 2 places.'>mpz_sgn</a> (in1) &gt;= 0)
+<a id='L447' name='L447'></a>        <em class='brace'>{</em>
+<a id='L448' name='L448'></a>          <a href='../D/3543.html' title='Multiple defined in 2 places.'>mpz_root</a> (ref1, in1, in2i % 0x100 + 1);
+<a id='L449' name='L449'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L450' name='L450'></a>
+<a id='L451' name='L451'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L452' name='L452'></a>          <a href='../D/3543.html' title='Multiple defined in 2 places.'>mpz_root</a> (res1, res1, in2i % 0x100 + 1);
+<a id='L453' name='L453'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L454' name='L454'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0)
+<a id='L455' name='L455'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3543.html' title='Multiple defined in 2 places.'>mpz_root</a>, in1, in2, NULL);
+<a id='L456' name='L456'></a>        <em class='brace'>}</em>
+<a id='L457' name='L457'></a>
+<a id='L458' name='L458'></a>      <strong class='reserved'>if</strong> (<a href='../D/3558.html' title='Multiple defined in 2 places.'>mpz_sgn</a> (in1) &gt;= 0)
+<a id='L459' name='L459'></a>        <em class='brace'>{</em>
+<a id='L460' name='L460'></a>          <a href='../D/3544.html' title='Multiple defined in 2 places.'>mpz_rootrem</a> (ref1, ref2, in1, in2i % 0x100 + 1);
+<a id='L461' name='L461'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L462' name='L462'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref2);
+<a id='L463' name='L463'></a>
+<a id='L464' name='L464'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L465' name='L465'></a>          <a href='../D/3544.html' title='Multiple defined in 2 places.'>mpz_rootrem</a> (res1, res2, res1, in2i % 0x100 + 1);
+<a id='L466' name='L466'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L467' name='L467'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res2);
+<a id='L468' name='L468'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref2, res2) != 0)
+<a id='L469' name='L469'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3544.html' title='Multiple defined in 2 places.'>mpz_rootrem</a>, in1, in2, NULL);
+<a id='L470' name='L470'></a>
+<a id='L471' name='L471'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res2, in1);
+<a id='L472' name='L472'></a>          <a href='../D/3544.html' title='Multiple defined in 2 places.'>mpz_rootrem</a> (res1, res2, res2, in2i % 0x100 + 1);
+<a id='L473' name='L473'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L474' name='L474'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res2);
+<a id='L475' name='L475'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref2, res2) != 0)
+<a id='L476' name='L476'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3544.html' title='Multiple defined in 2 places.'>mpz_rootrem</a>, in1, in2, NULL);
+<a id='L477' name='L477'></a>        <em class='brace'>}</em>
+<a id='L478' name='L478'></a>
+<a id='L479' name='L479'></a>      <strong class='reserved'>if</strong> (size_range &lt; 18)      <em class='comment'>/* run fewer tests since gcdext is slow */</em>
+<a id='L480' name='L480'></a>        <em class='brace'>{</em>
+<a id='L481' name='L481'></a>          <a href='../D/3456.html' title='Multiple defined in 2 places.'>mpz_gcdext</a> (ref1, ref2, ref3, in1, in2);
+<a id='L482' name='L482'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L483' name='L483'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref2);
+<a id='L484' name='L484'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref3);
+<a id='L485' name='L485'></a>
+<a id='L486' name='L486'></a><em class='sharp'>#define</em> <a href='../R/370.html' title='Multiple referred from 12 places.'>GCDEXT_CHECK3</a>(i1, i2) <strong class='reserved'>do</strong> <em class='brace'>{</em>                                      \
+<a id='L487' name='L487'></a>            <a href='../D/3456.html' title='Multiple defined in 2 places.'>mpz_gcdext</a> (res1, res2, res3, i1, i2);                      \
+<a id='L488' name='L488'></a>            <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);                                    \
+<a id='L489' name='L489'></a>            <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res2);                                    \
+<a id='L490' name='L490'></a>            <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res3);                                    \
+<a id='L491' name='L491'></a>            <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref2, res2) != 0  \
+<a id='L492' name='L492'></a>                || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref3, res3) != 0)                           \
+<a id='L493' name='L493'></a>              <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3456.html' title='Multiple defined in 2 places.'>mpz_gcdext</a>, i1, i2, NULL);                         \
+<a id='L494' name='L494'></a>          <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L495' name='L495'></a><em class='sharp'>#define</em> <a href='../R/369.html' title='Multiple referred from 4 places.'>GCDEXT_CHECK2</a>(i1, i2) <strong class='reserved'>do</strong> <em class='brace'>{</em>                                      \
+<a id='L496' name='L496'></a>            <a href='../D/3456.html' title='Multiple defined in 2 places.'>mpz_gcdext</a> (res1, res2, NULL, i1, i2);                      \
+<a id='L497' name='L497'></a>            <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);                                    \
+<a id='L498' name='L498'></a>            <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res2);                                    \
+<a id='L499' name='L499'></a>            <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref2, res2) != 0) \
+<a id='L500' name='L500'></a>              <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3456.html' title='Multiple defined in 2 places.'>mpz_gcdext</a>, i1, i2, NULL);                         \
+<a id='L501' name='L501'></a>          <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L502' name='L502'></a>
+<a id='L503' name='L503'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L504' name='L504'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res2);
+<a id='L505' name='L505'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res3);
+<a id='L506' name='L506'></a>          <a href='../S/276.html#L486' title='Defined at 486 in tests/mpz/reuse.c.'>GCDEXT_CHECK3</a> (res1, in2);
+<a id='L507' name='L507'></a>
+<a id='L508' name='L508'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res1);
+<a id='L509' name='L509'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res2, in1);
+<a id='L510' name='L510'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res3);
+<a id='L511' name='L511'></a>          <a href='../S/276.html#L486' title='Defined at 486 in tests/mpz/reuse.c.'>GCDEXT_CHECK3</a> (res2, in2);
+<a id='L512' name='L512'></a>
+<a id='L513' name='L513'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res1);
+<a id='L514' name='L514'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res2);
+<a id='L515' name='L515'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res3, in1);
+<a id='L516' name='L516'></a>          <a href='../S/276.html#L486' title='Defined at 486 in tests/mpz/reuse.c.'>GCDEXT_CHECK3</a> (res3, in2);
+<a id='L517' name='L517'></a>
+<a id='L518' name='L518'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in2);
+<a id='L519' name='L519'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res2);
+<a id='L520' name='L520'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res3);
+<a id='L521' name='L521'></a>          <a href='../S/276.html#L486' title='Defined at 486 in tests/mpz/reuse.c.'>GCDEXT_CHECK3</a> (in1, res1);
+<a id='L522' name='L522'></a>
+<a id='L523' name='L523'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res1);
+<a id='L524' name='L524'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res2, in2);
+<a id='L525' name='L525'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res3);
+<a id='L526' name='L526'></a>          <a href='../S/276.html#L486' title='Defined at 486 in tests/mpz/reuse.c.'>GCDEXT_CHECK3</a> (in1, res2);
+<a id='L527' name='L527'></a>
+<a id='L528' name='L528'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res1);
+<a id='L529' name='L529'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res2);
+<a id='L530' name='L530'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res3, in2);
+<a id='L531' name='L531'></a>          <a href='../S/276.html#L486' title='Defined at 486 in tests/mpz/reuse.c.'>GCDEXT_CHECK3</a> (in1, res3);
+<a id='L532' name='L532'></a>
+<a id='L533' name='L533'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L534' name='L534'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res2, in2);
+<a id='L535' name='L535'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res3);
+<a id='L536' name='L536'></a>          <a href='../S/276.html#L486' title='Defined at 486 in tests/mpz/reuse.c.'>GCDEXT_CHECK3</a> (res1, res2);
+<a id='L537' name='L537'></a>
+<a id='L538' name='L538'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L539' name='L539'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res2);
+<a id='L540' name='L540'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res3, in2);
+<a id='L541' name='L541'></a>          <a href='../S/276.html#L486' title='Defined at 486 in tests/mpz/reuse.c.'>GCDEXT_CHECK3</a> (res1, res3);
+<a id='L542' name='L542'></a>
+<a id='L543' name='L543'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res1);
+<a id='L544' name='L544'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res2, in1);
+<a id='L545' name='L545'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res3, in2);
+<a id='L546' name='L546'></a>          <a href='../S/276.html#L486' title='Defined at 486 in tests/mpz/reuse.c.'>GCDEXT_CHECK3</a> (res2, res3);
+<a id='L547' name='L547'></a>
+<a id='L548' name='L548'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in2);
+<a id='L549' name='L549'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res2, in1);
+<a id='L550' name='L550'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res3);
+<a id='L551' name='L551'></a>          <a href='../S/276.html#L486' title='Defined at 486 in tests/mpz/reuse.c.'>GCDEXT_CHECK3</a> (res2, res1);
+<a id='L552' name='L552'></a>
+<a id='L553' name='L553'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in2);
+<a id='L554' name='L554'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res2);
+<a id='L555' name='L555'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res3, in1);
+<a id='L556' name='L556'></a>          <a href='../S/276.html#L486' title='Defined at 486 in tests/mpz/reuse.c.'>GCDEXT_CHECK3</a> (res3, res1);
+<a id='L557' name='L557'></a>
+<a id='L558' name='L558'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res1);
+<a id='L559' name='L559'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res2, in2);
+<a id='L560' name='L560'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res3, in1);
+<a id='L561' name='L561'></a>          <a href='../S/276.html#L486' title='Defined at 486 in tests/mpz/reuse.c.'>GCDEXT_CHECK3</a>(res3, res2);
+<a id='L562' name='L562'></a>
+<a id='L563' name='L563'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L564' name='L564'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res2);
+<a id='L565' name='L565'></a>          <a href='../S/276.html#L495' title='Defined at 495 in tests/mpz/reuse.c.'>GCDEXT_CHECK2</a> (res1, in2);
+<a id='L566' name='L566'></a>
+<a id='L567' name='L567'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res1);
+<a id='L568' name='L568'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res2, in1);
+<a id='L569' name='L569'></a>          <a href='../S/276.html#L495' title='Defined at 495 in tests/mpz/reuse.c.'>GCDEXT_CHECK2</a> (res2, in2);
+<a id='L570' name='L570'></a>
+<a id='L571' name='L571'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in2);
+<a id='L572' name='L572'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res2);
+<a id='L573' name='L573'></a>          <a href='../S/276.html#L495' title='Defined at 495 in tests/mpz/reuse.c.'>GCDEXT_CHECK2</a> (in1, res1);
+<a id='L574' name='L574'></a>
+<a id='L575' name='L575'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res1);
+<a id='L576' name='L576'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res2, in2);
+<a id='L577' name='L577'></a>          <a href='../S/276.html#L495' title='Defined at 495 in tests/mpz/reuse.c.'>GCDEXT_CHECK2</a> (in1, res2);
+<a id='L578' name='L578'></a><em class='sharp'>#undef</em> GCDEXT_CHECK
+<a id='L579' name='L579'></a>          <em class='comment'>/* Identical inputs, gcd(in1, in1). Then the result should be</em>
+<a id='L580' name='L580'></a><em class='comment'>             gcd = abs(in1), s = 0, t = sgn(in1). */</em>
+<a id='L581' name='L581'></a>          <a href='../D/3367.html' title='Multiple defined in 2 places.'>mpz_abs</a> (ref1, in1);
+<a id='L582' name='L582'></a>          <a href='../D/3556.html' title='Multiple defined in 2 places.'>mpz_set_ui</a> (ref2, 0);
+<a id='L583' name='L583'></a>          <a href='../D/3553.html' title='Multiple defined in 2 places.'>mpz_set_si</a> (ref3, <a href='../D/3558.html' title='Multiple defined in 2 places.'>mpz_sgn</a> (in1));
+<a id='L584' name='L584'></a>
+<a id='L585' name='L585'></a><em class='sharp'>#define</em> <a href='../R/372.html' title='Multiple referred from 3 places.'>GCDEXT_CHECK_SAME3</a>(in) <strong class='reserved'>do</strong> <em class='brace'>{</em>                                     \
+<a id='L586' name='L586'></a>            <a href='../D/3456.html' title='Multiple defined in 2 places.'>mpz_gcdext</a> (res1, res2, res3, in, in);                      \
+<a id='L587' name='L587'></a>            <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);                                    \
+<a id='L588' name='L588'></a>            <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res2);                                    \
+<a id='L589' name='L589'></a>            <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res3);                                    \
+<a id='L590' name='L590'></a>            <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref2, res2) != 0  \
+<a id='L591' name='L591'></a>                || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref3, res3) != 0)                           \
+<a id='L592' name='L592'></a>              <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3456.html' title='Multiple defined in 2 places.'>mpz_gcdext</a>, in, in, NULL);                         \
+<a id='L593' name='L593'></a>          <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L594' name='L594'></a><em class='sharp'>#define</em> <a href='../R/371.html' title='Multiple referred from 2 places.'>GCDEXT_CHECK_SAME2</a>(in) <strong class='reserved'>do</strong> <em class='brace'>{</em>                                     \
+<a id='L595' name='L595'></a>            <a href='../D/3456.html' title='Multiple defined in 2 places.'>mpz_gcdext</a> (res1, res2, NULL, in, in);                      \
+<a id='L596' name='L596'></a>            <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);                                    \
+<a id='L597' name='L597'></a>            <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res2);                                    \
+<a id='L598' name='L598'></a>            <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || <a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref2, res2) != 0) \
+<a id='L599' name='L599'></a>              <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3456.html' title='Multiple defined in 2 places.'>mpz_gcdext</a>, in, in, NULL);                         \
+<a id='L600' name='L600'></a>          <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L601' name='L601'></a>
+<a id='L602' name='L602'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L603' name='L603'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res2);
+<a id='L604' name='L604'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res3);
+<a id='L605' name='L605'></a>          <a href='../S/276.html#L585' title='Defined at 585 in tests/mpz/reuse.c.'>GCDEXT_CHECK_SAME3</a> (res1);
+<a id='L606' name='L606'></a>
+<a id='L607' name='L607'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res1);
+<a id='L608' name='L608'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res2, in1);
+<a id='L609' name='L609'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res3);
+<a id='L610' name='L610'></a>          <a href='../S/276.html#L585' title='Defined at 585 in tests/mpz/reuse.c.'>GCDEXT_CHECK_SAME3</a> (res2);
+<a id='L611' name='L611'></a>
+<a id='L612' name='L612'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res1);
+<a id='L613' name='L613'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res2);
+<a id='L614' name='L614'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res3, in1);
+<a id='L615' name='L615'></a>          <a href='../S/276.html#L585' title='Defined at 585 in tests/mpz/reuse.c.'>GCDEXT_CHECK_SAME3</a> (res3);
+<a id='L616' name='L616'></a>
+<a id='L617' name='L617'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L618' name='L618'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res2);
+<a id='L619' name='L619'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res3);
+<a id='L620' name='L620'></a>          <a href='../S/276.html#L594' title='Defined at 594 in tests/mpz/reuse.c.'>GCDEXT_CHECK_SAME2</a> (res1);
+<a id='L621' name='L621'></a>
+<a id='L622' name='L622'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res1);
+<a id='L623' name='L623'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res2, in1);
+<a id='L624' name='L624'></a>          <a href='../S/321.html#L411' title='Defined at 411 in tests/misc.c.'>mpz_clobber</a> (res3);
+<a id='L625' name='L625'></a>          <a href='../S/276.html#L594' title='Defined at 594 in tests/mpz/reuse.c.'>GCDEXT_CHECK_SAME2</a> (res2);
+<a id='L626' name='L626'></a><em class='sharp'>#undef</em> GCDEXT_CHECK_SAME
+<a id='L627' name='L627'></a>        <em class='brace'>}</em>
+<a id='L628' name='L628'></a>
+<a id='L629' name='L629'></a>      <em class='comment'>/* Don't run mpz_powm for huge exponents or when undefined.  */</em>
+<a id='L630' name='L630'></a>      <strong class='reserved'>if</strong> (size_range &lt; 17 &amp;&amp; <a href='../D/3561.html' title='Multiple defined in 2 places.'>mpz_sizeinbase</a> (in2, 2) &lt; 250 &amp;&amp; <a href='../D/3558.html' title='Multiple defined in 2 places.'>mpz_sgn</a> (in3) != 0
+<a id='L631' name='L631'></a>          &amp;&amp; (<a href='../D/3558.html' title='Multiple defined in 2 places.'>mpz_sgn</a> (in2) &gt;= 0 || <a href='../D/3481.html' title='Multiple defined in 2 places.'>mpz_invert</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, in1, in3)))
+<a id='L632' name='L632'></a>        <em class='brace'>{</em>
+<a id='L633' name='L633'></a>          <a href='../D/3524.html' title='Multiple defined in 2 places.'>mpz_powm</a> (ref1, in1, in2, in3);
+<a id='L634' name='L634'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L635' name='L635'></a>
+<a id='L636' name='L636'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L637' name='L637'></a>          <a href='../D/3524.html' title='Multiple defined in 2 places.'>mpz_powm</a> (res1, res1, in2, in3);
+<a id='L638' name='L638'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L639' name='L639'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0)
+<a id='L640' name='L640'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3524.html' title='Multiple defined in 2 places.'>mpz_powm</a>, in1, in2, in3);
+<a id='L641' name='L641'></a>
+<a id='L642' name='L642'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in2);
+<a id='L643' name='L643'></a>          <a href='../D/3524.html' title='Multiple defined in 2 places.'>mpz_powm</a> (res1, in1, res1, in3);
+<a id='L644' name='L644'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L645' name='L645'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0)
+<a id='L646' name='L646'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3524.html' title='Multiple defined in 2 places.'>mpz_powm</a>, in1, in2, in3);
+<a id='L647' name='L647'></a>
+<a id='L648' name='L648'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in3);
+<a id='L649' name='L649'></a>          <a href='../D/3524.html' title='Multiple defined in 2 places.'>mpz_powm</a> (res1, in1, in2, res1);
+<a id='L650' name='L650'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L651' name='L651'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0)
+<a id='L652' name='L652'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3524.html' title='Multiple defined in 2 places.'>mpz_powm</a>, in1, in2, in3);
+<a id='L653' name='L653'></a>        <em class='brace'>}</em>
+<a id='L654' name='L654'></a>
+<a id='L655' name='L655'></a>      <em class='comment'>/* Don't run mpz_powm_ui when undefined.  */</em>
+<a id='L656' name='L656'></a>      <strong class='reserved'>if</strong> (size_range &lt; 17 &amp;&amp; <a href='../D/3558.html' title='Multiple defined in 2 places.'>mpz_sgn</a> (in3) != 0)
+<a id='L657' name='L657'></a>        <em class='brace'>{</em>
+<a id='L658' name='L658'></a>          <a href='../D/3526.html' title='Multiple defined in 2 places.'>mpz_powm_ui</a> (ref1, in1, in2i, in3);
+<a id='L659' name='L659'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L660' name='L660'></a>
+<a id='L661' name='L661'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L662' name='L662'></a>          <a href='../D/3526.html' title='Multiple defined in 2 places.'>mpz_powm_ui</a> (res1, res1, in2i, in3);
+<a id='L663' name='L663'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L664' name='L664'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0)
+<a id='L665' name='L665'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3526.html' title='Multiple defined in 2 places.'>mpz_powm_ui</a>, in1, in2, in3);
+<a id='L666' name='L666'></a>
+<a id='L667' name='L667'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in3);
+<a id='L668' name='L668'></a>          <a href='../D/3526.html' title='Multiple defined in 2 places.'>mpz_powm_ui</a> (res1, in1, in2i, res1);
+<a id='L669' name='L669'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L670' name='L670'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0)
+<a id='L671' name='L671'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3526.html' title='Multiple defined in 2 places.'>mpz_powm_ui</a>, in1, in2, in3);
+<a id='L672' name='L672'></a>        <em class='brace'>}</em>
+<a id='L673' name='L673'></a>
+<a id='L674' name='L674'></a>      <em class='brace'>{</em>
+<a id='L675' name='L675'></a>        <a href='../D/3671.html' title='Multiple defined in 12 places.'>r1</a> = <a href='../D/3455.html' title='Multiple defined in 2 places.'>mpz_gcd_ui</a> (ref1, in1, in2i);
+<a id='L676' name='L676'></a>        <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L677' name='L677'></a>
+<a id='L678' name='L678'></a>        <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L679' name='L679'></a>        <a href='../D/3672.html' title='Multiple defined in 12 places.'>r2</a> = <a href='../D/3455.html' title='Multiple defined in 2 places.'>mpz_gcd_ui</a> (res1, res1, in2i);
+<a id='L680' name='L680'></a>        <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L681' name='L681'></a>        <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0)
+<a id='L682' name='L682'></a>          <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3455.html' title='Multiple defined in 2 places.'>mpz_gcd_ui</a>, in1, in2, NULL);
+<a id='L683' name='L683'></a>      <em class='brace'>}</em>
+<a id='L684' name='L684'></a>
+<a id='L685' name='L685'></a>      <strong class='reserved'>if</strong> (<a href='../D/3558.html' title='Multiple defined in 2 places.'>mpz_sgn</a> (in2) != 0)
+<a id='L686' name='L686'></a>        <em class='brace'>{</em>
+<a id='L687' name='L687'></a>          <em class='comment'>/* Test mpz_remove */</em>
+<a id='L688' name='L688'></a>          <a href='../S/18.html#L62' title='Defined at 62 in mini-gmp/mini-gmp.h.'>mp_bitcnt_t</a> refretval, retval;
+<a id='L689' name='L689'></a>          refretval = <a href='../S/653.html#L34' title='Defined at 34 in mpz/remove.c.'>mpz_remove</a> (ref1, in1, in2);
+<a id='L690' name='L690'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L691' name='L691'></a>
+<a id='L692' name='L692'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in1);
+<a id='L693' name='L693'></a>          retval = <a href='../S/653.html#L34' title='Defined at 34 in mpz/remove.c.'>mpz_remove</a> (res1, res1, in2);
+<a id='L694' name='L694'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L695' name='L695'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || refretval != retval)
+<a id='L696' name='L696'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../S/653.html#L34' title='Defined at 34 in mpz/remove.c.'>mpz_remove</a>, in1, in2, NULL);
+<a id='L697' name='L697'></a>
+<a id='L698' name='L698'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in2);
+<a id='L699' name='L699'></a>          retval = <a href='../S/653.html#L34' title='Defined at 34 in mpz/remove.c.'>mpz_remove</a> (res1, in1, res1);
+<a id='L700' name='L700'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L701' name='L701'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0 || refretval != retval)
+<a id='L702' name='L702'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../S/653.html#L34' title='Defined at 34 in mpz/remove.c.'>mpz_remove</a>, in1, in2, NULL);
+<a id='L703' name='L703'></a>        <em class='brace'>}</em>
+<a id='L704' name='L704'></a>
+<a id='L705' name='L705'></a>      <strong class='reserved'>if</strong> (<a href='../D/3558.html' title='Multiple defined in 2 places.'>mpz_sgn</a> (in2) != 0)
+<a id='L706' name='L706'></a>        <em class='brace'>{</em>
+<a id='L707' name='L707'></a>          <em class='comment'>/* Test mpz_divexact */</em>
+<a id='L708' name='L708'></a>          <a href='../D/3507.html' title='Multiple defined in 2 places.'>mpz_mul</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, in1, in2);
+<a id='L709' name='L709'></a>          <a href='../D/3416.html' title='Multiple defined in 2 places.'>mpz_divexact</a> (ref1, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, in2);
+<a id='L710' name='L710'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L711' name='L711'></a>
+<a id='L712' name='L712'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L713' name='L713'></a>          <a href='../D/3416.html' title='Multiple defined in 2 places.'>mpz_divexact</a> (res1, res1, in2);
+<a id='L714' name='L714'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L715' name='L715'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0)
+<a id='L716' name='L716'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3416.html' title='Multiple defined in 2 places.'>mpz_divexact</a>, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, in2, NULL);
+<a id='L717' name='L717'></a>
+<a id='L718' name='L718'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in2);
+<a id='L719' name='L719'></a>          <a href='../D/3416.html' title='Multiple defined in 2 places.'>mpz_divexact</a> (res1, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, res1);
+<a id='L720' name='L720'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L721' name='L721'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0)
+<a id='L722' name='L722'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3416.html' title='Multiple defined in 2 places.'>mpz_divexact</a>, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, in2, NULL);
+<a id='L723' name='L723'></a>        <em class='brace'>}</em>
+<a id='L724' name='L724'></a>
+<a id='L725' name='L725'></a>      <strong class='reserved'>if</strong> (<a href='../D/3558.html' title='Multiple defined in 2 places.'>mpz_sgn</a> (in2) &gt; 0)
+<a id='L726' name='L726'></a>        <em class='brace'>{</em>
+<a id='L727' name='L727'></a>          <em class='comment'>/* Test mpz_divexact_gcd, same as mpz_divexact */</em>
+<a id='L728' name='L728'></a>          <a href='../D/3507.html' title='Multiple defined in 2 places.'>mpz_mul</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, in1, in2);
+<a id='L729' name='L729'></a>          <a href='../D/3419.html' title='Multiple defined in 2 places.'>mpz_divexact_gcd</a> (ref1, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, in2);
+<a id='L730' name='L730'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (ref1);
+<a id='L731' name='L731'></a>
+<a id='L732' name='L732'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L733' name='L733'></a>          <a href='../D/3419.html' title='Multiple defined in 2 places.'>mpz_divexact_gcd</a> (res1, res1, in2);
+<a id='L734' name='L734'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L735' name='L735'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0)
+<a id='L736' name='L736'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3419.html' title='Multiple defined in 2 places.'>mpz_divexact_gcd</a>, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, in2, NULL);
+<a id='L737' name='L737'></a>
+<a id='L738' name='L738'></a>          <a href='../D/3548.html' title='Multiple defined in 2 places.'>mpz_set</a> (res1, in2);
+<a id='L739' name='L739'></a>          <a href='../D/3419.html' title='Multiple defined in 2 places.'>mpz_divexact_gcd</a> (res1, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, res1);
+<a id='L740' name='L740'></a>          <a href='../S/146.html#L4605' title='Defined at 4605 in gmp-impl.h.'>MPZ_CHECK_FORMAT</a> (res1);
+<a id='L741' name='L741'></a>          <strong class='reserved'>if</strong> (<a href='../D/3399.html' title='Multiple defined in 2 places.'>mpz_cmp</a> (ref1, res1) != 0)
+<a id='L742' name='L742'></a>            <a href='../D/350.html' title='Multiple defined in 2 places.'>FAIL2</a> (<a href='../D/3419.html' title='Multiple defined in 2 places.'>mpz_divexact_gcd</a>, <a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>, in2, NULL);
+<a id='L743' name='L743'></a>        <em class='brace'>}</em>
+<a id='L744' name='L744'></a>    <em class='brace'>}</em>
+<a id='L745' name='L745'></a>
+<a id='L746' name='L746'></a>  <strong class='reserved'>if</strong> (isatty (STDOUT_FILENO))
+<a id='L747' name='L747'></a>    printf ("\r%20s", "");
+<a id='L748' name='L748'></a>
+<a id='L749' name='L749'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (bs);
+<a id='L750' name='L750'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (in1);
+<a id='L751' name='L751'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (in2);
+<a id='L752' name='L752'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (in3);
+<a id='L753' name='L753'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (ref1);
+<a id='L754' name='L754'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (ref2);
+<a id='L755' name='L755'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (ref3);
+<a id='L756' name='L756'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (res1);
+<a id='L757' name='L757'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (res2);
+<a id='L758' name='L758'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (res3);
+<a id='L759' name='L759'></a>  <a href='../D/3395.html' title='Multiple defined in 2 places.'>mpz_clear</a> (<a href='../S/1163.html#L84' title='Defined at 84 in mpn/generic/toom42_mulmid.c.'>t</a>);
+<a id='L760' name='L760'></a>
+<a id='L761' name='L761'></a>  <strong class='reserved'>if</strong> (isatty (STDOUT_FILENO))
+<a id='L762' name='L762'></a>    printf ("\r");
+<a id='L763' name='L763'></a>
+<a id='L764' name='L764'></a>  <a href='../S/321.html#L80' title='Defined at 80 in tests/misc.c.'>tests_end</a> ();
+<a id='L765' name='L765'></a>  exit (0);
+<a id='L766' name='L766'></a><em class='brace'>}</em>
+<a id='L767' name='L767'></a>
+<a id='L768' name='L768'></a><strong class='reserved'>void</strong>
+<a id='L769' name='L769'></a><a href='../R/2169.html' title='Multiple referred from 281 places.'>dump</a> (<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *name, <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> in1, <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> in2, <a href='../D/3573.html' title='Multiple defined in 7 places.'>mpz_t</a> in3)
+<a id='L770' name='L770'></a><em class='brace'>{</em>
+<a id='L771' name='L771'></a>  printf ("failure in %s (", name);
+<a id='L772' name='L772'></a>  <a href='../D/3518.html' title='Multiple defined in 2 places.'>mpz_out_str</a> (stdout, -16, in1);
+<a id='L773' name='L773'></a>  <strong class='reserved'>if</strong> (in2 != NULL)
+<a id='L774' name='L774'></a>    <em class='brace'>{</em>
+<a id='L775' name='L775'></a>      printf (" ");
+<a id='L776' name='L776'></a>      <a href='../D/3518.html' title='Multiple defined in 2 places.'>mpz_out_str</a> (stdout, -16, in2);
+<a id='L777' name='L777'></a>    <em class='brace'>}</em>
+<a id='L778' name='L778'></a>  <strong class='reserved'>if</strong> (in3 != NULL)
+<a id='L779' name='L779'></a>    <em class='brace'>{</em>
+<a id='L780' name='L780'></a>      printf (" ");
+<a id='L781' name='L781'></a>      <a href='../D/3518.html' title='Multiple defined in 2 places.'>mpz_out_str</a> (stdout, -16, in3);
+<a id='L782' name='L782'></a>    <em class='brace'>}</em>
+<a id='L783' name='L783'></a>  printf (")\n");
+<a id='L784' name='L784'></a><em class='brace'>}</em>
+<a id='L785' name='L785'></a>
+<a id='L786' name='L786'></a><em class='sharp'>#endif</em> <em class='comment'>/* ! DLL_EXPORT */</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L43'>[^]</a><a href='#L769'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

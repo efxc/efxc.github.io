@@ -1,0 +1,562 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/session.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/session.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L48'>[^]</a><a href='#L514'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L48' title='Defined at 48.'>gnutls_session_get_data</a></li>
+<li><a href='#L122' title='Defined at 122.'>gnutls_session_get_data2</a></li>
+<li><a href='#L210' title='Defined at 210.'>gnutls_session_get_id</a></li>
+<li><a href='#L262' title='Defined at 262.'>gnutls_session_get_id2</a></li>
+<li><a href='#L290' title='Defined at 290.'>gnutls_session_set_data</a></li>
+<li><a href='#L341' title='Defined at 341.'>gnutls_session_force_valid</a></li>
+<li><a href='#L362' title='Defined at 362.'>gnutls_session_get_desc</a></li>
+<li><a href='#L514' title='Defined at 514.'>gnutls_session_set_id</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2000-2016 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> * Copyright (C) 2017 Red Hat, Inc.</em>
+<a id='L4' name='L4'></a><em class='comment'> *</em>
+<a id='L5' name='L5'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L8' name='L8'></a><em class='comment'> *</em>
+<a id='L9' name='L9'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L10' name='L10'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L11' name='L11'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L12' name='L12'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L13' name='L13'></a><em class='comment'> *</em>
+<a id='L14' name='L14'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L15' name='L15'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L16' name='L16'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L17' name='L17'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L18' name='L18'></a><em class='comment'> *</em>
+<a id='L19' name='L19'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L20' name='L20'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L21' name='L21'></a><em class='comment'> *</em>
+<a id='L22' name='L22'></a><em class='comment'> */</em>
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> "<a href='5626.html'>debug.h</a>"
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> &lt;<a href='6040.html'>session_pack.h</a>&gt;
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;<a href='6034.html'>datum.h</a>&gt;
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> "<a href='6033.html'>buffers.h</a>"
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> "<a href='5748.html'>state.h</a>"
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> "<a href='5403.html'>ext/cert_types.h</a>"
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;<a href='../I/135.html'>minmax.h</a>&gt;
+<a id='L32' name='L32'></a>
+<a id='L33' name='L33'></a><em class='comment'>/**</em>
+<a id='L34' name='L34'></a><em class='comment'> * gnutls_session_get_data:</em>
+<a id='L35' name='L35'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L36' name='L36'></a><em class='comment'> * @session_data: is a pointer to space to hold the session.</em>
+<a id='L37' name='L37'></a><em class='comment'> * @session_data_size: is the session_data's size, or it will be set by the function.</em>
+<a id='L38' name='L38'></a><em class='comment'> *</em>
+<a id='L39' name='L39'></a><em class='comment'> * Returns all session parameters needed to be stored to support resumption,</em>
+<a id='L40' name='L40'></a><em class='comment'> * in a pre-allocated buffer.</em>
+<a id='L41' name='L41'></a><em class='comment'> *</em>
+<a id='L42' name='L42'></a><em class='comment'> * See gnutls_session_get_data2() for more information.</em>
+<a id='L43' name='L43'></a><em class='comment'> *</em>
+<a id='L44' name='L44'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned, otherwise</em>
+<a id='L45' name='L45'></a><em class='comment'> *   an error code is returned.</em>
+<a id='L46' name='L46'></a><em class='comment'> **/</em>
+<a id='L47' name='L47'></a><strong class='reserved'>int</strong>
+<a id='L48' name='L48'></a><a href='../R/8307.html' title='Multiple referred from 3 places.'>gnutls_session_get_data</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L49' name='L49'></a>                        <strong class='reserved'>void</strong> *session_data, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> * session_data_size)
+<a id='L50' name='L50'></a><em class='brace'>{</em>
+<a id='L51' name='L51'></a>
+<a id='L52' name='L52'></a>        gnutls_datum_t psession;
+<a id='L53' name='L53'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L54' name='L54'></a>
+<a id='L55' name='L55'></a>        ret = <a href='../S/5303.html#L122' title='Defined at 122 in lib/session.c.'>gnutls_session_get_data2</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;psession);
+<a id='L56' name='L56'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L57' name='L57'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L58' name='L58'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L59' name='L59'></a>        <em class='brace'>}</em>
+<a id='L60' name='L60'></a>
+<a id='L61' name='L61'></a>        <strong class='reserved'>if</strong> (psession.size &gt; *session_data_size) <em class='brace'>{</em>
+<a id='L62' name='L62'></a>                *session_data_size = psession.size;
+<a id='L63' name='L63'></a>                ret = GNUTLS_E_SHORT_MEMORY_BUFFER;
+<a id='L64' name='L64'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L65' name='L65'></a>        <em class='brace'>}</em>
+<a id='L66' name='L66'></a>        *session_data_size = psession.size;
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a>        <strong class='reserved'>if</strong> (session_data != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L69' name='L69'></a>                memcpy(session_data, psession.data, psession.size);
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a>        ret = 0;
+<a id='L72' name='L72'></a>
+<a id='L73' name='L73'></a>      error:
+<a id='L74' name='L74'></a>        _gnutls_free_datum(&amp;psession);
+<a id='L75' name='L75'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L76' name='L76'></a><em class='brace'>}</em>
+<a id='L77' name='L77'></a>
+<a id='L78' name='L78'></a><em class='sharp'>#define</em> <a href='../R/714.html' title='Multiple referred from 2 places.'>EMPTY_DATA</a> "\x00\x00\x00\x00"
+<a id='L79' name='L79'></a><em class='sharp'>#define</em> <a href='../R/715.html' title='Multiple referred from 3 places.'>EMPTY_DATA_SIZE</a> 4
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a><em class='comment'>/**</em>
+<a id='L82' name='L82'></a><em class='comment'> * gnutls_session_get_data2:</em>
+<a id='L83' name='L83'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L84' name='L84'></a><em class='comment'> * @data: is a pointer to a datum that will hold the session.</em>
+<a id='L85' name='L85'></a><em class='comment'> *</em>
+<a id='L86' name='L86'></a><em class='comment'> * Returns necessary parameters to support resumption. The client</em>
+<a id='L87' name='L87'></a><em class='comment'> * should call this function and store the returned session data. A session</em>
+<a id='L88' name='L88'></a><em class='comment'> * can be resumed later by calling gnutls_session_set_data() with the returned</em>
+<a id='L89' name='L89'></a><em class='comment'> * data. Note that under TLS 1.3, it is recommended for clients to use</em>
+<a id='L90' name='L90'></a><em class='comment'> * session parameters only once, to prevent passive-observers from correlating</em>
+<a id='L91' name='L91'></a><em class='comment'> * the different connections.</em>
+<a id='L92' name='L92'></a><em class='comment'> *</em>
+<a id='L93' name='L93'></a><em class='comment'> * The returned @data are allocated and must be released using gnutls_free().</em>
+<a id='L94' name='L94'></a><em class='comment'> *</em>
+<a id='L95' name='L95'></a><em class='comment'> * This function will fail if called prior to handshake completion. In</em>
+<a id='L96' name='L96'></a><em class='comment'> * case of false start TLS, the handshake completes only after data have</em>
+<a id='L97' name='L97'></a><em class='comment'> * been successfully received from the peer.</em>
+<a id='L98' name='L98'></a><em class='comment'> *</em>
+<a id='L99' name='L99'></a><em class='comment'> * Under TLS1.3 session resumption is possible only after a session ticket</em>
+<a id='L100' name='L100'></a><em class='comment'> * is received by the client. To ensure that such a ticket has been received use</em>
+<a id='L101' name='L101'></a><em class='comment'> * gnutls_session_get_flags() and check for flag %GNUTLS_SFLAGS_SESSION_TICKET;</em>
+<a id='L102' name='L102'></a><em class='comment'> * if this flag is not set, this function will wait for a new ticket within</em>
+<a id='L103' name='L103'></a><em class='comment'> * an estimated roundtrip, and if not received will return dummy data which</em>
+<a id='L104' name='L104'></a><em class='comment'> * cannot lead to resumption.</em>
+<a id='L105' name='L105'></a><em class='comment'> *</em>
+<a id='L106' name='L106'></a><em class='comment'> * To get notified when new tickets are received by the server</em>
+<a id='L107' name='L107'></a><em class='comment'> * use gnutls_handshake_set_hook_function() to wait for %GNUTLS_HANDSHAKE_NEW_SESSION_TICKET</em>
+<a id='L108' name='L108'></a><em class='comment'> * messages. Each call of gnutls_session_get_data2() after a ticket is</em>
+<a id='L109' name='L109'></a><em class='comment'> * received, will return session resumption data corresponding to the last</em>
+<a id='L110' name='L110'></a><em class='comment'> * received ticket.</em>
+<a id='L111' name='L111'></a><em class='comment'> *</em>
+<a id='L112' name='L112'></a><em class='comment'> * Note that this function under TLS1.3 requires a callback to be set with</em>
+<a id='L113' name='L113'></a><em class='comment'> * gnutls_transport_set_pull_timeout_function() for successful operation. There</em>
+<a id='L114' name='L114'></a><em class='comment'> * was a bug before 3.6.10 which could make this function fail if that callback</em>
+<a id='L115' name='L115'></a><em class='comment'> * was not set. On later versions if not set, the function will return a successful</em>
+<a id='L116' name='L116'></a><em class='comment'> * error code, but will return dummy data that cannot lead to a resumption.</em>
+<a id='L117' name='L117'></a><em class='comment'> *</em>
+<a id='L118' name='L118'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned, otherwise</em>
+<a id='L119' name='L119'></a><em class='comment'> *   an error code is returned.</em>
+<a id='L120' name='L120'></a><em class='comment'> **/</em>
+<a id='L121' name='L121'></a><strong class='reserved'>int</strong>
+<a id='L122' name='L122'></a><a href='../R/8308.html' title='Multiple referred from 22 places.'>gnutls_session_get_data2</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, gnutls_datum_t *data)
+<a id='L123' name='L123'></a><em class='brace'>{</em>
+<a id='L124' name='L124'></a>        <strong class='reserved'>const</strong> <a href='../S/5822.html#L713' title='Defined at 713 in lib/gnutls_int.h.'>version_entry_st</a> *vers = <a href='../S/5822.html#L1524' title='Defined at 1524 in lib/gnutls_int.h.'>get_version</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L125' name='L125'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L126' name='L126'></a>
+<a id='L127' name='L127'></a>        <strong class='reserved'>if</strong> (data == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> || vers == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L128' name='L128'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L129' name='L129'></a>        <em class='brace'>}</em>
+<a id='L130' name='L130'></a>
+<a id='L131' name='L131'></a>        <strong class='reserved'>if</strong> (vers-&gt;tls13_sem &amp;&amp; !(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.hsk_flags &amp; HSK_TICKET_RECEIVED)) <em class='brace'>{</em>
+<a id='L132' name='L132'></a>                <strong class='reserved'>unsigned</strong> ertt = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.ertt;
+<a id='L133' name='L133'></a>                <em class='comment'>/* use our estimation of round-trip + some time for the server to calculate</em>
+<a id='L134' name='L134'></a><em class='comment'>                 * the value(s). */</em>
+<a id='L135' name='L135'></a>                ertt += 60;
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a>                <em class='comment'>/* we cannot use a read with timeout if the caller has not set</em>
+<a id='L138' name='L138'></a><em class='comment'>                 * a callback with gnutls_transport_set_pull_timeout_function() */</em>
+<a id='L139' name='L139'></a>                <strong class='reserved'>if</strong> (<a href='../S/6033.html#L40' title='Defined at 40 in lib/buffers.h.'>NO_TIMEOUT_FUNC_SET</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>) || (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.flags &amp; GNUTLS_NONBLOCK)) <em class='brace'>{</em>
+<a id='L140' name='L140'></a>                        <strong class='reserved'>if</strong> (!(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.flags &amp; GNUTLS_NONBLOCK))
+<a id='L141' name='L141'></a>                                <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>("TLS1.3 works efficiently if a callback with gnutls_transport_set_pull_timeout_function() is set\n");
+<a id='L142' name='L142'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L143' name='L143'></a>                        <em class='comment'>/* wait for a message with timeout */</em>
+<a id='L144' name='L144'></a>                        ret = <a href='../S/5258.html#L1264' title='Defined at 1264 in lib/record.c.'>_gnutls_recv_in_buffers</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../S/5822.html#L370' title='Defined at 370 in lib/gnutls_int.h.'>GNUTLS_APPLICATION_DATA</a>, -1, ertt);
+<a id='L145' name='L145'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0 &amp;&amp; (<a href='../S/5298.html#L483' title='Defined at 483 in lib/errors.c.'>gnutls_error_is_fatal</a>(ret) &amp;&amp; ret != GNUTLS_E_TIMEDOUT)) <em class='brace'>{</em>
+<a id='L146' name='L146'></a>                                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L147' name='L147'></a>                        <em class='brace'>}</em>
+<a id='L148' name='L148'></a>                <em class='brace'>}</em>
+<a id='L149' name='L149'></a>
+<a id='L150' name='L150'></a>                <strong class='reserved'>if</strong> (!(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.hsk_flags &amp; HSK_TICKET_RECEIVED)) <em class='brace'>{</em>
+<a id='L151' name='L151'></a>                        ret = <a href='../S/5799.html#L35' title='Defined at 35 in lib/datum.c.'>_gnutls_set_datum</a>(data, <a href='../S/5303.html#L78' title='Defined at 78 in lib/session.c.'>EMPTY_DATA</a>, <a href='../S/5303.html#L79' title='Defined at 79 in lib/session.c.'>EMPTY_DATA_SIZE</a>);
+<a id='L152' name='L152'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L153' name='L153'></a>                                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L154' name='L154'></a>
+<a id='L155' name='L155'></a>                        <strong class='reserved'>return</strong> 0;
+<a id='L156' name='L156'></a>                <em class='brace'>}</em>
+<a id='L157' name='L157'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (!vers-&gt;tls13_sem) <em class='brace'>{</em>
+<a id='L158' name='L158'></a>                <em class='comment'>/* under TLS1.3 we want to pack the latest ticket, while that's</em>
+<a id='L159' name='L159'></a><em class='comment'>                 * not the case in TLS1.2 or earlier. */</em>
+<a id='L160' name='L160'></a>                <strong class='reserved'>if</strong> (<a href='../S/5625.html#L987' title='Defined at 987 in lib/state.c.'>gnutls_session_is_resumed</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>) &amp;&amp; <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumption_data.data) <em class='brace'>{</em>
+<a id='L161' name='L161'></a>                        ret = <a href='../S/5799.html#L35' title='Defined at 35 in lib/datum.c.'>_gnutls_set_datum</a>(data, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumption_data.data, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumption_data.size);
+<a id='L162' name='L162'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L163' name='L163'></a>                                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L164' name='L164'></a>
+<a id='L165' name='L165'></a>                        <strong class='reserved'>return</strong> 0;
+<a id='L166' name='L166'></a>                <em class='brace'>}</em>
+<a id='L167' name='L167'></a>        <em class='brace'>}</em>
+<a id='L168' name='L168'></a>
+<a id='L169' name='L169'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumable == <a href='../S/5822.html#L365' title='Defined at 365 in lib/gnutls_int.h.'>RESUME_FALSE</a>)
+<a id='L170' name='L170'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_SESSION;
+<a id='L171' name='L171'></a>
+<a id='L172' name='L172'></a>        ret = <a href='../S/6030.html#L88' title='Defined at 88 in lib/session_pack.c.'>_gnutls_session_pack</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, data);
+<a id='L173' name='L173'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L174' name='L174'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L175' name='L175'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L176' name='L176'></a>        <em class='brace'>}</em>
+<a id='L177' name='L177'></a>
+<a id='L178' name='L178'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L179' name='L179'></a><em class='brace'>}</em>
+<a id='L180' name='L180'></a>
+<a id='L181' name='L181'></a>
+<a id='L182' name='L182'></a><em class='comment'>/**</em>
+<a id='L183' name='L183'></a><em class='comment'> * gnutls_session_get_id:</em>
+<a id='L184' name='L184'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L185' name='L185'></a><em class='comment'> * @session_id: is a pointer to space to hold the session id.</em>
+<a id='L186' name='L186'></a><em class='comment'> * @session_id_size: initially should contain the maximum @session_id size and will be updated.</em>
+<a id='L187' name='L187'></a><em class='comment'> *</em>
+<a id='L188' name='L188'></a><em class='comment'> * Returns the TLS session identifier. The session ID is selected by the</em>
+<a id='L189' name='L189'></a><em class='comment'> * server, and in older versions of TLS was a unique identifier shared</em>
+<a id='L190' name='L190'></a><em class='comment'> * between client and server which was persistent across resumption.</em>
+<a id='L191' name='L191'></a><em class='comment'> * In the latest version of TLS (1.3) or TLS with session tickets, the</em>
+<a id='L192' name='L192'></a><em class='comment'> * notion of session identifiers is undefined and cannot be relied for uniquely</em>
+<a id='L193' name='L193'></a><em class='comment'> * identifying sessions across client and server.</em>
+<a id='L194' name='L194'></a><em class='comment'> *</em>
+<a id='L195' name='L195'></a><em class='comment'> * In client side this function returns the identifier returned by the</em>
+<a id='L196' name='L196'></a><em class='comment'> * server, and cannot be assumed to have any relation to session resumption.</em>
+<a id='L197' name='L197'></a><em class='comment'> * In server side this function is guaranteed to return a persistent</em>
+<a id='L198' name='L198'></a><em class='comment'> * identifier of the session since GnuTLS 3.6.4, which may not necessarily</em>
+<a id='L199' name='L199'></a><em class='comment'> * map into the TLS session ID value. Prior to that version the value</em>
+<a id='L200' name='L200'></a><em class='comment'> * could only be considered a persistent identifier, under TLS1.2 or earlier</em>
+<a id='L201' name='L201'></a><em class='comment'> * and when no session tickets were in use.</em>
+<a id='L202' name='L202'></a><em class='comment'> *</em>
+<a id='L203' name='L203'></a><em class='comment'> * The session identifier value returned is always less than</em>
+<a id='L204' name='L204'></a><em class='comment'> * %GNUTLS_MAX_SESSION_ID_SIZE.</em>
+<a id='L205' name='L205'></a><em class='comment'> *</em>
+<a id='L206' name='L206'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned, otherwise</em>
+<a id='L207' name='L207'></a><em class='comment'> *   an error code is returned.</em>
+<a id='L208' name='L208'></a><em class='comment'> **/</em>
+<a id='L209' name='L209'></a><strong class='reserved'>int</strong>
+<a id='L210' name='L210'></a><a href='../R/8311.html' title='Multiple referred from 7 places.'>gnutls_session_get_id</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L211' name='L211'></a>                      <strong class='reserved'>void</strong> *session_id, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> * session_id_size)
+<a id='L212' name='L212'></a><em class='brace'>{</em>
+<a id='L213' name='L213'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> given_session_id_size = *session_id_size;
+<a id='L214' name='L214'></a>
+<a id='L215' name='L215'></a>        *session_id_size = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.session_id_size;
+<a id='L216' name='L216'></a>
+<a id='L217' name='L217'></a>        <em class='comment'>/* just return the session size */</em>
+<a id='L218' name='L218'></a>        <strong class='reserved'>if</strong> (session_id == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L219' name='L219'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L220' name='L220'></a>        <em class='brace'>}</em>
+<a id='L221' name='L221'></a>
+<a id='L222' name='L222'></a>        <strong class='reserved'>if</strong> (given_session_id_size &lt;
+<a id='L223' name='L223'></a>            <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.session_id_size) <em class='brace'>{</em>
+<a id='L224' name='L224'></a>                <strong class='reserved'>return</strong> GNUTLS_E_SHORT_MEMORY_BUFFER;
+<a id='L225' name='L225'></a>        <em class='brace'>}</em>
+<a id='L226' name='L226'></a>
+<a id='L227' name='L227'></a>        memcpy(session_id, &amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.session_id,
+<a id='L228' name='L228'></a>               *session_id_size);
+<a id='L229' name='L229'></a>
+<a id='L230' name='L230'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L231' name='L231'></a><em class='brace'>}</em>
+<a id='L232' name='L232'></a>
+<a id='L233' name='L233'></a><em class='comment'>/**</em>
+<a id='L234' name='L234'></a><em class='comment'> * gnutls_session_get_id2:</em>
+<a id='L235' name='L235'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L236' name='L236'></a><em class='comment'> * @session_id: will point to the session ID.</em>
+<a id='L237' name='L237'></a><em class='comment'> *</em>
+<a id='L238' name='L238'></a><em class='comment'> * Returns the TLS session identifier. The session ID is selected by the</em>
+<a id='L239' name='L239'></a><em class='comment'> * server, and in older versions of TLS was a unique identifier shared</em>
+<a id='L240' name='L240'></a><em class='comment'> * between client and server which was persistent across resumption.</em>
+<a id='L241' name='L241'></a><em class='comment'> * In the latest version of TLS (1.3) or TLS 1.2 with session tickets, the</em>
+<a id='L242' name='L242'></a><em class='comment'> * notion of session identifiers is undefined and cannot be relied for uniquely</em>
+<a id='L243' name='L243'></a><em class='comment'> * identifying sessions across client and server.</em>
+<a id='L244' name='L244'></a><em class='comment'> *</em>
+<a id='L245' name='L245'></a><em class='comment'> * In client side this function returns the identifier returned by the</em>
+<a id='L246' name='L246'></a><em class='comment'> * server, and cannot be assumed to have any relation to session resumption.</em>
+<a id='L247' name='L247'></a><em class='comment'> * In server side this function is guaranteed to return a persistent</em>
+<a id='L248' name='L248'></a><em class='comment'> * identifier of the session since GnuTLS 3.6.4, which may not necessarily</em>
+<a id='L249' name='L249'></a><em class='comment'> * map into the TLS session ID value. Prior to that version the value</em>
+<a id='L250' name='L250'></a><em class='comment'> * could only be considered a persistent identifier, under TLS1.2 or earlier</em>
+<a id='L251' name='L251'></a><em class='comment'> * and when no session tickets were in use.</em>
+<a id='L252' name='L252'></a><em class='comment'> *</em>
+<a id='L253' name='L253'></a><em class='comment'> * The session identifier value returned is always less than</em>
+<a id='L254' name='L254'></a><em class='comment'> * %GNUTLS_MAX_SESSION_ID_SIZE and should be treated as constant.</em>
+<a id='L255' name='L255'></a><em class='comment'> *</em>
+<a id='L256' name='L256'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned, otherwise</em>
+<a id='L257' name='L257'></a><em class='comment'> *   an error code is returned.</em>
+<a id='L258' name='L258'></a><em class='comment'> *</em>
+<a id='L259' name='L259'></a><em class='comment'> * Since: 3.1.4</em>
+<a id='L260' name='L260'></a><em class='comment'> **/</em>
+<a id='L261' name='L261'></a><strong class='reserved'>int</strong>
+<a id='L262' name='L262'></a>gnutls_session_get_id2(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L263' name='L263'></a>                       gnutls_datum_t * session_id)
+<a id='L264' name='L264'></a><em class='brace'>{</em>
+<a id='L265' name='L265'></a>        session_id-&gt;size = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.session_id_size;
+<a id='L266' name='L266'></a>        session_id-&gt;data = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.session_id;
+<a id='L267' name='L267'></a>
+<a id='L268' name='L268'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L269' name='L269'></a><em class='brace'>}</em>
+<a id='L270' name='L270'></a>
+<a id='L271' name='L271'></a><em class='comment'>/**</em>
+<a id='L272' name='L272'></a><em class='comment'> * gnutls_session_set_data:</em>
+<a id='L273' name='L273'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L274' name='L274'></a><em class='comment'> * @session_data: is a pointer to space to hold the session.</em>
+<a id='L275' name='L275'></a><em class='comment'> * @session_data_size: is the session's size</em>
+<a id='L276' name='L276'></a><em class='comment'> *</em>
+<a id='L277' name='L277'></a><em class='comment'> * Sets all session parameters, in order to resume a previously</em>
+<a id='L278' name='L278'></a><em class='comment'> * established session.  The session data given must be the one</em>
+<a id='L279' name='L279'></a><em class='comment'> * returned by gnutls_session_get_data().  This function should be</em>
+<a id='L280' name='L280'></a><em class='comment'> * called before gnutls_handshake().</em>
+<a id='L281' name='L281'></a><em class='comment'> *</em>
+<a id='L282' name='L282'></a><em class='comment'> * Keep in mind that session resuming is advisory. The server may</em>
+<a id='L283' name='L283'></a><em class='comment'> * choose not to resume the session, thus a full handshake will be</em>
+<a id='L284' name='L284'></a><em class='comment'> * performed.</em>
+<a id='L285' name='L285'></a><em class='comment'> *</em>
+<a id='L286' name='L286'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned, otherwise</em>
+<a id='L287' name='L287'></a><em class='comment'> *   an error code is returned.</em>
+<a id='L288' name='L288'></a><em class='comment'> **/</em>
+<a id='L289' name='L289'></a><strong class='reserved'>int</strong>
+<a id='L290' name='L290'></a><a href='../R/8321.html' title='Multiple referred from 21 places.'>gnutls_session_set_data</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L291' name='L291'></a>                        <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *session_data, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> session_data_size)
+<a id='L292' name='L292'></a><em class='brace'>{</em>
+<a id='L293' name='L293'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L294' name='L294'></a>        gnutls_datum_t psession;
+<a id='L295' name='L295'></a>
+<a id='L296' name='L296'></a>        psession.data = (<a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *) session_data;
+<a id='L297' name='L297'></a>        psession.size = session_data_size;
+<a id='L298' name='L298'></a>
+<a id='L299' name='L299'></a>        <strong class='reserved'>if</strong> (session_data == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> || session_data_size == 0) <em class='brace'>{</em>
+<a id='L300' name='L300'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L301' name='L301'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L302' name='L302'></a>        <em class='brace'>}</em>
+<a id='L303' name='L303'></a>
+<a id='L304' name='L304'></a>        <em class='comment'>/* under TLS1.3 we always return some data on resumption when there</em>
+<a id='L305' name='L305'></a><em class='comment'>         * is no ticket in order to keep compatibility with existing apps */</em>
+<a id='L306' name='L306'></a>        <strong class='reserved'>if</strong> (session_data_size == <a href='../S/5303.html#L79' title='Defined at 79 in lib/session.c.'>EMPTY_DATA_SIZE</a> &amp;&amp;
+<a id='L307' name='L307'></a>            memcmp(session_data, <a href='../S/5303.html#L78' title='Defined at 78 in lib/session.c.'>EMPTY_DATA</a>, <a href='../S/5303.html#L79' title='Defined at 79 in lib/session.c.'>EMPTY_DATA_SIZE</a>) == 0) <em class='brace'>{</em>
+<a id='L308' name='L308'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L309' name='L309'></a>        <em class='brace'>}</em>
+<a id='L310' name='L310'></a>
+<a id='L311' name='L311'></a>        ret = <a href='../S/6030.html#L189' title='Defined at 189 in lib/session_pack.c.'>_gnutls_session_unpack</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;psession);
+<a id='L312' name='L312'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L313' name='L313'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L314' name='L314'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L315' name='L315'></a>        <em class='brace'>}</em>
+<a id='L316' name='L316'></a>
+<a id='L317' name='L317'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumption_requested = 1;
+<a id='L318' name='L318'></a>
+<a id='L319' name='L319'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumption_data.data != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L320' name='L320'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumption_data.data);
+<a id='L321' name='L321'></a>        ret = <a href='../S/5799.html#L35' title='Defined at 35 in lib/datum.c.'>_gnutls_set_datum</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumption_data, session_data, session_data_size);
+<a id='L322' name='L322'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L323' name='L323'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L324' name='L324'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L325' name='L325'></a>        <em class='brace'>}</em>
+<a id='L326' name='L326'></a>
+<a id='L327' name='L327'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L328' name='L328'></a><em class='brace'>}</em>
+<a id='L329' name='L329'></a>
+<a id='L330' name='L330'></a><em class='comment'>/**</em>
+<a id='L331' name='L331'></a><em class='comment'> * gnutls_session_force_valid:</em>
+<a id='L332' name='L332'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L333' name='L333'></a><em class='comment'> *</em>
+<a id='L334' name='L334'></a><em class='comment'> * Clears the invalid flag in a session. That means</em>
+<a id='L335' name='L335'></a><em class='comment'> * that sessions were corrupt or invalid data were received </em>
+<a id='L336' name='L336'></a><em class='comment'> * can be re-used. Use only when debugging or experimenting</em>
+<a id='L337' name='L337'></a><em class='comment'> * with the TLS protocol. Should not be used in typical</em>
+<a id='L338' name='L338'></a><em class='comment'> * applications.</em>
+<a id='L339' name='L339'></a><em class='comment'> *</em>
+<a id='L340' name='L340'></a><em class='comment'> **/</em>
+<a id='L341' name='L341'></a><strong class='reserved'>void</strong> <a href='../S/4538.html#L260' title='Referred from 260 in tests/psk-file.c.'>gnutls_session_force_valid</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L342' name='L342'></a><em class='brace'>{</em>
+<a id='L343' name='L343'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.invalid_connection = 0;
+<a id='L344' name='L344'></a><em class='brace'>}</em>
+<a id='L345' name='L345'></a>
+<a id='L346' name='L346'></a><em class='sharp'>#define</em> <a href='../R/570.html' title='Multiple referred from 3 places.'>DESC_SIZE</a> 96
+<a id='L347' name='L347'></a>
+<a id='L348' name='L348'></a><em class='comment'>/**</em>
+<a id='L349' name='L349'></a><em class='comment'> * gnutls_session_get_desc:</em>
+<a id='L350' name='L350'></a><em class='comment'> * @session: is a gnutls session</em>
+<a id='L351' name='L351'></a><em class='comment'> *</em>
+<a id='L352' name='L352'></a><em class='comment'> * This function returns a string describing the current session.</em>
+<a id='L353' name='L353'></a><em class='comment'> * The string is null terminated and allocated using gnutls_malloc().</em>
+<a id='L354' name='L354'></a><em class='comment'> *</em>
+<a id='L355' name='L355'></a><em class='comment'> * If initial negotiation is not complete when this function is called,</em>
+<a id='L356' name='L356'></a><em class='comment'> * %NULL will be returned.</em>
+<a id='L357' name='L357'></a><em class='comment'> *</em>
+<a id='L358' name='L358'></a><em class='comment'> * Returns: a description of the protocols and algorithms in the current session.</em>
+<a id='L359' name='L359'></a><em class='comment'> *</em>
+<a id='L360' name='L360'></a><em class='comment'> * Since: 3.1.10</em>
+<a id='L361' name='L361'></a><em class='comment'> **/</em>
+<a id='L362' name='L362'></a><strong class='reserved'>char</strong> *<a href='../R/8309.html' title='Multiple referred from 16 places.'>gnutls_session_get_desc</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L363' name='L363'></a><em class='brace'>{</em>
+<a id='L364' name='L364'></a>        gnutls_kx_algorithm_t kx;
+<a id='L365' name='L365'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *kx_str, *sign_str;
+<a id='L366' name='L366'></a>        gnutls_certificate_type_t ctype_client, ctype_server;
+<a id='L367' name='L367'></a>        <strong class='reserved'>char</strong> kx_name[64] = "";
+<a id='L368' name='L368'></a>        <strong class='reserved'>char</strong> proto_name[32];
+<a id='L369' name='L369'></a>        <strong class='reserved'>char</strong> _group_name[24];
+<a id='L370' name='L370'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *group_name = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L371' name='L371'></a>        <strong class='reserved'>int</strong> dh_bits = 0;
+<a id='L372' name='L372'></a>        <strong class='reserved'>unsigned</strong> mac_id;
+<a id='L373' name='L373'></a>        <strong class='reserved'>unsigned</strong> sign_algo;
+<a id='L374' name='L374'></a>        <strong class='reserved'>char</strong> *desc;
+<a id='L375' name='L375'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../D/8639.html' title='Multiple defined in 2 places.'>gnutls_group_entry_st</a> *group = <a href='../S/5748.html#L34' title='Defined at 34 in lib/state.h.'>get_group</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L376' name='L376'></a>        <strong class='reserved'>const</strong> <a href='../S/5822.html#L713' title='Defined at 713 in lib/gnutls_int.h.'>version_entry_st</a> *ver = <a href='../S/5822.html#L1524' title='Defined at 1524 in lib/gnutls_int.h.'>get_version</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L377' name='L377'></a>
+<a id='L378' name='L378'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.initial_negotiation_completed == 0)
+<a id='L379' name='L379'></a>                <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L380' name='L380'></a>
+<a id='L381' name='L381'></a>        kx = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.cs-&gt;kx_algorithm;
+<a id='L382' name='L382'></a>        <strong class='reserved'>if</strong> (group)
+<a id='L383' name='L383'></a>                group_name = group-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>;
+<a id='L384' name='L384'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(ENABLE_DHE) || <strong class='reserved'>defined</strong>(ENABLE_ANON)
+<a id='L385' name='L385'></a>        <strong class='reserved'>if</strong> (group_name == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> &amp;&amp; <a href='../S/6029.html#L502' title='Defined at 502 in lib/algorithms.h.'>_gnutls_kx_is_dhe</a>(kx)) <em class='brace'>{</em>
+<a id='L386' name='L386'></a>                dh_bits = <a href='../S/5812.html#L288' title='Defined at 288 in lib/dh-session.c.'>gnutls_dh_get_prime_bits</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L387' name='L387'></a>                <strong class='reserved'>if</strong> (dh_bits &gt; 0)
+<a id='L388' name='L388'></a>                        <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(_group_name, <strong class='reserved'>sizeof</strong>(_group_name), "CUSTOM%u", dh_bits);
+<a id='L389' name='L389'></a>                <strong class='reserved'>else</strong>
+<a id='L390' name='L390'></a>                        <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(_group_name, <strong class='reserved'>sizeof</strong>(_group_name), "CUSTOM");
+<a id='L391' name='L391'></a>                group_name = _group_name;
+<a id='L392' name='L392'></a>        <em class='brace'>}</em>
+<a id='L393' name='L393'></a><em class='sharp'>#endif</em>
+<a id='L394' name='L394'></a>
+<a id='L395' name='L395'></a>        <em class='comment'>/* Key exchange    - Signature algorithm */</em>
+<a id='L396' name='L396'></a>        <em class='comment'>/* DHE-3072        - RSA-PSS-2048        */</em>
+<a id='L397' name='L397'></a>        <em class='comment'>/* ECDHE-SECP256R1 - ECDSA-SECP256R1     */</em>
+<a id='L398' name='L398'></a>
+<a id='L399' name='L399'></a>        sign_algo = <a href='../S/5399.html#L567' title='Defined at 567 in lib/ext/signature.c.'>gnutls_sign_algorithm_get</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L400' name='L400'></a>        sign_str = <a href='../S/5247.html#L432' title='Defined at 432 in lib/algorithms/sign.c.'>gnutls_sign_get_name</a>(sign_algo);
+<a id='L401' name='L401'></a>
+<a id='L402' name='L402'></a>        <strong class='reserved'>if</strong> (kx == 0 &amp;&amp; ver-&gt;tls13_sem) <em class='brace'>{</em> <em class='comment'>/* TLS 1.3 */</em>
+<a id='L403' name='L403'></a>                <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.hsk_flags &amp; HSK_PSK_SELECTED) <em class='brace'>{</em>
+<a id='L404' name='L404'></a>                        <strong class='reserved'>if</strong> (group) <em class='brace'>{</em>
+<a id='L405' name='L405'></a>                                <strong class='reserved'>if</strong> (group-&gt;pk == GNUTLS_PK_DH)
+<a id='L406' name='L406'></a>                                        <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(kx_name, <strong class='reserved'>sizeof</strong>(kx_name), "(DHE-PSK-%s)",
+<a id='L407' name='L407'></a>                                                 group_name);
+<a id='L408' name='L408'></a>                                <strong class='reserved'>else</strong>
+<a id='L409' name='L409'></a>                                        <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(kx_name, <strong class='reserved'>sizeof</strong>(kx_name), "(ECDHE-PSK-%s)",
+<a id='L410' name='L410'></a>                                                 group_name);
+<a id='L411' name='L411'></a>                        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L412' name='L412'></a>                                        <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(kx_name, <strong class='reserved'>sizeof</strong>(kx_name), "(PSK)");
+<a id='L413' name='L413'></a>                        <em class='brace'>}</em>
+<a id='L414' name='L414'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (group &amp;&amp; sign_str) <em class='brace'>{</em>
+<a id='L415' name='L415'></a>                        <strong class='reserved'>if</strong> (group-&gt;curve)
+<a id='L416' name='L416'></a>                                <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(kx_name, <strong class='reserved'>sizeof</strong>(kx_name), "(ECDHE-%s)-(%s)",
+<a id='L417' name='L417'></a>                                         group_name, sign_str);
+<a id='L418' name='L418'></a>                        <strong class='reserved'>else</strong>
+<a id='L419' name='L419'></a>                                <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(kx_name, <strong class='reserved'>sizeof</strong>(kx_name), "(DHE-%s)-(%s)",
+<a id='L420' name='L420'></a>                                         group_name, sign_str);
+<a id='L421' name='L421'></a>                <em class='brace'>}</em>
+<a id='L422' name='L422'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L423' name='L423'></a>                kx_str = <a href='../S/5250.html#L164' title='Defined at 164 in lib/algorithms/kx.c.'>gnutls_kx_get_name</a>(kx);
+<a id='L424' name='L424'></a>                <strong class='reserved'>if</strong> (kx_str == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L425' name='L425'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L426' name='L426'></a>                        <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L427' name='L427'></a>                <em class='brace'>}</em>
+<a id='L428' name='L428'></a>
+<a id='L429' name='L429'></a>                <strong class='reserved'>if</strong> ((kx == GNUTLS_KX_ECDHE_ECDSA || kx == GNUTLS_KX_ECDHE_RSA ||
+<a id='L430' name='L430'></a>                    kx == GNUTLS_KX_ECDHE_PSK) &amp;&amp; group_name) <em class='brace'>{</em>
+<a id='L431' name='L431'></a>                        <strong class='reserved'>if</strong> (sign_str)
+<a id='L432' name='L432'></a>                                <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(kx_name, <strong class='reserved'>sizeof</strong>(kx_name), "(ECDHE-%s)-(%s)",
+<a id='L433' name='L433'></a>                                         group_name, sign_str);
+<a id='L434' name='L434'></a>                        <strong class='reserved'>else</strong>
+<a id='L435' name='L435'></a>                                <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(kx_name, <strong class='reserved'>sizeof</strong>(kx_name), "(ECDHE-%s)",
+<a id='L436' name='L436'></a>                                         group_name);
+<a id='L437' name='L437'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> ((kx == GNUTLS_KX_DHE_DSS || kx == GNUTLS_KX_DHE_RSA ||
+<a id='L438' name='L438'></a>                    kx == GNUTLS_KX_DHE_PSK) &amp;&amp; group_name) <em class='brace'>{</em>
+<a id='L439' name='L439'></a>                        <strong class='reserved'>if</strong> (sign_str)
+<a id='L440' name='L440'></a>                                <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(kx_name, <strong class='reserved'>sizeof</strong>(kx_name), "(DHE-%s)-(%s)", group_name, sign_str);
+<a id='L441' name='L441'></a>                        <strong class='reserved'>else</strong>
+<a id='L442' name='L442'></a>                                <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(kx_name, <strong class='reserved'>sizeof</strong>(kx_name), "(DHE-%s)", group_name);
+<a id='L443' name='L443'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (kx == GNUTLS_KX_RSA) <em class='brace'>{</em>
+<a id='L444' name='L444'></a>                        <em class='comment'>/* Possible enhancement: include the certificate bits */</em>
+<a id='L445' name='L445'></a>                        <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(kx_name, <strong class='reserved'>sizeof</strong>(kx_name), "(RSA)");
+<a id='L446' name='L446'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L447' name='L447'></a>                        <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(kx_name, <strong class='reserved'>sizeof</strong>(kx_name), "(%s)",
+<a id='L448' name='L448'></a>                                 kx_str);
+<a id='L449' name='L449'></a>                <em class='brace'>}</em>
+<a id='L450' name='L450'></a>        <em class='brace'>}</em>
+<a id='L451' name='L451'></a>
+<a id='L452' name='L452'></a>        <strong class='reserved'>if</strong> (<a href='../S/5403.html#L78' title='Defined at 78 in lib/ext/cert_types.h.'>are_alternative_cert_types_allowed</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)) <em class='brace'>{</em>
+<a id='L453' name='L453'></a>                <em class='comment'>// Get certificate types</em>
+<a id='L454' name='L454'></a>                ctype_client = <a href='../D/8007.html' title='Multiple defined in 2 places.'>get_certificate_type</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CTYPE_CLIENT);
+<a id='L455' name='L455'></a>                ctype_server = <a href='../D/8007.html' title='Multiple defined in 2 places.'>get_certificate_type</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CTYPE_SERVER);
+<a id='L456' name='L456'></a>
+<a id='L457' name='L457'></a>                <strong class='reserved'>if</strong> (ctype_client == ctype_server) <em class='brace'>{</em>
+<a id='L458' name='L458'></a>                        <em class='comment'>// print proto version, client/server cert type</em>
+<a id='L459' name='L459'></a>                        <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(proto_name, <strong class='reserved'>sizeof</strong>(proto_name), "%s-%s",
+<a id='L460' name='L460'></a>                                 <a href='../S/5246.html#L408' title='Defined at 408 in lib/algorithms/protocols.c.'>gnutls_protocol_get_name</a>(<a href='../S/5822.html#L1529' title='Defined at 1529 in lib/gnutls_int.h.'>get_num_version</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)),
+<a id='L461' name='L461'></a>                                 <a href='../S/5255.html#L38' title='Defined at 38 in lib/algorithms/cert_types.c.'>gnutls_certificate_type_get_name</a>(ctype_client));
+<a id='L462' name='L462'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L463' name='L463'></a>                        <em class='comment'>// print proto version, client cert type, server cert type</em>
+<a id='L464' name='L464'></a>                        <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(proto_name, <strong class='reserved'>sizeof</strong>(proto_name), "%s-%s-%s",
+<a id='L465' name='L465'></a>                                 <a href='../S/5246.html#L408' title='Defined at 408 in lib/algorithms/protocols.c.'>gnutls_protocol_get_name</a>(<a href='../S/5822.html#L1529' title='Defined at 1529 in lib/gnutls_int.h.'>get_num_version</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)),
+<a id='L466' name='L466'></a>                                 <a href='../S/5255.html#L38' title='Defined at 38 in lib/algorithms/cert_types.c.'>gnutls_certificate_type_get_name</a>(ctype_client),
+<a id='L467' name='L467'></a>                                 <a href='../S/5255.html#L38' title='Defined at 38 in lib/algorithms/cert_types.c.'>gnutls_certificate_type_get_name</a>(ctype_server));
+<a id='L468' name='L468'></a>                <em class='brace'>}</em>
+<a id='L469' name='L469'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em> <em class='comment'>// Assumed default certificate type (X.509)</em>
+<a id='L470' name='L470'></a>                <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(proto_name, <strong class='reserved'>sizeof</strong>(proto_name), "%s",
+<a id='L471' name='L471'></a>                                 <a href='../S/5246.html#L408' title='Defined at 408 in lib/algorithms/protocols.c.'>gnutls_protocol_get_name</a>(<a href='../S/5822.html#L1529' title='Defined at 1529 in lib/gnutls_int.h.'>get_num_version</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)));
+<a id='L472' name='L472'></a>        <em class='brace'>}</em>
+<a id='L473' name='L473'></a>
+<a id='L474' name='L474'></a>        desc = <a href='../S/5460.html#L95' title='Defined at 95 in lib/mem.c.'>gnutls_malloc</a>(<a href='../S/5303.html#L346' title='Defined at 346 in lib/session.c.'>DESC_SIZE</a>);
+<a id='L475' name='L475'></a>        <strong class='reserved'>if</strong> (desc == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L476' name='L476'></a>                <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L477' name='L477'></a>
+<a id='L478' name='L478'></a>        mac_id = <a href='../S/5625.html#L208' title='Defined at 208 in lib/state.c.'>gnutls_mac_get</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L479' name='L479'></a>        <strong class='reserved'>if</strong> (mac_id == GNUTLS_MAC_AEAD) <em class='brace'>{</em> <em class='comment'>/* no need to print */</em>
+<a id='L480' name='L480'></a>                <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(desc, <a href='../S/5303.html#L346' title='Defined at 346 in lib/session.c.'>DESC_SIZE</a>,
+<a id='L481' name='L481'></a>                         "(%s)-%s-(%s)",
+<a id='L482' name='L482'></a>                         proto_name,
+<a id='L483' name='L483'></a>                         kx_name,
+<a id='L484' name='L484'></a>                         <a href='../S/5256.html#L449' title='Defined at 449 in lib/algorithms/ciphers.c.'>gnutls_cipher_get_name</a>(<a href='../S/5625.html#L81' title='Defined at 81 in lib/state.c.'>gnutls_cipher_get</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)));
+<a id='L485' name='L485'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L486' name='L486'></a>                <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(desc, <a href='../S/5303.html#L346' title='Defined at 346 in lib/session.c.'>DESC_SIZE</a>,
+<a id='L487' name='L487'></a>                         "(%s)-%s-(%s)-(%s)",
+<a id='L488' name='L488'></a>                         proto_name,
+<a id='L489' name='L489'></a>                         kx_name,
+<a id='L490' name='L490'></a>                         <a href='../S/5256.html#L449' title='Defined at 449 in lib/algorithms/ciphers.c.'>gnutls_cipher_get_name</a>(<a href='../S/5625.html#L81' title='Defined at 81 in lib/state.c.'>gnutls_cipher_get</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)),
+<a id='L491' name='L491'></a>                         <a href='../S/5245.html#L223' title='Defined at 223 in lib/algorithms/mac.c.'>gnutls_mac_get_name</a>(mac_id));
+<a id='L492' name='L492'></a>        <em class='brace'>}</em>
+<a id='L493' name='L493'></a>
+<a id='L494' name='L494'></a>        <strong class='reserved'>return</strong> desc;
+<a id='L495' name='L495'></a><em class='brace'>}</em>
+<a id='L496' name='L496'></a>
+<a id='L497' name='L497'></a><em class='comment'>/**</em>
+<a id='L498' name='L498'></a><em class='comment'> * gnutls_session_set_id:</em>
+<a id='L499' name='L499'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L500' name='L500'></a><em class='comment'> * @sid: the session identifier</em>
+<a id='L501' name='L501'></a><em class='comment'> *</em>
+<a id='L502' name='L502'></a><em class='comment'> * This function sets the session ID to be used in a client hello.</em>
+<a id='L503' name='L503'></a><em class='comment'> * This is a function intended for exceptional uses. Do not use this</em>
+<a id='L504' name='L504'></a><em class='comment'> * function unless you are implementing a custom protocol.</em>
+<a id='L505' name='L505'></a><em class='comment'> *</em>
+<a id='L506' name='L506'></a><em class='comment'> * To set session resumption parameters use gnutls_session_set_data() instead.</em>
+<a id='L507' name='L507'></a><em class='comment'> *</em>
+<a id='L508' name='L508'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned, otherwise</em>
+<a id='L509' name='L509'></a><em class='comment'> *   an error code is returned.</em>
+<a id='L510' name='L510'></a><em class='comment'> *</em>
+<a id='L511' name='L511'></a><em class='comment'> * Since: 3.2.1</em>
+<a id='L512' name='L512'></a><em class='comment'> **/</em>
+<a id='L513' name='L513'></a><strong class='reserved'>int</strong>
+<a id='L514' name='L514'></a><a href='../S/5021.html#L179' title='Referred from 179 in tests/gnutls_session_set_id.c.'>gnutls_session_set_id</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <strong class='reserved'>const</strong> gnutls_datum_t * sid)
+<a id='L515' name='L515'></a><em class='brace'>{</em>
+<a id='L516' name='L516'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.entity == GNUTLS_SERVER ||
+<a id='L517' name='L517'></a>            sid-&gt;size &gt; GNUTLS_MAX_SESSION_ID_SIZE)
+<a id='L518' name='L518'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L519' name='L519'></a>
+<a id='L520' name='L520'></a>        memset(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters, 0,
+<a id='L521' name='L521'></a>               <strong class='reserved'>sizeof</strong>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters));
+<a id='L522' name='L522'></a>
+<a id='L523' name='L523'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.session_id_size =
+<a id='L524' name='L524'></a>            sid-&gt;size;
+<a id='L525' name='L525'></a>        memcpy(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.session_id,
+<a id='L526' name='L526'></a>               sid-&gt;data, sid-&gt;size);
+<a id='L527' name='L527'></a>
+<a id='L528' name='L528'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L529' name='L529'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L48'>[^]</a><a href='#L514'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

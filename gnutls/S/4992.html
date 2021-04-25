@@ -1,0 +1,497 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>tests/tls13/post-handshake-with-cert-pkcs11.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6501.html'>tests</a>/<a href='../files/6506.html'>tls13</a>/post-handshake-with-cert-pkcs11.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L31'>[^]</a><a href='#L442'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L31' title='Defined at 31.'>main</a></li>
+<li><a href='#L61' title='Defined at 61.'>server_log_func</a></li>
+<li><a href='#L66' title='Defined at 66.'>client_log_func</a></li>
+<li><a href='#L81' title='Defined at 81.'>pin_func</a></li>
+<li><a href='#L91' title='Defined at 91.'>client</a></li>
+<li><a href='#L278' title='Defined at 278.'>parse_ext</a></li>
+<li><a href='#L285' title='Defined at 285.'>hellos_callback</a></li>
+<li><a href='#L308' title='Defined at 308.'>server</a></li>
+<li><a href='#L399' title='Defined at 399.'>start</a></li>
+<li><a href='#L442' title='Defined at 442.'>doit</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2017-2019 Red Hat, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Daiki Ueno</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * GnuTLS is free software; you can redistribute it and/or modify it</em>
+<a id='L9' name='L9'></a><em class='comment'> * under the terms of the GNU General Public License as published by</em>
+<a id='L10' name='L10'></a><em class='comment'> * the Free Software Foundation; either version 3 of the License, or</em>
+<a id='L11' name='L11'></a><em class='comment'> * (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * GnuTLS is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L20' name='L20'></a><em class='comment'> */</em>
+<a id='L21' name='L21'></a>
+<a id='L22' name='L22'></a><em class='sharp'>#ifdef</em> HAVE_CONFIG_H
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L24' name='L24'></a><em class='sharp'>#endif</em>
+<a id='L25' name='L25'></a>
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(_WIN32)
+<a id='L30' name='L30'></a>
+<a id='L31' name='L31'></a><strong class='reserved'>int</strong> main()
+<a id='L32' name='L32'></a><em class='brace'>{</em>
+<a id='L33' name='L33'></a>        exit(77);
+<a id='L34' name='L34'></a><em class='brace'>}</em>
+<a id='L35' name='L35'></a>
+<a id='L36' name='L36'></a><em class='sharp'>#else</em>
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> &lt;sys/types.h&gt;
+<a id='L40' name='L40'></a><em class='sharp'>#include</em> &lt;netinet/in.h&gt;
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> &lt;<a href='../I/687.html'>sys/socket.h</a>&gt;
+<a id='L42' name='L42'></a><em class='sharp'>#include</em> &lt;sys/wait.h&gt;
+<a id='L43' name='L43'></a><em class='sharp'>#include</em> &lt;arpa/inet.h&gt;
+<a id='L44' name='L44'></a><em class='sharp'>#include</em> &lt;unistd.h&gt;
+<a id='L45' name='L45'></a><em class='sharp'>#include</em> &lt;gnutls/gnutls.h&gt;
+<a id='L46' name='L46'></a><em class='sharp'>#include</em> &lt;<a href='../I/592.html'>gnutls/dtls.h</a>&gt;
+<a id='L47' name='L47'></a><em class='sharp'>#include</em> &lt;signal.h&gt;
+<a id='L48' name='L48'></a><em class='sharp'>#include</em> &lt;assert.h&gt;
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a><em class='sharp'>#include</em> "<a href='5039.html'>cert-common.h</a>"
+<a id='L51' name='L51'></a><em class='sharp'>#include</em> "<a href='4998.html'>tls13/ext-parse.h</a>"
+<a id='L52' name='L52'></a><em class='sharp'>#include</em> "<a href='4465.html'>pkcs11/softhsm.h</a>"
+<a id='L53' name='L53'></a><em class='sharp'>#include</em> "<a href='../I/424.html'>utils.h</a>"
+<a id='L54' name='L54'></a>
+<a id='L55' name='L55'></a><em class='comment'>/* This program tests whether the Post Handshake Auth extension is</em>
+<a id='L56' name='L56'></a><em class='comment'> * present in the client hello, and whether it is missing from server</em>
+<a id='L57' name='L57'></a><em class='comment'> * hello. In addition it contains basic functionality test for</em>
+<a id='L58' name='L58'></a><em class='comment'> * post handshake authentication.</em>
+<a id='L59' name='L59'></a><em class='comment'> */</em>
+<a id='L60' name='L60'></a>
+<a id='L61' name='L61'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/10318.html' title='Multiple referred from 86 places.'>server_log_func</a>(<strong class='reserved'>int</strong> level, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str)
+<a id='L62' name='L62'></a><em class='brace'>{</em>
+<a id='L63' name='L63'></a>        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "server|&lt;%d&gt;| %s", level, str);
+<a id='L64' name='L64'></a><em class='brace'>}</em>
+<a id='L65' name='L65'></a>
+<a id='L66' name='L66'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/6395.html' title='Multiple referred from 86 places.'>client_log_func</a>(<strong class='reserved'>int</strong> level, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *str)
+<a id='L67' name='L67'></a><em class='brace'>{</em>
+<a id='L68' name='L68'></a>        <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr, "client|&lt;%d&gt;| %s", level, str);
+<a id='L69' name='L69'></a><em class='brace'>}</em>
+<a id='L70' name='L70'></a>
+<a id='L71' name='L71'></a><em class='sharp'>#define</em> <a href='../R/2345.html' title='Multiple referred from 336 places.'>MAX_BUF</a> 1024
+<a id='L72' name='L72'></a>
+<a id='L73' name='L73'></a><em class='sharp'>#define</em> <a href='../R/2724.html' title='Multiple referred from 16 places.'>P11LIB</a> "libpkcs11mock2.so"
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a><em class='sharp'>#define</em> <a href='../R/2775.html' title='Multiple referred from 79 places.'>PIN</a> "1234"
+<a id='L76' name='L76'></a>
+<a id='L77' name='L77'></a><em class='sharp'>#define</em> <a href='../R/412.html' title='Multiple referred from 14 places.'>CONFIG_NAME</a> "softhsm-post-handshake-with-cert-pkcs11"
+<a id='L78' name='L78'></a><em class='sharp'>#define</em> <a href='../R/410.html' title='Multiple referred from 34 places.'>CONFIG</a> <a href='../D/574.html' title='Multiple defined in 14 places.'>CONFIG_NAME</a>".config"
+<a id='L79' name='L79'></a>
+<a id='L80' name='L80'></a><strong class='reserved'>static</strong>
+<a id='L81' name='L81'></a><strong class='reserved'>int</strong> <a href='../R/9651.html' title='Multiple referred from 36 places.'>pin_func</a>(<strong class='reserved'>void</strong> *userdata, <strong class='reserved'>int</strong> attempt, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *url, <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *label,
+<a id='L82' name='L82'></a>             <strong class='reserved'>unsigned</strong> flags, <strong class='reserved'>char</strong> *pin, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> pin_max)
+<a id='L83' name='L83'></a><em class='brace'>{</em>
+<a id='L84' name='L84'></a>        <strong class='reserved'>if</strong> (attempt == 0) <em class='brace'>{</em>
+<a id='L85' name='L85'></a>                strcpy(pin, <a href='../D/3218.html' title='Multiple defined in 21 places.'>PIN</a>);
+<a id='L86' name='L86'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L87' name='L87'></a>        <em class='brace'>}</em>
+<a id='L88' name='L88'></a>        <strong class='reserved'>return</strong> -1;
+<a id='L89' name='L89'></a><em class='brace'>}</em>
+<a id='L90' name='L90'></a>
+<a id='L91' name='L91'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/6386.html' title='Multiple referred from 1426 places.'>client</a>(<strong class='reserved'>int</strong> fd, <strong class='reserved'>int</strong> err)
+<a id='L92' name='L92'></a><em class='brace'>{</em>
+<a id='L93' name='L93'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L94' name='L94'></a>        gnutls_certificate_credentials_t x509_cred;
+<a id='L95' name='L95'></a>        gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>;
+<a id='L96' name='L96'></a>        gnutls_x509_crt_t crt;
+<a id='L97' name='L97'></a>        gnutls_x509_privkey_t key;
+<a id='L98' name='L98'></a>        gnutls_datum_t tmp;
+<a id='L99' name='L99'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *lib;
+<a id='L100' name='L100'></a>        <strong class='reserved'>char</strong> <a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>[<a href='../D/2701.html' title='Multiple defined in 117 places.'>MAX_BUF</a> + 1];
+<a id='L101' name='L101'></a>
+<a id='L102' name='L102'></a>        <a href='../S/4443.html#L55' title='Defined at 55 in tests/utils.h.'>global_init</a>();
+<a id='L103' name='L103'></a>
+<a id='L104' name='L104'></a>        <strong class='reserved'>if</strong> (debug) <em class='brace'>{</em>
+<a id='L105' name='L105'></a>                <a href='../S/6039.html#L104' title='Defined at 104 in lib/global.c.'>gnutls_global_set_log_function</a>(<a href='../D/7233.html' title='Multiple defined in 86 places.'>client_log_func</a>);
+<a id='L106' name='L106'></a>                <a href='../S/6039.html#L155' title='Defined at 155 in lib/global.c.'>gnutls_global_set_log_level</a>(7);
+<a id='L107' name='L107'></a>        <em class='brace'>}</em>
+<a id='L108' name='L108'></a>
+<a id='L109' name='L109'></a>        <em class='comment'>/* point to SoftHSM token that libpkcs11mock2.so internally uses */</em>
+<a id='L110' name='L110'></a>        <a href='../D/11415.html' title='Multiple defined in 12 places.'>setenv</a>(<a href='../D/3902.html' title='Multiple defined in 2 places.'>SOFTHSM_ENV</a>, <a href='../D/572.html' title='Multiple defined in 18 places.'>CONFIG</a>, 1);
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a>        <a href='../S/5639.html#L41' title='Defined at 41 in lib/pin.c.'>gnutls_pkcs11_set_pin_function</a>(<a href='../D/10650.html' title='Multiple defined in 26 places.'>pin_func</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L113' name='L113'></a>
+<a id='L114' name='L114'></a>        lib = getenv("P11MOCKLIB2");
+<a id='L115' name='L115'></a>        <strong class='reserved'>if</strong> (lib == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L116' name='L116'></a>                lib = <a href='../D/3162.html' title='Multiple defined in 28 places.'>P11LIB</a>;
+<a id='L117' name='L117'></a>
+<a id='L118' name='L118'></a>        ret = <a href='../S/5802.html#L983' title='Defined at 983 in lib/pkcs11.c.'>gnutls_pkcs11_init</a>(<a href='../S/6018.html#L67' title='Defined at 67 in lib/includes/gnutls/pkcs11.h.'>GNUTLS_PKCS11_FLAG_MANUAL</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L119' name='L119'></a>        <strong class='reserved'>if</strong> (ret != 0) <em class='brace'>{</em>
+<a id='L120' name='L120'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: %s\n", ret, <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L121' name='L121'></a>                exit(1);
+<a id='L122' name='L122'></a>        <em class='brace'>}</em>
+<a id='L123' name='L123'></a>
+<a id='L124' name='L124'></a>        ret = <a href='../S/5802.html#L378' title='Defined at 378 in lib/pkcs11.c.'>gnutls_pkcs11_add_provider</a>(lib, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L125' name='L125'></a>        <strong class='reserved'>if</strong> (ret != 0) <em class='brace'>{</em>
+<a id='L126' name='L126'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("%d: %s\n", ret, <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L127' name='L127'></a>                exit(1);
+<a id='L128' name='L128'></a>        <em class='brace'>}</em>
+<a id='L129' name='L129'></a>
+<a id='L130' name='L130'></a>        ret = <a href='../S/5349.html#L199' title='Defined at 199 in lib/x509/x509.c.'>gnutls_x509_crt_init</a>(&amp;crt);
+<a id='L131' name='L131'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L132' name='L132'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr,
+<a id='L133' name='L133'></a>                        "gnutls_x509_crt_init: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L134' name='L134'></a>                exit(1);
+<a id='L135' name='L135'></a>        <em class='brace'>}</em>
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a>        ret = <a href='../S/5349.html#L553' title='Defined at 553 in lib/x509/x509.c.'>gnutls_x509_crt_import</a>(crt, &amp;cli_ca3_cert, GNUTLS_X509_FMT_PEM);
+<a id='L138' name='L138'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L139' name='L139'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr,
+<a id='L140' name='L140'></a>                        "gnutls_x509_crt_import: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L141' name='L141'></a>                exit(1);
+<a id='L142' name='L142'></a>        <em class='brace'>}</em>
+<a id='L143' name='L143'></a>
+<a id='L144' name='L144'></a>        <strong class='reserved'>if</strong> (debug) <em class='brace'>{</em>
+<a id='L145' name='L145'></a>                <a href='../S/5388.html#L2204' title='Defined at 2204 in lib/x509/output.c.'>gnutls_x509_crt_print</a>(crt, GNUTLS_CRT_PRINT_ONELINE, &amp;tmp);
+<a id='L146' name='L146'></a>
+<a id='L147' name='L147'></a>                <a href='../D/10847.html' title='Multiple defined in 6 places.'>printf</a>("\tCertificate: %.*s\n", tmp.size, tmp.data);
+<a id='L148' name='L148'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(tmp.data);
+<a id='L149' name='L149'></a>        <em class='brace'>}</em>
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a>        ret = <a href='../S/5382.html#L48' title='Defined at 48 in lib/x509/privkey.c.'>gnutls_x509_privkey_init</a>(&amp;key);
+<a id='L152' name='L152'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L153' name='L153'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr,
+<a id='L154' name='L154'></a>                        "gnutls_x509_privkey_init: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L155' name='L155'></a>                exit(1);
+<a id='L156' name='L156'></a>        <em class='brace'>}</em>
+<a id='L157' name='L157'></a>
+<a id='L158' name='L158'></a>        ret = <a href='../S/5382.html#L474' title='Defined at 474 in lib/x509/privkey.c.'>gnutls_x509_privkey_import</a>(key, &amp;cli_ca3_key, GNUTLS_X509_FMT_PEM);
+<a id='L159' name='L159'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L160' name='L160'></a>                <a href='../D/7906.html' title='Multiple defined in 5 places.'>fprintf</a>(stderr,
+<a id='L161' name='L161'></a>                        "gnutls_x509_privkey_import: %s\n",
+<a id='L162' name='L162'></a>                        <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L163' name='L163'></a>                exit(1);
+<a id='L164' name='L164'></a>        <em class='brace'>}</em>
+<a id='L165' name='L165'></a>
+<a id='L166' name='L166'></a>        <em class='comment'>/* initialize softhsm token */</em>
+<a id='L167' name='L167'></a>        ret = <a href='../S/5453.html#L1212' title='Defined at 1212 in lib/pkcs11_write.c.'>gnutls_pkcs11_token_init</a>(<a href='../D/3904.html' title='Multiple defined in 2 places.'>SOFTHSM_URL</a>, <a href='../D/3218.html' title='Multiple defined in 21 places.'>PIN</a>, "test");
+<a id='L168' name='L168'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L169' name='L169'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("gnutls_pkcs11_token_init: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L170' name='L170'></a>                exit(1);
+<a id='L171' name='L171'></a>        <em class='brace'>}</em>
+<a id='L172' name='L172'></a>
+<a id='L173' name='L173'></a>        ret =
+<a id='L174' name='L174'></a>            <a href='../S/5453.html#L1274' title='Defined at 1274 in lib/pkcs11_write.c.'>gnutls_pkcs11_token_set_pin</a>(<a href='../D/3904.html' title='Multiple defined in 2 places.'>SOFTHSM_URL</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, <a href='../D/3218.html' title='Multiple defined in 21 places.'>PIN</a>,
+<a id='L175' name='L175'></a>                                        GNUTLS_PIN_USER);
+<a id='L176' name='L176'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L177' name='L177'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("gnutls_pkcs11_token_set_pin: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L178' name='L178'></a>                exit(1);
+<a id='L179' name='L179'></a>        <em class='brace'>}</em>
+<a id='L180' name='L180'></a>
+<a id='L181' name='L181'></a>        ret = <a href='../D/8896.html' title='Multiple defined in 2 places.'>gnutls_pkcs11_copy_x509_crt</a>(<a href='../D/3904.html' title='Multiple defined in 2 places.'>SOFTHSM_URL</a>, crt, "cert",
+<a id='L182' name='L182'></a>                                          <a href='../S/6018.html#L132' title='Defined at 132 in lib/includes/gnutls/pkcs11.h.'>GNUTLS_PKCS11_OBJ_FLAG_MARK_PRIVATE</a> |
+<a id='L183' name='L183'></a>                                          <a href='../S/6018.html#L128' title='Defined at 128 in lib/includes/gnutls/pkcs11.h.'>GNUTLS_PKCS11_OBJ_FLAG_LOGIN</a>);
+<a id='L184' name='L184'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L185' name='L185'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("gnutls_pkcs11_copy_x509_crt: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L186' name='L186'></a>                exit(1);
+<a id='L187' name='L187'></a>        <em class='brace'>}</em>
+<a id='L188' name='L188'></a>
+<a id='L189' name='L189'></a>        ret =
+<a id='L190' name='L190'></a>            <a href='../D/8898.html' title='Multiple defined in 2 places.'>gnutls_pkcs11_copy_x509_privkey</a>(<a href='../D/3904.html' title='Multiple defined in 2 places.'>SOFTHSM_URL</a>, key, "cert",
+<a id='L191' name='L191'></a>                                            GNUTLS_KEY_DIGITAL_SIGNATURE |
+<a id='L192' name='L192'></a>                                            GNUTLS_KEY_KEY_ENCIPHERMENT,
+<a id='L193' name='L193'></a>                                            <a href='../S/6018.html#L132' title='Defined at 132 in lib/includes/gnutls/pkcs11.h.'>GNUTLS_PKCS11_OBJ_FLAG_MARK_PRIVATE</a>
+<a id='L194' name='L194'></a>                                            |
+<a id='L195' name='L195'></a>                                            <a href='../S/6018.html#L130' title='Defined at 130 in lib/includes/gnutls/pkcs11.h.'>GNUTLS_PKCS11_OBJ_FLAG_MARK_SENSITIVE</a>
+<a id='L196' name='L196'></a>                                            | <a href='../S/6018.html#L128' title='Defined at 128 in lib/includes/gnutls/pkcs11.h.'>GNUTLS_PKCS11_OBJ_FLAG_LOGIN</a>);
+<a id='L197' name='L197'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L198' name='L198'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("gnutls_pkcs11_copy_x509_privkey: %s\n",
+<a id='L199' name='L199'></a>                     <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L200' name='L200'></a>                exit(1);
+<a id='L201' name='L201'></a>        <em class='brace'>}</em>
+<a id='L202' name='L202'></a>
+<a id='L203' name='L203'></a>        <a href='../S/5349.html#L291' title='Defined at 291 in lib/x509/x509.c.'>gnutls_x509_crt_deinit</a>(crt);
+<a id='L204' name='L204'></a>        <a href='../S/5382.html#L80' title='Defined at 80 in lib/x509/privkey.c.'>gnutls_x509_privkey_deinit</a>(key);
+<a id='L205' name='L205'></a>
+<a id='L206' name='L206'></a>        assert(<a href='../S/5463.html#L418' title='Defined at 418 in lib/cert-cred.c.'>gnutls_certificate_allocate_credentials</a>(&amp;x509_cred)&gt;=0);
+<a id='L207' name='L207'></a>
+<a id='L208' name='L208'></a>        <em class='comment'>/* Initialize TLS session</em>
+<a id='L209' name='L209'></a><em class='comment'>         */</em>
+<a id='L210' name='L210'></a>        assert(<a href='../S/5625.html#L475' title='Defined at 475 in lib/state.c.'>gnutls_init</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CLIENT|GNUTLS_POST_HANDSHAKE_AUTH|GNUTLS_AUTO_REAUTH)&gt;=0);
+<a id='L211' name='L211'></a>
+<a id='L212' name='L212'></a>        <a href='../S/5300.html#L2841' title='Defined at 2841 in lib/handshake.c.'>gnutls_handshake_set_timeout</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, 20 * 1000);
+<a id='L213' name='L213'></a>
+<a id='L214' name='L214'></a>        ret = <a href='../S/5260.html#L2335' title='Defined at 2335 in lib/priority.c.'>gnutls_priority_set_direct</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, "NORMAL:-VERS-ALL:+VERS-TLS1.3:-SIGN-RSA-SHA256", <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L215' name='L215'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L216' name='L216'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("cannot set TLS 1.3 priorities\n");
+<a id='L217' name='L217'></a>
+<a id='L218' name='L218'></a>
+<a id='L219' name='L219'></a>        assert(<a href='../S/5456.html#L1001' title='Defined at 1001 in lib/cert-cred-x509.c.'>gnutls_certificate_set_x509_key_file</a>(x509_cred,
+<a id='L220' name='L220'></a>                                                    <a href='../D/3904.html' title='Multiple defined in 2 places.'>SOFTHSM_URL</a>
+<a id='L221' name='L221'></a>                                                    ";object=cert;object-type=cert",
+<a id='L222' name='L222'></a>                                                    <a href='../D/3904.html' title='Multiple defined in 2 places.'>SOFTHSM_URL</a>
+<a id='L223' name='L223'></a>                                                    ";object=cert;object-type=private;pin-value="
+<a id='L224' name='L224'></a>                                                    <a href='../D/3218.html' title='Multiple defined in 21 places.'>PIN</a>,
+<a id='L225' name='L225'></a>                                                    GNUTLS_X509_FMT_DER)&gt;=0);
+<a id='L226' name='L226'></a>
+<a id='L227' name='L227'></a>        <a href='../S/5749.html#L94' title='Defined at 94 in lib/auth.c.'>gnutls_credentials_set</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_CERTIFICATE, x509_cred);
+<a id='L228' name='L228'></a>
+<a id='L229' name='L229'></a>        <a href='../S/5258.html#L171' title='Defined at 171 in lib/record.c.'>gnutls_transport_set_int</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, fd);
+<a id='L230' name='L230'></a>
+<a id='L231' name='L231'></a>        <em class='comment'>/* Perform the TLS handshake</em>
+<a id='L232' name='L232'></a><em class='comment'>         */</em>
+<a id='L233' name='L233'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L234' name='L234'></a>                ret = <a href='../S/5300.html#L2721' title='Defined at 2721 in lib/handshake.c.'>gnutls_handshake</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L235' name='L235'></a>        <em class='brace'>}</em>
+<a id='L236' name='L236'></a>        <strong class='reserved'>while</strong> (ret &lt; 0 &amp;&amp; <a href='../S/5298.html#L483' title='Defined at 483 in lib/errors.c.'>gnutls_error_is_fatal</a>(ret) == 0);
+<a id='L237' name='L237'></a>
+<a id='L238' name='L238'></a>        <strong class='reserved'>if</strong> (ret != 0)
+<a id='L239' name='L239'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("handshake failed: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L240' name='L240'></a>
+<a id='L241' name='L241'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L242' name='L242'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("client handshake completed\n");
+<a id='L243' name='L243'></a>
+<a id='L244' name='L244'></a>        <a href='../S/5258.html#L2338' title='Defined at 2338 in lib/record.c.'>gnutls_record_set_timeout</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, 20 * 1000);
+<a id='L245' name='L245'></a>
+<a id='L246' name='L246'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L247' name='L247'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("waiting for auth\n");
+<a id='L248' name='L248'></a>
+<a id='L249' name='L249'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L250' name='L250'></a>                ret = <a href='../S/5258.html#L2278' title='Defined at 2278 in lib/record.c.'>gnutls_record_recv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>, <strong class='reserved'>sizeof</strong>(<a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>));
+<a id='L251' name='L251'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (ret == GNUTLS_E_AGAIN || ret == GNUTLS_E_INTERRUPTED);
+<a id='L252' name='L252'></a>
+<a id='L253' name='L253'></a>        <strong class='reserved'>if</strong> (err) <em class='brace'>{</em>
+<a id='L254' name='L254'></a>                <strong class='reserved'>if</strong> (ret != err)
+<a id='L255' name='L255'></a>                        <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("client: expected error %s, got: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(err),
+<a id='L256' name='L256'></a>                             <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L257' name='L257'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L258' name='L258'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("client: gnutls_record_recv did not succeed as expected: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L259' name='L259'></a>
+<a id='L260' name='L260'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L261' name='L261'></a>                ret = <a href='../S/5258.html#L285' title='Defined at 285 in lib/record.c.'>gnutls_bye</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_SHUT_WR);
+<a id='L262' name='L262'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (ret == GNUTLS_E_AGAIN || ret == GNUTLS_E_INTERRUPTED);
+<a id='L263' name='L263'></a>
+<a id='L264' name='L264'></a>        <a href='../D/7245.html' title='Multiple defined in 25 places.'>close</a>(fd);
+<a id='L265' name='L265'></a>
+<a id='L266' name='L266'></a>        <a href='../S/5625.html#L659' title='Defined at 659 in lib/state.c.'>gnutls_deinit</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L267' name='L267'></a>
+<a id='L268' name='L268'></a>        <a href='../S/5463.html#L391' title='Defined at 391 in lib/cert-cred.c.'>gnutls_certificate_free_credentials</a>(x509_cred);
+<a id='L269' name='L269'></a>
+<a id='L270' name='L270'></a>        <a href='../S/6039.html#L467' title='Defined at 467 in lib/global.c.'>gnutls_global_deinit</a>();
+<a id='L271' name='L271'></a><em class='brace'>}</em>
+<a id='L272' name='L272'></a>
+<a id='L273' name='L273'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> client_hello_ok = 0;
+<a id='L274' name='L274'></a><strong class='reserved'>static</strong> <strong class='reserved'>unsigned</strong> server_hello_ok = 0;
+<a id='L275' name='L275'></a>
+<a id='L276' name='L276'></a><em class='sharp'>#define</em> <a href='../R/3927.html' title='Multiple referred from 12 places.'>TLS_EXT_POST_HANDSHAKE</a> 49
+<a id='L277' name='L277'></a>
+<a id='L278' name='L278'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/9609.html' title='Multiple referred from 5 places.'>parse_ext</a>(<strong class='reserved'>void</strong> *priv, gnutls_datum_t *msg)
+<a id='L279' name='L279'></a><em class='brace'>{</em>
+<a id='L280' name='L280'></a>        <strong class='reserved'>if</strong> (msg-&gt;size != 0) <em class='brace'>{</em>
+<a id='L281' name='L281'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("error in extension length: %d\n", (<strong class='reserved'>int</strong>)msg-&gt;size);
+<a id='L282' name='L282'></a>        <em class='brace'>}</em>
+<a id='L283' name='L283'></a><em class='brace'>}</em>
+<a id='L284' name='L284'></a>
+<a id='L285' name='L285'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../R/8971.html' title='Multiple referred from 7 places.'>hellos_callback</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> htype,
+<a id='L286' name='L286'></a>        <strong class='reserved'>unsigned</strong> post, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> incoming, <strong class='reserved'>const</strong> gnutls_datum_t *msg)
+<a id='L287' name='L287'></a><em class='brace'>{</em>
+<a id='L288' name='L288'></a>        <strong class='reserved'>if</strong> (htype == GNUTLS_HANDSHAKE_SERVER_HELLO &amp;&amp; post == GNUTLS_HOOK_POST) <em class='brace'>{</em>
+<a id='L289' name='L289'></a>                <strong class='reserved'>if</strong> (<a href='../S/4998.html#L167' title='Defined at 167 in tests/tls13/ext-parse.h.'>find_server_extension</a>(msg, <a href='../D/4544.html' title='Multiple defined in 7 places.'>TLS_EXT_POST_HANDSHAKE</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)) <em class='brace'>{</em>
+<a id='L290' name='L290'></a>                        <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("Post handshake extension seen in server hello!\n");
+<a id='L291' name='L291'></a>                <em class='brace'>}</em>
+<a id='L292' name='L292'></a>                server_hello_ok = 1;
+<a id='L293' name='L293'></a>
+<a id='L294' name='L294'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INTERRUPTED;
+<a id='L295' name='L295'></a>        <em class='brace'>}</em>
+<a id='L296' name='L296'></a>
+<a id='L297' name='L297'></a>        <strong class='reserved'>if</strong> (htype != GNUTLS_HANDSHAKE_CLIENT_HELLO || post != GNUTLS_HOOK_PRE)
+<a id='L298' name='L298'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L299' name='L299'></a>
+<a id='L300' name='L300'></a>        <strong class='reserved'>if</strong> (<a href='../D/7844.html' title='Multiple defined in 2 places.'>find_client_extension</a>(msg, <a href='../D/4544.html' title='Multiple defined in 7 places.'>TLS_EXT_POST_HANDSHAKE</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, <a href='../D/10606.html' title='Multiple defined in 5 places.'>parse_ext</a>))
+<a id='L301' name='L301'></a>                client_hello_ok = 1;
+<a id='L302' name='L302'></a>        <strong class='reserved'>else</strong>
+<a id='L303' name='L303'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("Post handshake extension NOT seen in client hello!\n");
+<a id='L304' name='L304'></a>
+<a id='L305' name='L305'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L306' name='L306'></a><em class='brace'>}</em>
+<a id='L307' name='L307'></a>
+<a id='L308' name='L308'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/10309.html' title='Multiple referred from 1376 places.'>server</a>(<strong class='reserved'>int</strong> fd, <strong class='reserved'>int</strong> err, <strong class='reserved'>int</strong> <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>)
+<a id='L309' name='L309'></a><em class='brace'>{</em>
+<a id='L310' name='L310'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L311' name='L311'></a>        <strong class='reserved'>char</strong> <a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>[<a href='../D/2701.html' title='Multiple defined in 117 places.'>MAX_BUF</a> + 1];
+<a id='L312' name='L312'></a>        gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>;
+<a id='L313' name='L313'></a>        gnutls_certificate_credentials_t x509_cred;
+<a id='L314' name='L314'></a>
+<a id='L315' name='L315'></a>        <em class='comment'>/* this must be called once in the program</em>
+<a id='L316' name='L316'></a><em class='comment'>         */</em>
+<a id='L317' name='L317'></a>        <a href='../S/4443.html#L55' title='Defined at 55 in tests/utils.h.'>global_init</a>();
+<a id='L318' name='L318'></a>        memset(<a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>, 0, <strong class='reserved'>sizeof</strong>(<a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>));
+<a id='L319' name='L319'></a>
+<a id='L320' name='L320'></a>        <strong class='reserved'>if</strong> (debug) <em class='brace'>{</em>
+<a id='L321' name='L321'></a>                <a href='../S/6039.html#L104' title='Defined at 104 in lib/global.c.'>gnutls_global_set_log_function</a>(<a href='../D/11322.html' title='Multiple defined in 86 places.'>server_log_func</a>);
+<a id='L322' name='L322'></a>                <a href='../S/6039.html#L155' title='Defined at 155 in lib/global.c.'>gnutls_global_set_log_level</a>(6);
+<a id='L323' name='L323'></a>        <em class='brace'>}</em>
+<a id='L324' name='L324'></a>
+<a id='L325' name='L325'></a>        <a href='../S/5463.html#L418' title='Defined at 418 in lib/cert-cred.c.'>gnutls_certificate_allocate_credentials</a>(&amp;x509_cred);
+<a id='L326' name='L326'></a>        <a href='../S/5456.html#L635' title='Defined at 635 in lib/cert-cred-x509.c.'>gnutls_certificate_set_x509_key_mem</a>(x509_cred, &amp;server_cert,
+<a id='L327' name='L327'></a>                                            &amp;server_key,
+<a id='L328' name='L328'></a>                                            GNUTLS_X509_FMT_PEM);
+<a id='L329' name='L329'></a>
+<a id='L330' name='L330'></a>        <a href='../S/5625.html#L475' title='Defined at 475 in lib/state.c.'>gnutls_init</a>(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_SERVER|GNUTLS_POST_HANDSHAKE_AUTH);
+<a id='L331' name='L331'></a>
+<a id='L332' name='L332'></a>        <a href='../S/5300.html#L2841' title='Defined at 2841 in lib/handshake.c.'>gnutls_handshake_set_timeout</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, 20 * 1000);
+<a id='L333' name='L333'></a>        <a href='../S/5625.html#L1466' title='Defined at 1466 in lib/state.c.'>gnutls_handshake_set_hook_function</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_HANDSHAKE_ANY,
+<a id='L334' name='L334'></a>                                           GNUTLS_HOOK_BOTH,
+<a id='L335' name='L335'></a>                                           <a href='../D/9929.html' title='Multiple defined in 7 places.'>hellos_callback</a>);
+<a id='L336' name='L336'></a>
+<a id='L337' name='L337'></a>        <em class='comment'>/* avoid calling all the priority functions, since the defaults</em>
+<a id='L338' name='L338'></a><em class='comment'>         * are adequate.</em>
+<a id='L339' name='L339'></a><em class='comment'>         */</em>
+<a id='L340' name='L340'></a>        <a href='../S/5260.html#L2335' title='Defined at 2335 in lib/priority.c.'>gnutls_priority_set_direct</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, "NORMAL:-VERS-ALL:+VERS-TLS1.3", <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L341' name='L341'></a>
+<a id='L342' name='L342'></a>        <a href='../S/5749.html#L94' title='Defined at 94 in lib/auth.c.'>gnutls_credentials_set</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_CERTIFICATE, x509_cred);
+<a id='L343' name='L343'></a>
+<a id='L344' name='L344'></a>        <a href='../S/5258.html#L171' title='Defined at 171 in lib/record.c.'>gnutls_transport_set_int</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, fd);
+<a id='L345' name='L345'></a>
+<a id='L346' name='L346'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L347' name='L347'></a>                ret = <a href='../S/5300.html#L2721' title='Defined at 2721 in lib/handshake.c.'>gnutls_handshake</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L348' name='L348'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (ret &lt; 0 &amp;&amp; <a href='../S/5298.html#L483' title='Defined at 483 in lib/errors.c.'>gnutls_error_is_fatal</a>(ret) == 0);
+<a id='L349' name='L349'></a>
+<a id='L350' name='L350'></a>        <strong class='reserved'>if</strong> (ret != 0)
+<a id='L351' name='L351'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("handshake failed: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L352' name='L352'></a>
+<a id='L353' name='L353'></a>        <strong class='reserved'>if</strong> (!(<a href='../S/5625.html#L1610' title='Defined at 1610 in lib/state.c.'>gnutls_session_get_flags</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>) &amp; GNUTLS_SFLAGS_POST_HANDSHAKE_AUTH)) <em class='brace'>{</em>
+<a id='L354' name='L354'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("server: session flags did not contain GNUTLS_SFLAGS_POST_HANDSHAKE_AUTH\n");
+<a id='L355' name='L355'></a>        <em class='brace'>}</em>
+<a id='L356' name='L356'></a>
+<a id='L357' name='L357'></a>
+<a id='L358' name='L358'></a>        <strong class='reserved'>if</strong> (client_hello_ok == 0) <em class='brace'>{</em>
+<a id='L359' name='L359'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("server: did not verify the client hello\n");
+<a id='L360' name='L360'></a>        <em class='brace'>}</em>
+<a id='L361' name='L361'></a>
+<a id='L362' name='L362'></a>        <strong class='reserved'>if</strong> (server_hello_ok == 0) <em class='brace'>{</em>
+<a id='L363' name='L363'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("server: did not verify the server hello contents\n");
+<a id='L364' name='L364'></a>        <em class='brace'>}</em>
+<a id='L365' name='L365'></a>
+<a id='L366' name='L366'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L367' name='L367'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("server handshake completed\n");
+<a id='L368' name='L368'></a>
+<a id='L369' name='L369'></a>        <a href='../S/5463.html#L558' title='Defined at 558 in lib/cert-cred.c.'>gnutls_certificate_server_set_request</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>);
+<a id='L370' name='L370'></a>
+<a id='L371' name='L371'></a>        <em class='comment'>/* ask peer for re-authentication */</em>
+<a id='L372' name='L372'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L373' name='L373'></a>                ret = <a href='../S/5764.html#L241' title='Defined at 241 in lib/tls13/post_handshake.c.'>gnutls_reauth</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, 0);
+<a id='L374' name='L374'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (ret == GNUTLS_E_AGAIN || ret == GNUTLS_E_INTERRUPTED);
+<a id='L375' name='L375'></a>
+<a id='L376' name='L376'></a>        <strong class='reserved'>if</strong> (err) <em class='brace'>{</em>
+<a id='L377' name='L377'></a>                <strong class='reserved'>if</strong> (ret != err)
+<a id='L378' name='L378'></a>                        <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("server: expected error %s, got: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(err),
+<a id='L379' name='L379'></a>                             <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L380' name='L380'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (ret != 0)
+<a id='L381' name='L381'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("server: gnutls_reauth did not succeed as expected: %s\n", <a href='../S/5298.html#L528' title='Defined at 528 in lib/errors.c.'>gnutls_strerror</a>(ret));
+<a id='L382' name='L382'></a>
+<a id='L383' name='L383'></a>        <strong class='reserved'>do</strong> <em class='brace'>{</em>
+<a id='L384' name='L384'></a>                ret = <a href='../S/5258.html#L285' title='Defined at 285 in lib/record.c.'>gnutls_bye</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_SHUT_RDWR);
+<a id='L385' name='L385'></a>        <em class='brace'>}</em> <strong class='reserved'>while</strong> (ret == GNUTLS_E_AGAIN || ret == GNUTLS_E_INTERRUPTED);
+<a id='L386' name='L386'></a>
+<a id='L387' name='L387'></a>        <a href='../D/7245.html' title='Multiple defined in 25 places.'>close</a>(fd);
+<a id='L388' name='L388'></a>        <a href='../S/5625.html#L659' title='Defined at 659 in lib/state.c.'>gnutls_deinit</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L389' name='L389'></a>
+<a id='L390' name='L390'></a>        <a href='../S/5463.html#L391' title='Defined at 391 in lib/cert-cred.c.'>gnutls_certificate_free_credentials</a>(x509_cred);
+<a id='L391' name='L391'></a>
+<a id='L392' name='L392'></a>        <a href='../S/6039.html#L467' title='Defined at 467 in lib/global.c.'>gnutls_global_deinit</a>();
+<a id='L393' name='L393'></a>
+<a id='L394' name='L394'></a>        <strong class='reserved'>if</strong> (debug)
+<a id='L395' name='L395'></a>                <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("server: client/server hello were verified\n");
+<a id='L396' name='L396'></a><em class='brace'>}</em>
+<a id='L397' name='L397'></a>
+<a id='L398' name='L398'></a><strong class='reserved'>static</strong>
+<a id='L399' name='L399'></a><strong class='reserved'>void</strong> <a href='../R/10552.html' title='Multiple referred from 535 places.'>start</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, <strong class='reserved'>int</strong> err, <strong class='reserved'>int</strong> cli_err, <strong class='reserved'>int</strong> <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>)
+<a id='L400' name='L400'></a><em class='brace'>{</em>
+<a id='L401' name='L401'></a>        <strong class='reserved'>int</strong> fd[2];
+<a id='L402' name='L402'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L403' name='L403'></a>        <a href='../S/4209.html#L331' title='Defined at 331 in src/libopts/compat/compat.h.'>pid_t</a> child;
+<a id='L404' name='L404'></a>        <strong class='reserved'>int</strong> status = 0;
+<a id='L405' name='L405'></a>
+<a id='L406' name='L406'></a>        <a href='../S/4366.html#L146' title='Defined at 146 in tests/utils.c.'>success</a>("testing %s\n", <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>);
+<a id='L407' name='L407'></a>
+<a id='L408' name='L408'></a>        client_hello_ok = 0;
+<a id='L409' name='L409'></a>        server_hello_ok = 0;
+<a id='L410' name='L410'></a>
+<a id='L411' name='L411'></a>        <a href='../D/11480.html' title='Multiple defined in 6 places.'>signal</a>(SIGCHLD, SIG_IGN);
+<a id='L412' name='L412'></a>        <a href='../D/11480.html' title='Multiple defined in 6 places.'>signal</a>(<a href='../D/3815.html' title='Multiple defined in 2 places.'>SIGPIPE</a>, SIG_IGN);
+<a id='L413' name='L413'></a>
+<a id='L414' name='L414'></a>        ret = socketpair(AF_UNIX, SOCK_STREAM, 0, fd);
+<a id='L415' name='L415'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L416' name='L416'></a>                <a href='../D/10644.html' title='Multiple defined in 5 places.'>perror</a>("socketpair");
+<a id='L417' name='L417'></a>                exit(1);
+<a id='L418' name='L418'></a>        <em class='brace'>}</em>
+<a id='L419' name='L419'></a>
+<a id='L420' name='L420'></a>        child = fork();
+<a id='L421' name='L421'></a>        <strong class='reserved'>if</strong> (child &lt; 0) <em class='brace'>{</em>
+<a id='L422' name='L422'></a>                <a href='../D/10644.html' title='Multiple defined in 5 places.'>perror</a>("fork");
+<a id='L423' name='L423'></a>                <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>("fork");
+<a id='L424' name='L424'></a>                exit(1);
+<a id='L425' name='L425'></a>        <em class='brace'>}</em>
+<a id='L426' name='L426'></a>
+<a id='L427' name='L427'></a>        <strong class='reserved'>if</strong> (child) <em class='brace'>{</em>
+<a id='L428' name='L428'></a>                <em class='comment'>/* parent */</em>
+<a id='L429' name='L429'></a>                <a href='../D/7245.html' title='Multiple defined in 25 places.'>close</a>(fd[1]);
+<a id='L430' name='L430'></a>                <a href='../D/11313.html' title='Multiple defined in 129 places.'>server</a>(fd[0], err, <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>);
+<a id='L431' name='L431'></a>                kill(child, SIGTERM);
+<a id='L432' name='L432'></a>                wait(&amp;status);
+<a id='L433' name='L433'></a>                <a href='../S/4443.html#L170' title='Defined at 170 in tests/utils.h.'>check_wait_status</a>(status);
+<a id='L434' name='L434'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L435' name='L435'></a>                <a href='../D/7245.html' title='Multiple defined in 25 places.'>close</a>(fd[0]);
+<a id='L436' name='L436'></a>                <a href='../D/7224.html' title='Multiple defined in 129 places.'>client</a>(fd[1], cli_err);
+<a id='L437' name='L437'></a>                exit(0);
+<a id='L438' name='L438'></a>        <em class='brace'>}</em>
+<a id='L439' name='L439'></a>
+<a id='L440' name='L440'></a><em class='brace'>}</em>
+<a id='L441' name='L441'></a>
+<a id='L442' name='L442'></a><strong class='reserved'>void</strong> <a href='../R/6687.html' title='Multiple referred from 5 places.'>doit</a>(<strong class='reserved'>void</strong>)
+<a id='L443' name='L443'></a><em class='brace'>{</em>
+<a id='L444' name='L444'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *bin;
+<a id='L445' name='L445'></a>        <strong class='reserved'>char</strong> buf[128];
+<a id='L446' name='L446'></a>
+<a id='L447' name='L447'></a>        <em class='comment'>/* check if softhsm module is loadable */</em>
+<a id='L448' name='L448'></a>        (<strong class='reserved'>void</strong>) <a href='../S/4465.html#L49' title='Defined at 49 in tests/pkcs11/softhsm.h.'>softhsm_lib</a>();
+<a id='L449' name='L449'></a>
+<a id='L450' name='L450'></a>        <em class='comment'>/* initialize SoftHSM token that libpkcs11mock2.so internally uses */</em>
+<a id='L451' name='L451'></a>        bin = <a href='../S/4465.html#L69' title='Defined at 69 in tests/pkcs11/softhsm.h.'>softhsm_bin</a>();
+<a id='L452' name='L452'></a>
+<a id='L453' name='L453'></a>        <a href='../S/4465.html#L86' title='Defined at 86 in tests/pkcs11/softhsm.h.'>set_softhsm_conf</a>(<a href='../D/572.html' title='Multiple defined in 18 places.'>CONFIG</a>);
+<a id='L454' name='L454'></a>        <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(buf, <strong class='reserved'>sizeof</strong>(buf),
+<a id='L455' name='L455'></a>                 "%s --init-token --slot 0 --label test --so-pin " <a href='../D/3218.html' title='Multiple defined in 21 places.'>PIN</a> " --pin "
+<a id='L456' name='L456'></a>                 <a href='../D/3218.html' title='Multiple defined in 21 places.'>PIN</a>, bin);
+<a id='L457' name='L457'></a>        system(buf);
+<a id='L458' name='L458'></a>
+<a id='L459' name='L459'></a>        <a href='../D/11559.html' title='Multiple defined in 102 places.'>start</a>("reauth-require", GNUTLS_E_CERTIFICATE_REQUIRED, GNUTLS_E_SUCCESS, GNUTLS_CERT_REQUIRE);
+<a id='L460' name='L460'></a>        <a href='../D/11559.html' title='Multiple defined in 102 places.'>start</a>("reauth-request", 0, GNUTLS_E_SUCCESS, GNUTLS_CERT_REQUEST);
+<a id='L461' name='L461'></a><em class='brace'>}</em>
+<a id='L462' name='L462'></a><em class='sharp'>#endif</em>                          <em class='comment'>/* _WIN32 */</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L31'>[^]</a><a href='#L442'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

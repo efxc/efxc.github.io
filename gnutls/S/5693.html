@@ -1,0 +1,360 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/accelerated/x86/hmac-x86-ssse3.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6465.html'>accelerated</a>/<a href='../files/6469.html'>x86</a>/hmac-x86-ssse3.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L61'>[^]</a><a href='#L281'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L61' title='Defined at 61.'>x86_hmac_sha1_set_key</a></li>
+<li><a href='#L68' title='Defined at 68.'>x86_hmac_sha1_update</a></li>
+<li><a href='#L75' title='Defined at 75.'>x86_hmac_sha1_digest</a></li>
+<li><a href='#L82' title='Defined at 82.'>x86_hmac_sha256_set_key</a></li>
+<li><a href='#L89' title='Defined at 89.'>x86_hmac_sha256_update</a></li>
+<li><a href='#L96' title='Defined at 96.'>x86_hmac_sha256_digest</a></li>
+<li><a href='#L103' title='Defined at 103.'>x86_hmac_sha224_set_key</a></li>
+<li><a href='#L110' title='Defined at 110.'>x86_hmac_sha224_digest</a></li>
+<li><a href='#L117' title='Defined at 117.'>x86_hmac_sha384_set_key</a></li>
+<li><a href='#L124' title='Defined at 124.'>x86_hmac_sha384_digest</a></li>
+<li><a href='#L131' title='Defined at 131.'>x86_hmac_sha512_set_key</a></li>
+<li><a href='#L138' title='Defined at 138.'>x86_hmac_sha512_update</a></li>
+<li><a href='#L145' title='Defined at 145.'>x86_hmac_sha512_digest</a></li>
+<li><a href='#L152' title='Defined at 152.'>_hmac_ctx_init</a></li>
+<li><a href='#L199' title='Defined at 199.'>wrap_x86_hmac_init</a></li>
+<li><a href='#L222' title='Defined at 222.'>wrap_x86_hmac_copy</a></li>
+<li><a href='#L241' title='Defined at 241.'>wrap_x86_hmac_setkey</a></li>
+<li><a href='#L251' title='Defined at 251.'>wrap_x86_hmac_update</a></li>
+<li><a href='#L261' title='Defined at 261.'>wrap_x86_hmac_output</a></li>
+<li><a href='#L276' title='Defined at 276.'>wrap_x86_hmac_deinit</a></li>
+<li><a href='#L281' title='Defined at 281.'>wrap_x86_hmac_fast</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2008, 2010-2012 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GNUTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * The GNUTLS library is free software; you can redistribute it and/or</em>
+<a id='L9' name='L9'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L10' name='L10'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L11' name='L11'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='comment'>/* This file provides the backend hash/mac implementation for</em>
+<a id='L24' name='L24'></a><em class='comment'> * VIA Padlock hardware acceleration.</em>
+<a id='L25' name='L25'></a><em class='comment'> */</em>
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> &lt;<a href='5756.html'>hash_int.h</a>&gt;
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;nettle/sha.h&gt;
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;nettle/hmac.h&gt;
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> &lt;<a href='6165.html'>nettle/macros.h</a>&gt;
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;<a href='5732.html'>aes-x86.h</a>&gt;
+<a id='L34' name='L34'></a><em class='sharp'>#include</em> &lt;<a href='5669.html'>sha-x86.h</a>&gt;
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> &lt;<a href='6029.html'>algorithms.h</a>&gt;
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a><em class='sharp'>#ifdef</em> HAVE_LIBNETTLE
+<a id='L38' name='L38'></a>
+<a id='L39' name='L39'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> (*update_func) (<strong class='reserved'>void</strong> *, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a>, <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *);
+<a id='L40' name='L40'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> (*digest_func) (<strong class='reserved'>void</strong> *, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a>, <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *);
+<a id='L41' name='L41'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>void</strong> (*set_key_func) (<strong class='reserved'>void</strong> *, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a>, <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *);
+<a id='L42' name='L42'></a>
+<a id='L43' name='L43'></a><strong class='reserved'>struct</strong> <a href='../R/11380.html' title='Multiple referred from 10 places.'>x86_hmac_ctx</a> <em class='brace'>{</em>
+<a id='L44' name='L44'></a>        <strong class='reserved'>union</strong> <em class='brace'>{</em>
+<a id='L45' name='L45'></a>                <strong class='reserved'>struct</strong> hmac_sha1_ctx sha1;
+<a id='L46' name='L46'></a>                <strong class='reserved'>struct</strong> hmac_sha224_ctx sha224;
+<a id='L47' name='L47'></a>                <strong class='reserved'>struct</strong> hmac_sha256_ctx sha256;
+<a id='L48' name='L48'></a>                <strong class='reserved'>struct</strong> hmac_sha384_ctx sha384;
+<a id='L49' name='L49'></a>                <strong class='reserved'>struct</strong> hmac_sha512_ctx sha512;
+<a id='L50' name='L50'></a>        <em class='brace'>}</em> ctx;
+<a id='L51' name='L51'></a>
+<a id='L52' name='L52'></a>        <strong class='reserved'>void</strong> *ctx_ptr;
+<a id='L53' name='L53'></a>        gnutls_mac_algorithm_t algo;
+<a id='L54' name='L54'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L55' name='L55'></a>        update_func update;
+<a id='L56' name='L56'></a>        digest_func digest;
+<a id='L57' name='L57'></a>        set_key_func setkey;
+<a id='L58' name='L58'></a><em class='brace'>}</em>;
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L61' name='L61'></a><a href='../S/5693.html#L158' title='Referred from 158 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha1_set_key</a>(<strong class='reserved'>struct</strong> hmac_sha1_ctx *ctx,
+<a id='L62' name='L62'></a>                          <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> key_length, <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * key)
+<a id='L63' name='L63'></a><em class='brace'>{</em>
+<a id='L64' name='L64'></a>        HMAC_SET_KEY(ctx, &amp;x86_sha1, key_length, key);
+<a id='L65' name='L65'></a><em class='brace'>}</em>
+<a id='L66' name='L66'></a>
+<a id='L67' name='L67'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L68' name='L68'></a><a href='../S/5693.html#L156' title='Referred from 156 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha1_update</a>(<strong class='reserved'>struct</strong> hmac_sha1_ctx *ctx,
+<a id='L69' name='L69'></a>                         <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * data)
+<a id='L70' name='L70'></a><em class='brace'>{</em>
+<a id='L71' name='L71'></a>        <a href='../S/5695.html#L74' title='Defined at 74 in lib/accelerated/x86/sha-x86-ssse3.c.'>x86_sha1_update</a>(&amp;ctx-&gt;state, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, data);
+<a id='L72' name='L72'></a><em class='brace'>}</em>
+<a id='L73' name='L73'></a>
+<a id='L74' name='L74'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L75' name='L75'></a><a href='../S/5693.html#L157' title='Referred from 157 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha1_digest</a>(<strong class='reserved'>struct</strong> hmac_sha1_ctx *ctx,
+<a id='L76' name='L76'></a>                         <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * digest)
+<a id='L77' name='L77'></a><em class='brace'>{</em>
+<a id='L78' name='L78'></a>        HMAC_DIGEST(ctx, &amp;x86_sha1, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, digest);
+<a id='L79' name='L79'></a><em class='brace'>}</em>
+<a id='L80' name='L80'></a>
+<a id='L81' name='L81'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L82' name='L82'></a><a href='../S/5693.html#L172' title='Referred from 172 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha256_set_key</a>(<strong class='reserved'>struct</strong> hmac_sha256_ctx *ctx,
+<a id='L83' name='L83'></a>                            <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> key_length, <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * key)
+<a id='L84' name='L84'></a><em class='brace'>{</em>
+<a id='L85' name='L85'></a>        HMAC_SET_KEY(ctx, &amp;x86_sha256, key_length, key);
+<a id='L86' name='L86'></a><em class='brace'>}</em>
+<a id='L87' name='L87'></a>
+<a id='L88' name='L88'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L89' name='L89'></a><a href='../R/11388.html' title='Multiple referred from 2 places.'>x86_hmac_sha256_update</a>(<strong class='reserved'>struct</strong> hmac_sha256_ctx *ctx,
+<a id='L90' name='L90'></a>                           <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * data)
+<a id='L91' name='L91'></a><em class='brace'>{</em>
+<a id='L92' name='L92'></a>        <a href='../S/5695.html#L133' title='Defined at 133 in lib/accelerated/x86/sha-x86-ssse3.c.'>x86_sha256_update</a>(&amp;ctx-&gt;state, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, data);
+<a id='L93' name='L93'></a><em class='brace'>}</em>
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L96' name='L96'></a><a href='../S/5693.html#L171' title='Referred from 171 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha256_digest</a>(<strong class='reserved'>struct</strong> hmac_sha256_ctx *ctx,
+<a id='L97' name='L97'></a>                           <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * digest)
+<a id='L98' name='L98'></a><em class='brace'>{</em>
+<a id='L99' name='L99'></a>        HMAC_DIGEST(ctx, &amp;x86_sha256, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, digest);
+<a id='L100' name='L100'></a><em class='brace'>}</em>
+<a id='L101' name='L101'></a>
+<a id='L102' name='L102'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L103' name='L103'></a><a href='../S/5693.html#L165' title='Referred from 165 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha224_set_key</a>(<strong class='reserved'>struct</strong> hmac_sha224_ctx *ctx,
+<a id='L104' name='L104'></a>                            <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> key_length, <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * key)
+<a id='L105' name='L105'></a><em class='brace'>{</em>
+<a id='L106' name='L106'></a>        HMAC_SET_KEY(ctx, &amp;x86_sha224, key_length, key);
+<a id='L107' name='L107'></a><em class='brace'>}</em>
+<a id='L108' name='L108'></a>
+<a id='L109' name='L109'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L110' name='L110'></a><a href='../S/5693.html#L164' title='Referred from 164 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha224_digest</a>(<strong class='reserved'>struct</strong> hmac_sha224_ctx *ctx,
+<a id='L111' name='L111'></a>                           <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * digest)
+<a id='L112' name='L112'></a><em class='brace'>{</em>
+<a id='L113' name='L113'></a>        HMAC_DIGEST(ctx, &amp;x86_sha224, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, digest);
+<a id='L114' name='L114'></a><em class='brace'>}</em>
+<a id='L115' name='L115'></a>
+<a id='L116' name='L116'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L117' name='L117'></a><a href='../S/5693.html#L179' title='Referred from 179 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha384_set_key</a>(<strong class='reserved'>struct</strong> hmac_sha384_ctx *ctx,
+<a id='L118' name='L118'></a>                            <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> key_length, <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * key)
+<a id='L119' name='L119'></a><em class='brace'>{</em>
+<a id='L120' name='L120'></a>        HMAC_SET_KEY(ctx, &amp;x86_sha384, key_length, key);
+<a id='L121' name='L121'></a><em class='brace'>}</em>
+<a id='L122' name='L122'></a>
+<a id='L123' name='L123'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L124' name='L124'></a><a href='../S/5693.html#L178' title='Referred from 178 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha384_digest</a>(<strong class='reserved'>struct</strong> hmac_sha384_ctx *ctx,
+<a id='L125' name='L125'></a>                           <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * digest)
+<a id='L126' name='L126'></a><em class='brace'>{</em>
+<a id='L127' name='L127'></a>        HMAC_DIGEST(ctx, &amp;x86_sha384, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, digest);
+<a id='L128' name='L128'></a><em class='brace'>}</em>
+<a id='L129' name='L129'></a>
+<a id='L130' name='L130'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L131' name='L131'></a><a href='../S/5693.html#L186' title='Referred from 186 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha512_set_key</a>(<strong class='reserved'>struct</strong> hmac_sha512_ctx *ctx,
+<a id='L132' name='L132'></a>                            <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> key_length, <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * key)
+<a id='L133' name='L133'></a><em class='brace'>{</em>
+<a id='L134' name='L134'></a>        HMAC_SET_KEY(ctx, &amp;x86_sha512, key_length, key);
+<a id='L135' name='L135'></a><em class='brace'>}</em>
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L138' name='L138'></a><a href='../R/11393.html' title='Multiple referred from 2 places.'>x86_hmac_sha512_update</a>(<strong class='reserved'>struct</strong> hmac_sha512_ctx *ctx,
+<a id='L139' name='L139'></a>                           <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * data)
+<a id='L140' name='L140'></a><em class='brace'>{</em>
+<a id='L141' name='L141'></a>        <a href='../S/5695.html#L181' title='Defined at 181 in lib/accelerated/x86/sha-x86-ssse3.c.'>x86_sha512_update</a>(&amp;ctx-&gt;state, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, data);
+<a id='L142' name='L142'></a><em class='brace'>}</em>
+<a id='L143' name='L143'></a>
+<a id='L144' name='L144'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L145' name='L145'></a><a href='../S/5693.html#L185' title='Referred from 185 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha512_digest</a>(<strong class='reserved'>struct</strong> hmac_sha512_ctx *ctx,
+<a id='L146' name='L146'></a>                           <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * digest)
+<a id='L147' name='L147'></a><em class='brace'>{</em>
+<a id='L148' name='L148'></a>        HMAC_DIGEST(ctx, &amp;x86_sha512, <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, digest);
+<a id='L149' name='L149'></a><em class='brace'>}</em>
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L152' name='L152'></a><a href='../R/5702.html' title='Multiple referred from 6 places.'>_hmac_ctx_init</a>(gnutls_mac_algorithm_t algo, <strong class='reserved'>struct</strong> <a href='../S/5693.html#L43' title='Defined at 43 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_ctx</a> *ctx)
+<a id='L153' name='L153'></a><em class='brace'>{</em>
+<a id='L154' name='L154'></a>        <strong class='reserved'>switch</strong> (algo) <em class='brace'>{</em>
+<a id='L155' name='L155'></a>        <strong class='reserved'>case</strong> GNUTLS_MAC_SHA1:
+<a id='L156' name='L156'></a>                ctx-&gt;update = (update_func) <a href='../S/5693.html#L68' title='Defined at 68 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha1_update</a>;
+<a id='L157' name='L157'></a>                ctx-&gt;digest = (digest_func) <a href='../S/5693.html#L75' title='Defined at 75 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha1_digest</a>;
+<a id='L158' name='L158'></a>                ctx-&gt;setkey = (set_key_func) <a href='../S/5693.html#L61' title='Defined at 61 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha1_set_key</a>;
+<a id='L159' name='L159'></a>                ctx-&gt;ctx_ptr = &amp;ctx-&gt;ctx.sha1;
+<a id='L160' name='L160'></a>                ctx-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> = SHA1_DIGEST_SIZE;
+<a id='L161' name='L161'></a>                <strong class='reserved'>break</strong>;
+<a id='L162' name='L162'></a>        <strong class='reserved'>case</strong> GNUTLS_MAC_SHA224:
+<a id='L163' name='L163'></a>                ctx-&gt;update = (update_func) <a href='../S/5693.html#L89' title='Defined at 89 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha256_update</a>;
+<a id='L164' name='L164'></a>                ctx-&gt;digest = (digest_func) <a href='../S/5693.html#L110' title='Defined at 110 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha224_digest</a>;
+<a id='L165' name='L165'></a>                ctx-&gt;setkey = (set_key_func) <a href='../S/5693.html#L103' title='Defined at 103 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha224_set_key</a>;
+<a id='L166' name='L166'></a>                ctx-&gt;ctx_ptr = &amp;ctx-&gt;ctx.sha224;
+<a id='L167' name='L167'></a>                ctx-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> = SHA224_DIGEST_SIZE;
+<a id='L168' name='L168'></a>                <strong class='reserved'>break</strong>;
+<a id='L169' name='L169'></a>        <strong class='reserved'>case</strong> GNUTLS_MAC_SHA256:
+<a id='L170' name='L170'></a>                ctx-&gt;update = (update_func) <a href='../S/5693.html#L89' title='Defined at 89 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha256_update</a>;
+<a id='L171' name='L171'></a>                ctx-&gt;digest = (digest_func) <a href='../S/5693.html#L96' title='Defined at 96 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha256_digest</a>;
+<a id='L172' name='L172'></a>                ctx-&gt;setkey = (set_key_func) <a href='../S/5693.html#L82' title='Defined at 82 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha256_set_key</a>;
+<a id='L173' name='L173'></a>                ctx-&gt;ctx_ptr = &amp;ctx-&gt;ctx.sha256;
+<a id='L174' name='L174'></a>                ctx-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> = SHA256_DIGEST_SIZE;
+<a id='L175' name='L175'></a>                <strong class='reserved'>break</strong>;
+<a id='L176' name='L176'></a>        <strong class='reserved'>case</strong> GNUTLS_MAC_SHA384:
+<a id='L177' name='L177'></a>                ctx-&gt;update = (update_func) <a href='../S/5693.html#L138' title='Defined at 138 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha512_update</a>;
+<a id='L178' name='L178'></a>                ctx-&gt;digest = (digest_func) <a href='../S/5693.html#L124' title='Defined at 124 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha384_digest</a>;
+<a id='L179' name='L179'></a>                ctx-&gt;setkey = (set_key_func) <a href='../S/5693.html#L117' title='Defined at 117 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha384_set_key</a>;
+<a id='L180' name='L180'></a>                ctx-&gt;ctx_ptr = &amp;ctx-&gt;ctx.sha384;
+<a id='L181' name='L181'></a>                ctx-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> = SHA384_DIGEST_SIZE;
+<a id='L182' name='L182'></a>                <strong class='reserved'>break</strong>;
+<a id='L183' name='L183'></a>        <strong class='reserved'>case</strong> GNUTLS_MAC_SHA512:
+<a id='L184' name='L184'></a>                ctx-&gt;update = (update_func) <a href='../S/5693.html#L138' title='Defined at 138 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha512_update</a>;
+<a id='L185' name='L185'></a>                ctx-&gt;digest = (digest_func) <a href='../S/5693.html#L145' title='Defined at 145 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha512_digest</a>;
+<a id='L186' name='L186'></a>                ctx-&gt;setkey = (set_key_func) <a href='../S/5693.html#L131' title='Defined at 131 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_sha512_set_key</a>;
+<a id='L187' name='L187'></a>                ctx-&gt;ctx_ptr = &amp;ctx-&gt;ctx.sha512;
+<a id='L188' name='L188'></a>                ctx-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> = SHA512_DIGEST_SIZE;
+<a id='L189' name='L189'></a>                <strong class='reserved'>break</strong>;
+<a id='L190' name='L190'></a>        <strong class='reserved'>default</strong>:
+<a id='L191' name='L191'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L192' name='L192'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L193' name='L193'></a>        <em class='brace'>}</em>
+<a id='L194' name='L194'></a>
+<a id='L195' name='L195'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L196' name='L196'></a><em class='brace'>}</em>
+<a id='L197' name='L197'></a>
+<a id='L198' name='L198'></a>
+<a id='L199' name='L199'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5693.html#L304' title='Referred from 304 in lib/accelerated/x86/hmac-x86-ssse3.c.'>wrap_x86_hmac_init</a>(gnutls_mac_algorithm_t algo, <strong class='reserved'>void</strong> **_ctx)
+<a id='L200' name='L200'></a><em class='brace'>{</em>
+<a id='L201' name='L201'></a>        <strong class='reserved'>struct</strong> <a href='../S/5693.html#L43' title='Defined at 43 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_ctx</a> *ctx;
+<a id='L202' name='L202'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L203' name='L203'></a>
+<a id='L204' name='L204'></a>        ctx = gnutls_calloc(1, <strong class='reserved'>sizeof</strong>(<strong class='reserved'>struct</strong> <a href='../S/5693.html#L43' title='Defined at 43 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_ctx</a>));
+<a id='L205' name='L205'></a>        <strong class='reserved'>if</strong> (ctx == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L206' name='L206'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L207' name='L207'></a>                <strong class='reserved'>return</strong> GNUTLS_E_MEMORY_ERROR;
+<a id='L208' name='L208'></a>        <em class='brace'>}</em>
+<a id='L209' name='L209'></a>
+<a id='L210' name='L210'></a>        ctx-&gt;algo = algo;
+<a id='L211' name='L211'></a>
+<a id='L212' name='L212'></a>        ret = <a href='../D/6501.html' title='Multiple defined in 3 places.'>_hmac_ctx_init</a>(algo, ctx);
+<a id='L213' name='L213'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L214' name='L214'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L215' name='L215'></a>
+<a id='L216' name='L216'></a>        *_ctx = ctx;
+<a id='L217' name='L217'></a>
+<a id='L218' name='L218'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L219' name='L219'></a><em class='brace'>}</em>
+<a id='L220' name='L220'></a>
+<a id='L221' name='L221'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> *
+<a id='L222' name='L222'></a><a href='../S/5693.html#L309' title='Referred from 309 in lib/accelerated/x86/hmac-x86-ssse3.c.'>wrap_x86_hmac_copy</a>(<strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *_ctx)
+<a id='L223' name='L223'></a><em class='brace'>{</em>
+<a id='L224' name='L224'></a>        <strong class='reserved'>struct</strong> <a href='../S/5693.html#L43' title='Defined at 43 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_ctx</a> *new_ctx;
+<a id='L225' name='L225'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/5693.html#L43' title='Defined at 43 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_ctx</a> *ctx=_ctx;
+<a id='L226' name='L226'></a>        ptrdiff_t off = (<a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *)ctx-&gt;ctx_ptr - (<a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *)(&amp;ctx-&gt;ctx);
+<a id='L227' name='L227'></a>
+<a id='L228' name='L228'></a>        new_ctx = <a href='../S/5460.html#L95' title='Defined at 95 in lib/mem.c.'>gnutls_malloc</a>(<strong class='reserved'>sizeof</strong>(<strong class='reserved'>struct</strong> <a href='../S/5693.html#L43' title='Defined at 43 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_ctx</a>));
+<a id='L229' name='L229'></a>        <strong class='reserved'>if</strong> (new_ctx == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L230' name='L230'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L231' name='L231'></a>                <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L232' name='L232'></a>        <em class='brace'>}</em>
+<a id='L233' name='L233'></a>
+<a id='L234' name='L234'></a>        memcpy(new_ctx, ctx, <strong class='reserved'>sizeof</strong>(*new_ctx));
+<a id='L235' name='L235'></a>        new_ctx-&gt;ctx_ptr = (<a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *)&amp;new_ctx-&gt;ctx + off;
+<a id='L236' name='L236'></a>
+<a id='L237' name='L237'></a>        <strong class='reserved'>return</strong> new_ctx;
+<a id='L238' name='L238'></a><em class='brace'>}</em>
+<a id='L239' name='L239'></a>
+<a id='L240' name='L240'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L241' name='L241'></a><a href='../S/5693.html#L305' title='Referred from 305 in lib/accelerated/x86/hmac-x86-ssse3.c.'>wrap_x86_hmac_setkey</a>(<strong class='reserved'>void</strong> *_ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *key, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> keylen)
+<a id='L242' name='L242'></a><em class='brace'>{</em>
+<a id='L243' name='L243'></a>        <strong class='reserved'>struct</strong> <a href='../S/5693.html#L43' title='Defined at 43 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_ctx</a> *ctx = _ctx;
+<a id='L244' name='L244'></a>
+<a id='L245' name='L245'></a>        ctx-&gt;setkey(ctx-&gt;ctx_ptr, keylen, key);
+<a id='L246' name='L246'></a>
+<a id='L247' name='L247'></a>        <strong class='reserved'>return</strong> GNUTLS_E_SUCCESS;
+<a id='L248' name='L248'></a><em class='brace'>}</em>
+<a id='L249' name='L249'></a>
+<a id='L250' name='L250'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L251' name='L251'></a><a href='../S/5693.html#L307' title='Referred from 307 in lib/accelerated/x86/hmac-x86-ssse3.c.'>wrap_x86_hmac_update</a>(<strong class='reserved'>void</strong> *_ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *text, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> textsize)
+<a id='L252' name='L252'></a><em class='brace'>{</em>
+<a id='L253' name='L253'></a>        <strong class='reserved'>struct</strong> <a href='../S/5693.html#L43' title='Defined at 43 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_ctx</a> *ctx = _ctx;
+<a id='L254' name='L254'></a>
+<a id='L255' name='L255'></a>        ctx-&gt;update(ctx-&gt;ctx_ptr, textsize, text);
+<a id='L256' name='L256'></a>
+<a id='L257' name='L257'></a>        <strong class='reserved'>return</strong> GNUTLS_E_SUCCESS;
+<a id='L258' name='L258'></a><em class='brace'>}</em>
+<a id='L259' name='L259'></a>
+<a id='L260' name='L260'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L261' name='L261'></a><a href='../S/5693.html#L308' title='Referred from 308 in lib/accelerated/x86/hmac-x86-ssse3.c.'>wrap_x86_hmac_output</a>(<strong class='reserved'>void</strong> *src_ctx, <strong class='reserved'>void</strong> *digest, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> digestsize)
+<a id='L262' name='L262'></a><em class='brace'>{</em>
+<a id='L263' name='L263'></a>        <strong class='reserved'>struct</strong> <a href='../S/5693.html#L43' title='Defined at 43 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_ctx</a> *ctx;
+<a id='L264' name='L264'></a>        ctx = src_ctx;
+<a id='L265' name='L265'></a>
+<a id='L266' name='L266'></a>        <strong class='reserved'>if</strong> (digestsize &lt; ctx-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>) <em class='brace'>{</em>
+<a id='L267' name='L267'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L268' name='L268'></a>                <strong class='reserved'>return</strong> GNUTLS_E_SHORT_MEMORY_BUFFER;
+<a id='L269' name='L269'></a>        <em class='brace'>}</em>
+<a id='L270' name='L270'></a>
+<a id='L271' name='L271'></a>        ctx-&gt;digest(ctx-&gt;ctx_ptr, digestsize, digest);
+<a id='L272' name='L272'></a>
+<a id='L273' name='L273'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L274' name='L274'></a><em class='brace'>}</em>
+<a id='L275' name='L275'></a>
+<a id='L276' name='L276'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../S/5693.html#L310' title='Referred from 310 in lib/accelerated/x86/hmac-x86-ssse3.c.'>wrap_x86_hmac_deinit</a>(<strong class='reserved'>void</strong> *hd)
+<a id='L277' name='L277'></a><em class='brace'>{</em>
+<a id='L278' name='L278'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(hd);
+<a id='L279' name='L279'></a><em class='brace'>}</em>
+<a id='L280' name='L280'></a>
+<a id='L281' name='L281'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5693.html#L311' title='Referred from 311 in lib/accelerated/x86/hmac-x86-ssse3.c.'>wrap_x86_hmac_fast</a>(gnutls_mac_algorithm_t algo,
+<a id='L282' name='L282'></a>                                <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *nonce, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> nonce_size,
+<a id='L283' name='L283'></a>                                <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *key, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> key_size,
+<a id='L284' name='L284'></a>                                <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *text, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> text_size,
+<a id='L285' name='L285'></a>                                <strong class='reserved'>void</strong> *digest)
+<a id='L286' name='L286'></a><em class='brace'>{</em>
+<a id='L287' name='L287'></a>        <strong class='reserved'>struct</strong> <a href='../S/5693.html#L43' title='Defined at 43 in lib/accelerated/x86/hmac-x86-ssse3.c.'>x86_hmac_ctx</a> ctx;
+<a id='L288' name='L288'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L289' name='L289'></a>
+<a id='L290' name='L290'></a>        ret = <a href='../D/6501.html' title='Multiple defined in 3 places.'>_hmac_ctx_init</a>(algo, &amp;ctx);
+<a id='L291' name='L291'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L292' name='L292'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L293' name='L293'></a>
+<a id='L294' name='L294'></a>        ctx.setkey(&amp;ctx, key_size, key);
+<a id='L295' name='L295'></a>        ctx.update(&amp;ctx, text_size, text);
+<a id='L296' name='L296'></a>        ctx.digest(&amp;ctx, ctx.<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, digest);
+<a id='L297' name='L297'></a>        
+<a id='L298' name='L298'></a>        <a href='../S/5986.html#L45' title='Defined at 45 in lib/mem.h.'>zeroize_temp_key</a>(&amp;ctx, <strong class='reserved'>sizeof</strong>(ctx));
+<a id='L299' name='L299'></a>
+<a id='L300' name='L300'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L301' name='L301'></a><em class='brace'>}</em>
+<a id='L302' name='L302'></a>
+<a id='L303' name='L303'></a><strong class='reserved'>const</strong> <a href='../S/5825.html#L63' title='Defined at 63 in lib/crypto-backend.h.'>gnutls_crypto_mac_st</a> _gnutls_hmac_sha_x86_ssse3 = <em class='brace'>{</em>
+<a id='L304' name='L304'></a>        .<a href='../S/4268.html#L34' title='Defined at 34 in fuzz/fuzzer.h.'>init</a> = <a href='../S/5693.html#L199' title='Defined at 199 in lib/accelerated/x86/hmac-x86-ssse3.c.'>wrap_x86_hmac_init</a>,
+<a id='L305' name='L305'></a>        .setkey = <a href='../S/5693.html#L241' title='Defined at 241 in lib/accelerated/x86/hmac-x86-ssse3.c.'>wrap_x86_hmac_setkey</a>,
+<a id='L306' name='L306'></a>        .setnonce = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L307' name='L307'></a>        .<a href='../D/9874.html' title='Multiple defined in 5 places.'>hash</a> = <a href='../S/5693.html#L251' title='Defined at 251 in lib/accelerated/x86/hmac-x86-ssse3.c.'>wrap_x86_hmac_update</a>,
+<a id='L308' name='L308'></a>        .output = <a href='../S/5693.html#L261' title='Defined at 261 in lib/accelerated/x86/hmac-x86-ssse3.c.'>wrap_x86_hmac_output</a>,
+<a id='L309' name='L309'></a>        .<a href='../S/5046.html#L170' title='Defined at 170 in tests/iov.c.'>copy</a> = <a href='../S/5693.html#L222' title='Defined at 222 in lib/accelerated/x86/hmac-x86-ssse3.c.'>wrap_x86_hmac_copy</a>,
+<a id='L310' name='L310'></a>        .<a href='../S/4268.html#L39' title='Defined at 39 in fuzz/fuzzer.h.'>deinit</a> = <a href='../S/5693.html#L276' title='Defined at 276 in lib/accelerated/x86/hmac-x86-ssse3.c.'>wrap_x86_hmac_deinit</a>,
+<a id='L311' name='L311'></a>        .fast = <a href='../S/5693.html#L281' title='Defined at 281 in lib/accelerated/x86/hmac-x86-ssse3.c.'>wrap_x86_hmac_fast</a>,
+<a id='L312' name='L312'></a><em class='brace'>}</em>;
+<a id='L313' name='L313'></a>
+<a id='L314' name='L314'></a><em class='sharp'>#endif</em>                          <em class='comment'>/* HAVE_LIBNETTLE */</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L61'>[^]</a><a href='#L281'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

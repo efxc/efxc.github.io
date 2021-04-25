@@ -1,0 +1,1237 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/session_pack.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/session_pack.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L88'>[^]</a><a href='#L1125'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L88' title='Defined at 88.'>_gnutls_session_pack</a></li>
+<li><a href='#L189' title='Defined at 189.'>_gnutls_session_unpack</a></li>
+<li><a href='#L326' title='Defined at 326.'>tls13_pack_security_parameters</a></li>
+<li><a href='#L368' title='Defined at 368.'>tls13_unpack_security_parameters</a></li>
+<li><a href='#L439' title='Defined at 439.'>pack_certificate_auth_info</a></li>
+<li><a href='#L492' title='Defined at 492.'>unpack_certificate_auth_info</a></li>
+<li><a href='#L594' title='Defined at 594.'>pack_srp_auth_info</a></li>
+<li><a href='#L623' title='Defined at 623.'>unpack_srp_auth_info</a></li>
+<li><a href='#L675' title='Defined at 675.'>pack_anon_auth_info</a></li>
+<li><a href='#L704' title='Defined at 704.'>unpack_anon_auth_info</a></li>
+<li><a href='#L767' title='Defined at 767.'>pack_psk_auth_info</a></li>
+<li><a href='#L803' title='Defined at 803.'>unpack_psk_auth_info</a></li>
+<li><a href='#L870' title='Defined at 870.'>pack_security_parameters</a></li>
+<li><a href='#L968' title='Defined at 968.'>unpack_security_parameters</a></li>
+<li><a href='#L1125' title='Defined at 1125.'>gnutls_session_set_premaster</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2000-2012 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> * Copyright (C) 2017 Red Hat, Inc.</em>
+<a id='L4' name='L4'></a><em class='comment'> *</em>
+<a id='L5' name='L5'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L8' name='L8'></a><em class='comment'> *</em>
+<a id='L9' name='L9'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L10' name='L10'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L11' name='L11'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L12' name='L12'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L13' name='L13'></a><em class='comment'> *</em>
+<a id='L14' name='L14'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L15' name='L15'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L16' name='L16'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L17' name='L17'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L18' name='L18'></a><em class='comment'> *</em>
+<a id='L19' name='L19'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L20' name='L20'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L21' name='L21'></a><em class='comment'> *</em>
+<a id='L22' name='L22'></a><em class='comment'> */</em>
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><em class='comment'>/* Contains functions that are supposed to pack and unpack session data,</em>
+<a id='L25' name='L25'></a><em class='comment'> * before and after they are sent to the database backend.</em>
+<a id='L26' name='L26'></a><em class='comment'> */</em>
+<a id='L27' name='L27'></a>
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L29' name='L29'></a><em class='sharp'>#ifdef</em> ENABLE_SRP
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;<a href='5307.html'>auth/srp_kx.h</a>&gt;
+<a id='L31' name='L31'></a><em class='sharp'>#endif</em>
+<a id='L32' name='L32'></a><em class='sharp'>#ifdef</em> ENABLE_PSK
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;<a href='../I/72.html'>auth/psk.h</a>&gt;
+<a id='L34' name='L34'></a><em class='sharp'>#endif</em>
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> &lt;<a href='5312.html'>auth/anon.h</a>&gt;
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> &lt;<a href='5326.html'>auth/cert.h</a>&gt;
+<a id='L37' name='L37'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> &lt;<a href='5289.html'>auth.h</a>&gt;
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> &lt;<a href='6040.html'>session_pack.h</a>&gt;
+<a id='L40' name='L40'></a><em class='sharp'>#include</em> &lt;<a href='6034.html'>datum.h</a>&gt;
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> &lt;<a href='5268.html'>num.h</a>&gt;
+<a id='L42' name='L42'></a><em class='sharp'>#include</em> &lt;<a href='5302.html'>hello_ext.h</a>&gt;
+<a id='L43' name='L43'></a><em class='sharp'>#include</em> &lt;<a href='5991.html'>constate.h</a>&gt;
+<a id='L44' name='L44'></a><em class='sharp'>#include</em> &lt;<a href='6029.html'>algorithms.h</a>&gt;
+<a id='L45' name='L45'></a><em class='sharp'>#include</em> &lt;<a href='5748.html'>state.h</a>&gt;
+<a id='L46' name='L46'></a><em class='sharp'>#include</em> &lt;<a href='5461.html'>db.h</a>&gt;
+<a id='L47' name='L47'></a><em class='sharp'>#include</em> "<a href='../I/635.html'>tls13/session_ticket.h</a>"
+<a id='L48' name='L48'></a>
+<a id='L49' name='L49'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/6030.html#L439' title='Defined at 439 in lib/session_pack.c.'>pack_certificate_auth_info</a>(gnutls_session_t,
+<a id='L50' name='L50'></a>                                      <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * packed_session);
+<a id='L51' name='L51'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/6030.html#L492' title='Defined at 492 in lib/session_pack.c.'>unpack_certificate_auth_info</a>(gnutls_session_t,
+<a id='L52' name='L52'></a>                                        <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * packed_session);
+<a id='L53' name='L53'></a>
+<a id='L54' name='L54'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/6030.html#L623' title='Defined at 623 in lib/session_pack.c.'>unpack_srp_auth_info</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L55' name='L55'></a>                                <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * packed_session);
+<a id='L56' name='L56'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/6030.html#L594' title='Defined at 594 in lib/session_pack.c.'>pack_srp_auth_info</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L57' name='L57'></a>                              <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * packed_session);
+<a id='L58' name='L58'></a>
+<a id='L59' name='L59'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/6030.html#L803' title='Defined at 803 in lib/session_pack.c.'>unpack_psk_auth_info</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L60' name='L60'></a>                                <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * packed_session);
+<a id='L61' name='L61'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/6030.html#L767' title='Defined at 767 in lib/session_pack.c.'>pack_psk_auth_info</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L62' name='L62'></a>                              <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * packed_session);
+<a id='L63' name='L63'></a>
+<a id='L64' name='L64'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/6030.html#L704' title='Defined at 704 in lib/session_pack.c.'>unpack_anon_auth_info</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L65' name='L65'></a>                                 <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * packed_session);
+<a id='L66' name='L66'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/6030.html#L675' title='Defined at 675 in lib/session_pack.c.'>pack_anon_auth_info</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L67' name='L67'></a>                               <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * packed_session);
+<a id='L68' name='L68'></a>
+<a id='L69' name='L69'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/6030.html#L968' title='Defined at 968 in lib/session_pack.c.'>unpack_security_parameters</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L70' name='L70'></a>                                      <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * packed_session);
+<a id='L71' name='L71'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/6030.html#L870' title='Defined at 870 in lib/session_pack.c.'>pack_security_parameters</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L72' name='L72'></a>                                    <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * packed_session);
+<a id='L73' name='L73'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/6030.html#L368' title='Defined at 368 in lib/session_pack.c.'>tls13_unpack_security_parameters</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L74' name='L74'></a>                                            <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * packed_session);
+<a id='L75' name='L75'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/6030.html#L326' title='Defined at 326 in lib/session_pack.c.'>tls13_pack_security_parameters</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L76' name='L76'></a>                                          <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * packed_session);
+<a id='L77' name='L77'></a>
+<a id='L78' name='L78'></a>
+<a id='L79' name='L79'></a><em class='comment'>/* Since auth_info structures contain malloced data, this function</em>
+<a id='L80' name='L80'></a><em class='comment'> * is required in order to pack these structures in a vector in</em>
+<a id='L81' name='L81'></a><em class='comment'> * order to store them to the DB.</em>
+<a id='L82' name='L82'></a><em class='comment'> *</em>
+<a id='L83' name='L83'></a><em class='comment'> * packed_session will contain the session data.</em>
+<a id='L84' name='L84'></a><em class='comment'> *</em>
+<a id='L85' name='L85'></a><em class='comment'> * The data will be in a platform independent format.</em>
+<a id='L86' name='L86'></a><em class='comment'> */</em>
+<a id='L87' name='L87'></a><strong class='reserved'>int</strong>
+<a id='L88' name='L88'></a><a href='../R/5473.html' title='Multiple referred from 5 places.'>_gnutls_session_pack</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L89' name='L89'></a>                     gnutls_datum_t * packed_session)
+<a id='L90' name='L90'></a><em class='brace'>{</em>
+<a id='L91' name='L91'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L92' name='L92'></a>        <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> sb;
+<a id='L93' name='L93'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> id;
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a>        <strong class='reserved'>if</strong> (packed_session == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L96' name='L96'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L97' name='L97'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INTERNAL_ERROR;
+<a id='L98' name='L98'></a>        <em class='brace'>}</em>
+<a id='L99' name='L99'></a>
+<a id='L100' name='L100'></a>        <a href='../S/5806.html#L70' title='Defined at 70 in lib/str.c.'>_gnutls_buffer_init</a>(&amp;sb);
+<a id='L101' name='L101'></a>
+<a id='L102' name='L102'></a>
+<a id='L103' name='L103'></a>        id = <a href='../S/5749.html#L229' title='Defined at 229 in lib/auth.c.'>gnutls_auth_get_type</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L104' name='L104'></a>
+<a id='L105' name='L105'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(&amp;sb, <a href='../S/5461.html#L33' title='Defined at 33 in lib/db.h.'>PACKED_SESSION_MAGIC</a>);
+<a id='L106' name='L106'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(&amp;sb, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.timestamp);
+<a id='L107' name='L107'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(&amp;sb, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.expire_time);
+<a id='L108' name='L108'></a>        <a href='../S/5333.html#L194' title='Defined at 194 in lib/str.h.'>BUFFER_APPEND</a>(&amp;sb, &amp;id, 1);
+<a id='L109' name='L109'></a>
+<a id='L110' name='L110'></a>        <strong class='reserved'>switch</strong> (id) <em class='brace'>{</em>
+<a id='L111' name='L111'></a><em class='sharp'>#ifdef</em> ENABLE_SRP
+<a id='L112' name='L112'></a>        <strong class='reserved'>case</strong> GNUTLS_CRD_SRP:
+<a id='L113' name='L113'></a>                ret = <a href='../S/6030.html#L594' title='Defined at 594 in lib/session_pack.c.'>pack_srp_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;sb);
+<a id='L114' name='L114'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L115' name='L115'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L116' name='L116'></a>                        <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L117' name='L117'></a>                <em class='brace'>}</em>
+<a id='L118' name='L118'></a>                <strong class='reserved'>break</strong>;
+<a id='L119' name='L119'></a><em class='sharp'>#endif</em>
+<a id='L120' name='L120'></a><em class='sharp'>#ifdef</em> ENABLE_PSK
+<a id='L121' name='L121'></a>        <strong class='reserved'>case</strong> GNUTLS_CRD_PSK:
+<a id='L122' name='L122'></a>                ret = <a href='../S/6030.html#L767' title='Defined at 767 in lib/session_pack.c.'>pack_psk_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;sb);
+<a id='L123' name='L123'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L124' name='L124'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L125' name='L125'></a>                        <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L126' name='L126'></a>                <em class='brace'>}</em>
+<a id='L127' name='L127'></a>                <strong class='reserved'>break</strong>;
+<a id='L128' name='L128'></a><em class='sharp'>#endif</em>
+<a id='L129' name='L129'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L130' name='L130'></a>        <strong class='reserved'>case</strong> GNUTLS_CRD_ANON:
+<a id='L131' name='L131'></a>                ret = <a href='../S/6030.html#L675' title='Defined at 675 in lib/session_pack.c.'>pack_anon_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;sb);
+<a id='L132' name='L132'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L133' name='L133'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L134' name='L134'></a>                        <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L135' name='L135'></a>                <em class='brace'>}</em>
+<a id='L136' name='L136'></a>                <strong class='reserved'>break</strong>;
+<a id='L137' name='L137'></a><em class='sharp'>#endif</em>
+<a id='L138' name='L138'></a>        <strong class='reserved'>case</strong> GNUTLS_CRD_CERTIFICATE:
+<a id='L139' name='L139'></a>                ret = <a href='../S/6030.html#L439' title='Defined at 439 in lib/session_pack.c.'>pack_certificate_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;sb);
+<a id='L140' name='L140'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L141' name='L141'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L142' name='L142'></a>                        <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L143' name='L143'></a>                <em class='brace'>}</em>
+<a id='L144' name='L144'></a>                <strong class='reserved'>break</strong>;
+<a id='L145' name='L145'></a>        <strong class='reserved'>default</strong>:
+<a id='L146' name='L146'></a>                ret = <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L147' name='L147'></a>                <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L148' name='L148'></a>
+<a id='L149' name='L149'></a>        <em class='brace'>}</em>
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a>        <em class='comment'>/* Auth_info structures copied. Now copy security_parameters_st. </em>
+<a id='L152' name='L152'></a><em class='comment'>         * packed_session must have allocated space for the security parameters.</em>
+<a id='L153' name='L153'></a><em class='comment'>         */</em>
+<a id='L154' name='L154'></a>        ret = <a href='../S/6030.html#L870' title='Defined at 870 in lib/session_pack.c.'>pack_security_parameters</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;sb);
+<a id='L155' name='L155'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L156' name='L156'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L157' name='L157'></a>                <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L158' name='L158'></a>        <em class='brace'>}</em>
+<a id='L159' name='L159'></a>
+<a id='L160' name='L160'></a>
+<a id='L161' name='L161'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.pversion-&gt;tls13_sem) <em class='brace'>{</em>
+<a id='L162' name='L162'></a>                ret = <a href='../S/6030.html#L326' title='Defined at 326 in lib/session_pack.c.'>tls13_pack_security_parameters</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;sb);
+<a id='L163' name='L163'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L164' name='L164'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L165' name='L165'></a>                        <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L166' name='L166'></a>                <em class='brace'>}</em>
+<a id='L167' name='L167'></a>        <em class='brace'>}</em>
+<a id='L168' name='L168'></a>
+<a id='L169' name='L169'></a>        <em class='comment'>/* Extensions are re-negotiated in a resumed session under TLS 1.3 */</em>
+<a id='L170' name='L170'></a>        <strong class='reserved'>if</strong> (!<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.pversion-&gt;tls13_sem) <em class='brace'>{</em>
+<a id='L171' name='L171'></a>                ret = <a href='../S/5633.html#L511' title='Defined at 511 in lib/hello_ext.c.'>_gnutls_hello_ext_pack</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;sb);
+<a id='L172' name='L172'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L173' name='L173'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L174' name='L174'></a>                        <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L175' name='L175'></a>                <em class='brace'>}</em>
+<a id='L176' name='L176'></a>        <em class='brace'>}</em>
+<a id='L177' name='L177'></a>
+<a id='L178' name='L178'></a>        <strong class='reserved'>return</strong> <a href='../S/5806.html#L237' title='Defined at 237 in lib/str.c.'>_gnutls_buffer_to_datum</a>(&amp;sb, packed_session, 0);
+<a id='L179' name='L179'></a>
+<a id='L180' name='L180'></a>      <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>:
+<a id='L181' name='L181'></a>        <a href='../S/5806.html#L77' title='Defined at 77 in lib/str.c.'>_gnutls_buffer_clear</a>(&amp;sb);
+<a id='L182' name='L182'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L183' name='L183'></a><em class='brace'>}</em>
+<a id='L184' name='L184'></a>
+<a id='L185' name='L185'></a>
+<a id='L186' name='L186'></a><em class='comment'>/* Load session data from a buffer.</em>
+<a id='L187' name='L187'></a><em class='comment'> */</em>
+<a id='L188' name='L188'></a><strong class='reserved'>int</strong>
+<a id='L189' name='L189'></a><a href='../R/5477.html' title='Multiple referred from 4 places.'>_gnutls_session_unpack</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L190' name='L190'></a>                       <strong class='reserved'>const</strong> gnutls_datum_t * packed_session)
+<a id='L191' name='L191'></a><em class='brace'>{</em>
+<a id='L192' name='L192'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L193' name='L193'></a>        <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> sb;
+<a id='L194' name='L194'></a>        <a href='../D/12096.html' title='Multiple defined in 11 places.'>uint32_t</a> magic;
+<a id='L195' name='L195'></a>        <a href='../D/12096.html' title='Multiple defined in 11 places.'>uint32_t</a> expire_time;
+<a id='L196' name='L196'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> id;
+<a id='L197' name='L197'></a>
+<a id='L198' name='L198'></a>        <a href='../S/5806.html#L70' title='Defined at 70 in lib/str.c.'>_gnutls_buffer_init</a>(&amp;sb);
+<a id='L199' name='L199'></a>
+<a id='L200' name='L200'></a>        <strong class='reserved'>if</strong> (packed_session == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> || packed_session-&gt;size == 0) <em class='brace'>{</em>
+<a id='L201' name='L201'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L202' name='L202'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INTERNAL_ERROR;
+<a id='L203' name='L203'></a>        <em class='brace'>}</em>
+<a id='L204' name='L204'></a>
+<a id='L205' name='L205'></a>        ret =
+<a id='L206' name='L206'></a>            <a href='../S/5333.html#L107' title='Defined at 107 in lib/str.h.'>_gnutls_buffer_append_data</a>(&amp;sb, packed_session-&gt;data,
+<a id='L207' name='L207'></a>                                       packed_session-&gt;size);
+<a id='L208' name='L208'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L209' name='L209'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L210' name='L210'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L211' name='L211'></a>        <em class='brace'>}</em>
+<a id='L212' name='L212'></a>
+<a id='L213' name='L213'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;key.auth_info != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L214' name='L214'></a>                <a href='../S/5749.html#L319' title='Defined at 319 in lib/auth.c.'>_gnutls_free_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L215' name='L215'></a>        <em class='brace'>}</em>
+<a id='L216' name='L216'></a>
+<a id='L217' name='L217'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(&amp;sb, magic);
+<a id='L218' name='L218'></a>        <strong class='reserved'>if</strong> (magic != <a href='../S/5461.html#L33' title='Defined at 33 in lib/db.h.'>PACKED_SESSION_MAGIC</a>) <em class='brace'>{</em>
+<a id='L219' name='L219'></a>                ret = <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_DB_ERROR);
+<a id='L220' name='L220'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L221' name='L221'></a>        <em class='brace'>}</em>
+<a id='L222' name='L222'></a>
+<a id='L223' name='L223'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(&amp;sb,
+<a id='L224' name='L224'></a>                       <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L225' name='L225'></a>                       timestamp);
+<a id='L226' name='L226'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(&amp;sb, expire_time);
+<a id='L227' name='L227'></a>        (<strong class='reserved'>void</strong>) expire_time;
+<a id='L228' name='L228'></a>        <a href='../S/5333.html#L261' title='Defined at 261 in lib/str.h.'>BUFFER_POP</a>(&amp;sb, &amp;id, 1);
+<a id='L229' name='L229'></a>
+<a id='L230' name='L230'></a>        <strong class='reserved'>switch</strong> (id) <em class='brace'>{</em>
+<a id='L231' name='L231'></a><em class='sharp'>#ifdef</em> ENABLE_SRP
+<a id='L232' name='L232'></a>        <strong class='reserved'>case</strong> GNUTLS_CRD_SRP:
+<a id='L233' name='L233'></a>                ret = <a href='../S/6030.html#L623' title='Defined at 623 in lib/session_pack.c.'>unpack_srp_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;sb);
+<a id='L234' name='L234'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L235' name='L235'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L236' name='L236'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L237' name='L237'></a>                <em class='brace'>}</em>
+<a id='L238' name='L238'></a>                <strong class='reserved'>break</strong>;
+<a id='L239' name='L239'></a><em class='sharp'>#endif</em>
+<a id='L240' name='L240'></a><em class='sharp'>#ifdef</em> ENABLE_PSK
+<a id='L241' name='L241'></a>        <strong class='reserved'>case</strong> GNUTLS_CRD_PSK:
+<a id='L242' name='L242'></a>                ret = <a href='../S/6030.html#L803' title='Defined at 803 in lib/session_pack.c.'>unpack_psk_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;sb);
+<a id='L243' name='L243'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L244' name='L244'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L245' name='L245'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L246' name='L246'></a>                <em class='brace'>}</em>
+<a id='L247' name='L247'></a>                <strong class='reserved'>break</strong>;
+<a id='L248' name='L248'></a><em class='sharp'>#endif</em>
+<a id='L249' name='L249'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L250' name='L250'></a>        <strong class='reserved'>case</strong> GNUTLS_CRD_ANON:
+<a id='L251' name='L251'></a>                ret = <a href='../S/6030.html#L704' title='Defined at 704 in lib/session_pack.c.'>unpack_anon_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;sb);
+<a id='L252' name='L252'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L253' name='L253'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L254' name='L254'></a>                        <strong class='reserved'>return</strong> ret;
+<a id='L255' name='L255'></a>                <em class='brace'>}</em>
+<a id='L256' name='L256'></a>                <strong class='reserved'>break</strong>;
+<a id='L257' name='L257'></a><em class='sharp'>#endif</em>
+<a id='L258' name='L258'></a>        <strong class='reserved'>case</strong> GNUTLS_CRD_CERTIFICATE:
+<a id='L259' name='L259'></a>                ret = <a href='../S/6030.html#L492' title='Defined at 492 in lib/session_pack.c.'>unpack_certificate_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;sb);
+<a id='L260' name='L260'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L261' name='L261'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L262' name='L262'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L263' name='L263'></a>                <em class='brace'>}</em>
+<a id='L264' name='L264'></a>                <strong class='reserved'>break</strong>;
+<a id='L265' name='L265'></a>        <strong class='reserved'>default</strong>:
+<a id='L266' name='L266'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L267' name='L267'></a>                ret = GNUTLS_E_INTERNAL_ERROR;
+<a id='L268' name='L268'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L269' name='L269'></a>
+<a id='L270' name='L270'></a>        <em class='brace'>}</em>
+<a id='L271' name='L271'></a>
+<a id='L272' name='L272'></a>        <em class='comment'>/* Auth_info structures copied. Now copy security_parameters_st. </em>
+<a id='L273' name='L273'></a><em class='comment'>         * packed_session must have allocated space for the security parameters.</em>
+<a id='L274' name='L274'></a><em class='comment'>         */</em>
+<a id='L275' name='L275'></a>        ret = <a href='../S/6030.html#L968' title='Defined at 968 in lib/session_pack.c.'>unpack_security_parameters</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;sb);
+<a id='L276' name='L276'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L277' name='L277'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L278' name='L278'></a>                <strong class='reserved'>goto</strong> error;
+<a id='L279' name='L279'></a>        <em class='brace'>}</em>
+<a id='L280' name='L280'></a>
+<a id='L281' name='L281'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.pversion-&gt;tls13_sem) <em class='brace'>{</em>
+<a id='L282' name='L282'></a>                <em class='comment'>/* 'prf' will not be NULL at this point, else unpack_security_parameters() would have failed */</em>
+<a id='L283' name='L283'></a>                ret = <a href='../S/6030.html#L368' title='Defined at 368 in lib/session_pack.c.'>tls13_unpack_security_parameters</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;sb);
+<a id='L284' name='L284'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L285' name='L285'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L286' name='L286'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L287' name='L287'></a>                <em class='brace'>}</em>
+<a id='L288' name='L288'></a>        <em class='brace'>}</em>
+<a id='L289' name='L289'></a>
+<a id='L290' name='L290'></a>        <strong class='reserved'>if</strong> (!<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.pversion-&gt;tls13_sem) <em class='brace'>{</em>
+<a id='L291' name='L291'></a>                ret = <a href='../S/5633.html#L596' title='Defined at 596 in lib/hello_ext.c.'>_gnutls_hello_ext_unpack</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, &amp;sb);
+<a id='L292' name='L292'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L293' name='L293'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L294' name='L294'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L295' name='L295'></a>                <em class='brace'>}</em>
+<a id='L296' name='L296'></a>        <em class='brace'>}</em>
+<a id='L297' name='L297'></a>
+<a id='L298' name='L298'></a>        ret = 0;
+<a id='L299' name='L299'></a>
+<a id='L300' name='L300'></a>      error:
+<a id='L301' name='L301'></a>        <a href='../S/5806.html#L77' title='Defined at 77 in lib/str.c.'>_gnutls_buffer_clear</a>(&amp;sb);
+<a id='L302' name='L302'></a>
+<a id='L303' name='L303'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L304' name='L304'></a><em class='brace'>}</em>
+<a id='L305' name='L305'></a>
+<a id='L306' name='L306'></a><em class='comment'>/*</em>
+<a id='L307' name='L307'></a><em class='comment'> * If we're using TLS 1.3 semantics, we might have TLS 1.3-specific data.</em>
+<a id='L308' name='L308'></a><em class='comment'> * Format:</em>
+<a id='L309' name='L309'></a><em class='comment'> *      4 bytes the total length</em>
+<a id='L310' name='L310'></a><em class='comment'> *      4 bytes the ticket lifetime</em>
+<a id='L311' name='L311'></a><em class='comment'> *      4 bytes the ticket age add value</em>
+<a id='L312' name='L312'></a><em class='comment'> *      1 byte the ticket nonce length</em>
+<a id='L313' name='L313'></a><em class='comment'> *      x bytes the ticket nonce</em>
+<a id='L314' name='L314'></a><em class='comment'> *      4 bytes the ticket length</em>
+<a id='L315' name='L315'></a><em class='comment'> *      x bytes the ticket</em>
+<a id='L316' name='L316'></a><em class='comment'> *      1 bytes the resumption master secret length</em>
+<a id='L317' name='L317'></a><em class='comment'> *      x bytes the resumption master secret</em>
+<a id='L318' name='L318'></a><em class='comment'> *     12 bytes the ticket arrival time</em>
+<a id='L319' name='L319'></a><em class='comment'> *      4 bytes the max early data size</em>
+<a id='L320' name='L320'></a><em class='comment'> *</em>
+<a id='L321' name='L321'></a><em class='comment'> * We only store that info if we received a TLS 1.3 NewSessionTicket at some point.</em>
+<a id='L322' name='L322'></a><em class='comment'> * If we didn't receive any NST then we cannot resume a TLS 1.3 session and hence</em>
+<a id='L323' name='L323'></a><em class='comment'> * its nonsense to store all that info.</em>
+<a id='L324' name='L324'></a><em class='comment'> */</em>
+<a id='L325' name='L325'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L326' name='L326'></a><a href='../R/10908.html' title='Multiple referred from 2 places.'>tls13_pack_security_parameters</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> *ps)
+<a id='L327' name='L327'></a><em class='brace'>{</em>
+<a id='L328' name='L328'></a>        <strong class='reserved'>int</strong> ret = 0;
+<a id='L329' name='L329'></a>        <a href='../D/12096.html' title='Multiple defined in 11 places.'>uint32_t</a> <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> = 0;
+<a id='L330' name='L330'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> length_pos;
+<a id='L331' name='L331'></a>        <a href='../S/5822.html#L1026' title='Defined at 1026 in lib/gnutls_int.h.'>tls13_ticket_st</a> *ticket = &amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.tls13_ticket;
+<a id='L332' name='L332'></a>
+<a id='L333' name='L333'></a>        length_pos = ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L334' name='L334'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, 0);
+<a id='L335' name='L335'></a>
+<a id='L336' name='L336'></a>        <strong class='reserved'>if</strong> (ticket-&gt;ticket.data != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L337' name='L337'></a>                <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, ticket-&gt;lifetime);
+<a id='L338' name='L338'></a>                <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> += 4;
+<a id='L339' name='L339'></a>                <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, ticket-&gt;age_add);
+<a id='L340' name='L340'></a>                <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> += 4;
+<a id='L341' name='L341'></a>                <a href='../S/5333.html#L227' title='Defined at 227 in lib/str.h.'>BUFFER_APPEND_PFX1</a>(ps,
+<a id='L342' name='L342'></a>                                   ticket-&gt;nonce,
+<a id='L343' name='L343'></a>                                   ticket-&gt;nonce_size);
+<a id='L344' name='L344'></a>                <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> += (1 + ticket-&gt;nonce_size);
+<a id='L345' name='L345'></a>                <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps,
+<a id='L346' name='L346'></a>                                   ticket-&gt;ticket.data,
+<a id='L347' name='L347'></a>                                   ticket-&gt;ticket.size);
+<a id='L348' name='L348'></a>                <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> += (4 + ticket-&gt;ticket.size);
+<a id='L349' name='L349'></a>                <a href='../S/5333.html#L227' title='Defined at 227 in lib/str.h.'>BUFFER_APPEND_PFX1</a>(ps,
+<a id='L350' name='L350'></a>                                   ticket-&gt;resumption_master_secret,
+<a id='L351' name='L351'></a>                                   ticket-&gt;<a href='../S/5262.html#L170' title='Defined at 170 in lib/gnutlsxx.cpp.'>prf</a>-&gt;output_size);
+<a id='L352' name='L352'></a>                <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> += (1 + ticket-&gt;<a href='../S/5262.html#L170' title='Defined at 170 in lib/gnutlsxx.cpp.'>prf</a>-&gt;output_size);
+<a id='L353' name='L353'></a>                <a href='../S/5333.html#L243' title='Defined at 243 in lib/str.h.'>BUFFER_APPEND_TS</a>(ps, ticket-&gt;arrival_time);
+<a id='L354' name='L354'></a>                <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> += 12;
+<a id='L355' name='L355'></a>                <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps,
+<a id='L356' name='L356'></a>                                  <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.
+<a id='L357' name='L357'></a>                                  max_early_data_size);
+<a id='L358' name='L358'></a>                <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> += 4;
+<a id='L359' name='L359'></a>
+<a id='L360' name='L360'></a>                <em class='comment'>/* Overwrite the length field */</em>
+<a id='L361' name='L361'></a>                <a href='../S/5268.html#L74' title='Defined at 74 in lib/num.h.'>_gnutls_write_uint32</a>(<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>, ps-&gt;data + length_pos);
+<a id='L362' name='L362'></a>        <em class='brace'>}</em>
+<a id='L363' name='L363'></a>
+<a id='L364' name='L364'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L365' name='L365'></a><em class='brace'>}</em>
+<a id='L366' name='L366'></a>
+<a id='L367' name='L367'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L368' name='L368'></a><a href='../R/10911.html' title='Multiple referred from 2 places.'>tls13_unpack_security_parameters</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> *ps)
+<a id='L369' name='L369'></a><em class='brace'>{</em>
+<a id='L370' name='L370'></a>        <a href='../D/12096.html' title='Multiple defined in 11 places.'>uint32_t</a> ttl_len;
+<a id='L371' name='L371'></a>        <a href='../S/5822.html#L1026' title='Defined at 1026 in lib/gnutls_int.h.'>tls13_ticket_st</a> *ticket = &amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.tls13_ticket;
+<a id='L372' name='L372'></a>        gnutls_datum_t t;
+<a id='L373' name='L373'></a>        <strong class='reserved'>int</strong> ret = 0;
+<a id='L374' name='L374'></a>
+<a id='L375' name='L375'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, ttl_len);
+<a id='L376' name='L376'></a>
+<a id='L377' name='L377'></a>        <strong class='reserved'>if</strong> (ttl_len &gt; 0) <em class='brace'>{</em>
+<a id='L378' name='L378'></a>                <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, ticket-&gt;lifetime);
+<a id='L379' name='L379'></a>                <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, ticket-&gt;age_add);
+<a id='L380' name='L380'></a>
+<a id='L381' name='L381'></a>                ret = <a href='../S/5806.html#L901' title='Defined at 901 in lib/str.c.'>_gnutls_buffer_pop_datum_prefix8</a>(ps, &amp;t);
+<a id='L382' name='L382'></a>                <strong class='reserved'>if</strong> (ret &lt; 0 || t.size &gt; <strong class='reserved'>sizeof</strong>(ticket-&gt;nonce)) <em class='brace'>{</em>
+<a id='L383' name='L383'></a>                            ret = GNUTLS_E_PARSING_ERROR;
+<a id='L384' name='L384'></a>                            <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L385' name='L385'></a>                            <strong class='reserved'>goto</strong> error;
+<a id='L386' name='L386'></a>                <em class='brace'>}</em>
+<a id='L387' name='L387'></a>                ticket-&gt;nonce_size = t.size;
+<a id='L388' name='L388'></a>                memcpy(ticket-&gt;nonce, t.data, t.size);
+<a id='L389' name='L389'></a>
+<a id='L390' name='L390'></a>                <a href='../S/5333.html#L270' title='Defined at 270 in lib/str.h.'>BUFFER_POP_DATUM</a>(ps, &amp;ticket-&gt;ticket);
+<a id='L391' name='L391'></a>
+<a id='L392' name='L392'></a>                ret = <a href='../S/5806.html#L901' title='Defined at 901 in lib/str.c.'>_gnutls_buffer_pop_datum_prefix8</a>(ps, &amp;t);
+<a id='L393' name='L393'></a>                <strong class='reserved'>if</strong> (ret &lt; 0 || t.size &gt; <strong class='reserved'>sizeof</strong>(ticket-&gt;resumption_master_secret)) <em class='brace'>{</em>
+<a id='L394' name='L394'></a>                            ret = GNUTLS_E_PARSING_ERROR;
+<a id='L395' name='L395'></a>                            <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L396' name='L396'></a>                            <strong class='reserved'>goto</strong> error;
+<a id='L397' name='L397'></a>                <em class='brace'>}</em>
+<a id='L398' name='L398'></a>                memcpy(ticket-&gt;resumption_master_secret, t.data, t.size);
+<a id='L399' name='L399'></a>
+<a id='L400' name='L400'></a>                <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.<a href='../S/5262.html#L170' title='Defined at 170 in lib/gnutlsxx.cpp.'>prf</a> == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> ||
+<a id='L401' name='L401'></a>                    <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.<a href='../S/5262.html#L170' title='Defined at 170 in lib/gnutlsxx.cpp.'>prf</a>-&gt;output_size != t.size))
+<a id='L402' name='L402'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L403' name='L403'></a>
+<a id='L404' name='L404'></a>                ticket-&gt;<a href='../S/5262.html#L170' title='Defined at 170 in lib/gnutlsxx.cpp.'>prf</a> = <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.<a href='../S/5262.html#L170' title='Defined at 170 in lib/gnutlsxx.cpp.'>prf</a>;
+<a id='L405' name='L405'></a>
+<a id='L406' name='L406'></a>                <a href='../S/5333.html#L301' title='Defined at 301 in lib/str.h.'>BUFFER_POP_TS</a>(ps, ticket-&gt;arrival_time);
+<a id='L407' name='L407'></a>                <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps,
+<a id='L408' name='L408'></a>                               <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.
+<a id='L409' name='L409'></a>                               max_early_data_size);
+<a id='L410' name='L410'></a>        <em class='brace'>}</em>
+<a id='L411' name='L411'></a>
+<a id='L412' name='L412'></a>error:
+<a id='L413' name='L413'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L414' name='L414'></a><em class='brace'>}</em>
+<a id='L415' name='L415'></a>
+<a id='L416' name='L416'></a><em class='comment'>/* Format: </em>
+<a id='L417' name='L417'></a><em class='comment'> *      1 byte the credentials type</em>
+<a id='L418' name='L418'></a><em class='comment'> *      4 bytes the size of the whole structure</em>
+<a id='L419' name='L419'></a><em class='comment'> *      DH stuff</em>
+<a id='L420' name='L420'></a><em class='comment'> *      2 bytes the size of secret key in bits</em>
+<a id='L421' name='L421'></a><em class='comment'> *      4 bytes the size of the prime</em>
+<a id='L422' name='L422'></a><em class='comment'> *      x bytes the prime</em>
+<a id='L423' name='L423'></a><em class='comment'> *      4 bytes the size of the generator</em>
+<a id='L424' name='L424'></a><em class='comment'> *      x bytes the generator</em>
+<a id='L425' name='L425'></a><em class='comment'> *      4 bytes the size of the public key</em>
+<a id='L426' name='L426'></a><em class='comment'> *      x bytes the public key</em>
+<a id='L427' name='L427'></a><em class='comment'> *      RSA stuff</em>
+<a id='L428' name='L428'></a><em class='comment'> *      4 bytes the size of the modulus</em>
+<a id='L429' name='L429'></a><em class='comment'> *      x bytes the modulus</em>
+<a id='L430' name='L430'></a><em class='comment'> *      4 bytes the size of the exponent</em>
+<a id='L431' name='L431'></a><em class='comment'> *      x bytes the exponent</em>
+<a id='L432' name='L432'></a><em class='comment'> *      CERTIFICATES</em>
+<a id='L433' name='L433'></a><em class='comment'> *      4 bytes the length of the certificate list</em>
+<a id='L434' name='L434'></a><em class='comment'> *      4 bytes the size of first certificate</em>
+<a id='L435' name='L435'></a><em class='comment'> *      x bytes the certificate</em>
+<a id='L436' name='L436'></a><em class='comment'> *       and so on...</em>
+<a id='L437' name='L437'></a><em class='comment'> */</em>
+<a id='L438' name='L438'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L439' name='L439'></a><a href='../R/9558.html' title='Multiple referred from 2 places.'>pack_certificate_auth_info</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps)
+<a id='L440' name='L440'></a><em class='brace'>{</em>
+<a id='L441' name='L441'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> i;
+<a id='L442' name='L442'></a>        <strong class='reserved'>int</strong> cur_size, ret;
+<a id='L443' name='L443'></a>        <a href='../S/5326.html#L131' title='Defined at 131 in lib/auth/cert.h.'>cert_auth_info_t</a> info = <a href='../S/5289.html#L78' title='Defined at 78 in lib/auth.h.'>_gnutls_get_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_CERTIFICATE);
+<a id='L444' name='L444'></a>        <strong class='reserved'>int</strong> size_offset;
+<a id='L445' name='L445'></a>
+<a id='L446' name='L446'></a>        size_offset = ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L447' name='L447'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, 0);
+<a id='L448' name='L448'></a>        cur_size = ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L449' name='L449'></a>
+<a id='L450' name='L450'></a>        <strong class='reserved'>if</strong> (info) <em class='brace'>{</em>
+<a id='L451' name='L451'></a>
+<a id='L452' name='L452'></a>                <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, info-&gt;dh.secret_bits);
+<a id='L453' name='L453'></a>                <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps, info-&gt;dh.prime.data,
+<a id='L454' name='L454'></a>                                   info-&gt;dh.prime.size);
+<a id='L455' name='L455'></a>                <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps, info-&gt;dh.generator.data,
+<a id='L456' name='L456'></a>                                   info-&gt;dh.generator.size);
+<a id='L457' name='L457'></a>                <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps, info-&gt;dh.public_key.data,
+<a id='L458' name='L458'></a>                                   info-&gt;dh.public_key.size);
+<a id='L459' name='L459'></a>
+<a id='L460' name='L460'></a>                <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, info-&gt;ncerts);
+<a id='L461' name='L461'></a>
+<a id='L462' name='L462'></a>                <strong class='reserved'>for</strong> (i = 0; i &lt; info-&gt;ncerts; i++) <em class='brace'>{</em>
+<a id='L463' name='L463'></a>                        <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps,
+<a id='L464' name='L464'></a>                                           info-&gt;raw_certificate_list[i].
+<a id='L465' name='L465'></a>                                           data,
+<a id='L466' name='L466'></a>                                           info-&gt;raw_certificate_list[i].
+<a id='L467' name='L467'></a>                                           size);
+<a id='L468' name='L468'></a>                <em class='brace'>}</em>
+<a id='L469' name='L469'></a>
+<a id='L470' name='L470'></a>                <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, info-&gt;nocsp);
+<a id='L471' name='L471'></a>
+<a id='L472' name='L472'></a>                <strong class='reserved'>for</strong> (i = 0; i &lt; info-&gt;nocsp; i++) <em class='brace'>{</em>
+<a id='L473' name='L473'></a>                        <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps,
+<a id='L474' name='L474'></a>                                           info-&gt;raw_ocsp_list[i].
+<a id='L475' name='L475'></a>                                           data,
+<a id='L476' name='L476'></a>                                           info-&gt;raw_ocsp_list[i].
+<a id='L477' name='L477'></a>                                           size);
+<a id='L478' name='L478'></a>                <em class='brace'>}</em>
+<a id='L479' name='L479'></a>        <em class='brace'>}</em>
+<a id='L480' name='L480'></a>
+<a id='L481' name='L481'></a>        <em class='comment'>/* write the real size */</em>
+<a id='L482' name='L482'></a>        <a href='../S/5268.html#L74' title='Defined at 74 in lib/num.h.'>_gnutls_write_uint32</a>(ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> - cur_size,
+<a id='L483' name='L483'></a>                             ps-&gt;data + size_offset);
+<a id='L484' name='L484'></a>
+<a id='L485' name='L485'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L486' name='L486'></a><em class='brace'>}</em>
+<a id='L487' name='L487'></a>
+<a id='L488' name='L488'></a>
+<a id='L489' name='L489'></a><em class='comment'>/* Upack certificate info.</em>
+<a id='L490' name='L490'></a><em class='comment'> */</em>
+<a id='L491' name='L491'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L492' name='L492'></a><a href='../R/11091.html' title='Multiple referred from 2 places.'>unpack_certificate_auth_info</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L493' name='L493'></a>                             <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps)
+<a id='L494' name='L494'></a><em class='brace'>{</em>
+<a id='L495' name='L495'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L496' name='L496'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> i = 0, <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> = 0;
+<a id='L497' name='L497'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> pack_size;
+<a id='L498' name='L498'></a>        <a href='../S/5326.html#L131' title='Defined at 131 in lib/auth/cert.h.'>cert_auth_info_t</a> info = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L499' name='L499'></a>        <strong class='reserved'>unsigned</strong> cur_ncerts = 0;
+<a id='L500' name='L500'></a>        <strong class='reserved'>unsigned</strong> cur_nocsp = 0;
+<a id='L501' name='L501'></a>
+<a id='L502' name='L502'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, pack_size);
+<a id='L503' name='L503'></a>
+<a id='L504' name='L504'></a>        <strong class='reserved'>if</strong> (pack_size == 0)
+<a id='L505' name='L505'></a>                <strong class='reserved'>return</strong> 0;       <em class='comment'>/* nothing to be done */</em>
+<a id='L506' name='L506'></a>
+<a id='L507' name='L507'></a>        <em class='comment'>/* client and server have the same auth_info here</em>
+<a id='L508' name='L508'></a><em class='comment'>         */</em>
+<a id='L509' name='L509'></a>        ret =
+<a id='L510' name='L510'></a>            <a href='../S/5749.html#L407' title='Defined at 407 in lib/auth.c.'>_gnutls_auth_info_init</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_CERTIFICATE,
+<a id='L511' name='L511'></a>                                  <strong class='reserved'>sizeof</strong>(<a href='../D/7026.html' title='Multiple defined in 2 places.'>cert_auth_info_st</a>), 1);
+<a id='L512' name='L512'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L513' name='L513'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L514' name='L514'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L515' name='L515'></a>        <em class='brace'>}</em>
+<a id='L516' name='L516'></a>
+<a id='L517' name='L517'></a>        info = <a href='../S/5289.html#L78' title='Defined at 78 in lib/auth.h.'>_gnutls_get_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_CERTIFICATE);
+<a id='L518' name='L518'></a>        <strong class='reserved'>if</strong> (info == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L519' name='L519'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L520' name='L520'></a>
+<a id='L521' name='L521'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, info-&gt;dh.secret_bits);
+<a id='L522' name='L522'></a>
+<a id='L523' name='L523'></a>        <a href='../S/5333.html#L270' title='Defined at 270 in lib/str.h.'>BUFFER_POP_DATUM</a>(ps, &amp;info-&gt;dh.prime);
+<a id='L524' name='L524'></a>        <a href='../S/5333.html#L270' title='Defined at 270 in lib/str.h.'>BUFFER_POP_DATUM</a>(ps, &amp;info-&gt;dh.generator);
+<a id='L525' name='L525'></a>        <a href='../S/5333.html#L270' title='Defined at 270 in lib/str.h.'>BUFFER_POP_DATUM</a>(ps, &amp;info-&gt;dh.public_key);
+<a id='L526' name='L526'></a>
+<a id='L527' name='L527'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, info-&gt;ncerts);
+<a id='L528' name='L528'></a>
+<a id='L529' name='L529'></a>        <strong class='reserved'>if</strong> (info-&gt;ncerts &gt; 0) <em class='brace'>{</em>
+<a id='L530' name='L530'></a>                info-&gt;raw_certificate_list =
+<a id='L531' name='L531'></a>                    gnutls_calloc(info-&gt;ncerts, <strong class='reserved'>sizeof</strong>(gnutls_datum_t));
+<a id='L532' name='L532'></a>                <strong class='reserved'>if</strong> (info-&gt;raw_certificate_list == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L533' name='L533'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L534' name='L534'></a>                        ret = GNUTLS_E_MEMORY_ERROR;
+<a id='L535' name='L535'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L536' name='L536'></a>                <em class='brace'>}</em>
+<a id='L537' name='L537'></a>        <em class='brace'>}</em>
+<a id='L538' name='L538'></a>
+<a id='L539' name='L539'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; info-&gt;ncerts; i++) <em class='brace'>{</em>
+<a id='L540' name='L540'></a>                <a href='../S/5333.html#L270' title='Defined at 270 in lib/str.h.'>BUFFER_POP_DATUM</a>(ps, &amp;info-&gt;raw_certificate_list[i]);
+<a id='L541' name='L541'></a>                cur_ncerts++;
+<a id='L542' name='L542'></a>        <em class='brace'>}</em>
+<a id='L543' name='L543'></a>
+<a id='L544' name='L544'></a>        <em class='comment'>/* read OCSP responses */</em>
+<a id='L545' name='L545'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, info-&gt;nocsp);
+<a id='L546' name='L546'></a>
+<a id='L547' name='L547'></a>        <strong class='reserved'>if</strong> (info-&gt;nocsp &gt; 0) <em class='brace'>{</em>
+<a id='L548' name='L548'></a>                info-&gt;raw_ocsp_list =
+<a id='L549' name='L549'></a>                    gnutls_calloc(info-&gt;nocsp, <strong class='reserved'>sizeof</strong>(gnutls_datum_t));
+<a id='L550' name='L550'></a>                <strong class='reserved'>if</strong> (info-&gt;raw_ocsp_list == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L551' name='L551'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L552' name='L552'></a>                        ret = GNUTLS_E_MEMORY_ERROR;
+<a id='L553' name='L553'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L554' name='L554'></a>                <em class='brace'>}</em>
+<a id='L555' name='L555'></a>        <em class='brace'>}</em>
+<a id='L556' name='L556'></a>
+<a id='L557' name='L557'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; info-&gt;nocsp; i++) <em class='brace'>{</em>
+<a id='L558' name='L558'></a>                <a href='../S/5333.html#L270' title='Defined at 270 in lib/str.h.'>BUFFER_POP_DATUM</a>(ps, &amp;info-&gt;raw_ocsp_list[i]);
+<a id='L559' name='L559'></a>                cur_nocsp++;
+<a id='L560' name='L560'></a>        <em class='brace'>}</em>
+<a id='L561' name='L561'></a>
+<a id='L562' name='L562'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L563' name='L563'></a>
+<a id='L564' name='L564'></a>      error:
+<a id='L565' name='L565'></a>        <strong class='reserved'>if</strong> (info) <em class='brace'>{</em>
+<a id='L566' name='L566'></a>                _gnutls_free_datum(&amp;info-&gt;dh.prime);
+<a id='L567' name='L567'></a>                _gnutls_free_datum(&amp;info-&gt;dh.generator);
+<a id='L568' name='L568'></a>                _gnutls_free_datum(&amp;info-&gt;dh.public_key);
+<a id='L569' name='L569'></a>
+<a id='L570' name='L570'></a>                <strong class='reserved'>for</strong> (<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> = 0; <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> &lt; cur_ncerts; <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>++)
+<a id='L571' name='L571'></a>                        _gnutls_free_datum(&amp;info-&gt;raw_certificate_list[<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>]);
+<a id='L572' name='L572'></a>
+<a id='L573' name='L573'></a>                <strong class='reserved'>for</strong> (<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> = 0; <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> &lt; cur_nocsp; <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>++)
+<a id='L574' name='L574'></a>                        _gnutls_free_datum(&amp;info-&gt;raw_ocsp_list[<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>]);
+<a id='L575' name='L575'></a>
+<a id='L576' name='L576'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(info-&gt;raw_certificate_list);
+<a id='L577' name='L577'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(info-&gt;raw_ocsp_list);
+<a id='L578' name='L578'></a>        <em class='brace'>}</em>
+<a id='L579' name='L579'></a>
+<a id='L580' name='L580'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L581' name='L581'></a>
+<a id='L582' name='L582'></a><em class='brace'>}</em>
+<a id='L583' name='L583'></a>
+<a id='L584' name='L584'></a><em class='sharp'>#ifdef</em> ENABLE_SRP
+<a id='L585' name='L585'></a><em class='comment'>/* Packs the SRP session authentication data.</em>
+<a id='L586' name='L586'></a><em class='comment'> */</em>
+<a id='L587' name='L587'></a>
+<a id='L588' name='L588'></a><em class='comment'>/* Format: </em>
+<a id='L589' name='L589'></a><em class='comment'> *      1 byte the credentials type</em>
+<a id='L590' name='L590'></a><em class='comment'> *      4 bytes the size of the SRP username (x)</em>
+<a id='L591' name='L591'></a><em class='comment'> *      x bytes the SRP username</em>
+<a id='L592' name='L592'></a><em class='comment'> */</em>
+<a id='L593' name='L593'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L594' name='L594'></a><a href='../R/9562.html' title='Multiple referred from 2 places.'>pack_srp_auth_info</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps)
+<a id='L595' name='L595'></a><em class='brace'>{</em>
+<a id='L596' name='L596'></a>        <a href='../S/5307.html#L52' title='Defined at 52 in lib/auth/srp_kx.h.'>srp_server_auth_info_t</a> info = <a href='../S/5289.html#L78' title='Defined at 78 in lib/auth.h.'>_gnutls_get_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_SRP);
+<a id='L597' name='L597'></a>        <strong class='reserved'>int</strong> len, ret;
+<a id='L598' name='L598'></a>        <strong class='reserved'>int</strong> size_offset;
+<a id='L599' name='L599'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> cur_size;
+<a id='L600' name='L600'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *username = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L601' name='L601'></a>
+<a id='L602' name='L602'></a>        <strong class='reserved'>if</strong> (info) <em class='brace'>{</em>
+<a id='L603' name='L603'></a>                username = info-&gt;username;
+<a id='L604' name='L604'></a>                len = strlen(info-&gt;username) + 1;       <em class='comment'>/* include the terminating null */</em>
+<a id='L605' name='L605'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong>
+<a id='L606' name='L606'></a>                len = 0;
+<a id='L607' name='L607'></a>
+<a id='L608' name='L608'></a>        size_offset = ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L609' name='L609'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, 0);
+<a id='L610' name='L610'></a>        cur_size = ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L611' name='L611'></a>
+<a id='L612' name='L612'></a>        <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps, username, len);
+<a id='L613' name='L613'></a>
+<a id='L614' name='L614'></a>        <em class='comment'>/* write the real size */</em>
+<a id='L615' name='L615'></a>        <a href='../S/5268.html#L74' title='Defined at 74 in lib/num.h.'>_gnutls_write_uint32</a>(ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> - cur_size,
+<a id='L616' name='L616'></a>                             ps-&gt;data + size_offset);
+<a id='L617' name='L617'></a>
+<a id='L618' name='L618'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L619' name='L619'></a><em class='brace'>}</em>
+<a id='L620' name='L620'></a>
+<a id='L621' name='L621'></a>
+<a id='L622' name='L622'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L623' name='L623'></a><a href='../R/11095.html' title='Multiple referred from 2 places.'>unpack_srp_auth_info</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps)
+<a id='L624' name='L624'></a><em class='brace'>{</em>
+<a id='L625' name='L625'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> username_size;
+<a id='L626' name='L626'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L627' name='L627'></a>        <a href='../S/5307.html#L52' title='Defined at 52 in lib/auth/srp_kx.h.'>srp_server_auth_info_t</a> info;
+<a id='L628' name='L628'></a>
+<a id='L629' name='L629'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, username_size);
+<a id='L630' name='L630'></a>        <strong class='reserved'>if</strong> (username_size &gt; <strong class='reserved'>sizeof</strong>(info-&gt;username)) <em class='brace'>{</em>
+<a id='L631' name='L631'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L632' name='L632'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INTERNAL_ERROR;
+<a id='L633' name='L633'></a>        <em class='brace'>}</em>
+<a id='L634' name='L634'></a>
+<a id='L635' name='L635'></a>        ret =
+<a id='L636' name='L636'></a>            <a href='../S/5749.html#L407' title='Defined at 407 in lib/auth.c.'>_gnutls_auth_info_init</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_SRP,
+<a id='L637' name='L637'></a>                                  <strong class='reserved'>sizeof</strong>(<a href='../D/11540.html' title='Multiple defined in 2 places.'>srp_server_auth_info_st</a>), 1);
+<a id='L638' name='L638'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L639' name='L639'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L640' name='L640'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L641' name='L641'></a>        <em class='brace'>}</em>
+<a id='L642' name='L642'></a>
+<a id='L643' name='L643'></a>        info = <a href='../S/5289.html#L78' title='Defined at 78 in lib/auth.h.'>_gnutls_get_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_SRP);
+<a id='L644' name='L644'></a>        <strong class='reserved'>if</strong> (info == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L645' name='L645'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L646' name='L646'></a>
+<a id='L647' name='L647'></a>        <a href='../S/5333.html#L261' title='Defined at 261 in lib/str.h.'>BUFFER_POP</a>(ps, info-&gt;username, username_size);
+<a id='L648' name='L648'></a>        <strong class='reserved'>if</strong> (username_size == 0)
+<a id='L649' name='L649'></a>                info-&gt;username[0] = 0;
+<a id='L650' name='L650'></a>
+<a id='L651' name='L651'></a>        ret = 0;
+<a id='L652' name='L652'></a>
+<a id='L653' name='L653'></a>      error:
+<a id='L654' name='L654'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L655' name='L655'></a><em class='brace'>}</em>
+<a id='L656' name='L656'></a><em class='sharp'>#endif</em>
+<a id='L657' name='L657'></a>
+<a id='L658' name='L658'></a>
+<a id='L659' name='L659'></a><em class='sharp'>#ifdef</em> ENABLE_ANON
+<a id='L660' name='L660'></a><em class='comment'>/* Packs the ANON session authentication data.</em>
+<a id='L661' name='L661'></a><em class='comment'> */</em>
+<a id='L662' name='L662'></a>
+<a id='L663' name='L663'></a><em class='comment'>/* Format: </em>
+<a id='L664' name='L664'></a><em class='comment'> *      1 byte the credentials type</em>
+<a id='L665' name='L665'></a><em class='comment'> *      4 bytes the size of the whole structure</em>
+<a id='L666' name='L666'></a><em class='comment'> *      2 bytes the size of secret key in bits</em>
+<a id='L667' name='L667'></a><em class='comment'> *      4 bytes the size of the prime</em>
+<a id='L668' name='L668'></a><em class='comment'> *      x bytes the prime</em>
+<a id='L669' name='L669'></a><em class='comment'> *      4 bytes the size of the generator</em>
+<a id='L670' name='L670'></a><em class='comment'> *      x bytes the generator</em>
+<a id='L671' name='L671'></a><em class='comment'> *      4 bytes the size of the public key</em>
+<a id='L672' name='L672'></a><em class='comment'> *      x bytes the public key</em>
+<a id='L673' name='L673'></a><em class='comment'> */</em>
+<a id='L674' name='L674'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L675' name='L675'></a><a href='../R/9557.html' title='Multiple referred from 2 places.'>pack_anon_auth_info</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps)
+<a id='L676' name='L676'></a><em class='brace'>{</em>
+<a id='L677' name='L677'></a>        <strong class='reserved'>int</strong> cur_size, ret;
+<a id='L678' name='L678'></a>        <a href='../S/5312.html#L48' title='Defined at 48 in lib/auth/anon.h.'>anon_auth_info_t</a> info = <a href='../S/5289.html#L78' title='Defined at 78 in lib/auth.h.'>_gnutls_get_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_ANON);
+<a id='L679' name='L679'></a>        <strong class='reserved'>int</strong> size_offset;
+<a id='L680' name='L680'></a>
+<a id='L681' name='L681'></a>        size_offset = ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L682' name='L682'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, 0);
+<a id='L683' name='L683'></a>        cur_size = ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L684' name='L684'></a>
+<a id='L685' name='L685'></a>        <strong class='reserved'>if</strong> (info) <em class='brace'>{</em>
+<a id='L686' name='L686'></a>                <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, info-&gt;dh.secret_bits);
+<a id='L687' name='L687'></a>                <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps, info-&gt;dh.prime.data,
+<a id='L688' name='L688'></a>                                   info-&gt;dh.prime.size);
+<a id='L689' name='L689'></a>                <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps, info-&gt;dh.generator.data,
+<a id='L690' name='L690'></a>                                   info-&gt;dh.generator.size);
+<a id='L691' name='L691'></a>                <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps, info-&gt;dh.public_key.data,
+<a id='L692' name='L692'></a>                                   info-&gt;dh.public_key.size);
+<a id='L693' name='L693'></a>        <em class='brace'>}</em>
+<a id='L694' name='L694'></a>
+<a id='L695' name='L695'></a>        <em class='comment'>/* write the real size */</em>
+<a id='L696' name='L696'></a>        <a href='../S/5268.html#L74' title='Defined at 74 in lib/num.h.'>_gnutls_write_uint32</a>(ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> - cur_size,
+<a id='L697' name='L697'></a>                             ps-&gt;data + size_offset);
+<a id='L698' name='L698'></a>
+<a id='L699' name='L699'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L700' name='L700'></a><em class='brace'>}</em>
+<a id='L701' name='L701'></a>
+<a id='L702' name='L702'></a>
+<a id='L703' name='L703'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L704' name='L704'></a><a href='../R/11090.html' title='Multiple referred from 2 places.'>unpack_anon_auth_info</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps)
+<a id='L705' name='L705'></a><em class='brace'>{</em>
+<a id='L706' name='L706'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L707' name='L707'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> pack_size;
+<a id='L708' name='L708'></a>        <a href='../S/5312.html#L48' title='Defined at 48 in lib/auth/anon.h.'>anon_auth_info_t</a> info = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L709' name='L709'></a>
+<a id='L710' name='L710'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, pack_size);
+<a id='L711' name='L711'></a>
+<a id='L712' name='L712'></a>        <strong class='reserved'>if</strong> (pack_size == 0)
+<a id='L713' name='L713'></a>                <strong class='reserved'>return</strong> 0;       <em class='comment'>/* nothing to be done */</em>
+<a id='L714' name='L714'></a>
+<a id='L715' name='L715'></a>        <em class='comment'>/* client and server have the same auth_info here</em>
+<a id='L716' name='L716'></a><em class='comment'>         */</em>
+<a id='L717' name='L717'></a>        ret =
+<a id='L718' name='L718'></a>            <a href='../S/5749.html#L407' title='Defined at 407 in lib/auth.c.'>_gnutls_auth_info_init</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_ANON,
+<a id='L719' name='L719'></a>                                  <strong class='reserved'>sizeof</strong>(<a href='../D/6781.html' title='Multiple defined in 2 places.'>anon_auth_info_st</a>), 1);
+<a id='L720' name='L720'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L721' name='L721'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L722' name='L722'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L723' name='L723'></a>        <em class='brace'>}</em>
+<a id='L724' name='L724'></a>
+<a id='L725' name='L725'></a>        info = <a href='../S/5289.html#L78' title='Defined at 78 in lib/auth.h.'>_gnutls_get_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_ANON);
+<a id='L726' name='L726'></a>        <strong class='reserved'>if</strong> (info == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L727' name='L727'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L728' name='L728'></a>
+<a id='L729' name='L729'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, info-&gt;dh.secret_bits);
+<a id='L730' name='L730'></a>
+<a id='L731' name='L731'></a>        <a href='../S/5333.html#L270' title='Defined at 270 in lib/str.h.'>BUFFER_POP_DATUM</a>(ps, &amp;info-&gt;dh.prime);
+<a id='L732' name='L732'></a>        <a href='../S/5333.html#L270' title='Defined at 270 in lib/str.h.'>BUFFER_POP_DATUM</a>(ps, &amp;info-&gt;dh.generator);
+<a id='L733' name='L733'></a>        <a href='../S/5333.html#L270' title='Defined at 270 in lib/str.h.'>BUFFER_POP_DATUM</a>(ps, &amp;info-&gt;dh.public_key);
+<a id='L734' name='L734'></a>
+<a id='L735' name='L735'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L736' name='L736'></a>
+<a id='L737' name='L737'></a>      error:
+<a id='L738' name='L738'></a>        <strong class='reserved'>if</strong> (info) <em class='brace'>{</em>
+<a id='L739' name='L739'></a>                _gnutls_free_datum(&amp;info-&gt;dh.prime);
+<a id='L740' name='L740'></a>                _gnutls_free_datum(&amp;info-&gt;dh.generator);
+<a id='L741' name='L741'></a>                _gnutls_free_datum(&amp;info-&gt;dh.public_key);
+<a id='L742' name='L742'></a>        <em class='brace'>}</em>
+<a id='L743' name='L743'></a>
+<a id='L744' name='L744'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L745' name='L745'></a><em class='brace'>}</em>
+<a id='L746' name='L746'></a><em class='sharp'>#endif</em>                          <em class='comment'>/* ANON */</em>
+<a id='L747' name='L747'></a>
+<a id='L748' name='L748'></a><em class='sharp'>#ifdef</em> ENABLE_PSK
+<a id='L749' name='L749'></a><em class='comment'>/* Packs the PSK session authentication data.</em>
+<a id='L750' name='L750'></a><em class='comment'> */</em>
+<a id='L751' name='L751'></a>
+<a id='L752' name='L752'></a><em class='comment'>/* Format: </em>
+<a id='L753' name='L753'></a><em class='comment'> *      1 byte the credentials type</em>
+<a id='L754' name='L754'></a><em class='comment'> *      4 bytes the size of the whole structure</em>
+<a id='L755' name='L755'></a><em class='comment'> *</em>
+<a id='L756' name='L756'></a><em class='comment'> *      4 bytes the size of the PSK username (x)</em>
+<a id='L757' name='L757'></a><em class='comment'> *      x bytes the PSK username</em>
+<a id='L758' name='L758'></a><em class='comment'> *      2 bytes the size of secret key in bits</em>
+<a id='L759' name='L759'></a><em class='comment'> *      4 bytes the size of the prime</em>
+<a id='L760' name='L760'></a><em class='comment'> *      x bytes the prime</em>
+<a id='L761' name='L761'></a><em class='comment'> *      4 bytes the size of the generator</em>
+<a id='L762' name='L762'></a><em class='comment'> *      x bytes the generator</em>
+<a id='L763' name='L763'></a><em class='comment'> *      4 bytes the size of the public key</em>
+<a id='L764' name='L764'></a><em class='comment'> *      x bytes the public key</em>
+<a id='L765' name='L765'></a><em class='comment'> */</em>
+<a id='L766' name='L766'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L767' name='L767'></a><a href='../R/9560.html' title='Multiple referred from 2 places.'>pack_psk_auth_info</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps)
+<a id='L768' name='L768'></a><em class='brace'>{</em>
+<a id='L769' name='L769'></a>        <a href='../S/5315.html#L67' title='Defined at 67 in lib/auth/psk.h.'>psk_auth_info_t</a> info;
+<a id='L770' name='L770'></a>        <strong class='reserved'>int</strong> username_len;
+<a id='L771' name='L771'></a>        <strong class='reserved'>int</strong> hint_len, ret;
+<a id='L772' name='L772'></a>        <strong class='reserved'>int</strong> size_offset;
+<a id='L773' name='L773'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> cur_size;
+<a id='L774' name='L774'></a>
+<a id='L775' name='L775'></a>        info = <a href='../S/5289.html#L78' title='Defined at 78 in lib/auth.h.'>_gnutls_get_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_PSK);
+<a id='L776' name='L776'></a>        <strong class='reserved'>if</strong> (info == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L777' name='L777'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L778' name='L778'></a>
+<a id='L779' name='L779'></a>        username_len = info-&gt;username_len;
+<a id='L780' name='L780'></a>        hint_len = strlen(info-&gt;hint) + 1;      <em class='comment'>/* include the terminating null */</em>
+<a id='L781' name='L781'></a>
+<a id='L782' name='L782'></a>        size_offset = ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L783' name='L783'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, 0);
+<a id='L784' name='L784'></a>        cur_size = ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L785' name='L785'></a>
+<a id='L786' name='L786'></a>        <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps, info-&gt;username, username_len);
+<a id='L787' name='L787'></a>        <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps, info-&gt;hint, hint_len);
+<a id='L788' name='L788'></a>
+<a id='L789' name='L789'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, info-&gt;dh.secret_bits);
+<a id='L790' name='L790'></a>        <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps, info-&gt;dh.prime.data, info-&gt;dh.prime.size);
+<a id='L791' name='L791'></a>        <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps, info-&gt;dh.generator.data,
+<a id='L792' name='L792'></a>                           info-&gt;dh.generator.size);
+<a id='L793' name='L793'></a>        <a href='../S/5333.html#L203' title='Defined at 203 in lib/str.h.'>BUFFER_APPEND_PFX4</a>(ps, info-&gt;dh.public_key.data,
+<a id='L794' name='L794'></a>                           info-&gt;dh.public_key.size);
+<a id='L795' name='L795'></a>
+<a id='L796' name='L796'></a>        <em class='comment'>/* write the real size */</em>
+<a id='L797' name='L797'></a>        <a href='../S/5268.html#L74' title='Defined at 74 in lib/num.h.'>_gnutls_write_uint32</a>(ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> - cur_size,
+<a id='L798' name='L798'></a>                             ps-&gt;data + size_offset);
+<a id='L799' name='L799'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L800' name='L800'></a><em class='brace'>}</em>
+<a id='L801' name='L801'></a>
+<a id='L802' name='L802'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L803' name='L803'></a><a href='../R/11092.html' title='Multiple referred from 2 places.'>unpack_psk_auth_info</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps)
+<a id='L804' name='L804'></a><em class='brace'>{</em>
+<a id='L805' name='L805'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> username_size, hint_size;
+<a id='L806' name='L806'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L807' name='L807'></a>        <a href='../S/5315.html#L67' title='Defined at 67 in lib/auth/psk.h.'>psk_auth_info_t</a> info;
+<a id='L808' name='L808'></a>        <strong class='reserved'>unsigned</strong> pack_size;
+<a id='L809' name='L809'></a>
+<a id='L810' name='L810'></a>        ret =
+<a id='L811' name='L811'></a>            <a href='../S/5749.html#L407' title='Defined at 407 in lib/auth.c.'>_gnutls_auth_info_init</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_PSK,
+<a id='L812' name='L812'></a>                                  <strong class='reserved'>sizeof</strong>(<a href='../D/10905.html' title='Multiple defined in 2 places.'>psk_auth_info_st</a>), 1);
+<a id='L813' name='L813'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L814' name='L814'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L815' name='L815'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L816' name='L816'></a>        <em class='brace'>}</em>
+<a id='L817' name='L817'></a>
+<a id='L818' name='L818'></a>        info = <a href='../S/5289.html#L78' title='Defined at 78 in lib/auth.h.'>_gnutls_get_auth_info</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, GNUTLS_CRD_PSK);
+<a id='L819' name='L819'></a>        <strong class='reserved'>if</strong> (info == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L820' name='L820'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L821' name='L821'></a>
+<a id='L822' name='L822'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, pack_size);
+<a id='L823' name='L823'></a>        <strong class='reserved'>if</strong> (pack_size == 0)
+<a id='L824' name='L824'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L825' name='L825'></a>
+<a id='L826' name='L826'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, username_size);
+<a id='L827' name='L827'></a>        <strong class='reserved'>if</strong> (username_size &gt; (<strong class='reserved'>sizeof</strong>(info-&gt;username) - 1)) <em class='brace'>{</em>
+<a id='L828' name='L828'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L829' name='L829'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INTERNAL_ERROR;
+<a id='L830' name='L830'></a>        <em class='brace'>}</em>
+<a id='L831' name='L831'></a>
+<a id='L832' name='L832'></a>        <a href='../S/5333.html#L261' title='Defined at 261 in lib/str.h.'>BUFFER_POP</a>(ps, info-&gt;username, username_size);
+<a id='L833' name='L833'></a>        <strong class='reserved'>if</strong> (username_size == 0)
+<a id='L834' name='L834'></a>                info-&gt;username[0] = 0;
+<a id='L835' name='L835'></a>
+<a id='L836' name='L836'></a>        <em class='comment'>/* append a null terminator and set length */</em>
+<a id='L837' name='L837'></a>        info-&gt;username[username_size] = 0;
+<a id='L838' name='L838'></a>        info-&gt;username_len = username_size;
+<a id='L839' name='L839'></a>
+<a id='L840' name='L840'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, hint_size);
+<a id='L841' name='L841'></a>        <strong class='reserved'>if</strong> (hint_size &gt; <strong class='reserved'>sizeof</strong>(info-&gt;hint)) <em class='brace'>{</em>
+<a id='L842' name='L842'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L843' name='L843'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INTERNAL_ERROR;
+<a id='L844' name='L844'></a>        <em class='brace'>}</em>
+<a id='L845' name='L845'></a>        <a href='../S/5333.html#L261' title='Defined at 261 in lib/str.h.'>BUFFER_POP</a>(ps, info-&gt;hint, hint_size);
+<a id='L846' name='L846'></a>        <strong class='reserved'>if</strong> (hint_size == 0)
+<a id='L847' name='L847'></a>                info-&gt;hint[0] = 0;
+<a id='L848' name='L848'></a>
+<a id='L849' name='L849'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, info-&gt;dh.secret_bits);
+<a id='L850' name='L850'></a>
+<a id='L851' name='L851'></a>        <a href='../S/5333.html#L270' title='Defined at 270 in lib/str.h.'>BUFFER_POP_DATUM</a>(ps, &amp;info-&gt;dh.prime);
+<a id='L852' name='L852'></a>        <a href='../S/5333.html#L270' title='Defined at 270 in lib/str.h.'>BUFFER_POP_DATUM</a>(ps, &amp;info-&gt;dh.generator);
+<a id='L853' name='L853'></a>        <a href='../S/5333.html#L270' title='Defined at 270 in lib/str.h.'>BUFFER_POP_DATUM</a>(ps, &amp;info-&gt;dh.public_key);
+<a id='L854' name='L854'></a>
+<a id='L855' name='L855'></a>        ret = 0;
+<a id='L856' name='L856'></a>
+<a id='L857' name='L857'></a>      error:
+<a id='L858' name='L858'></a>        _gnutls_free_datum(&amp;info-&gt;dh.prime);
+<a id='L859' name='L859'></a>        _gnutls_free_datum(&amp;info-&gt;dh.generator);
+<a id='L860' name='L860'></a>        _gnutls_free_datum(&amp;info-&gt;dh.public_key);
+<a id='L861' name='L861'></a>
+<a id='L862' name='L862'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L863' name='L863'></a><em class='brace'>}</em>
+<a id='L864' name='L864'></a><em class='sharp'>#endif</em>
+<a id='L865' name='L865'></a>
+<a id='L866' name='L866'></a>
+<a id='L867' name='L867'></a><em class='comment'>/* Packs the security parameters.</em>
+<a id='L868' name='L868'></a><em class='comment'> */</em>
+<a id='L869' name='L869'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L870' name='L870'></a><a href='../R/9561.html' title='Multiple referred from 2 places.'>pack_security_parameters</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps)
+<a id='L871' name='L871'></a><em class='brace'>{</em>
+<a id='L872' name='L872'></a>
+<a id='L873' name='L873'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L874' name='L874'></a>        <strong class='reserved'>int</strong> size_offset;
+<a id='L875' name='L875'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> cur_size;
+<a id='L876' name='L876'></a>
+<a id='L877' name='L877'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.epoch_read
+<a id='L878' name='L878'></a>            != <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.epoch_write &amp;&amp;
+<a id='L879' name='L879'></a>            !(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.hsk_flags &amp; HSK_EARLY_START_USED)) <em class='brace'>{</em>
+<a id='L880' name='L880'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L881' name='L881'></a>                <strong class='reserved'>return</strong> GNUTLS_E_UNAVAILABLE_DURING_HANDSHAKE;
+<a id='L882' name='L882'></a>        <em class='brace'>}</em>
+<a id='L883' name='L883'></a>
+<a id='L884' name='L884'></a>        ret = <a href='../S/5810.html#L914' title='Defined at 914 in lib/constate.c.'>_gnutls_epoch_get</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../S/5822.html#L861' title='Defined at 861 in lib/gnutls_int.h.'>EPOCH_READ_CURRENT</a>, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L885' name='L885'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L886' name='L886'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L887' name='L887'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L888' name='L888'></a>        <em class='brace'>}</em>
+<a id='L889' name='L889'></a>
+<a id='L890' name='L890'></a>        <em class='comment'>/* move after the auth info stuff.</em>
+<a id='L891' name='L891'></a><em class='comment'>         */</em>
+<a id='L892' name='L892'></a>        size_offset = ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L893' name='L893'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, 0);
+<a id='L894' name='L894'></a>        cur_size = ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L895' name='L895'></a>
+<a id='L896' name='L896'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.entity);
+<a id='L897' name='L897'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.<a href='../S/5262.html#L170' title='Defined at 170 in lib/gnutlsxx.cpp.'>prf</a>-&gt;id);
+<a id='L898' name='L898'></a>
+<a id='L899' name='L899'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps,
+<a id='L900' name='L900'></a>                          <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.client_auth_type);
+<a id='L901' name='L901'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps,
+<a id='L902' name='L902'></a>                          <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.server_auth_type);
+<a id='L903' name='L903'></a>
+<a id='L904' name='L904'></a>        <a href='../S/5333.html#L194' title='Defined at 194 in lib/str.h.'>BUFFER_APPEND</a>(ps, &amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.session_id_size,
+<a id='L905' name='L905'></a>                      1);
+<a id='L906' name='L906'></a>        <a href='../S/5333.html#L194' title='Defined at 194 in lib/str.h.'>BUFFER_APPEND</a>(ps, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.session_id,
+<a id='L907' name='L907'></a>                      <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.session_id_size);
+<a id='L908' name='L908'></a>
+<a id='L909' name='L909'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.pversion-&gt;id);
+<a id='L910' name='L910'></a>
+<a id='L911' name='L911'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.client_ctype);
+<a id='L912' name='L912'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.server_ctype);
+<a id='L913' name='L913'></a>
+<a id='L914' name='L914'></a>        <em class='comment'>/* if we are under TLS 1.3 do not pack keys or params negotiated using an extension</em>
+<a id='L915' name='L915'></a><em class='comment'>         * they are not necessary */</em>
+<a id='L916' name='L916'></a>        <strong class='reserved'>if</strong> (!<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.pversion-&gt;tls13_sem) <em class='brace'>{</em>
+<a id='L917' name='L917'></a>                <a href='../S/5333.html#L194' title='Defined at 194 in lib/str.h.'>BUFFER_APPEND</a>(ps, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.cs-&gt;id, 2);
+<a id='L918' name='L918'></a>
+<a id='L919' name='L919'></a>                <a href='../S/5333.html#L227' title='Defined at 227 in lib/str.h.'>BUFFER_APPEND_PFX1</a>(ps, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.master_secret,
+<a id='L920' name='L920'></a>                              <a href='../S/5822.html#L119' title='Defined at 119 in lib/gnutls_int.h.'>GNUTLS_MASTER_SIZE</a>);
+<a id='L921' name='L921'></a>                <a href='../S/5333.html#L227' title='Defined at 227 in lib/str.h.'>BUFFER_APPEND_PFX1</a>(ps, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.client_random,
+<a id='L922' name='L922'></a>                              <a href='../S/5822.html#L120' title='Defined at 120 in lib/gnutls_int.h.'>GNUTLS_RANDOM_SIZE</a>);
+<a id='L923' name='L923'></a>                <a href='../S/5333.html#L227' title='Defined at 227 in lib/str.h.'>BUFFER_APPEND_PFX1</a>(ps, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.server_random,
+<a id='L924' name='L924'></a>                              <a href='../S/5822.html#L120' title='Defined at 120 in lib/gnutls_int.h.'>GNUTLS_RANDOM_SIZE</a>);
+<a id='L925' name='L925'></a>
+<a id='L926' name='L926'></a>                <em class='comment'>/* reset max_record_recv_size if it was negotiated</em>
+<a id='L927' name='L927'></a><em class='comment'>                 * using the record_size_limit extension */</em>
+<a id='L928' name='L928'></a>                <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.hsk_flags &amp; HSK_RECORD_SIZE_LIMIT_NEGOTIATED) <em class='brace'>{</em>
+<a id='L929' name='L929'></a>                        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps,
+<a id='L930' name='L930'></a>                                          <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.
+<a id='L931' name='L931'></a>                                          max_user_record_send_size);
+<a id='L932' name='L932'></a>                        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps,
+<a id='L933' name='L933'></a>                                          <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.
+<a id='L934' name='L934'></a>                                          max_user_record_recv_size);
+<a id='L935' name='L935'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L936' name='L936'></a>                        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps,
+<a id='L937' name='L937'></a>                                          <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.
+<a id='L938' name='L938'></a>                                          <a href='../S/5295.html#L51' title='Defined at 51 in lib/record.h.'>max_record_recv_size</a>);
+<a id='L939' name='L939'></a>                        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps,
+<a id='L940' name='L940'></a>                                          <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.
+<a id='L941' name='L941'></a>                                          <a href='../S/5822.html#L1571' title='Defined at 1571 in lib/gnutls_int.h.'>max_record_send_size</a>);
+<a id='L942' name='L942'></a>                <em class='brace'>}</em>
+<a id='L943' name='L943'></a>
+<a id='L944' name='L944'></a>                <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.grp) <em class='brace'>{</em>
+<a id='L945' name='L945'></a>                        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.grp-&gt;id);
+<a id='L946' name='L946'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L947' name='L947'></a>                        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, 0);
+<a id='L948' name='L948'></a>                <em class='brace'>}</em>
+<a id='L949' name='L949'></a>
+<a id='L950' name='L950'></a>                <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps,
+<a id='L951' name='L951'></a>                                  <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.server_sign_algo);
+<a id='L952' name='L952'></a>                <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps,
+<a id='L953' name='L953'></a>                                  <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.client_sign_algo);
+<a id='L954' name='L954'></a>                <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps,
+<a id='L955' name='L955'></a>                                  <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.ext_master_secret);
+<a id='L956' name='L956'></a>                <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps,
+<a id='L957' name='L957'></a>                                  <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.etm);
+<a id='L958' name='L958'></a>        <em class='brace'>}</em>
+<a id='L959' name='L959'></a>
+<a id='L960' name='L960'></a>
+<a id='L961' name='L961'></a>        <a href='../S/5268.html#L74' title='Defined at 74 in lib/num.h.'>_gnutls_write_uint32</a>(ps-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> - cur_size,
+<a id='L962' name='L962'></a>                             ps-&gt;data + size_offset);
+<a id='L963' name='L963'></a>
+<a id='L964' name='L964'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L965' name='L965'></a><em class='brace'>}</em>
+<a id='L966' name='L966'></a>
+<a id='L967' name='L967'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L968' name='L968'></a><a href='../R/11093.html' title='Multiple referred from 2 places.'>unpack_security_parameters</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps)
+<a id='L969' name='L969'></a><em class='brace'>{</em>
+<a id='L970' name='L970'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> pack_size;
+<a id='L971' name='L971'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L972' name='L972'></a>        <strong class='reserved'>unsigned</strong> version;
+<a id='L973' name='L973'></a>        gnutls_datum_t t;
+<a id='L974' name='L974'></a>        time_t timestamp;
+<a id='L975' name='L975'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> cs[2];
+<a id='L976' name='L976'></a>
+<a id='L977' name='L977'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, pack_size);
+<a id='L978' name='L978'></a>
+<a id='L979' name='L979'></a>        <strong class='reserved'>if</strong> (pack_size == 0)
+<a id='L980' name='L980'></a>                <strong class='reserved'>return</strong> GNUTLS_E_INVALID_REQUEST;
+<a id='L981' name='L981'></a>
+<a id='L982' name='L982'></a>        timestamp =
+<a id='L983' name='L983'></a>            <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.timestamp;
+<a id='L984' name='L984'></a>        memset(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters, 0,
+<a id='L985' name='L985'></a>               <strong class='reserved'>sizeof</strong>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters));
+<a id='L986' name='L986'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.timestamp =
+<a id='L987' name='L987'></a>            timestamp;
+<a id='L988' name='L988'></a>
+<a id='L989' name='L989'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps,
+<a id='L990' name='L990'></a>                       <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L991' name='L991'></a>                       entity);
+<a id='L992' name='L992'></a>
+<a id='L993' name='L993'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, version);
+<a id='L994' name='L994'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.<a href='../S/5262.html#L170' title='Defined at 170 in lib/gnutlsxx.cpp.'>prf</a> = <a href='../S/6029.html#L117' title='Defined at 117 in lib/algorithms.h.'>mac_to_entry</a>(version);
+<a id='L995' name='L995'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.<a href='../S/5262.html#L170' title='Defined at 170 in lib/gnutlsxx.cpp.'>prf</a> == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L996' name='L996'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L997' name='L997'></a>
+<a id='L998' name='L998'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps,
+<a id='L999' name='L999'></a>                       <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1000' name='L1000'></a>                       client_auth_type);
+<a id='L1001' name='L1001'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps,
+<a id='L1002' name='L1002'></a>                       <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1003' name='L1003'></a>                       server_auth_type);
+<a id='L1004' name='L1004'></a>
+<a id='L1005' name='L1005'></a>        <a href='../S/5333.html#L261' title='Defined at 261 in lib/str.h.'>BUFFER_POP</a>(ps,
+<a id='L1006' name='L1006'></a>                   &amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1007' name='L1007'></a>                   session_id_size, 1);
+<a id='L1008' name='L1008'></a>
+<a id='L1009' name='L1009'></a>        <a href='../S/5333.html#L261' title='Defined at 261 in lib/str.h.'>BUFFER_POP</a>(ps,
+<a id='L1010' name='L1010'></a>                   <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1011' name='L1011'></a>                   session_id,
+<a id='L1012' name='L1012'></a>                   <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1013' name='L1013'></a>                   session_id_size);
+<a id='L1014' name='L1014'></a>
+<a id='L1015' name='L1015'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, version);
+<a id='L1016' name='L1016'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.pversion =
+<a id='L1017' name='L1017'></a>            <a href='../D/12187.html' title='Multiple defined in 2 places.'>version_to_entry</a>(version);
+<a id='L1018' name='L1018'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.pversion ==
+<a id='L1019' name='L1019'></a>            <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L1020' name='L1020'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L1021' name='L1021'></a>
+<a id='L1022' name='L1022'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps,
+<a id='L1023' name='L1023'></a>                       <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1024' name='L1024'></a>                       client_ctype);
+<a id='L1025' name='L1025'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps,
+<a id='L1026' name='L1026'></a>                       <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1027' name='L1027'></a>                       server_ctype);
+<a id='L1028' name='L1028'></a>
+<a id='L1029' name='L1029'></a>        <strong class='reserved'>if</strong> (!<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.pversion-&gt;tls13_sem) <em class='brace'>{</em>
+<a id='L1030' name='L1030'></a>                <a href='../S/5333.html#L261' title='Defined at 261 in lib/str.h.'>BUFFER_POP</a>(ps, cs, 2);
+<a id='L1031' name='L1031'></a>                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.cs = <a href='../S/5251.html#L1200' title='Defined at 1200 in lib/algorithms/ciphersuites.c.'>ciphersuite_to_entry</a>(cs);
+<a id='L1032' name='L1032'></a>                <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.cs == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L1033' name='L1033'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L1034' name='L1034'></a>
+<a id='L1035' name='L1035'></a>                <em class='comment'>/* master secret */</em>
+<a id='L1036' name='L1036'></a>                ret = <a href='../S/5806.html#L901' title='Defined at 901 in lib/str.c.'>_gnutls_buffer_pop_datum_prefix8</a>(ps, &amp;t);
+<a id='L1037' name='L1037'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1038' name='L1038'></a>                        ret = GNUTLS_E_PARSING_ERROR;
+<a id='L1039' name='L1039'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1040' name='L1040'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L1041' name='L1041'></a>                <em class='brace'>}</em>
+<a id='L1042' name='L1042'></a>                <strong class='reserved'>if</strong> (t.size == <a href='../S/5822.html#L119' title='Defined at 119 in lib/gnutls_int.h.'>GNUTLS_MASTER_SIZE</a>)
+<a id='L1043' name='L1043'></a>                        memcpy(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.master_secret, t.data, t.size);
+<a id='L1044' name='L1044'></a>
+<a id='L1045' name='L1045'></a>                <em class='comment'>/* client random */</em>
+<a id='L1046' name='L1046'></a>                ret = <a href='../S/5806.html#L901' title='Defined at 901 in lib/str.c.'>_gnutls_buffer_pop_datum_prefix8</a>(ps, &amp;t);
+<a id='L1047' name='L1047'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1048' name='L1048'></a>                        ret = GNUTLS_E_PARSING_ERROR;
+<a id='L1049' name='L1049'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1050' name='L1050'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L1051' name='L1051'></a>                <em class='brace'>}</em>
+<a id='L1052' name='L1052'></a>                <strong class='reserved'>if</strong> (t.size == <a href='../S/5822.html#L120' title='Defined at 120 in lib/gnutls_int.h.'>GNUTLS_RANDOM_SIZE</a>)
+<a id='L1053' name='L1053'></a>                        memcpy(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.client_random, t.data, t.size);
+<a id='L1054' name='L1054'></a>
+<a id='L1055' name='L1055'></a>                <em class='comment'>/* server random */</em>
+<a id='L1056' name='L1056'></a>                ret = <a href='../S/5806.html#L901' title='Defined at 901 in lib/str.c.'>_gnutls_buffer_pop_datum_prefix8</a>(ps, &amp;t);
+<a id='L1057' name='L1057'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L1058' name='L1058'></a>                        ret = GNUTLS_E_PARSING_ERROR;
+<a id='L1059' name='L1059'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L1060' name='L1060'></a>                        <strong class='reserved'>goto</strong> error;
+<a id='L1061' name='L1061'></a>                <em class='brace'>}</em>
+<a id='L1062' name='L1062'></a>                <strong class='reserved'>if</strong> (t.size == <a href='../S/5822.html#L120' title='Defined at 120 in lib/gnutls_int.h.'>GNUTLS_RANDOM_SIZE</a>)
+<a id='L1063' name='L1063'></a>                        memcpy(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.server_random, t.data, t.size);
+<a id='L1064' name='L1064'></a>
+<a id='L1065' name='L1065'></a>
+<a id='L1066' name='L1066'></a>                <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps,
+<a id='L1067' name='L1067'></a>                               <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1068' name='L1068'></a>                               <a href='../S/5822.html#L1571' title='Defined at 1571 in lib/gnutls_int.h.'>max_record_send_size</a>);
+<a id='L1069' name='L1069'></a>                <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps,
+<a id='L1070' name='L1070'></a>                               <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1071' name='L1071'></a>                               <a href='../S/5295.html#L51' title='Defined at 51 in lib/record.h.'>max_record_recv_size</a>);
+<a id='L1072' name='L1072'></a>
+<a id='L1073' name='L1073'></a>                <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, ret);
+<a id='L1074' name='L1074'></a>                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.grp = <a href='../S/5254.html#L209' title='Defined at 209 in lib/algorithms/groups.c.'>_gnutls_id_to_group</a>(ret);
+<a id='L1075' name='L1075'></a>                <em class='comment'>/* it can be null */</em>
+<a id='L1076' name='L1076'></a>
+<a id='L1077' name='L1077'></a>                <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps,
+<a id='L1078' name='L1078'></a>                               <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1079' name='L1079'></a>                               server_sign_algo);
+<a id='L1080' name='L1080'></a>                <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps,
+<a id='L1081' name='L1081'></a>                               <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1082' name='L1082'></a>                               client_sign_algo);
+<a id='L1083' name='L1083'></a>                <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps,
+<a id='L1084' name='L1084'></a>                               <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1085' name='L1085'></a>                               ext_master_secret);
+<a id='L1086' name='L1086'></a>                <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps,
+<a id='L1087' name='L1087'></a>                               <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1088' name='L1088'></a>                               etm);
+<a id='L1089' name='L1089'></a>
+<a id='L1090' name='L1090'></a>                <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1091' name='L1091'></a>                    <a href='../S/5295.html#L51' title='Defined at 51 in lib/record.h.'>max_record_recv_size</a> == 0
+<a id='L1092' name='L1092'></a>                    || <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1093' name='L1093'></a>                    <a href='../S/5822.html#L1571' title='Defined at 1571 in lib/gnutls_int.h.'>max_record_send_size</a> == 0) <em class='brace'>{</em>
+<a id='L1094' name='L1094'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L1095' name='L1095'></a>                <em class='brace'>}</em>
+<a id='L1096' name='L1096'></a>        <em class='brace'>}</em>
+<a id='L1097' name='L1097'></a>
+<a id='L1098' name='L1098'></a>        ret = 0;
+<a id='L1099' name='L1099'></a>
+<a id='L1100' name='L1100'></a>      error:
+<a id='L1101' name='L1101'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L1102' name='L1102'></a><em class='brace'>}</em>
+<a id='L1103' name='L1103'></a>
+<a id='L1104' name='L1104'></a><em class='comment'>/**</em>
+<a id='L1105' name='L1105'></a><em class='comment'> * gnutls_session_set_premaster:</em>
+<a id='L1106' name='L1106'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L1107' name='L1107'></a><em class='comment'> * @entity: GNUTLS_SERVER or GNUTLS_CLIENT</em>
+<a id='L1108' name='L1108'></a><em class='comment'> * @version: the TLS protocol version</em>
+<a id='L1109' name='L1109'></a><em class='comment'> * @kx: the key exchange method</em>
+<a id='L1110' name='L1110'></a><em class='comment'> * @cipher: the cipher</em>
+<a id='L1111' name='L1111'></a><em class='comment'> * @mac: the MAC algorithm</em>
+<a id='L1112' name='L1112'></a><em class='comment'> * @comp: the compression method (ignored)</em>
+<a id='L1113' name='L1113'></a><em class='comment'> * @master: the master key to use</em>
+<a id='L1114' name='L1114'></a><em class='comment'> * @session_id: the session identifier</em>
+<a id='L1115' name='L1115'></a><em class='comment'> *</em>
+<a id='L1116' name='L1116'></a><em class='comment'> * This function sets the premaster secret in a session. This is</em>
+<a id='L1117' name='L1117'></a><em class='comment'> * a function intended for exceptional uses. Do not use this</em>
+<a id='L1118' name='L1118'></a><em class='comment'> * function unless you are implementing a legacy protocol.</em>
+<a id='L1119' name='L1119'></a><em class='comment'> * Use gnutls_session_set_data() instead.</em>
+<a id='L1120' name='L1120'></a><em class='comment'> *</em>
+<a id='L1121' name='L1121'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned, otherwise</em>
+<a id='L1122' name='L1122'></a><em class='comment'> *   an error code is returned.</em>
+<a id='L1123' name='L1123'></a><em class='comment'> **/</em>
+<a id='L1124' name='L1124'></a><strong class='reserved'>int</strong>
+<a id='L1125' name='L1125'></a><a href='../R/8324.html' title='Multiple referred from 6 places.'>gnutls_session_set_premaster</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> entity,
+<a id='L1126' name='L1126'></a>                             gnutls_protocol_t version,
+<a id='L1127' name='L1127'></a>                             gnutls_kx_algorithm_t kx,
+<a id='L1128' name='L1128'></a>                             gnutls_cipher_algorithm_t cipher,
+<a id='L1129' name='L1129'></a>                             gnutls_mac_algorithm_t mac,
+<a id='L1130' name='L1130'></a>                             gnutls_compression_method_t comp,
+<a id='L1131' name='L1131'></a>                             <strong class='reserved'>const</strong> gnutls_datum_t * master,
+<a id='L1132' name='L1132'></a>                             <strong class='reserved'>const</strong> gnutls_datum_t * session_id)
+<a id='L1133' name='L1133'></a><em class='brace'>{</em>
+<a id='L1134' name='L1134'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L1135' name='L1135'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> cs[2];
+<a id='L1136' name='L1136'></a>
+<a id='L1137' name='L1137'></a>        memset(&amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters, 0,
+<a id='L1138' name='L1138'></a>               <strong class='reserved'>sizeof</strong>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters));
+<a id='L1139' name='L1139'></a>
+<a id='L1140' name='L1140'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.entity = entity;
+<a id='L1141' name='L1141'></a>
+<a id='L1142' name='L1142'></a>        ret =
+<a id='L1143' name='L1143'></a>            <a href='../S/5251.html#L1351' title='Defined at 1351 in lib/algorithms/ciphersuites.c.'>_gnutls_cipher_suite_get_id</a>(kx, cipher, mac, cs);
+<a id='L1144' name='L1144'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L1145' name='L1145'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L1146' name='L1146'></a>
+<a id='L1147' name='L1147'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.cs = <a href='../S/5251.html#L1200' title='Defined at 1200 in lib/algorithms/ciphersuites.c.'>ciphersuite_to_entry</a>(cs);
+<a id='L1148' name='L1148'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.cs == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L1149' name='L1149'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L1150' name='L1150'></a>
+<a id='L1151' name='L1151'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.client_ctype =
+<a id='L1152' name='L1152'></a>                        <a href='../S/5748.html#L123' title='Defined at 123 in lib/state.h.'>DEFAULT_CERT_TYPE</a>;
+<a id='L1153' name='L1153'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.server_ctype =
+<a id='L1154' name='L1154'></a>                        <a href='../S/5748.html#L123' title='Defined at 123 in lib/state.h.'>DEFAULT_CERT_TYPE</a>;
+<a id='L1155' name='L1155'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.pversion =
+<a id='L1156' name='L1156'></a>            <a href='../D/12187.html' title='Multiple defined in 2 places.'>version_to_entry</a>(version);
+<a id='L1157' name='L1157'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.pversion ==
+<a id='L1158' name='L1158'></a>            <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L1159' name='L1159'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L1160' name='L1160'></a>
+<a id='L1161' name='L1161'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.pversion-&gt;selectable_prf)
+<a id='L1162' name='L1162'></a>                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.<a href='../S/5262.html#L170' title='Defined at 170 in lib/gnutlsxx.cpp.'>prf</a> = <a href='../S/6029.html#L117' title='Defined at 117 in lib/algorithms.h.'>mac_to_entry</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.cs-&gt;<a href='../S/5262.html#L170' title='Defined at 170 in lib/gnutlsxx.cpp.'>prf</a>);
+<a id='L1163' name='L1163'></a>        <strong class='reserved'>else</strong>
+<a id='L1164' name='L1164'></a>                <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.<a href='../S/5262.html#L170' title='Defined at 170 in lib/gnutlsxx.cpp.'>prf</a> = <a href='../S/6029.html#L117' title='Defined at 117 in lib/algorithms.h.'>mac_to_entry</a>(GNUTLS_MAC_MD5_SHA1);
+<a id='L1165' name='L1165'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.<a href='../S/5262.html#L170' title='Defined at 170 in lib/gnutlsxx.cpp.'>prf</a> == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L1166' name='L1166'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L1167' name='L1167'></a>
+<a id='L1168' name='L1168'></a>        <strong class='reserved'>if</strong> (master-&gt;size != <a href='../S/5822.html#L119' title='Defined at 119 in lib/gnutls_int.h.'>GNUTLS_MASTER_SIZE</a>)
+<a id='L1169' name='L1169'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L1170' name='L1170'></a>
+<a id='L1171' name='L1171'></a>        memcpy(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1172' name='L1172'></a>               master_secret, master-&gt;data, master-&gt;size);
+<a id='L1173' name='L1173'></a>
+<a id='L1174' name='L1174'></a>        <strong class='reserved'>if</strong> (session_id-&gt;size &gt; GNUTLS_MAX_SESSION_ID)
+<a id='L1175' name='L1175'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L1176' name='L1176'></a>
+<a id='L1177' name='L1177'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.session_id_size =
+<a id='L1178' name='L1178'></a>            session_id-&gt;size;
+<a id='L1179' name='L1179'></a>        memcpy(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.session_id,
+<a id='L1180' name='L1180'></a>               session_id-&gt;data, session_id-&gt;size);
+<a id='L1181' name='L1181'></a>
+<a id='L1182' name='L1182'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1183' name='L1183'></a>            <a href='../S/5822.html#L1571' title='Defined at 1571 in lib/gnutls_int.h.'>max_record_send_size</a> =
+<a id='L1184' name='L1184'></a>            <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.
+<a id='L1185' name='L1185'></a>            <a href='../S/5295.html#L51' title='Defined at 51 in lib/record.h.'>max_record_recv_size</a> = <a href='../S/5822.html#L181' title='Defined at 181 in lib/gnutls_int.h.'>DEFAULT_MAX_RECORD_SIZE</a>;
+<a id='L1186' name='L1186'></a>
+<a id='L1187' name='L1187'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.timestamp =
+<a id='L1188' name='L1188'></a>            gnutls_time(0);
+<a id='L1189' name='L1189'></a>
+<a id='L1190' name='L1190'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.grp = 0;
+<a id='L1191' name='L1191'></a>
+<a id='L1192' name='L1192'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.resumed_security_parameters.post_handshake_auth = 0;
+<a id='L1193' name='L1193'></a>
+<a id='L1194' name='L1194'></a>        <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.premaster_set = 1;
+<a id='L1195' name='L1195'></a>
+<a id='L1196' name='L1196'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L1197' name='L1197'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L88'>[^]</a><a href='#L1125'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

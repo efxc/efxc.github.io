@@ -1,0 +1,215 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/nettle/ecc/ecc-mul-a.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6481.html'>nettle</a>/<a href='../files/6483.html'>ecc</a>/ecc-mul-a.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L52'>[^]</a><a href='#L119'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L52' title='Defined at 52.'>ecc_mul_a</a></li>
+<li><a href='#L100' title='Defined at 100.'>table_init</a></li>
+<li><a href='#L119' title='Defined at 119.'>ecc_mul_a</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* ecc-mul-a.c</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Copyright (C) 2013 Niels Möller</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   This file is part of GNU Nettle.</em>
+<a id='L6' name='L6'></a><em class='comment'></em>
+<a id='L7' name='L7'></a><em class='comment'>   GNU Nettle is free software: you can redistribute it and/or</em>
+<a id='L8' name='L8'></a><em class='comment'>   modify it under the terms of either:</em>
+<a id='L9' name='L9'></a><em class='comment'></em>
+<a id='L10' name='L10'></a><em class='comment'>     * the GNU Lesser General Public License as published by the Free</em>
+<a id='L11' name='L11'></a><em class='comment'>       Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L12' name='L12'></a><em class='comment'>       option) any later version.</em>
+<a id='L13' name='L13'></a><em class='comment'></em>
+<a id='L14' name='L14'></a><em class='comment'>   or</em>
+<a id='L15' name='L15'></a><em class='comment'></em>
+<a id='L16' name='L16'></a><em class='comment'>     * the GNU General Public License as published by the Free</em>
+<a id='L17' name='L17'></a><em class='comment'>       Software Foundation; either version 2 of the License, or (at your</em>
+<a id='L18' name='L18'></a><em class='comment'>       option) any later version.</em>
+<a id='L19' name='L19'></a><em class='comment'></em>
+<a id='L20' name='L20'></a><em class='comment'>   or both in parallel, as here.</em>
+<a id='L21' name='L21'></a><em class='comment'></em>
+<a id='L22' name='L22'></a><em class='comment'>   GNU Nettle is distributed in the hope that it will be useful,</em>
+<a id='L23' name='L23'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L24' name='L24'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L25' name='L25'></a><em class='comment'>   General Public License for more details.</em>
+<a id='L26' name='L26'></a><em class='comment'></em>
+<a id='L27' name='L27'></a><em class='comment'>   You should have received copies of the GNU General Public License and</em>
+<a id='L28' name='L28'></a><em class='comment'>   the GNU Lesser General Public License along with this program.  If</em>
+<a id='L29' name='L29'></a><em class='comment'>   not, see http://www.gnu.org/licenses/.</em>
+<a id='L30' name='L30'></a><em class='comment'>*/</em>
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a><em class='comment'>/* Development of Nettle's ECC support was funded by the .SE Internet Fund. */</em>
+<a id='L33' name='L33'></a>
+<a id='L34' name='L34'></a><em class='sharp'>#if</em> HAVE_CONFIG_H
+<a id='L35' name='L35'></a><em class='sharp'># include</em> "config.h"
+<a id='L36' name='L36'></a><em class='sharp'>#endif</em>
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> &lt;assert.h&gt;
+<a id='L39' name='L39'></a>
+<a id='L40' name='L40'></a><em class='sharp'>#include</em> &lt;<a href='6041.html'>nettle/ecc.h</a>&gt;
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> "<a href='5507.html'>ecc-internal.h</a>"
+<a id='L42' name='L42'></a>
+<a id='L43' name='L43'></a><em class='comment'>/* Binary algorithm needs 6*ecc-&gt;p.size + scratch for ecc_add_jja.</em>
+<a id='L44' name='L44'></a><em class='comment'>   Current total is 12 ecc-&gt;p.size, at most 864 bytes.</em>
+<a id='L45' name='L45'></a><em class='comment'></em>
+<a id='L46' name='L46'></a><em class='comment'>   Window algorithm needs (3&lt;&lt;w) * ecc-&gt;p.size for the table,</em>
+<a id='L47' name='L47'></a><em class='comment'>   3*ecc-&gt;p.size for a temporary point, and scratch for</em>
+<a id='L48' name='L48'></a><em class='comment'>   ecc_add_jjj. */</em>
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a><em class='sharp'>#if</em> <a href='../S/5507.html#L115' title='Defined at 115 in lib/nettle/ecc/ecc-internal.h.'>ECC_MUL_A_WBITS</a> == 0
+<a id='L51' name='L51'></a><strong class='reserved'>void</strong>
+<a id='L52' name='L52'></a><a href='../R/6793.html' title='Multiple referred from 3 places.'>ecc_mul_a</a> (<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../D/7598.html' title='Multiple defined in 2 places.'>ecc_curve</a> *ecc,
+<a id='L53' name='L53'></a>           <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> *r,
+<a id='L54' name='L54'></a>           <strong class='reserved'>const</strong> <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> *np, <strong class='reserved'>const</strong> <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> *p,
+<a id='L55' name='L55'></a>           <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> *scratch)
+<a id='L56' name='L56'></a><em class='brace'>{</em>
+<a id='L57' name='L57'></a><em class='sharp'>#define</em> <a href='../R/10944.html' title='Multiple referred from 300 places.'>tp</a> scratch
+<a id='L58' name='L58'></a><em class='sharp'>#define</em> <a href='../R/9655.html' title='Multiple referred from 3 places.'>pj</a> (scratch + 3*ecc-&gt;p.size)
+<a id='L59' name='L59'></a><em class='sharp'>#define</em> <a href='../R/10281.html' title='Multiple referred from 33 places.'>scratch_out</a> (scratch + 6*ecc-&gt;p.size)
+<a id='L60' name='L60'></a>
+<a id='L61' name='L61'></a>  <strong class='reserved'>int</strong> is_zero;
+<a id='L62' name='L62'></a>
+<a id='L63' name='L63'></a>  <strong class='reserved'>unsigned</strong> i;
+<a id='L64' name='L64'></a>
+<a id='L65' name='L65'></a>  <a href='../D/7587.html' title='Multiple defined in 2 places.'>ecc_a_to_j</a> (ecc, <a href='../S/5559.html#L58' title='Defined at 58 in lib/nettle/ecc/ecc-mul-a.c.'>pj</a>, p);
+<a id='L66' name='L66'></a>  mpn_zero (r, 3*ecc-&gt;p.size);
+<a id='L67' name='L67'></a>  
+<a id='L68' name='L68'></a>  <strong class='reserved'>for</strong> (i = ecc-&gt;p.size, is_zero = 1; i-- &gt; 0; )
+<a id='L69' name='L69'></a>    <em class='brace'>{</em>
+<a id='L70' name='L70'></a>      <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> <a href='../S/5549.html#L77' title='Defined at 77 in lib/nettle/ecc/ecc-add-jja.c.'>w</a> = np[i];
+<a id='L71' name='L71'></a>      <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> bit;
+<a id='L72' name='L72'></a>
+<a id='L73' name='L73'></a>      <strong class='reserved'>for</strong> (bit = (<a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a>) 1 &lt;&lt; (GMP_NUMB_BITS - 1);
+<a id='L74' name='L74'></a>           bit &gt; 0;
+<a id='L75' name='L75'></a>           bit &gt;&gt;= 1)
+<a id='L76' name='L76'></a>        <em class='brace'>{</em>
+<a id='L77' name='L77'></a>          <strong class='reserved'>int</strong> digit;
+<a id='L78' name='L78'></a>
+<a id='L79' name='L79'></a>          <a href='../D/7610.html' title='Multiple defined in 2 places.'>ecc_dup_jj</a> (ecc, r, r, <a href='../D/11284.html' title='Multiple defined in 24 places.'>scratch_out</a>);
+<a id='L80' name='L80'></a>          <a href='../D/7592.html' title='Multiple defined in 2 places.'>ecc_add_jja</a> (ecc, <a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>, r, <a href='../S/5559.html#L58' title='Defined at 58 in lib/nettle/ecc/ecc-mul-a.c.'>pj</a>, <a href='../D/11284.html' title='Multiple defined in 24 places.'>scratch_out</a>);
+<a id='L81' name='L81'></a>
+<a id='L82' name='L82'></a>          digit = (<a href='../S/5549.html#L77' title='Defined at 77 in lib/nettle/ecc/ecc-add-jja.c.'>w</a> &amp; bit) &gt; 0;
+<a id='L83' name='L83'></a>          <em class='comment'>/* If is_zero is set, r is the zero point,</em>
+<a id='L84' name='L84'></a><em class='comment'>             and ecc_add_jja produced garbage. */</em>
+<a id='L85' name='L85'></a>          <a href='../D/7278.html' title='Multiple defined in 2 places.'>cnd_copy</a> (is_zero, <a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>, <a href='../S/5559.html#L58' title='Defined at 58 in lib/nettle/ecc/ecc-mul-a.c.'>pj</a>, 3*ecc-&gt;p.size);
+<a id='L86' name='L86'></a>          is_zero &amp;= ~digit;
+<a id='L87' name='L87'></a>          <em class='comment'>/* If we had a one-bit, use the sum. */</em>
+<a id='L88' name='L88'></a>          <a href='../D/7278.html' title='Multiple defined in 2 places.'>cnd_copy</a> (digit, r, <a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>, 3*ecc-&gt;p.size);
+<a id='L89' name='L89'></a>        <em class='brace'>}</em>
+<a id='L90' name='L90'></a>    <em class='brace'>}</em>
+<a id='L91' name='L91'></a><em class='brace'>}</em>
+<a id='L92' name='L92'></a><em class='sharp'>#else</em> <em class='comment'>/* ECC_MUL_A_WBITS &gt; 1 */</em>
+<a id='L93' name='L93'></a>
+<a id='L94' name='L94'></a><em class='sharp'>#define</em> <a href='../R/3862.html' title='Multiple referred from 8 places.'>TABLE_SIZE</a> (1U &lt;&lt; <a href='../S/5507.html#L115' title='Defined at 115 in lib/nettle/ecc/ecc-internal.h.'>ECC_MUL_A_WBITS</a>)
+<a id='L95' name='L95'></a><em class='sharp'>#define</em> <a href='../R/3861.html' title='Multiple referred from 2 places.'>TABLE_MASK</a> (<a href='../D/4475.html' title='Multiple defined in 2 places.'>TABLE_SIZE</a> - 1)
+<a id='L96' name='L96'></a>
+<a id='L97' name='L97'></a><em class='sharp'>#define</em> <a href='../R/3860.html' title='Multiple referred from 9 places.'>TABLE</a>(<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>) (<a href='../D/11711.html' title='Multiple defined in 10 places.'>table</a> + (<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>) * 3*ecc-&gt;p.size)
+<a id='L98' name='L98'></a>
+<a id='L99' name='L99'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L100' name='L100'></a><a href='../R/10701.html' title='Multiple referred from 2 places.'>table_init</a> (<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../D/7598.html' title='Multiple defined in 2 places.'>ecc_curve</a> *ecc,
+<a id='L101' name='L101'></a>            <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> *<a href='../D/11711.html' title='Multiple defined in 10 places.'>table</a>, <strong class='reserved'>unsigned</strong> bits,
+<a id='L102' name='L102'></a>            <strong class='reserved'>const</strong> <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> *p,
+<a id='L103' name='L103'></a>            <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> *scratch)
+<a id='L104' name='L104'></a><em class='brace'>{</em>
+<a id='L105' name='L105'></a>  <strong class='reserved'>unsigned</strong> size = 1 &lt;&lt; bits;
+<a id='L106' name='L106'></a>  <strong class='reserved'>unsigned</strong> <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>;
+<a id='L107' name='L107'></a>
+<a id='L108' name='L108'></a>  mpn_zero (<a href='../D/4473.html' title='Multiple defined in 2 places.'>TABLE</a>(0), 3*ecc-&gt;p.size);
+<a id='L109' name='L109'></a>  <a href='../D/7587.html' title='Multiple defined in 2 places.'>ecc_a_to_j</a> (ecc, <a href='../D/4473.html' title='Multiple defined in 2 places.'>TABLE</a>(1), p);
+<a id='L110' name='L110'></a>
+<a id='L111' name='L111'></a>  <strong class='reserved'>for</strong> (<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> = 2; <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> &lt; size; <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> += 2)
+<a id='L112' name='L112'></a>    <em class='brace'>{</em>
+<a id='L113' name='L113'></a>      <a href='../D/7610.html' title='Multiple defined in 2 places.'>ecc_dup_jj</a> (ecc, <a href='../D/4473.html' title='Multiple defined in 2 places.'>TABLE</a>(<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>), <a href='../D/4473.html' title='Multiple defined in 2 places.'>TABLE</a>(<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>/2), scratch);
+<a id='L114' name='L114'></a>      <a href='../D/7592.html' title='Multiple defined in 2 places.'>ecc_add_jja</a> (ecc, <a href='../D/4473.html' title='Multiple defined in 2 places.'>TABLE</a>(<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>+1), <a href='../D/4473.html' title='Multiple defined in 2 places.'>TABLE</a>(<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>), <a href='../D/4473.html' title='Multiple defined in 2 places.'>TABLE</a>(1), scratch);
+<a id='L115' name='L115'></a>    <em class='brace'>}</em>  
+<a id='L116' name='L116'></a><em class='brace'>}</em>
+<a id='L117' name='L117'></a>
+<a id='L118' name='L118'></a><strong class='reserved'>void</strong>
+<a id='L119' name='L119'></a><a href='../R/6793.html' title='Multiple referred from 3 places.'>ecc_mul_a</a> (<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../D/7598.html' title='Multiple defined in 2 places.'>ecc_curve</a> *ecc,
+<a id='L120' name='L120'></a>           <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> *r,
+<a id='L121' name='L121'></a>           <strong class='reserved'>const</strong> <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> *np, <strong class='reserved'>const</strong> <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> *p,
+<a id='L122' name='L122'></a>           <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> *scratch)
+<a id='L123' name='L123'></a><em class='brace'>{</em>
+<a id='L124' name='L124'></a><em class='sharp'>#define</em> <a href='../R/10944.html' title='Multiple referred from 300 places.'>tp</a> scratch
+<a id='L125' name='L125'></a><em class='sharp'>#define</em> <a href='../R/10699.html' title='Multiple referred from 228 places.'>table</a> (scratch + 3*ecc-&gt;p.size)
+<a id='L126' name='L126'></a>  <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> *<a href='../D/11284.html' title='Multiple defined in 24 places.'>scratch_out</a> = <a href='../D/11711.html' title='Multiple defined in 10 places.'>table</a> + (3*ecc-&gt;p.size &lt;&lt; <a href='../S/5507.html#L115' title='Defined at 115 in lib/nettle/ecc/ecc-internal.h.'>ECC_MUL_A_WBITS</a>);
+<a id='L127' name='L127'></a>  <strong class='reserved'>int</strong> is_zero = 0;
+<a id='L128' name='L128'></a>
+<a id='L129' name='L129'></a>  <em class='comment'>/* Avoid the mp_bitcnt_t type for compatibility with older GMP</em>
+<a id='L130' name='L130'></a><em class='comment'>     versions. */</em>
+<a id='L131' name='L131'></a>  <strong class='reserved'>unsigned</strong> blocks = (ecc-&gt;p.bit_size + <a href='../S/5507.html#L115' title='Defined at 115 in lib/nettle/ecc/ecc-internal.h.'>ECC_MUL_A_WBITS</a> - 1) / <a href='../S/5507.html#L115' title='Defined at 115 in lib/nettle/ecc/ecc-internal.h.'>ECC_MUL_A_WBITS</a>;
+<a id='L132' name='L132'></a>  <strong class='reserved'>unsigned</strong> bit_index = (blocks-1) * <a href='../S/5507.html#L115' title='Defined at 115 in lib/nettle/ecc/ecc-internal.h.'>ECC_MUL_A_WBITS</a>;
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a>  mp_size_t limb_index = bit_index / GMP_NUMB_BITS;
+<a id='L135' name='L135'></a>  <strong class='reserved'>unsigned</strong> shift = bit_index % GMP_NUMB_BITS;
+<a id='L136' name='L136'></a>  <a href='../D/10323.html' title='Multiple defined in 2 places.'>mp_limb_t</a> <a href='../S/5549.html#L77' title='Defined at 77 in lib/nettle/ecc/ecc-add-jja.c.'>w</a>, bits;
+<a id='L137' name='L137'></a>
+<a id='L138' name='L138'></a>  <a href='../D/11713.html' title='Multiple defined in 2 places.'>table_init</a> (ecc, <a href='../D/11711.html' title='Multiple defined in 10 places.'>table</a>, <a href='../S/5507.html#L115' title='Defined at 115 in lib/nettle/ecc/ecc-internal.h.'>ECC_MUL_A_WBITS</a>, p, <a href='../D/11284.html' title='Multiple defined in 24 places.'>scratch_out</a>);
+<a id='L139' name='L139'></a>
+<a id='L140' name='L140'></a>  <a href='../S/5549.html#L77' title='Defined at 77 in lib/nettle/ecc/ecc-add-jja.c.'>w</a> = np[limb_index];
+<a id='L141' name='L141'></a>  bits = <a href='../S/5549.html#L77' title='Defined at 77 in lib/nettle/ecc/ecc-add-jja.c.'>w</a> &gt;&gt; shift;
+<a id='L142' name='L142'></a>  <strong class='reserved'>if</strong> (limb_index &lt; ecc-&gt;p.size - 1)
+<a id='L143' name='L143'></a>    bits |= np[limb_index + 1] &lt;&lt; (GMP_NUMB_BITS - shift);
+<a id='L144' name='L144'></a>
+<a id='L145' name='L145'></a>  assert (bits &lt; <a href='../D/4475.html' title='Multiple defined in 2 places.'>TABLE_SIZE</a>);
+<a id='L146' name='L146'></a>
+<a id='L147' name='L147'></a>  <a href='../D/11292.html' title='Multiple defined in 2 places.'>sec_tabselect</a> (r, 3*ecc-&gt;p.size, <a href='../D/11711.html' title='Multiple defined in 10 places.'>table</a>, <a href='../D/4475.html' title='Multiple defined in 2 places.'>TABLE_SIZE</a>, bits);
+<a id='L148' name='L148'></a>  is_zero = (bits == 0);
+<a id='L149' name='L149'></a>
+<a id='L150' name='L150'></a>  <strong class='reserved'>for</strong> (;;)
+<a id='L151' name='L151'></a>    <em class='brace'>{</em>
+<a id='L152' name='L152'></a>      <strong class='reserved'>unsigned</strong> <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>;
+<a id='L153' name='L153'></a>      <strong class='reserved'>if</strong> (shift &gt;= <a href='../S/5507.html#L115' title='Defined at 115 in lib/nettle/ecc/ecc-internal.h.'>ECC_MUL_A_WBITS</a>)
+<a id='L154' name='L154'></a>        <em class='brace'>{</em>
+<a id='L155' name='L155'></a>          shift -= <a href='../S/5507.html#L115' title='Defined at 115 in lib/nettle/ecc/ecc-internal.h.'>ECC_MUL_A_WBITS</a>;
+<a id='L156' name='L156'></a>          bits = <a href='../S/5549.html#L77' title='Defined at 77 in lib/nettle/ecc/ecc-add-jja.c.'>w</a> &gt;&gt; shift;
+<a id='L157' name='L157'></a>        <em class='brace'>}</em>
+<a id='L158' name='L158'></a>      <strong class='reserved'>else</strong>
+<a id='L159' name='L159'></a>        <em class='brace'>{</em>
+<a id='L160' name='L160'></a>          <strong class='reserved'>if</strong> (limb_index == 0)
+<a id='L161' name='L161'></a>            <em class='brace'>{</em>
+<a id='L162' name='L162'></a>              assert (shift == 0);
+<a id='L163' name='L163'></a>              <strong class='reserved'>break</strong>;
+<a id='L164' name='L164'></a>            <em class='brace'>}</em>
+<a id='L165' name='L165'></a>          bits = <a href='../S/5549.html#L77' title='Defined at 77 in lib/nettle/ecc/ecc-add-jja.c.'>w</a> &lt;&lt; (<a href='../S/5507.html#L115' title='Defined at 115 in lib/nettle/ecc/ecc-internal.h.'>ECC_MUL_A_WBITS</a> - shift);
+<a id='L166' name='L166'></a>          <a href='../S/5549.html#L77' title='Defined at 77 in lib/nettle/ecc/ecc-add-jja.c.'>w</a> = np[--limb_index];
+<a id='L167' name='L167'></a>          shift = shift + GMP_NUMB_BITS - <a href='../S/5507.html#L115' title='Defined at 115 in lib/nettle/ecc/ecc-internal.h.'>ECC_MUL_A_WBITS</a>;
+<a id='L168' name='L168'></a>          bits |= <a href='../S/5549.html#L77' title='Defined at 77 in lib/nettle/ecc/ecc-add-jja.c.'>w</a> &gt;&gt; shift;
+<a id='L169' name='L169'></a>        <em class='brace'>}</em>
+<a id='L170' name='L170'></a>      <strong class='reserved'>for</strong> (<a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> = 0; <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a> &lt; <a href='../S/5507.html#L115' title='Defined at 115 in lib/nettle/ecc/ecc-internal.h.'>ECC_MUL_A_WBITS</a>; <a href='../D/10083.html' title='Multiple defined in 3 places.'>j</a>++)
+<a id='L171' name='L171'></a>        <a href='../D/7610.html' title='Multiple defined in 2 places.'>ecc_dup_jj</a> (ecc, r, r, <a href='../D/11284.html' title='Multiple defined in 24 places.'>scratch_out</a>);
+<a id='L172' name='L172'></a>
+<a id='L173' name='L173'></a>      bits &amp;= <a href='../D/4474.html' title='Multiple defined in 2 places.'>TABLE_MASK</a>;
+<a id='L174' name='L174'></a>      <a href='../D/11292.html' title='Multiple defined in 2 places.'>sec_tabselect</a> (<a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>, 3*ecc-&gt;p.size, <a href='../D/11711.html' title='Multiple defined in 10 places.'>table</a>, <a href='../D/4475.html' title='Multiple defined in 2 places.'>TABLE_SIZE</a>, bits);
+<a id='L175' name='L175'></a>      <a href='../D/7278.html' title='Multiple defined in 2 places.'>cnd_copy</a> (is_zero, r, <a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>, 3*ecc-&gt;p.size);
+<a id='L176' name='L176'></a>      <a href='../D/7593.html' title='Multiple defined in 2 places.'>ecc_add_jjj</a> (ecc, <a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>, <a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>, r, <a href='../D/11284.html' title='Multiple defined in 24 places.'>scratch_out</a>);
+<a id='L177' name='L177'></a>
+<a id='L178' name='L178'></a>      <em class='comment'>/* Use the sum when valid. ecc_add_jja produced garbage if</em>
+<a id='L179' name='L179'></a><em class='comment'>         is_zero != 0 or bits == 0, . */</em>          
+<a id='L180' name='L180'></a>      <a href='../D/7278.html' title='Multiple defined in 2 places.'>cnd_copy</a> (bits &amp; (is_zero - 1), r, <a href='../D/11962.html' title='Multiple defined in 16 places.'>tp</a>, 3*ecc-&gt;p.size);
+<a id='L181' name='L181'></a>      is_zero &amp;= (bits == 0);
+<a id='L182' name='L182'></a>    <em class='brace'>}</em>
+<a id='L183' name='L183'></a><em class='sharp'>#undef</em> <a href='../R/10699.html' title='Multiple referred from 228 places.'>table</a>
+<a id='L184' name='L184'></a><em class='sharp'>#undef</em> <a href='../R/10944.html' title='Multiple referred from 300 places.'>tp</a>
+<a id='L185' name='L185'></a><em class='brace'>}</em>
+<a id='L186' name='L186'></a>
+<a id='L187' name='L187'></a><em class='sharp'>#endif</em> <em class='comment'>/* ECC_MUL_A_WBITS &gt; 1 */</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L52'>[^]</a><a href='#L119'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

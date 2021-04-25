@@ -1,0 +1,509 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>gcm.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/gcm.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L74'>[^]</a><a href='#L453'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L74' title='Defined at 74.'>gcm_gf_mul</a></li>
+<li><a href='#L113' title='Defined at 113.'>gcm_gf_shift_4</a></li>
+<li><a href='#L135' title='Defined at 135.'>gcm_gf_mul</a></li>
+<li><a href='#L198' title='Defined at 198.'>gcm_gf_shift_8</a></li>
+<li><a href='#L215' title='Defined at 215.'>gcm_gf_mul</a></li>
+<li><a href='#L249' title='Defined at 249.'>_nettle_gcm_init_key_c</a></li>
+<li><a href='#L276' title='Defined at 276.'>gcm_set_key</a></li>
+<li><a href='#L296' title='Defined at 296.'>_nettle_gcm_hash_c</a></li>
+<li><a href='#L314' title='Defined at 314.'>gcm_hash_sizes</a></li>
+<li><a href='#L330' title='Defined at 330.'>gcm_set_iv</a></li>
+<li><a href='#L357' title='Defined at 357.'>gcm_update</a></li>
+<li><a href='#L371' title='Defined at 371.'>gcm_fill</a></li>
+<li><a href='#L391' title='Defined at 391.'>gcm_fill</a></li>
+<li><a href='#L410' title='Defined at 410.'>gcm_fill</a></li>
+<li><a href='#L427' title='Defined at 427.'>gcm_encrypt</a></li>
+<li><a href='#L440' title='Defined at 440.'>gcm_decrypt</a></li>
+<li><a href='#L453' title='Defined at 453.'>gcm_digest</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* gcm.c</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Galois counter mode, specified by NIST,</em>
+<a id='L4' name='L4'></a><em class='comment'>   http://csrc.nist.gov/publications/nistpubs/800-38D/SP-800-38D.pdf</em>
+<a id='L5' name='L5'></a><em class='comment'></em>
+<a id='L6' name='L6'></a><em class='comment'>   See also the gcm paper at</em>
+<a id='L7' name='L7'></a><em class='comment'>   http://www.cryptobarn.com/papers/gcm-spec.pdf.</em>
+<a id='L8' name='L8'></a><em class='comment'></em>
+<a id='L9' name='L9'></a><em class='comment'>   Copyright (C) 2011 Katholieke Universiteit Leuven</em>
+<a id='L10' name='L10'></a><em class='comment'>   Copyright (C) 2011, 2013, 2018 Niels Möller</em>
+<a id='L11' name='L11'></a><em class='comment'>   Copyright (C) 2018 Red Hat, Inc.</em>
+<a id='L12' name='L12'></a><em class='comment'>   </em>
+<a id='L13' name='L13'></a><em class='comment'>   Contributed by Nikos Mavrogiannopoulos</em>
+<a id='L14' name='L14'></a><em class='comment'></em>
+<a id='L15' name='L15'></a><em class='comment'>   This file is part of GNU Nettle.</em>
+<a id='L16' name='L16'></a><em class='comment'></em>
+<a id='L17' name='L17'></a><em class='comment'>   GNU Nettle is free software: you can redistribute it and/or</em>
+<a id='L18' name='L18'></a><em class='comment'>   modify it under the terms of either:</em>
+<a id='L19' name='L19'></a><em class='comment'></em>
+<a id='L20' name='L20'></a><em class='comment'>     * the GNU Lesser General Public License as published by the Free</em>
+<a id='L21' name='L21'></a><em class='comment'>       Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L22' name='L22'></a><em class='comment'>       option) any later version.</em>
+<a id='L23' name='L23'></a><em class='comment'></em>
+<a id='L24' name='L24'></a><em class='comment'>   or</em>
+<a id='L25' name='L25'></a><em class='comment'></em>
+<a id='L26' name='L26'></a><em class='comment'>     * the GNU General Public License as published by the Free</em>
+<a id='L27' name='L27'></a><em class='comment'>       Software Foundation; either version 2 of the License, or (at your</em>
+<a id='L28' name='L28'></a><em class='comment'>       option) any later version.</em>
+<a id='L29' name='L29'></a><em class='comment'></em>
+<a id='L30' name='L30'></a><em class='comment'>   or both in parallel, as here.</em>
+<a id='L31' name='L31'></a><em class='comment'></em>
+<a id='L32' name='L32'></a><em class='comment'>   GNU Nettle is distributed in the hope that it will be useful,</em>
+<a id='L33' name='L33'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L34' name='L34'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L35' name='L35'></a><em class='comment'>   General Public License for more details.</em>
+<a id='L36' name='L36'></a><em class='comment'></em>
+<a id='L37' name='L37'></a><em class='comment'>   You should have received copies of the GNU General Public License and</em>
+<a id='L38' name='L38'></a><em class='comment'>   the GNU Lesser General Public License along with this program.  If</em>
+<a id='L39' name='L39'></a><em class='comment'>   not, see http://www.gnu.org/licenses/.</em>
+<a id='L40' name='L40'></a><em class='comment'>*/</em>
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a><em class='sharp'>#if</em> HAVE_CONFIG_H
+<a id='L43' name='L43'></a><em class='sharp'># include</em> "config.h"
+<a id='L44' name='L44'></a><em class='sharp'>#endif</em>
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a><em class='sharp'>#include</em> &lt;assert.h&gt;
+<a id='L47' name='L47'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L48' name='L48'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L49' name='L49'></a>
+<a id='L50' name='L50'></a><em class='sharp'>#include</em> "<a href='328.html'>gcm.h</a>"
+<a id='L51' name='L51'></a>
+<a id='L52' name='L52'></a><em class='sharp'>#include</em> "<a href='744.html'>gcm-internal.h</a>"
+<a id='L53' name='L53'></a><em class='sharp'>#include</em> "<a href='193.html'>memxor.h</a>"
+<a id='L54' name='L54'></a><em class='sharp'>#include</em> "<a href='88.html'>nettle-internal.h</a>"
+<a id='L55' name='L55'></a><em class='sharp'>#include</em> "<a href='251.html'>macros.h</a>"
+<a id='L56' name='L56'></a><em class='sharp'>#include</em> "<a href='26.html'>ctr-internal.h</a>"
+<a id='L57' name='L57'></a><em class='sharp'>#include</em> "<a href='120.html'>block-internal.h</a>"
+<a id='L58' name='L58'></a>
+<a id='L59' name='L59'></a><em class='sharp'>#if</em> <a href='../S/328.html#L101' title='Defined at 101 in gcm.h.'>GCM_TABLE_BITS</a> != 8
+<a id='L60' name='L60'></a><em class='comment'>/* The native implementations (currently ppc64 only) depend on the</em>
+<a id='L61' name='L61'></a><em class='comment'>   GCM_TABLE_BITS == 8 layout */</em>
+<a id='L62' name='L62'></a><em class='sharp'>#undef</em> <a href='../R/303.html' title='Multiple referred from 2 places.'>HAVE_NATIVE_gcm_hash</a>
+<a id='L63' name='L63'></a><em class='sharp'>#undef</em> <a href='../S/279.html#L243' title='Referred from 243 in gcm.c.'>HAVE_NATIVE_gcm_init_key</a>
+<a id='L64' name='L64'></a><em class='sharp'>#undef</em> <a href='../R/301.html' title='Multiple referred from 3 places.'>HAVE_NATIVE_fat_gcm_hash</a>
+<a id='L65' name='L65'></a><em class='sharp'>#undef</em> <a href='../S/744.html#L43' title='Referred from 43 in gcm-internal.h.'>HAVE_NATIVE_fat_gcm_init_key</a>
+<a id='L66' name='L66'></a><em class='sharp'>#endif</em>
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a><em class='sharp'>#if</em> !<a href='../S/279.html#L62' title='Defined at 62 in gcm.c.'>HAVE_NATIVE_gcm_hash</a>
+<a id='L69' name='L69'></a><em class='sharp'># if</em> <a href='../S/328.html#L101' title='Defined at 101 in gcm.h.'>GCM_TABLE_BITS</a> == 0
+<a id='L70' name='L70'></a><em class='comment'>/* Sets x &lt;- x * y mod r, using the plain bitwise algorithm from the</em>
+<a id='L71' name='L71'></a><em class='comment'>   specification. y may be shorter than a full block, missing bytes</em>
+<a id='L72' name='L72'></a><em class='comment'>   are assumed zero. */</em>
+<a id='L73' name='L73'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L74' name='L74'></a><a href='../R/1509.html' title='Multiple referred from 2 places.'>gcm_gf_mul</a> (<strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, <strong class='reserved'>const</strong> <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *y)
+<a id='L75' name='L75'></a><em class='brace'>{</em>
+<a id='L76' name='L76'></a>  <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> V;
+<a id='L77' name='L77'></a>  <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> Z;
+<a id='L78' name='L78'></a>  <strong class='reserved'>unsigned</strong> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L79' name='L79'></a>
+<a id='L80' name='L80'></a>  memcpy(V.b, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, <strong class='reserved'>sizeof</strong>(V));
+<a id='L81' name='L81'></a>  memset(Z.b, 0, <strong class='reserved'>sizeof</strong>(Z));
+<a id='L82' name='L82'></a>
+<a id='L83' name='L83'></a>  <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 0; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &lt; <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++)
+<a id='L84' name='L84'></a>    <em class='brace'>{</em>
+<a id='L85' name='L85'></a>      uint8_t b = y-&gt;b[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>];
+<a id='L86' name='L86'></a>      <strong class='reserved'>unsigned</strong> <a href='../D/1842.html' title='Multiple defined in 2 places.'>j</a>;
+<a id='L87' name='L87'></a>      <strong class='reserved'>for</strong> (<a href='../D/1842.html' title='Multiple defined in 2 places.'>j</a> = 0; <a href='../D/1842.html' title='Multiple defined in 2 places.'>j</a> &lt; 8; <a href='../D/1842.html' title='Multiple defined in 2 places.'>j</a>++, b &lt;&lt;= 1)
+<a id='L88' name='L88'></a>        <em class='brace'>{</em>
+<a id='L89' name='L89'></a>          <strong class='reserved'>if</strong> (b &amp; 0x80)
+<a id='L90' name='L90'></a>            <a href='../S/120.html#L46' title='Defined at 46 in block-internal.h.'>block16_xor</a>(&amp;Z, &amp;V);
+<a id='L91' name='L91'></a>          
+<a id='L92' name='L92'></a>          <a href='../D/1268.html' title='Multiple defined in 2 places.'>block16_mulx_ghash</a>(&amp;V, &amp;V);
+<a id='L93' name='L93'></a>        <em class='brace'>}</em>
+<a id='L94' name='L94'></a>    <em class='brace'>}</em>
+<a id='L95' name='L95'></a>  memcpy (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;b, Z.b, <strong class='reserved'>sizeof</strong>(Z));
+<a id='L96' name='L96'></a><em class='brace'>}</em>
+<a id='L97' name='L97'></a><em class='sharp'># else</em> <em class='comment'>/* GCM_TABLE_BITS != 0 */</em>
+<a id='L98' name='L98'></a>
+<a id='L99' name='L99'></a><em class='sharp'>#  if</em> WORDS_BIGENDIAN
+<a id='L100' name='L100'></a><em class='sharp'>#   define</em> <a href='../R/773.html' title='Multiple referred from 41 places.'>W</a>(left,right) (0x##left##right)
+<a id='L101' name='L101'></a><em class='sharp'>#  else</em>
+<a id='L102' name='L102'></a><em class='sharp'>#   define</em> <a href='../R/773.html' title='Multiple referred from 41 places.'>W</a>(left,right) (0x##right##left)
+<a id='L103' name='L103'></a><em class='sharp'>#  endif</em>
+<a id='L104' name='L104'></a>
+<a id='L105' name='L105'></a><em class='sharp'>#  if</em> <a href='../S/328.html#L101' title='Defined at 101 in gcm.h.'>GCM_TABLE_BITS</a> == 4
+<a id='L106' name='L106'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> uint16_t
+<a id='L107' name='L107'></a>shift_table[0x10] = <em class='brace'>{</em>
+<a id='L108' name='L108'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(00,00),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(1c,20),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(38,40),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(24,60),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(70,80),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(6c,a0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(48,c0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(54,e0),
+<a id='L109' name='L109'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(e1,00),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(fd,20),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(d9,40),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(c5,60),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(91,80),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(8d,a0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(a9,c0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(b5,e0),
+<a id='L110' name='L110'></a><em class='brace'>}</em>;
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L113' name='L113'></a><a href='../R/1510.html' title='Multiple referred from 2 places.'>gcm_gf_shift_4</a>(<strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>)
+<a id='L114' name='L114'></a><em class='brace'>{</em>
+<a id='L115' name='L115'></a>  uint64_t *u64 = <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;u64;
+<a id='L116' name='L116'></a>  uint64_t <a href='../S/564.html#L46' title='Defined at 46 in gcmdata.c.'>reduce</a>;
+<a id='L117' name='L117'></a>
+<a id='L118' name='L118'></a>  <em class='comment'>/* Shift uses big-endian representation. */</em>
+<a id='L119' name='L119'></a><em class='sharp'>#if</em> WORDS_BIGENDIAN
+<a id='L120' name='L120'></a>  <a href='../S/564.html#L46' title='Defined at 46 in gcmdata.c.'>reduce</a> = shift_table[u64[1] &amp; 0xf];
+<a id='L121' name='L121'></a>  u64[1] = (u64[1] &gt;&gt; 4) | ((u64[0] &amp; 0xf) &lt;&lt; 60);
+<a id='L122' name='L122'></a>  u64[0] = (u64[0] &gt;&gt; 4) ^ (<a href='../S/564.html#L46' title='Defined at 46 in gcmdata.c.'>reduce</a> &lt;&lt; 48);
+<a id='L123' name='L123'></a><em class='sharp'>#else</em> <em class='comment'>/* ! WORDS_BIGENDIAN */</em>
+<a id='L124' name='L124'></a><em class='sharp'># define</em> <a href='../R/617.html' title='Multiple referred from 2 places.'>RSHIFT_WORD_4</a>(<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>) \
+<a id='L125' name='L125'></a>  ((((<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>) &amp; UINT64_C(0xf0f0f0f0f0f0f0f0)) &gt;&gt; 4) \
+<a id='L126' name='L126'></a>   | (((<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>) &amp; UINT64_C(0x000f0f0f0f0f0f0f)) &lt;&lt; 12))
+<a id='L127' name='L127'></a>  <a href='../S/564.html#L46' title='Defined at 46 in gcmdata.c.'>reduce</a> = shift_table[(u64[1] &gt;&gt; 56) &amp; 0xf];
+<a id='L128' name='L128'></a>  u64[1] = <a href='../D/742.html' title='Multiple defined in 2 places.'>RSHIFT_WORD_4</a>(u64[1]) | ((u64[0] &gt;&gt; 52) &amp; 0xf0);
+<a id='L129' name='L129'></a>  u64[0] = <a href='../D/742.html' title='Multiple defined in 2 places.'>RSHIFT_WORD_4</a>(u64[0]) ^ <a href='../S/564.html#L46' title='Defined at 46 in gcmdata.c.'>reduce</a>;
+<a id='L130' name='L130'></a><em class='sharp'># undef</em> <a href='../R/617.html' title='Multiple referred from 2 places.'>RSHIFT_WORD_4</a>
+<a id='L131' name='L131'></a><em class='sharp'>#endif</em> <em class='comment'>/* ! WORDS_BIGENDIAN */</em>
+<a id='L132' name='L132'></a><em class='brace'>}</em>
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L135' name='L135'></a><a href='../R/1509.html' title='Multiple referred from 2 places.'>gcm_gf_mul</a> (<strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, <strong class='reserved'>const</strong> <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *<a href='../D/2581.html' title='Multiple defined in 4 places.'>table</a>)
+<a id='L136' name='L136'></a><em class='brace'>{</em>
+<a id='L137' name='L137'></a>  <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> Z;
+<a id='L138' name='L138'></a>  <strong class='reserved'>unsigned</strong> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L139' name='L139'></a>
+<a id='L140' name='L140'></a>  memset(Z.b, 0, <strong class='reserved'>sizeof</strong>(Z));
+<a id='L141' name='L141'></a>
+<a id='L142' name='L142'></a>  <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>-- &gt; 0;)
+<a id='L143' name='L143'></a>    <em class='brace'>{</em>
+<a id='L144' name='L144'></a>      uint8_t b = <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;b[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>];
+<a id='L145' name='L145'></a>
+<a id='L146' name='L146'></a>      <a href='../S/279.html#L113' title='Defined at 113 in gcm.c.'>gcm_gf_shift_4</a>(&amp;Z);
+<a id='L147' name='L147'></a>      <a href='../S/120.html#L46' title='Defined at 46 in block-internal.h.'>block16_xor</a>(&amp;Z, &amp;<a href='../D/2581.html' title='Multiple defined in 4 places.'>table</a>[b &amp; 0xf]);
+<a id='L148' name='L148'></a>      <a href='../S/279.html#L113' title='Defined at 113 in gcm.c.'>gcm_gf_shift_4</a>(&amp;Z);
+<a id='L149' name='L149'></a>      <a href='../S/120.html#L46' title='Defined at 46 in block-internal.h.'>block16_xor</a>(&amp;Z, &amp;<a href='../D/2581.html' title='Multiple defined in 4 places.'>table</a>[b &gt;&gt; 4]);
+<a id='L150' name='L150'></a>    <em class='brace'>}</em>
+<a id='L151' name='L151'></a>  memcpy (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;b, Z.b, <strong class='reserved'>sizeof</strong>(Z));
+<a id='L152' name='L152'></a><em class='brace'>}</em>
+<a id='L153' name='L153'></a><em class='sharp'>#  elif</em> <a href='../S/328.html#L101' title='Defined at 101 in gcm.h.'>GCM_TABLE_BITS</a> == 8
+<a id='L154' name='L154'></a><em class='sharp'>#   if</em> HAVE_NATIVE_gcm_hash8
+<a id='L155' name='L155'></a>
+<a id='L156' name='L156'></a><em class='sharp'>#define</em> <a href='../R/871.html' title='Multiple referred from 8 places.'>_nettle_gcm_hash</a> _nettle_gcm_hash8
+<a id='L157' name='L157'></a><strong class='reserved'>void</strong>
+<a id='L158' name='L158'></a>_nettle_gcm_hash8 (<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/328.html#L104' title='Defined at 104 in gcm.h.'>gcm_key</a> *key, <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>,
+<a id='L159' name='L159'></a>                   size_t length, <strong class='reserved'>const</strong> uint8_t *data);
+<a id='L160' name='L160'></a><em class='sharp'>#   else</em> <em class='comment'>/* !HAVE_NATIVE_gcm_hash8 */</em>
+<a id='L161' name='L161'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> uint16_t
+<a id='L162' name='L162'></a>shift_table[0x100] = <em class='brace'>{</em>
+<a id='L163' name='L163'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(00,00),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(01,c2),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(03,84),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(02,46),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(07,08),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(06,ca),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(04,8c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(05,4e),
+<a id='L164' name='L164'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(0e,10),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(0f,d2),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(0d,94),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(0c,56),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(09,18),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(08,da),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(0a,9c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(0b,5e),
+<a id='L165' name='L165'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(1c,20),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(1d,e2),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(1f,a4),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(1e,66),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(1b,28),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(1a,ea),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(18,ac),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(19,6e),
+<a id='L166' name='L166'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(12,30),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(13,<a href='../S/282.html#L85' title='Defined at 85 in sha1-compress.c.'>f2</a>),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(11,b4),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(10,76),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(15,38),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(14,fa),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(16,bc),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(17,7e),
+<a id='L167' name='L167'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(38,40),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(39,82),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(3b,c4),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(3a,06),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(3f,48),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(3e,8a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(3c,cc),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(3d,0e),
+<a id='L168' name='L168'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(36,50),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(37,92),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(35,d4),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(34,16),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(31,58),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(30,9a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(32,dc),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(33,1e),
+<a id='L169' name='L169'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(24,60),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(25,a2),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(27,e4),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(26,26),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(23,68),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(22,aa),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(20,ec),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(21,2e),
+<a id='L170' name='L170'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(2a,70),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(2b,b2),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(29,<a href='../S/282.html#L88' title='Defined at 88 in sha1-compress.c.'>f4</a>),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(28,36),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(2d,78),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(2c,ba),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(2e,fc),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(2f,3e),
+<a id='L171' name='L171'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(70,80),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(71,42),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(73,04),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(72,c6),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(77,88),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(76,4a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(74,0c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(75,ce),
+<a id='L172' name='L172'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(7e,90),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(7f,52),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(7d,14),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(7c,d6),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(79,98),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(78,5a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(7a,1c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(7b,de),
+<a id='L173' name='L173'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(6c,a0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(6d,62),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(6f,24),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(6e,e6),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(6b,a8),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(6a,6a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(68,2c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(69,ee),
+<a id='L174' name='L174'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(62,b0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(63,72),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(61,34),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(60,f6),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(65,b8),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(64,7a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(66,3c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(67,fe),
+<a id='L175' name='L175'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(48,c0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(49,02),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(4b,44),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(4a,86),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(4f,c8),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(4e,0a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(4c,4c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(4d,8e),
+<a id='L176' name='L176'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(46,d0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(47,12),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(45,54),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(44,96),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(41,d8),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(40,1a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(42,5c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(43,9e),
+<a id='L177' name='L177'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(54,e0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(55,22),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(57,64),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(56,a6),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(53,e8),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(52,2a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(50,6c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(51,ae),
+<a id='L178' name='L178'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(5a,f0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(5b,32),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(59,74),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(58,b6),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(5d,f8),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(5c,3a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(5e,7c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(5f,be),
+<a id='L179' name='L179'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(e1,00),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(e0,c2),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(e2,84),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(e3,46),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(e6,08),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(e7,ca),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(e5,8c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(e4,4e),
+<a id='L180' name='L180'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(ef,10),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(ee,d2),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(ec,94),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(ed,56),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(e8,18),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(e9,da),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(eb,9c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(ea,5e),
+<a id='L181' name='L181'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(fd,20),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(fc,e2),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(fe,a4),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(ff,66),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(fa,28),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(fb,ea),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(f9,ac),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(f8,6e),
+<a id='L182' name='L182'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(<a href='../S/282.html#L87' title='Defined at 87 in sha1-compress.c.'>f3</a>,30),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(<a href='../S/282.html#L85' title='Defined at 85 in sha1-compress.c.'>f2</a>,<a href='../S/282.html#L85' title='Defined at 85 in sha1-compress.c.'>f2</a>),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(f0,b4),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(<a href='../S/282.html#L84' title='Defined at 84 in sha1-compress.c.'>f1</a>,76),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(<a href='../S/282.html#L88' title='Defined at 88 in sha1-compress.c.'>f4</a>,38),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(f5,fa),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(f7,bc),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(f6,7e),
+<a id='L183' name='L183'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(d9,40),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(d8,82),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(da,c4),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(db,06),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(de,48),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(df,8a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(dd,cc),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(dc,0e),
+<a id='L184' name='L184'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(d7,50),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(d6,92),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(d4,d4),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(d5,16),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(d0,58),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(d1,9a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(d3,dc),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(d2,1e),
+<a id='L185' name='L185'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(c5,60),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(c4,a2),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(c6,e4),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(c7,26),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(c2,68),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(c3,aa),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(c1,ec),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(c0,2e),
+<a id='L186' name='L186'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(cb,70),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(ca,b2),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(c8,<a href='../S/282.html#L88' title='Defined at 88 in sha1-compress.c.'>f4</a>),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(c9,36),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(cc,78),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(cd,ba),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(cf,fc),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(ce,3e),
+<a id='L187' name='L187'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(91,80),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(90,42),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(92,04),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(93,c6),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(96,88),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(97,4a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(95,0c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(94,ce),
+<a id='L188' name='L188'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(9f,90),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(9e,52),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(9c,14),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(9d,d6),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(98,98),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(99,5a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(9b,1c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(9a,de),
+<a id='L189' name='L189'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(8d,a0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(8c,62),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(8e,24),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(8f,e6),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(8a,a8),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(8b,6a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(89,2c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(88,ee),
+<a id='L190' name='L190'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(83,b0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(82,72),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(80,34),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(81,f6),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(84,b8),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(85,7a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(87,3c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(86,fe),
+<a id='L191' name='L191'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(a9,c0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(a8,02),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(aa,44),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(ab,86),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(ae,c8),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(af,0a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(ad,4c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(ac,8e),
+<a id='L192' name='L192'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(<a href='../D/1101.html' title='Multiple defined in 3 places.'>a7</a>,d0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(a6,12),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(a4,54),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(a5,96),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(a0,d8),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(a1,1a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(<a href='../S/548.html#L158' title='Defined at 158 in ecc-secp384r1.c.'>a3</a>,5c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(a2,9e),
+<a id='L193' name='L193'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(b5,e0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(b4,22),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(b6,64),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(b7,a6),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(b2,e8),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(b3,2a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(b1,6c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(b0,ae),
+<a id='L194' name='L194'></a>  <a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(bb,f0),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(ba,32),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(b8,74),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(b9,b6),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(bc,f8),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(bd,3a),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(bf,7c),<a href='../D/946.html' title='Multiple defined in 3 places.'>W</a>(be,be),
+<a id='L195' name='L195'></a><em class='brace'>}</em>;
+<a id='L196' name='L196'></a>
+<a id='L197' name='L197'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L198' name='L198'></a><a href='../R/1511.html' title='Multiple referred from 2 places.'>gcm_gf_shift_8</a>(<strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>)
+<a id='L199' name='L199'></a><em class='brace'>{</em>
+<a id='L200' name='L200'></a>  uint64_t <a href='../S/564.html#L46' title='Defined at 46 in gcmdata.c.'>reduce</a>;
+<a id='L201' name='L201'></a>
+<a id='L202' name='L202'></a>  <em class='comment'>/* Shift uses big-endian representation. */</em>
+<a id='L203' name='L203'></a><em class='sharp'>#if</em> WORDS_BIGENDIAN
+<a id='L204' name='L204'></a>  <a href='../S/564.html#L46' title='Defined at 46 in gcmdata.c.'>reduce</a> = shift_table[<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;u64[1] &amp; 0xff];
+<a id='L205' name='L205'></a>  <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;u64[1] = (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;u64[1] &gt;&gt; 8) | ((<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;u64[0] &amp; 0xff) &lt;&lt; 56);
+<a id='L206' name='L206'></a>  <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;u64[0] = (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;u64[0] &gt;&gt; 8) ^ (<a href='../S/564.html#L46' title='Defined at 46 in gcmdata.c.'>reduce</a> &lt;&lt; 48);
+<a id='L207' name='L207'></a><em class='sharp'>#else</em> <em class='comment'>/* ! WORDS_BIGENDIAN */</em>
+<a id='L208' name='L208'></a>  <a href='../S/564.html#L46' title='Defined at 46 in gcmdata.c.'>reduce</a> = shift_table[(<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;u64[1] &gt;&gt; 56) &amp; 0xff];
+<a id='L209' name='L209'></a>  <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;u64[1] = (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;u64[1] &lt;&lt; 8) | (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;u64[0] &gt;&gt; 56);
+<a id='L210' name='L210'></a>  <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;u64[0] = (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;u64[0] &lt;&lt; 8) ^ <a href='../S/564.html#L46' title='Defined at 46 in gcmdata.c.'>reduce</a>;
+<a id='L211' name='L211'></a><em class='sharp'>#endif</em> <em class='comment'>/* ! WORDS_BIGENDIAN */</em>
+<a id='L212' name='L212'></a><em class='brace'>}</em>
+<a id='L213' name='L213'></a>
+<a id='L214' name='L214'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L215' name='L215'></a><a href='../R/1509.html' title='Multiple referred from 2 places.'>gcm_gf_mul</a> (<strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, <strong class='reserved'>const</strong> <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *<a href='../D/2581.html' title='Multiple defined in 4 places.'>table</a>)
+<a id='L216' name='L216'></a><em class='brace'>{</em>
+<a id='L217' name='L217'></a>  <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> Z;
+<a id='L218' name='L218'></a>  <strong class='reserved'>unsigned</strong> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L219' name='L219'></a>
+<a id='L220' name='L220'></a>  memcpy(Z.b, <a href='../D/2581.html' title='Multiple defined in 4 places.'>table</a>[<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;b[<a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>-1]].b, <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>);
+<a id='L221' name='L221'></a>
+<a id='L222' name='L222'></a>  <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>-2; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &gt; 0; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>--)
+<a id='L223' name='L223'></a>    <em class='brace'>{</em>
+<a id='L224' name='L224'></a>      <a href='../S/279.html#L198' title='Defined at 198 in gcm.c.'>gcm_gf_shift_8</a>(&amp;Z);
+<a id='L225' name='L225'></a>      <a href='../S/120.html#L46' title='Defined at 46 in block-internal.h.'>block16_xor</a>(&amp;Z, &amp;<a href='../D/2581.html' title='Multiple defined in 4 places.'>table</a>[<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;b[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>]]);
+<a id='L226' name='L226'></a>    <em class='brace'>}</em>
+<a id='L227' name='L227'></a>  <a href='../S/279.html#L198' title='Defined at 198 in gcm.c.'>gcm_gf_shift_8</a>(&amp;Z);
+<a id='L228' name='L228'></a>  <a href='../S/120.html#L54' title='Defined at 54 in block-internal.h.'>block16_xor3</a>(<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, &amp;Z, &amp;<a href='../D/2581.html' title='Multiple defined in 4 places.'>table</a>[<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;b[0]]);
+<a id='L229' name='L229'></a><em class='brace'>}</em>
+<a id='L230' name='L230'></a><em class='sharp'>#   endif</em> <em class='comment'>/* ! HAVE_NATIVE_gcm_hash8 */</em>
+<a id='L231' name='L231'></a><em class='sharp'>#  else</em> <em class='comment'>/* GCM_TABLE_BITS != 8 */</em>
+<a id='L232' name='L232'></a><em class='sharp'>#   error</em> Unsupported table size.
+<a id='L233' name='L233'></a><em class='sharp'>#  endif</em> <em class='comment'>/* GCM_TABLE_BITS != 8 */</em>
+<a id='L234' name='L234'></a>
+<a id='L235' name='L235'></a><em class='sharp'>#  undef</em> <a href='../R/773.html' title='Multiple referred from 41 places.'>W</a>
+<a id='L236' name='L236'></a><em class='sharp'># endif</em> <em class='comment'>/* GCM_TABLE_BITS != 0 */</em>
+<a id='L237' name='L237'></a><em class='sharp'>#endif</em> <em class='comment'>/* !HAVE_NATIVE_gcm_hash */</em>
+<a id='L238' name='L238'></a>
+<a id='L239' name='L239'></a>
+<a id='L240' name='L240'></a><em class='comment'>/* Increment the rightmost 32 bits. */</em>
+<a id='L241' name='L241'></a><em class='sharp'>#define</em> <a href='../S/279.html#L349' title='Referred from 349 in gcm.c.'>INC32</a>(block) <a href='../S/251.html#L159' title='Defined at 159 in macros.h.'>INCREMENT</a>(4, (block.b) + <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a> - 4)
+<a id='L242' name='L242'></a>
+<a id='L243' name='L243'></a><em class='sharp'>#if</em> !<a href='../S/279.html#L63' title='Defined at 63 in gcm.c.'>HAVE_NATIVE_gcm_init_key</a>
+<a id='L244' name='L244'></a><em class='sharp'># if</em> !<a href='../S/279.html#L64' title='Defined at 64 in gcm.c.'>HAVE_NATIVE_fat_gcm_hash</a>
+<a id='L245' name='L245'></a><em class='sharp'>#  define</em> <a href='../R/873.html' title='Multiple referred from 4 places.'>_nettle_gcm_init_key</a> <a href='../S/279.html#L249' title='Defined at 249 in gcm.c.'>_nettle_gcm_init_key_c</a>
+<a id='L246' name='L246'></a><strong class='reserved'>static</strong>
+<a id='L247' name='L247'></a><em class='sharp'># endif</em>
+<a id='L248' name='L248'></a><strong class='reserved'>void</strong>
+<a id='L249' name='L249'></a><a href='../R/874.html' title='Multiple referred from 3 places.'>_nettle_gcm_init_key_c</a>(<strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *<a href='../D/2581.html' title='Multiple defined in 4 places.'>table</a>)
+<a id='L250' name='L250'></a><em class='brace'>{</em>
+<a id='L251' name='L251'></a><em class='sharp'>#if</em> <a href='../S/328.html#L101' title='Defined at 101 in gcm.h.'>GCM_TABLE_BITS</a>
+<a id='L252' name='L252'></a>  <em class='comment'>/* Middle element if GCM_TABLE_BITS &gt; 0, otherwise the first</em>
+<a id='L253' name='L253'></a><em class='comment'>     element */</em>
+<a id='L254' name='L254'></a>  <strong class='reserved'>unsigned</strong> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = (1&lt;&lt;<a href='../S/328.html#L101' title='Defined at 101 in gcm.h.'>GCM_TABLE_BITS</a>)/2;
+<a id='L255' name='L255'></a>
+<a id='L256' name='L256'></a>  <em class='comment'>/* Algorithm 3 from the gcm paper. First do powers of two, then do</em>
+<a id='L257' name='L257'></a><em class='comment'>     the rest by adding. */</em>
+<a id='L258' name='L258'></a>  <strong class='reserved'>while</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> /= 2)
+<a id='L259' name='L259'></a>    <a href='../D/1268.html' title='Multiple defined in 2 places.'>block16_mulx_ghash</a>(&amp;<a href='../D/2581.html' title='Multiple defined in 4 places.'>table</a>[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>], &amp;<a href='../D/2581.html' title='Multiple defined in 4 places.'>table</a>[2*<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>]);
+<a id='L260' name='L260'></a>  <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 2; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &lt; 1&lt;&lt;<a href='../S/328.html#L101' title='Defined at 101 in gcm.h.'>GCM_TABLE_BITS</a>; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> *= 2)
+<a id='L261' name='L261'></a>    <em class='brace'>{</em>
+<a id='L262' name='L262'></a>      <strong class='reserved'>unsigned</strong> <a href='../D/1842.html' title='Multiple defined in 2 places.'>j</a>;
+<a id='L263' name='L263'></a>      <strong class='reserved'>for</strong> (<a href='../D/1842.html' title='Multiple defined in 2 places.'>j</a> = 1; <a href='../D/1842.html' title='Multiple defined in 2 places.'>j</a> &lt; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>; <a href='../D/1842.html' title='Multiple defined in 2 places.'>j</a>++)
+<a id='L264' name='L264'></a>        <a href='../S/120.html#L54' title='Defined at 54 in block-internal.h.'>block16_xor3</a>(&amp;<a href='../D/2581.html' title='Multiple defined in 4 places.'>table</a>[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>+<a href='../D/1842.html' title='Multiple defined in 2 places.'>j</a>], &amp;<a href='../D/2581.html' title='Multiple defined in 4 places.'>table</a>[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>], &amp;<a href='../D/2581.html' title='Multiple defined in 4 places.'>table</a>[<a href='../D/1842.html' title='Multiple defined in 2 places.'>j</a>]);
+<a id='L265' name='L265'></a>    <em class='brace'>}</em>
+<a id='L266' name='L266'></a><em class='sharp'>#endif</em>
+<a id='L267' name='L267'></a><em class='brace'>}</em>
+<a id='L268' name='L268'></a><em class='sharp'>#endif</em> <em class='comment'>/* !HAVE_NATIVE_gcm_init_key */</em>
+<a id='L269' name='L269'></a>
+<a id='L270' name='L270'></a><em class='comment'>/* Initialization of GCM.</em>
+<a id='L271' name='L271'></a><em class='comment'> * @ctx: The context of GCM</em>
+<a id='L272' name='L272'></a><em class='comment'> * @cipher: The context of the underlying block cipher</em>
+<a id='L273' name='L273'></a><em class='comment'> * @f: The underlying cipher encryption function</em>
+<a id='L274' name='L274'></a><em class='comment'> */</em>
+<a id='L275' name='L275'></a><strong class='reserved'>void</strong>
+<a id='L276' name='L276'></a><a href='../R/1517.html' title='Multiple referred from 3 places.'>gcm_set_key</a>(<strong class='reserved'>struct</strong> <a href='../S/328.html#L104' title='Defined at 104 in gcm.h.'>gcm_key</a> *key,
+<a id='L277' name='L277'></a>            <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *cipher, <a href='../S/122.html#L88' title='Defined at 88 in nettle-types.h.'>nettle_cipher_func</a> *f)
+<a id='L278' name='L278'></a><em class='brace'>{</em>
+<a id='L279' name='L279'></a>  <em class='comment'>/* Middle element if GCM_TABLE_BITS &gt; 0, otherwise the first</em>
+<a id='L280' name='L280'></a><em class='comment'>     element */</em>
+<a id='L281' name='L281'></a>  <strong class='reserved'>unsigned</strong> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = (1&lt;&lt;<a href='../S/328.html#L101' title='Defined at 101 in gcm.h.'>GCM_TABLE_BITS</a>)/2;
+<a id='L282' name='L282'></a>
+<a id='L283' name='L283'></a>  <em class='comment'>/* H */</em>  
+<a id='L284' name='L284'></a>  memset(key-&gt;<a href='../D/1769.html' title='Multiple defined in 3 places.'>h</a>[0].b, 0, <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>);
+<a id='L285' name='L285'></a>  f (cipher, <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>, key-&gt;<a href='../D/1769.html' title='Multiple defined in 3 places.'>h</a>[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>].b, key-&gt;<a href='../D/1769.html' title='Multiple defined in 3 places.'>h</a>[0].b);
+<a id='L286' name='L286'></a>
+<a id='L287' name='L287'></a>  <a href='../S/279.html#L245' title='Defined at 245 in gcm.c.'>_nettle_gcm_init_key</a>(key-&gt;<a href='../D/1769.html' title='Multiple defined in 3 places.'>h</a>);
+<a id='L288' name='L288'></a><em class='brace'>}</em>
+<a id='L289' name='L289'></a>
+<a id='L290' name='L290'></a><em class='sharp'>#if</em> !(<a href='../S/279.html#L62' title='Defined at 62 in gcm.c.'>HAVE_NATIVE_gcm_hash</a> || HAVE_NATIVE_gcm_hash8)
+<a id='L291' name='L291'></a><em class='sharp'># if</em> !<a href='../S/279.html#L64' title='Defined at 64 in gcm.c.'>HAVE_NATIVE_fat_gcm_hash</a>
+<a id='L292' name='L292'></a><em class='sharp'>#  define</em> <a href='../R/871.html' title='Multiple referred from 8 places.'>_nettle_gcm_hash</a> <a href='../S/279.html#L296' title='Defined at 296 in gcm.c.'>_nettle_gcm_hash_c</a>
+<a id='L293' name='L293'></a><strong class='reserved'>static</strong>
+<a id='L294' name='L294'></a><em class='sharp'># endif</em>
+<a id='L295' name='L295'></a><strong class='reserved'>void</strong>
+<a id='L296' name='L296'></a><a href='../R/872.html' title='Multiple referred from 3 places.'>_nettle_gcm_hash_c</a>(<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/328.html#L104' title='Defined at 104 in gcm.h.'>gcm_key</a> *key, <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>,
+<a id='L297' name='L297'></a>                   size_t length, <strong class='reserved'>const</strong> uint8_t *data)
+<a id='L298' name='L298'></a><em class='brace'>{</em>
+<a id='L299' name='L299'></a>  <strong class='reserved'>for</strong> (; length &gt;= <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>;
+<a id='L300' name='L300'></a>       length -= <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>, data += <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>)
+<a id='L301' name='L301'></a>    <em class='brace'>{</em>
+<a id='L302' name='L302'></a>      <a href='../D/1877.html' title='Multiple defined in 2 places.'>memxor</a> (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;b, data, <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>);
+<a id='L303' name='L303'></a>      <a href='../D/1698.html' title='Multiple defined in 3 places.'>gcm_gf_mul</a> (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, key-&gt;<a href='../D/1769.html' title='Multiple defined in 3 places.'>h</a>);
+<a id='L304' name='L304'></a>    <em class='brace'>}</em>
+<a id='L305' name='L305'></a>  <strong class='reserved'>if</strong> (length &gt; 0)
+<a id='L306' name='L306'></a>    <em class='brace'>{</em>
+<a id='L307' name='L307'></a>      <a href='../D/1877.html' title='Multiple defined in 2 places.'>memxor</a> (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>-&gt;b, data, length);
+<a id='L308' name='L308'></a>      <a href='../D/1698.html' title='Multiple defined in 3 places.'>gcm_gf_mul</a> (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, key-&gt;<a href='../D/1769.html' title='Multiple defined in 3 places.'>h</a>);
+<a id='L309' name='L309'></a>    <em class='brace'>}</em>
+<a id='L310' name='L310'></a><em class='brace'>}</em>
+<a id='L311' name='L311'></a><em class='sharp'>#endif</em> <em class='comment'>/* !(HAVE_NATIVE_gcm_hash || HAVE_NATIVE_gcm_hash8) */</em>
+<a id='L312' name='L312'></a>
+<a id='L313' name='L313'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L314' name='L314'></a><a href='../R/1513.html' title='Multiple referred from 2 places.'>gcm_hash_sizes</a>(<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/328.html#L104' title='Defined at 104 in gcm.h.'>gcm_key</a> *key, <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>,
+<a id='L315' name='L315'></a>               uint64_t auth_size, uint64_t data_size)
+<a id='L316' name='L316'></a><em class='brace'>{</em>
+<a id='L317' name='L317'></a>  uint8_t buffer[<a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>];
+<a id='L318' name='L318'></a>
+<a id='L319' name='L319'></a>  data_size *= 8;
+<a id='L320' name='L320'></a>  auth_size *= 8;
+<a id='L321' name='L321'></a>
+<a id='L322' name='L322'></a>  <a href='../S/251.html#L46' title='Defined at 46 in macros.h.'>WRITE_UINT64</a> (buffer, auth_size);
+<a id='L323' name='L323'></a>  <a href='../S/251.html#L46' title='Defined at 46 in macros.h.'>WRITE_UINT64</a> (buffer + 8, data_size);
+<a id='L324' name='L324'></a>
+<a id='L325' name='L325'></a>  <a href='../D/1046.html' title='Multiple defined in 2 places.'>_nettle_gcm_hash</a>(key, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>, buffer);
+<a id='L326' name='L326'></a><em class='brace'>}</em>
+<a id='L327' name='L327'></a>
+<a id='L328' name='L328'></a><em class='comment'>/* NOTE: The key is needed only if length != GCM_IV_SIZE */</em>
+<a id='L329' name='L329'></a><strong class='reserved'>void</strong>
+<a id='L330' name='L330'></a><a href='../R/1516.html' title='Multiple referred from 2 places.'>gcm_set_iv</a>(<strong class='reserved'>struct</strong> <a href='../S/328.html#L110' title='Defined at 110 in gcm.h.'>gcm_ctx</a> *ctx, <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/328.html#L104' title='Defined at 104 in gcm.h.'>gcm_key</a> *key,
+<a id='L331' name='L331'></a>           size_t length, <strong class='reserved'>const</strong> uint8_t *iv)
+<a id='L332' name='L332'></a><em class='brace'>{</em>
+<a id='L333' name='L333'></a>  <strong class='reserved'>if</strong> (length == <a href='../S/328.html#L99' title='Defined at 99 in gcm.h.'>GCM_IV_SIZE</a>)
+<a id='L334' name='L334'></a>    <em class='brace'>{</em>
+<a id='L335' name='L335'></a>      memcpy (ctx-&gt;iv.b, iv, <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a> - 4);
+<a id='L336' name='L336'></a>      ctx-&gt;iv.b[<a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a> - 4] = 0;
+<a id='L337' name='L337'></a>      ctx-&gt;iv.b[<a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a> - 3] = 0;
+<a id='L338' name='L338'></a>      ctx-&gt;iv.b[<a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a> - 2] = 0;
+<a id='L339' name='L339'></a>      ctx-&gt;iv.b[<a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a> - 1] = 1;
+<a id='L340' name='L340'></a>    <em class='brace'>}</em>
+<a id='L341' name='L341'></a>  <strong class='reserved'>else</strong>
+<a id='L342' name='L342'></a>    <em class='brace'>{</em>
+<a id='L343' name='L343'></a>      memset(ctx-&gt;iv.b, 0, <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>);
+<a id='L344' name='L344'></a>      <a href='../D/1046.html' title='Multiple defined in 2 places.'>_nettle_gcm_hash</a>(key, &amp;ctx-&gt;iv, length, iv);
+<a id='L345' name='L345'></a>      <a href='../S/279.html#L314' title='Defined at 314 in gcm.c.'>gcm_hash_sizes</a>(key, &amp;ctx-&gt;iv, 0, length);
+<a id='L346' name='L346'></a>    <em class='brace'>}</em>
+<a id='L347' name='L347'></a>
+<a id='L348' name='L348'></a>  memcpy (ctx-&gt;ctr.b, ctx-&gt;iv.b, <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>);
+<a id='L349' name='L349'></a>  <a href='../S/279.html#L241' title='Defined at 241 in gcm.c.'>INC32</a> (ctx-&gt;ctr);
+<a id='L350' name='L350'></a>
+<a id='L351' name='L351'></a>  <em class='comment'>/* Reset the rest of the message-dependent state. */</em>
+<a id='L352' name='L352'></a>  memset(ctx-&gt;<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>.b, 0, <strong class='reserved'>sizeof</strong>(ctx-&gt;<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>));
+<a id='L353' name='L353'></a>  ctx-&gt;auth_size = ctx-&gt;data_size = 0;
+<a id='L354' name='L354'></a><em class='brace'>}</em>
+<a id='L355' name='L355'></a>
+<a id='L356' name='L356'></a><strong class='reserved'>void</strong>
+<a id='L357' name='L357'></a><a href='../R/1520.html' title='Multiple referred from 2 places.'>gcm_update</a>(<strong class='reserved'>struct</strong> <a href='../S/328.html#L110' title='Defined at 110 in gcm.h.'>gcm_ctx</a> *ctx, <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/328.html#L104' title='Defined at 104 in gcm.h.'>gcm_key</a> *key,
+<a id='L358' name='L358'></a>           size_t length, <strong class='reserved'>const</strong> uint8_t *data)
+<a id='L359' name='L359'></a><em class='brace'>{</em>
+<a id='L360' name='L360'></a>  assert(ctx-&gt;auth_size % <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a> == 0);
+<a id='L361' name='L361'></a>  assert(ctx-&gt;data_size == 0);
+<a id='L362' name='L362'></a>
+<a id='L363' name='L363'></a>  <a href='../D/1046.html' title='Multiple defined in 2 places.'>_nettle_gcm_hash</a>(key, &amp;ctx-&gt;<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, length, data);
+<a id='L364' name='L364'></a>
+<a id='L365' name='L365'></a>  ctx-&gt;auth_size += length;
+<a id='L366' name='L366'></a><em class='brace'>}</em>
+<a id='L367' name='L367'></a>
+<a id='L368' name='L368'></a><strong class='reserved'>static</strong> <a href='../S/26.html#L44' title='Defined at 44 in ctr-internal.h.'>nettle_fill16_func</a> <a href='../D/1697.html' title='Multiple defined in 3 places.'>gcm_fill</a>;
+<a id='L369' name='L369'></a><em class='sharp'>#if</em> WORDS_BIGENDIAN
+<a id='L370' name='L370'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L371' name='L371'></a><a href='../R/1508.html' title='Multiple referred from 3 places.'>gcm_fill</a>(uint8_t *ctr, size_t blocks, <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *buffer)
+<a id='L372' name='L372'></a><em class='brace'>{</em>
+<a id='L373' name='L373'></a>  uint64_t hi, mid;
+<a id='L374' name='L374'></a>  uint32_t lo;
+<a id='L375' name='L375'></a>  size_t <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L376' name='L376'></a>  hi = <a href='../S/251.html#L36' title='Defined at 36 in macros.h.'>READ_UINT64</a>(ctr);
+<a id='L377' name='L377'></a>  mid = (uint64_t) <a href='../S/251.html#L59' title='Defined at 59 in macros.h.'>READ_UINT32</a>(ctr + 8) &lt;&lt; 32;
+<a id='L378' name='L378'></a>  lo = <a href='../S/251.html#L59' title='Defined at 59 in macros.h.'>READ_UINT32</a>(ctr + 12);
+<a id='L379' name='L379'></a>
+<a id='L380' name='L380'></a>  <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 0; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &lt; blocks; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++)
+<a id='L381' name='L381'></a>    <em class='brace'>{</em>
+<a id='L382' name='L382'></a>      buffer[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>].u64[0] = hi;
+<a id='L383' name='L383'></a>      buffer[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>].u64[1] = mid + lo++;
+<a id='L384' name='L384'></a>    <em class='brace'>}</em>
+<a id='L385' name='L385'></a>  <a href='../S/251.html#L65' title='Defined at 65 in macros.h.'>WRITE_UINT32</a>(ctr + 12, lo);
+<a id='L386' name='L386'></a>
+<a id='L387' name='L387'></a><em class='brace'>}</em>
+<a id='L388' name='L388'></a><em class='sharp'>#elif</em> HAVE_BUILTIN_BSWAP64
+<a id='L389' name='L389'></a><em class='comment'>/* Assume __builtin_bswap32 is also available */</em>
+<a id='L390' name='L390'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L391' name='L391'></a><a href='../R/1508.html' title='Multiple referred from 3 places.'>gcm_fill</a>(uint8_t *ctr, size_t blocks, <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *buffer)
+<a id='L392' name='L392'></a><em class='brace'>{</em>
+<a id='L393' name='L393'></a>  uint64_t hi, mid;
+<a id='L394' name='L394'></a>  uint32_t lo;
+<a id='L395' name='L395'></a>  size_t <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L396' name='L396'></a>  hi = <a href='../S/251.html#L97' title='Defined at 97 in macros.h.'>LE_READ_UINT64</a>(ctr);
+<a id='L397' name='L397'></a>  mid = <a href='../S/251.html#L119' title='Defined at 119 in macros.h.'>LE_READ_UINT32</a>(ctr + 8);
+<a id='L398' name='L398'></a>  lo = <a href='../S/251.html#L59' title='Defined at 59 in macros.h.'>READ_UINT32</a>(ctr + 12);
+<a id='L399' name='L399'></a>
+<a id='L400' name='L400'></a>  <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 0; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &lt; blocks; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++)
+<a id='L401' name='L401'></a>    <em class='brace'>{</em>
+<a id='L402' name='L402'></a>      buffer[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>].u64[0] = hi;
+<a id='L403' name='L403'></a>      buffer[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>].u64[1] = mid + ((uint64_t)__builtin_bswap32(lo) &lt;&lt; 32);
+<a id='L404' name='L404'></a>      lo++;
+<a id='L405' name='L405'></a>    <em class='brace'>}</em>
+<a id='L406' name='L406'></a>  <a href='../S/251.html#L65' title='Defined at 65 in macros.h.'>WRITE_UINT32</a>(ctr + 12, lo);
+<a id='L407' name='L407'></a><em class='brace'>}</em>
+<a id='L408' name='L408'></a><em class='sharp'>#else</em>
+<a id='L409' name='L409'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L410' name='L410'></a><a href='../R/1508.html' title='Multiple referred from 3 places.'>gcm_fill</a>(uint8_t *ctr, size_t blocks, <strong class='reserved'>union</strong> <a href='../S/122.html#L61' title='Defined at 61 in nettle-types.h.'>nettle_block16</a> *buffer)
+<a id='L411' name='L411'></a><em class='brace'>{</em>
+<a id='L412' name='L412'></a>  uint32_t c;
+<a id='L413' name='L413'></a>
+<a id='L414' name='L414'></a>  c = <a href='../S/251.html#L59' title='Defined at 59 in macros.h.'>READ_UINT32</a>(ctr + <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a> - 4);
+<a id='L415' name='L415'></a>
+<a id='L416' name='L416'></a>  <strong class='reserved'>for</strong> (; blocks-- &gt; 0; buffer++, c++)
+<a id='L417' name='L417'></a>    <em class='brace'>{</em>
+<a id='L418' name='L418'></a>      memcpy(buffer-&gt;b, ctr, <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a> - 4);
+<a id='L419' name='L419'></a>      <a href='../S/251.html#L65' title='Defined at 65 in macros.h.'>WRITE_UINT32</a>(buffer-&gt;b + <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a> - 4, c);
+<a id='L420' name='L420'></a>    <em class='brace'>}</em>
+<a id='L421' name='L421'></a>
+<a id='L422' name='L422'></a>  <a href='../S/251.html#L65' title='Defined at 65 in macros.h.'>WRITE_UINT32</a>(ctr + <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a> - 4, c);
+<a id='L423' name='L423'></a><em class='brace'>}</em>
+<a id='L424' name='L424'></a><em class='sharp'>#endif</em>
+<a id='L425' name='L425'></a>
+<a id='L426' name='L426'></a><strong class='reserved'>void</strong>
+<a id='L427' name='L427'></a><a href='../R/1507.html' title='Multiple referred from 2 places.'>gcm_encrypt</a> (<strong class='reserved'>struct</strong> <a href='../S/328.html#L110' title='Defined at 110 in gcm.h.'>gcm_ctx</a> *ctx, <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/328.html#L104' title='Defined at 104 in gcm.h.'>gcm_key</a> *key,
+<a id='L428' name='L428'></a>             <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *cipher, <a href='../S/122.html#L88' title='Defined at 88 in nettle-types.h.'>nettle_cipher_func</a> *f,
+<a id='L429' name='L429'></a>             size_t length, uint8_t *dst, <strong class='reserved'>const</strong> uint8_t *src)
+<a id='L430' name='L430'></a><em class='brace'>{</em>
+<a id='L431' name='L431'></a>  assert(ctx-&gt;data_size % <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a> == 0);
+<a id='L432' name='L432'></a>
+<a id='L433' name='L433'></a>  <a href='../S/69.html#L50' title='Defined at 50 in ctr16.c.'>_nettle_ctr_crypt16</a>(cipher, f, <a href='../D/1697.html' title='Multiple defined in 3 places.'>gcm_fill</a>, ctx-&gt;ctr.b, length, dst, src);
+<a id='L434' name='L434'></a>  <a href='../D/1046.html' title='Multiple defined in 2 places.'>_nettle_gcm_hash</a>(key, &amp;ctx-&gt;<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, length, dst);
+<a id='L435' name='L435'></a>
+<a id='L436' name='L436'></a>  ctx-&gt;data_size += length;
+<a id='L437' name='L437'></a><em class='brace'>}</em>
+<a id='L438' name='L438'></a>
+<a id='L439' name='L439'></a><strong class='reserved'>void</strong>
+<a id='L440' name='L440'></a><a href='../R/1505.html' title='Multiple referred from 2 places.'>gcm_decrypt</a>(<strong class='reserved'>struct</strong> <a href='../S/328.html#L110' title='Defined at 110 in gcm.h.'>gcm_ctx</a> *ctx, <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/328.html#L104' title='Defined at 104 in gcm.h.'>gcm_key</a> *key,
+<a id='L441' name='L441'></a>            <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *cipher, <a href='../S/122.html#L88' title='Defined at 88 in nettle-types.h.'>nettle_cipher_func</a> *f,
+<a id='L442' name='L442'></a>            size_t length, uint8_t *dst, <strong class='reserved'>const</strong> uint8_t *src)
+<a id='L443' name='L443'></a><em class='brace'>{</em>
+<a id='L444' name='L444'></a>  assert(ctx-&gt;data_size % <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a> == 0);
+<a id='L445' name='L445'></a>
+<a id='L446' name='L446'></a>  <a href='../D/1046.html' title='Multiple defined in 2 places.'>_nettle_gcm_hash</a>(key, &amp;ctx-&gt;<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, length, src);
+<a id='L447' name='L447'></a>  <a href='../S/69.html#L50' title='Defined at 50 in ctr16.c.'>_nettle_ctr_crypt16</a>(cipher, f, <a href='../D/1697.html' title='Multiple defined in 3 places.'>gcm_fill</a>, ctx-&gt;ctr.b, length, dst, src);
+<a id='L448' name='L448'></a>
+<a id='L449' name='L449'></a>  ctx-&gt;data_size += length;
+<a id='L450' name='L450'></a><em class='brace'>}</em>
+<a id='L451' name='L451'></a>
+<a id='L452' name='L452'></a><strong class='reserved'>void</strong>
+<a id='L453' name='L453'></a><a href='../R/1506.html' title='Multiple referred from 2 places.'>gcm_digest</a>(<strong class='reserved'>struct</strong> <a href='../S/328.html#L110' title='Defined at 110 in gcm.h.'>gcm_ctx</a> *ctx, <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/328.html#L104' title='Defined at 104 in gcm.h.'>gcm_key</a> *key,
+<a id='L454' name='L454'></a>           <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *cipher, <a href='../S/122.html#L88' title='Defined at 88 in nettle-types.h.'>nettle_cipher_func</a> *f,
+<a id='L455' name='L455'></a>           size_t length, uint8_t *digest)
+<a id='L456' name='L456'></a><em class='brace'>{</em>
+<a id='L457' name='L457'></a>  uint8_t buffer[<a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>];
+<a id='L458' name='L458'></a>
+<a id='L459' name='L459'></a>  assert (length &lt;= <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>);
+<a id='L460' name='L460'></a>
+<a id='L461' name='L461'></a>  <a href='../S/279.html#L314' title='Defined at 314 in gcm.c.'>gcm_hash_sizes</a>(key, &amp;ctx-&gt;<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ctx-&gt;auth_size, ctx-&gt;data_size);
+<a id='L462' name='L462'></a>
+<a id='L463' name='L463'></a>  f (cipher, <a href='../S/328.html#L98' title='Defined at 98 in gcm.h.'>GCM_BLOCK_SIZE</a>, buffer, ctx-&gt;iv.b);
+<a id='L464' name='L464'></a>  <a href='../D/1878.html' title='Multiple defined in 2 places.'>memxor3</a> (digest, ctx-&gt;<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>.b, buffer, length);
+<a id='L465' name='L465'></a>
+<a id='L466' name='L466'></a>  <strong class='reserved'>return</strong>;
+<a id='L467' name='L467'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L74'>[^]</a><a href='#L453'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

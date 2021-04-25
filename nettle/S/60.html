@@ -1,0 +1,412 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>rsa-sign-tr.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/rsa-sign-tr.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L52'>[^]</a><a href='#L354'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L52' title='Defined at 52.'>rsa_blind</a></li>
+<li><a href='#L80' title='Defined at 80.'>rsa_unblind</a></li>
+<li><a href='#L91' title='Defined at 91.'>rsa_compute_root_tr</a></li>
+<li><a href='#L131' title='Defined at 131.'>_rsa_sec_compute_root_tr</a></li>
+<li><a href='#L159' title='Defined at 159.'>rsa_sec_blind</a></li>
+<li><a href='#L213' title='Defined at 213.'>rsa_sec_unblind</a></li>
+<li><a href='#L239' title='Defined at 239.'>sec_equal</a></li>
+<li><a href='#L254' title='Defined at 254.'>rsa_sec_check_root</a></li>
+<li><a href='#L280' title='Defined at 280.'>cnd_mpn_zero</a></li>
+<li><a href='#L299' title='Defined at 299.'>_rsa_sec_compute_root_tr</a></li>
+<li><a href='#L354' title='Defined at 354.'>rsa_compute_root_tr</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* rsa-sign-tr.c</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Creating RSA signatures, with some additional checks.</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   Copyright (C) 2001, 2015 Niels Möller</em>
+<a id='L6' name='L6'></a><em class='comment'>   Copyright (C) 2012 Nikos Mavrogiannopoulos</em>
+<a id='L7' name='L7'></a><em class='comment'>   Copyright (C) 2018 Red Hat Inc.</em>
+<a id='L8' name='L8'></a><em class='comment'></em>
+<a id='L9' name='L9'></a><em class='comment'>   This file is part of GNU Nettle.</em>
+<a id='L10' name='L10'></a><em class='comment'></em>
+<a id='L11' name='L11'></a><em class='comment'>   GNU Nettle is free software: you can redistribute it and/or</em>
+<a id='L12' name='L12'></a><em class='comment'>   modify it under the terms of either:</em>
+<a id='L13' name='L13'></a><em class='comment'></em>
+<a id='L14' name='L14'></a><em class='comment'>     * the GNU Lesser General Public License as published by the Free</em>
+<a id='L15' name='L15'></a><em class='comment'>       Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L16' name='L16'></a><em class='comment'>       option) any later version.</em>
+<a id='L17' name='L17'></a><em class='comment'></em>
+<a id='L18' name='L18'></a><em class='comment'>   or</em>
+<a id='L19' name='L19'></a><em class='comment'></em>
+<a id='L20' name='L20'></a><em class='comment'>     * the GNU General Public License as published by the Free</em>
+<a id='L21' name='L21'></a><em class='comment'>       Software Foundation; either version 2 of the License, or (at your</em>
+<a id='L22' name='L22'></a><em class='comment'>       option) any later version.</em>
+<a id='L23' name='L23'></a><em class='comment'></em>
+<a id='L24' name='L24'></a><em class='comment'>   or both in parallel, as here.</em>
+<a id='L25' name='L25'></a><em class='comment'></em>
+<a id='L26' name='L26'></a><em class='comment'>   GNU Nettle is distributed in the hope that it will be useful,</em>
+<a id='L27' name='L27'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L28' name='L28'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L29' name='L29'></a><em class='comment'>   General Public License for more details.</em>
+<a id='L30' name='L30'></a><em class='comment'></em>
+<a id='L31' name='L31'></a><em class='comment'>   You should have received copies of the GNU General Public License and</em>
+<a id='L32' name='L32'></a><em class='comment'>   the GNU Lesser General Public License along with this program.  If</em>
+<a id='L33' name='L33'></a><em class='comment'>   not, see http://www.gnu.org/licenses/.</em>
+<a id='L34' name='L34'></a><em class='comment'>*/</em>
+<a id='L35' name='L35'></a>
+<a id='L36' name='L36'></a><em class='sharp'>#if</em> HAVE_CONFIG_H
+<a id='L37' name='L37'></a><em class='sharp'># include</em> "config.h"
+<a id='L38' name='L38'></a><em class='sharp'>#endif</em>
+<a id='L39' name='L39'></a>
+<a id='L40' name='L40'></a><em class='sharp'>#include</em> &lt;assert.h&gt;
+<a id='L41' name='L41'></a>
+<a id='L42' name='L42'></a><em class='sharp'>#include</em> "<a href='606.html'>gmp-glue.h</a>"
+<a id='L43' name='L43'></a><em class='sharp'>#include</em> "<a href='743.html'>rsa.h</a>"
+<a id='L44' name='L44'></a><em class='sharp'>#include</em> "<a href='567.html'>rsa-internal.h</a>"
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a><em class='sharp'>#define</em> <a href='../R/371.html' title='Multiple referred from 12 places.'>MAX</a>(a, b) ((a) &gt; (b) ? (a) : (b))
+<a id='L47' name='L47'></a>
+<a id='L48' name='L48'></a><em class='sharp'>#if</em> NETTLE_USE_MINI_GMP
+<a id='L49' name='L49'></a><em class='comment'>/* Blinds m, by computing c = m r^e (mod n), for a random r. Also</em>
+<a id='L50' name='L50'></a><em class='comment'>   returns the inverse (ri), for use by rsa_unblind. */</em>
+<a id='L51' name='L51'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L52' name='L52'></a><a href='../S/60.html#L112' title='Referred from 112 in rsa-sign-tr.c.'>rsa_blind</a> (<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/743.html#L114' title='Defined at 114 in rsa.h.'>rsa_public_key</a> *pub,
+<a id='L53' name='L53'></a>           <strong class='reserved'>void</strong> *random_ctx, <a href='../S/122.html#L75' title='Defined at 75 in nettle-types.h.'>nettle_random_func</a> *random,
+<a id='L54' name='L54'></a>           <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> c, <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> ri, <strong class='reserved'>const</strong> <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> m)
+<a id='L55' name='L55'></a><em class='brace'>{</em>
+<a id='L56' name='L56'></a>  <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> r;
+<a id='L57' name='L57'></a>
+<a id='L58' name='L58'></a>  <a href='../S/263.html#L1410' title='Defined at 1410 in mini-gmp.c.'>mpz_init</a>(r);
+<a id='L59' name='L59'></a>
+<a id='L60' name='L60'></a>  <em class='comment'>/* c = m*(r^e)</em>
+<a id='L61' name='L61'></a><em class='comment'>   * ri = r^(-1)</em>
+<a id='L62' name='L62'></a><em class='comment'>   */</em>
+<a id='L63' name='L63'></a>  <strong class='reserved'>do</strong>
+<a id='L64' name='L64'></a>    <em class='brace'>{</em>
+<a id='L65' name='L65'></a>      <a href='../S/490.html#L64' title='Defined at 64 in bignum-random.c.'>nettle_mpz_random</a>(r, random_ctx, random, pub-&gt;n);
+<a id='L66' name='L66'></a>      <em class='comment'>/* invert r */</em>
+<a id='L67' name='L67'></a>    <em class='brace'>}</em>
+<a id='L68' name='L68'></a>  <strong class='reserved'>while</strong> (!<a href='../S/263.html#L3002' title='Defined at 3002 in mini-gmp.c.'>mpz_invert</a> (ri, r, pub-&gt;n));
+<a id='L69' name='L69'></a>
+<a id='L70' name='L70'></a>  <em class='comment'>/* c = c*(r^e) mod n */</em>
+<a id='L71' name='L71'></a>  <a href='../S/257.html#L48' title='Defined at 48 in bignum.h.'>mpz_powm_sec</a>(r, r, pub-&gt;e, pub-&gt;n);
+<a id='L72' name='L72'></a>  <a href='../S/263.html#L2058' title='Defined at 2058 in mini-gmp.c.'>mpz_mul</a>(c, m, r);
+<a id='L73' name='L73'></a>  <a href='../S/263.html#L2329' title='Defined at 2329 in mini-gmp.c.'>mpz_fdiv_r</a>(c, c, pub-&gt;n);
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a>  <a href='../S/263.html#L1435' title='Defined at 1435 in mini-gmp.c.'>mpz_clear</a>(r);
+<a id='L76' name='L76'></a><em class='brace'>}</em>
+<a id='L77' name='L77'></a>
+<a id='L78' name='L78'></a><em class='comment'>/* m = c ri mod n */</em>
+<a id='L79' name='L79'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L80' name='L80'></a><a href='../S/60.html#L120' title='Referred from 120 in rsa-sign-tr.c.'>rsa_unblind</a> (<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/743.html#L114' title='Defined at 114 in rsa.h.'>rsa_public_key</a> *pub,
+<a id='L81' name='L81'></a>             <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> m, <strong class='reserved'>const</strong> <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> ri, <strong class='reserved'>const</strong> <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> c)
+<a id='L82' name='L82'></a><em class='brace'>{</em>
+<a id='L83' name='L83'></a>  <a href='../S/263.html#L2058' title='Defined at 2058 in mini-gmp.c.'>mpz_mul</a>(m, c, ri);
+<a id='L84' name='L84'></a>  <a href='../S/263.html#L2329' title='Defined at 2329 in mini-gmp.c.'>mpz_fdiv_r</a>(m, m, pub-&gt;n);
+<a id='L85' name='L85'></a><em class='brace'>}</em>
+<a id='L86' name='L86'></a>
+<a id='L87' name='L87'></a><em class='comment'>/* Checks for any errors done in the RSA computation. That avoids</em>
+<a id='L88' name='L88'></a><em class='comment'> * attacks which rely on faults on hardware, or even software MPI</em>
+<a id='L89' name='L89'></a><em class='comment'> * implementation. */</em>
+<a id='L90' name='L90'></a><strong class='reserved'>int</strong>
+<a id='L91' name='L91'></a><a href='../R/2121.html' title='Multiple referred from 15 places.'>rsa_compute_root_tr</a>(<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/743.html#L114' title='Defined at 114 in rsa.h.'>rsa_public_key</a> *pub,
+<a id='L92' name='L92'></a>                    <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/743.html#L127' title='Defined at 127 in rsa.h.'>rsa_private_key</a> *key,
+<a id='L93' name='L93'></a>                    <strong class='reserved'>void</strong> *random_ctx, <a href='../S/122.html#L75' title='Defined at 75 in nettle-types.h.'>nettle_random_func</a> *random,
+<a id='L94' name='L94'></a>                    <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, <strong class='reserved'>const</strong> <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> m)
+<a id='L95' name='L95'></a><em class='brace'>{</em>
+<a id='L96' name='L96'></a>  <strong class='reserved'>int</strong> res;
+<a id='L97' name='L97'></a>  <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> t, mb, xb, ri;
+<a id='L98' name='L98'></a>
+<a id='L99' name='L99'></a>  <em class='comment'>/* mpz_powm_sec handles only odd moduli. If p, q or n is even, the</em>
+<a id='L100' name='L100'></a><em class='comment'>     key is invalid and rejected by rsa_private_key_prepare. However,</em>
+<a id='L101' name='L101'></a><em class='comment'>     some applications, notably gnutls, don't use this function, and</em>
+<a id='L102' name='L102'></a><em class='comment'>     we don't want an invalid key to lead to a crash down inside</em>
+<a id='L103' name='L103'></a><em class='comment'>     mpz_powm_sec. So do an additional check here. */</em>
+<a id='L104' name='L104'></a>  <strong class='reserved'>if</strong> (<a href='../S/71.html#L131' title='Defined at 131 in mini-gmp.h.'>mpz_even_p</a> (pub-&gt;n) || <a href='../S/71.html#L131' title='Defined at 131 in mini-gmp.h.'>mpz_even_p</a> (key-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>) || <a href='../S/71.html#L131' title='Defined at 131 in mini-gmp.h.'>mpz_even_p</a> (key-&gt;q))
+<a id='L105' name='L105'></a>    <strong class='reserved'>return</strong> 0;
+<a id='L106' name='L106'></a>
+<a id='L107' name='L107'></a>  <a href='../S/263.html#L1410' title='Defined at 1410 in mini-gmp.c.'>mpz_init</a> (mb);
+<a id='L108' name='L108'></a>  <a href='../S/263.html#L1410' title='Defined at 1410 in mini-gmp.c.'>mpz_init</a> (xb);
+<a id='L109' name='L109'></a>  <a href='../S/263.html#L1410' title='Defined at 1410 in mini-gmp.c.'>mpz_init</a> (ri);
+<a id='L110' name='L110'></a>  <a href='../S/263.html#L1410' title='Defined at 1410 in mini-gmp.c.'>mpz_init</a> (t);
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a>  <a href='../S/60.html#L52' title='Defined at 52 in rsa-sign-tr.c.'>rsa_blind</a> (pub, random_ctx, random, mb, ri, m);
+<a id='L113' name='L113'></a>
+<a id='L114' name='L114'></a>  <a href='../D/2331.html' title='Multiple defined in 3 places.'>rsa_compute_root</a> (key, xb, mb);
+<a id='L115' name='L115'></a>
+<a id='L116' name='L116'></a>  <a href='../S/257.html#L48' title='Defined at 48 in bignum.h.'>mpz_powm_sec</a>(t, xb, pub-&gt;e, pub-&gt;n);
+<a id='L117' name='L117'></a>  res = (<a href='../S/263.html#L1877' title='Defined at 1877 in mini-gmp.c.'>mpz_cmp</a>(mb, t) == 0);
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a>  <strong class='reserved'>if</strong> (res)
+<a id='L120' name='L120'></a>    <a href='../S/60.html#L80' title='Defined at 80 in rsa-sign-tr.c.'>rsa_unblind</a> (pub, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ri, xb);
+<a id='L121' name='L121'></a>
+<a id='L122' name='L122'></a>  <a href='../S/263.html#L1435' title='Defined at 1435 in mini-gmp.c.'>mpz_clear</a> (mb);
+<a id='L123' name='L123'></a>  <a href='../S/263.html#L1435' title='Defined at 1435 in mini-gmp.c.'>mpz_clear</a> (xb);
+<a id='L124' name='L124'></a>  <a href='../S/263.html#L1435' title='Defined at 1435 in mini-gmp.c.'>mpz_clear</a> (ri);
+<a id='L125' name='L125'></a>  <a href='../S/263.html#L1435' title='Defined at 1435 in mini-gmp.c.'>mpz_clear</a> (t);
+<a id='L126' name='L126'></a>
+<a id='L127' name='L127'></a>  <strong class='reserved'>return</strong> res;
+<a id='L128' name='L128'></a><em class='brace'>}</em>
+<a id='L129' name='L129'></a>
+<a id='L130' name='L130'></a><strong class='reserved'>int</strong>
+<a id='L131' name='L131'></a><a href='../R/908.html' title='Multiple referred from 4 places.'>_rsa_sec_compute_root_tr</a>(<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/743.html#L114' title='Defined at 114 in rsa.h.'>rsa_public_key</a> *pub,
+<a id='L132' name='L132'></a>                         <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/743.html#L127' title='Defined at 127 in rsa.h.'>rsa_private_key</a> *key,
+<a id='L133' name='L133'></a>                         <strong class='reserved'>void</strong> *random_ctx, <a href='../S/122.html#L75' title='Defined at 75 in nettle-types.h.'>nettle_random_func</a> *random,
+<a id='L134' name='L134'></a>                         <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, <strong class='reserved'>const</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *m, size_t mn)
+<a id='L135' name='L135'></a><em class='brace'>{</em>
+<a id='L136' name='L136'></a>  <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> mz;
+<a id='L137' name='L137'></a>  <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> xz;
+<a id='L138' name='L138'></a>  <strong class='reserved'>int</strong> res;
+<a id='L139' name='L139'></a>
+<a id='L140' name='L140'></a>  <a href='../S/263.html#L1410' title='Defined at 1410 in mini-gmp.c.'>mpz_init</a>(mz);
+<a id='L141' name='L141'></a>  <a href='../S/263.html#L1410' title='Defined at 1410 in mini-gmp.c.'>mpz_init</a>(xz);
+<a id='L142' name='L142'></a>
+<a id='L143' name='L143'></a>  <a href='../S/263.html#L374' title='Defined at 374 in mini-gmp.c.'>mpn_copyi</a>(<a href='../S/263.html#L1656' title='Defined at 1656 in mini-gmp.c.'>mpz_limbs_write</a>(mz, mn), m, mn);
+<a id='L144' name='L144'></a>  <a href='../S/263.html#L1662' title='Defined at 1662 in mini-gmp.c.'>mpz_limbs_finish</a>(mz, mn);
+<a id='L145' name='L145'></a>
+<a id='L146' name='L146'></a>  res = <a href='../D/2332.html' title='Multiple defined in 3 places.'>rsa_compute_root_tr</a>(pub, key, random_ctx, random, xz, mz);
+<a id='L147' name='L147'></a>
+<a id='L148' name='L148'></a>  <strong class='reserved'>if</strong> (res)
+<a id='L149' name='L149'></a>    <a href='../D/2040.html' title='Multiple defined in 2 places.'>mpz_limbs_copy</a>(<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, xz, <a href='../S/263.html#L1622' title='Defined at 1622 in mini-gmp.c.'>mpz_size</a>(pub-&gt;n));
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a>  <a href='../S/263.html#L1435' title='Defined at 1435 in mini-gmp.c.'>mpz_clear</a>(mz);
+<a id='L152' name='L152'></a>  <a href='../S/263.html#L1435' title='Defined at 1435 in mini-gmp.c.'>mpz_clear</a>(xz);
+<a id='L153' name='L153'></a>  <strong class='reserved'>return</strong> res;
+<a id='L154' name='L154'></a><em class='brace'>}</em>
+<a id='L155' name='L155'></a><em class='sharp'>#else</em>
+<a id='L156' name='L156'></a><em class='comment'>/* Blinds m, by computing c = m r^e (mod n), for a random r. Also</em>
+<a id='L157' name='L157'></a><em class='comment'>   returns the inverse (ri), for use by rsa_unblind. */</em>
+<a id='L158' name='L158'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L159' name='L159'></a><a href='../S/60.html#L330' title='Referred from 330 in rsa-sign-tr.c.'>rsa_sec_blind</a> (<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/743.html#L114' title='Defined at 114 in rsa.h.'>rsa_public_key</a> *pub,
+<a id='L160' name='L160'></a>               <strong class='reserved'>void</strong> *random_ctx, <a href='../S/122.html#L75' title='Defined at 75 in nettle-types.h.'>nettle_random_func</a> *random,
+<a id='L161' name='L161'></a>               <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *c, <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *ri, <strong class='reserved'>const</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *m,
+<a id='L162' name='L162'></a>               <a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> mn)
+<a id='L163' name='L163'></a><em class='brace'>{</em>
+<a id='L164' name='L164'></a>  <strong class='reserved'>const</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *ep = <a href='../S/263.html#L1643' title='Defined at 1643 in mini-gmp.c.'>mpz_limbs_read</a> (pub-&gt;e);
+<a id='L165' name='L165'></a>  <strong class='reserved'>const</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *np = <a href='../S/263.html#L1643' title='Defined at 1643 in mini-gmp.c.'>mpz_limbs_read</a> (pub-&gt;n);
+<a id='L166' name='L166'></a>  <a href='../S/71.html#L62' title='Defined at 62 in mini-gmp.h.'>mp_bitcnt_t</a> ebn = <a href='../S/263.html#L4167' title='Defined at 4167 in mini-gmp.c.'>mpz_sizeinbase</a> (pub-&gt;e, 2);
+<a id='L167' name='L167'></a>  <a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> nn = <a href='../S/263.html#L1622' title='Defined at 1622 in mini-gmp.c.'>mpz_size</a> (pub-&gt;n);
+<a id='L168' name='L168'></a>  size_t itch;
+<a id='L169' name='L169'></a>  size_t i2;
+<a id='L170' name='L170'></a>  <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *scratch;
+<a id='L171' name='L171'></a>  <a href='../S/606.html#L51' title='Defined at 51 in gmp-glue.h.'>TMP_GMP_DECL</a> (<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a>);
+<a id='L172' name='L172'></a>  <a href='../S/606.html#L51' title='Defined at 51 in gmp-glue.h.'>TMP_GMP_DECL</a> (<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a>);
+<a id='L173' name='L173'></a>  <a href='../S/606.html#L51' title='Defined at 51 in gmp-glue.h.'>TMP_GMP_DECL</a> (r, uint8_t);
+<a id='L174' name='L174'></a>
+<a id='L175' name='L175'></a>  <a href='../S/606.html#L53' title='Defined at 53 in gmp-glue.h.'>TMP_GMP_ALLOC</a> (<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, nn);
+<a id='L176' name='L176'></a>  <a href='../S/606.html#L53' title='Defined at 53 in gmp-glue.h.'>TMP_GMP_ALLOC</a> (r, nn * <strong class='reserved'>sizeof</strong>(<a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a>));
+<a id='L177' name='L177'></a>
+<a id='L178' name='L178'></a>  <em class='comment'>/* c = m*(r^e) mod n */</em>
+<a id='L179' name='L179'></a>  itch = mpn_sec_powm_itch(nn, ebn, nn);
+<a id='L180' name='L180'></a>  i2 = mpn_sec_mul_itch(nn, mn);
+<a id='L181' name='L181'></a>  itch = <a href='../D/415.html' title='Multiple defined in 2 places.'>MAX</a>(itch, i2);
+<a id='L182' name='L182'></a>  i2 = mpn_sec_div_r_itch(nn + mn, nn);
+<a id='L183' name='L183'></a>  itch = <a href='../D/415.html' title='Multiple defined in 2 places.'>MAX</a>(itch, i2);
+<a id='L184' name='L184'></a>  i2 = mpn_sec_invert_itch(nn);
+<a id='L185' name='L185'></a>  itch = <a href='../D/415.html' title='Multiple defined in 2 places.'>MAX</a>(itch, i2);
+<a id='L186' name='L186'></a>
+<a id='L187' name='L187'></a>  <a href='../S/606.html#L53' title='Defined at 53 in gmp-glue.h.'>TMP_GMP_ALLOC</a> (<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, nn + mn + itch);
+<a id='L188' name='L188'></a>  scratch = <a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a> + nn + mn;
+<a id='L189' name='L189'></a>
+<a id='L190' name='L190'></a>  <em class='comment'>/* ri = r^(-1) */</em>
+<a id='L191' name='L191'></a>  <strong class='reserved'>do</strong>
+<a id='L192' name='L192'></a>    <em class='brace'>{</em>
+<a id='L193' name='L193'></a>      random(random_ctx, nn * <strong class='reserved'>sizeof</strong>(<a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a>), (uint8_t *)r);
+<a id='L194' name='L194'></a>      <a href='../D/1945.html' title='Multiple defined in 2 places.'>mpn_set_base256</a>(<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, nn, r, nn * <strong class='reserved'>sizeof</strong>(<a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a>));
+<a id='L195' name='L195'></a>      <a href='../S/263.html#L374' title='Defined at 374 in mini-gmp.c.'>mpn_copyi</a>(<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, <a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, nn);
+<a id='L196' name='L196'></a>      <em class='comment'>/* invert r */</em>
+<a id='L197' name='L197'></a>    <em class='brace'>}</em>
+<a id='L198' name='L198'></a>  <strong class='reserved'>while</strong> (!mpn_sec_invert (ri, <a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, np, nn, 2 * nn * GMP_NUMB_BITS, scratch));
+<a id='L199' name='L199'></a>
+<a id='L200' name='L200'></a>  mpn_sec_powm (c, <a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, nn, ep, ebn, np, nn, scratch);
+<a id='L201' name='L201'></a>  <em class='comment'>/* normally mn == nn, but m can be smaller in some cases */</em>
+<a id='L202' name='L202'></a>  mpn_sec_mul (<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, c, nn, m, mn, scratch);
+<a id='L203' name='L203'></a>  mpn_sec_div_r (<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, nn + mn, np, nn, scratch);
+<a id='L204' name='L204'></a>  <a href='../S/263.html#L374' title='Defined at 374 in mini-gmp.c.'>mpn_copyi</a>(c, <a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, nn);
+<a id='L205' name='L205'></a>
+<a id='L206' name='L206'></a>  <a href='../S/606.html#L57' title='Defined at 57 in gmp-glue.h.'>TMP_GMP_FREE</a> (r);
+<a id='L207' name='L207'></a>  <a href='../S/606.html#L57' title='Defined at 57 in gmp-glue.h.'>TMP_GMP_FREE</a> (<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>);
+<a id='L208' name='L208'></a>  <a href='../S/606.html#L57' title='Defined at 57 in gmp-glue.h.'>TMP_GMP_FREE</a> (<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>);
+<a id='L209' name='L209'></a><em class='brace'>}</em>
+<a id='L210' name='L210'></a>
+<a id='L211' name='L211'></a><em class='comment'>/* m = c ri mod n */</em>
+<a id='L212' name='L212'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L213' name='L213'></a><a href='../S/60.html#L336' title='Referred from 336 in rsa-sign-tr.c.'>rsa_sec_unblind</a> (<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/743.html#L114' title='Defined at 114 in rsa.h.'>rsa_public_key</a> *pub,
+<a id='L214' name='L214'></a>                 <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *ri, <strong class='reserved'>const</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *c)
+<a id='L215' name='L215'></a><em class='brace'>{</em>
+<a id='L216' name='L216'></a>  <strong class='reserved'>const</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *np = <a href='../S/263.html#L1643' title='Defined at 1643 in mini-gmp.c.'>mpz_limbs_read</a> (pub-&gt;n);
+<a id='L217' name='L217'></a>  <a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> nn = <a href='../S/263.html#L1622' title='Defined at 1622 in mini-gmp.c.'>mpz_size</a> (pub-&gt;n);
+<a id='L218' name='L218'></a>
+<a id='L219' name='L219'></a>  size_t itch;
+<a id='L220' name='L220'></a>  size_t i2;
+<a id='L221' name='L221'></a>  <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *scratch;
+<a id='L222' name='L222'></a>  <a href='../S/606.html#L51' title='Defined at 51 in gmp-glue.h.'>TMP_GMP_DECL</a>(<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a>);
+<a id='L223' name='L223'></a>
+<a id='L224' name='L224'></a>  itch = mpn_sec_mul_itch(nn, nn);
+<a id='L225' name='L225'></a>  i2 = mpn_sec_div_r_itch(nn + nn, nn);
+<a id='L226' name='L226'></a>  itch = <a href='../D/415.html' title='Multiple defined in 2 places.'>MAX</a>(itch, i2);
+<a id='L227' name='L227'></a>
+<a id='L228' name='L228'></a>  <a href='../S/606.html#L53' title='Defined at 53 in gmp-glue.h.'>TMP_GMP_ALLOC</a> (<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, nn + nn + itch);
+<a id='L229' name='L229'></a>  scratch = <a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a> + nn + nn;
+<a id='L230' name='L230'></a>
+<a id='L231' name='L231'></a>  mpn_sec_mul (<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, c, nn, ri, nn, scratch);
+<a id='L232' name='L232'></a>  mpn_sec_div_r (<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, nn + nn, np, nn, scratch);
+<a id='L233' name='L233'></a>  <a href='../S/263.html#L374' title='Defined at 374 in mini-gmp.c.'>mpn_copyi</a>(<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, <a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, nn);
+<a id='L234' name='L234'></a>
+<a id='L235' name='L235'></a>  <a href='../S/606.html#L57' title='Defined at 57 in gmp-glue.h.'>TMP_GMP_FREE</a> (<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>);
+<a id='L236' name='L236'></a><em class='brace'>}</em>
+<a id='L237' name='L237'></a>
+<a id='L238' name='L238'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L239' name='L239'></a><a href='../S/60.html#L273' title='Referred from 273 in rsa-sign-tr.c.'>sec_equal</a>(<strong class='reserved'>const</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *a, <strong class='reserved'>const</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *b, size_t limbs)
+<a id='L240' name='L240'></a><em class='brace'>{</em>
+<a id='L241' name='L241'></a>  <strong class='reserved'>volatile</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> z = 0;
+<a id='L242' name='L242'></a>  size_t <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L243' name='L243'></a>
+<a id='L244' name='L244'></a>  <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 0; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &lt; limbs; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++)
+<a id='L245' name='L245'></a>    <em class='brace'>{</em>
+<a id='L246' name='L246'></a>      z |= (a[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>] ^ b[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>]);
+<a id='L247' name='L247'></a>    <em class='brace'>}</em>
+<a id='L248' name='L248'></a>
+<a id='L249' name='L249'></a>  <em class='comment'>/* FIXME: Might compile to a branch instruction on some platforms. */</em>
+<a id='L250' name='L250'></a>  <strong class='reserved'>return</strong> z == 0;
+<a id='L251' name='L251'></a><em class='brace'>}</em>
+<a id='L252' name='L252'></a>
+<a id='L253' name='L253'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L254' name='L254'></a><a href='../S/60.html#L334' title='Referred from 334 in rsa-sign-tr.c.'>rsa_sec_check_root</a>(<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/743.html#L114' title='Defined at 114 in rsa.h.'>rsa_public_key</a> *pub,
+<a id='L255' name='L255'></a>                   <strong class='reserved'>const</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, <strong class='reserved'>const</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *m)
+<a id='L256' name='L256'></a><em class='brace'>{</em>
+<a id='L257' name='L257'></a>  <a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> nn = <a href='../S/263.html#L1622' title='Defined at 1622 in mini-gmp.c.'>mpz_size</a> (pub-&gt;n);
+<a id='L258' name='L258'></a>  <a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> ebn = <a href='../S/263.html#L4167' title='Defined at 4167 in mini-gmp.c.'>mpz_sizeinbase</a> (pub-&gt;e, 2);
+<a id='L259' name='L259'></a>  <strong class='reserved'>const</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *np = <a href='../S/263.html#L1643' title='Defined at 1643 in mini-gmp.c.'>mpz_limbs_read</a> (pub-&gt;n);
+<a id='L260' name='L260'></a>  <strong class='reserved'>const</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *ep = <a href='../S/263.html#L1643' title='Defined at 1643 in mini-gmp.c.'>mpz_limbs_read</a> (pub-&gt;e);
+<a id='L261' name='L261'></a>  <strong class='reserved'>int</strong> ret;
+<a id='L262' name='L262'></a>
+<a id='L263' name='L263'></a>  <a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> itch;
+<a id='L264' name='L264'></a>
+<a id='L265' name='L265'></a>  <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *scratch;
+<a id='L266' name='L266'></a>  <a href='../S/606.html#L51' title='Defined at 51 in gmp-glue.h.'>TMP_GMP_DECL</a>(<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a>);
+<a id='L267' name='L267'></a>
+<a id='L268' name='L268'></a>  itch = mpn_sec_powm_itch (nn, ebn, nn);
+<a id='L269' name='L269'></a>  <a href='../S/606.html#L53' title='Defined at 53 in gmp-glue.h.'>TMP_GMP_ALLOC</a> (<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, nn + itch);
+<a id='L270' name='L270'></a>  scratch = <a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a> + nn;
+<a id='L271' name='L271'></a>
+<a id='L272' name='L272'></a>  mpn_sec_powm(<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, nn, ep, ebn, np, nn, scratch);
+<a id='L273' name='L273'></a>  ret = <a href='../S/60.html#L239' title='Defined at 239 in rsa-sign-tr.c.'>sec_equal</a>(<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>, m, nn);
+<a id='L274' name='L274'></a>
+<a id='L275' name='L275'></a>  <a href='../S/606.html#L57' title='Defined at 57 in gmp-glue.h.'>TMP_GMP_FREE</a> (<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>);
+<a id='L276' name='L276'></a>  <strong class='reserved'>return</strong> ret;
+<a id='L277' name='L277'></a><em class='brace'>}</em>
+<a id='L278' name='L278'></a>
+<a id='L279' name='L279'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L280' name='L280'></a><a href='../S/60.html#L338' title='Referred from 338 in rsa-sign-tr.c.'>cnd_mpn_zero</a> (<strong class='reserved'>int</strong> cnd, <strong class='reserved'>volatile</strong> <a href='../S/71.html#L64' title='Defined at 64 in mini-gmp.h.'>mp_ptr</a> <a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, <a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> n)
+<a id='L281' name='L281'></a><em class='brace'>{</em>
+<a id='L282' name='L282'></a>  <strong class='reserved'>volatile</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> c;
+<a id='L283' name='L283'></a>  <strong class='reserved'>volatile</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> mask = (<a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a>) cnd - 1;
+<a id='L284' name='L284'></a>
+<a id='L285' name='L285'></a>  <strong class='reserved'>while</strong> (--n &gt;= 0)
+<a id='L286' name='L286'></a>    <em class='brace'>{</em>
+<a id='L287' name='L287'></a>      c = <a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>[n];
+<a id='L288' name='L288'></a>      c &amp;= mask;
+<a id='L289' name='L289'></a>      <a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>[n] = c;
+<a id='L290' name='L290'></a>    <em class='brace'>}</em>
+<a id='L291' name='L291'></a><em class='brace'>}</em>
+<a id='L292' name='L292'></a>
+<a id='L293' name='L293'></a><em class='comment'>/* Checks for any errors done in the RSA computation. That avoids</em>
+<a id='L294' name='L294'></a><em class='comment'> * attacks which rely on faults on hardware, or even software MPI</em>
+<a id='L295' name='L295'></a><em class='comment'> * implementation.</em>
+<a id='L296' name='L296'></a><em class='comment'> * This version is side-channel silent even in case of error,</em>
+<a id='L297' name='L297'></a><em class='comment'> * the destination buffer is always overwritten */</em>
+<a id='L298' name='L298'></a><strong class='reserved'>int</strong>
+<a id='L299' name='L299'></a><a href='../R/908.html' title='Multiple referred from 4 places.'>_rsa_sec_compute_root_tr</a>(<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/743.html#L114' title='Defined at 114 in rsa.h.'>rsa_public_key</a> *pub,
+<a id='L300' name='L300'></a>                         <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/743.html#L127' title='Defined at 127 in rsa.h.'>rsa_private_key</a> *key,
+<a id='L301' name='L301'></a>                         <strong class='reserved'>void</strong> *random_ctx, <a href='../S/122.html#L75' title='Defined at 75 in nettle-types.h.'>nettle_random_func</a> *random,
+<a id='L302' name='L302'></a>                         <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, <strong class='reserved'>const</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *m, size_t mn)
+<a id='L303' name='L303'></a><em class='brace'>{</em>
+<a id='L304' name='L304'></a>  <a href='../S/606.html#L51' title='Defined at 51 in gmp-glue.h.'>TMP_GMP_DECL</a> (c, <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a>);
+<a id='L305' name='L305'></a>  <a href='../S/606.html#L51' title='Defined at 51 in gmp-glue.h.'>TMP_GMP_DECL</a> (ri, <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a>);
+<a id='L306' name='L306'></a>  <a href='../S/606.html#L51' title='Defined at 51 in gmp-glue.h.'>TMP_GMP_DECL</a> (scratch, <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a>);
+<a id='L307' name='L307'></a>  size_t key_limb_size;
+<a id='L308' name='L308'></a>  <strong class='reserved'>int</strong> ret;
+<a id='L309' name='L309'></a>
+<a id='L310' name='L310'></a>  key_limb_size = <a href='../S/606.html#L72' title='Defined at 72 in gmp-glue.h.'>NETTLE_OCTET_SIZE_TO_LIMB_SIZE</a>(key-&gt;size);
+<a id='L311' name='L311'></a>
+<a id='L312' name='L312'></a>  <em class='comment'>/* mpz_powm_sec handles only odd moduli. If p, q or n is even, the</em>
+<a id='L313' name='L313'></a><em class='comment'>     key is invalid and rejected by rsa_private_key_prepare. However,</em>
+<a id='L314' name='L314'></a><em class='comment'>     some applications, notably gnutls, don't use this function, and</em>
+<a id='L315' name='L315'></a><em class='comment'>     we don't want an invalid key to lead to a crash down inside</em>
+<a id='L316' name='L316'></a><em class='comment'>     mpz_powm_sec. So do an additional check here. */</em>
+<a id='L317' name='L317'></a>  <strong class='reserved'>if</strong> (<a href='../S/71.html#L131' title='Defined at 131 in mini-gmp.h.'>mpz_even_p</a> (pub-&gt;n) || <a href='../S/71.html#L131' title='Defined at 131 in mini-gmp.h.'>mpz_even_p</a> (key-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>) || <a href='../S/71.html#L131' title='Defined at 131 in mini-gmp.h.'>mpz_even_p</a> (key-&gt;q))
+<a id='L318' name='L318'></a>    <em class='brace'>{</em>
+<a id='L319' name='L319'></a>      <a href='../S/263.html#L423' title='Defined at 423 in mini-gmp.c.'>mpn_zero</a>(<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, key_limb_size);
+<a id='L320' name='L320'></a>      <strong class='reserved'>return</strong> 0;
+<a id='L321' name='L321'></a>    <em class='brace'>}</em>
+<a id='L322' name='L322'></a>
+<a id='L323' name='L323'></a>  assert(<a href='../S/263.html#L1622' title='Defined at 1622 in mini-gmp.c.'>mpz_size</a>(pub-&gt;n) == key_limb_size);
+<a id='L324' name='L324'></a>  assert(mn &lt;= key_limb_size);
+<a id='L325' name='L325'></a>
+<a id='L326' name='L326'></a>  <a href='../S/606.html#L53' title='Defined at 53 in gmp-glue.h.'>TMP_GMP_ALLOC</a> (c, key_limb_size);
+<a id='L327' name='L327'></a>  <a href='../S/606.html#L53' title='Defined at 53 in gmp-glue.h.'>TMP_GMP_ALLOC</a> (ri, key_limb_size);
+<a id='L328' name='L328'></a>  <a href='../S/606.html#L53' title='Defined at 53 in gmp-glue.h.'>TMP_GMP_ALLOC</a> (scratch, <a href='../D/1084.html' title='Multiple defined in 2 places.'>_rsa_sec_compute_root_itch</a>(key));
+<a id='L329' name='L329'></a>
+<a id='L330' name='L330'></a>  <a href='../S/60.html#L159' title='Defined at 159 in rsa-sign-tr.c.'>rsa_sec_blind</a> (pub, random_ctx, random, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ri, m, mn);
+<a id='L331' name='L331'></a>
+<a id='L332' name='L332'></a>  <a href='../D/1083.html' title='Multiple defined in 2 places.'>_rsa_sec_compute_root</a>(key, c, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, scratch);
+<a id='L333' name='L333'></a>
+<a id='L334' name='L334'></a>  ret = <a href='../S/60.html#L254' title='Defined at 254 in rsa-sign-tr.c.'>rsa_sec_check_root</a>(pub, c, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>);
+<a id='L335' name='L335'></a>
+<a id='L336' name='L336'></a>  <a href='../S/60.html#L213' title='Defined at 213 in rsa-sign-tr.c.'>rsa_sec_unblind</a>(pub, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, ri, c);
+<a id='L337' name='L337'></a>
+<a id='L338' name='L338'></a>  <a href='../S/60.html#L280' title='Defined at 280 in rsa-sign-tr.c.'>cnd_mpn_zero</a>(1 - ret, <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, key_limb_size);
+<a id='L339' name='L339'></a>
+<a id='L340' name='L340'></a>  <a href='../S/606.html#L57' title='Defined at 57 in gmp-glue.h.'>TMP_GMP_FREE</a> (scratch);
+<a id='L341' name='L341'></a>  <a href='../S/606.html#L57' title='Defined at 57 in gmp-glue.h.'>TMP_GMP_FREE</a> (ri);
+<a id='L342' name='L342'></a>  <a href='../S/606.html#L57' title='Defined at 57 in gmp-glue.h.'>TMP_GMP_FREE</a> (c);
+<a id='L343' name='L343'></a>  <strong class='reserved'>return</strong> ret;
+<a id='L344' name='L344'></a><em class='brace'>}</em>
+<a id='L345' name='L345'></a>
+<a id='L346' name='L346'></a><em class='comment'>/* Checks for any errors done in the RSA computation. That avoids</em>
+<a id='L347' name='L347'></a><em class='comment'> * attacks which rely on faults on hardware, or even software MPI</em>
+<a id='L348' name='L348'></a><em class='comment'> * implementation.</em>
+<a id='L349' name='L349'></a><em class='comment'> * This version is maintained for API compatibility reasons. It</em>
+<a id='L350' name='L350'></a><em class='comment'> * is not completely side-channel silent. There are conditionals</em>
+<a id='L351' name='L351'></a><em class='comment'> * in buffer copying both in case of success or error.</em>
+<a id='L352' name='L352'></a><em class='comment'> */</em>
+<a id='L353' name='L353'></a><strong class='reserved'>int</strong>
+<a id='L354' name='L354'></a><a href='../R/2121.html' title='Multiple referred from 15 places.'>rsa_compute_root_tr</a>(<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/743.html#L114' title='Defined at 114 in rsa.h.'>rsa_public_key</a> *pub,
+<a id='L355' name='L355'></a>                    <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../S/743.html#L127' title='Defined at 127 in rsa.h.'>rsa_private_key</a> *key,
+<a id='L356' name='L356'></a>                    <strong class='reserved'>void</strong> *random_ctx, <a href='../S/122.html#L75' title='Defined at 75 in nettle-types.h.'>nettle_random_func</a> *random,
+<a id='L357' name='L357'></a>                    <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> <a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, <strong class='reserved'>const</strong> <a href='../S/71.html#L77' title='Defined at 77 in mini-gmp.h.'>mpz_t</a> m)
+<a id='L358' name='L358'></a><em class='brace'>{</em>
+<a id='L359' name='L359'></a>  <a href='../S/606.html#L51' title='Defined at 51 in gmp-glue.h.'>TMP_GMP_DECL</a> (l, <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a>);
+<a id='L360' name='L360'></a>  <strong class='reserved'>int</strong> res;
+<a id='L361' name='L361'></a>
+<a id='L362' name='L362'></a>  <a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> l_size = <a href='../S/606.html#L72' title='Defined at 72 in gmp-glue.h.'>NETTLE_OCTET_SIZE_TO_LIMB_SIZE</a>(key-&gt;size);
+<a id='L363' name='L363'></a>  <a href='../S/606.html#L53' title='Defined at 53 in gmp-glue.h.'>TMP_GMP_ALLOC</a> (l, l_size);
+<a id='L364' name='L364'></a>
+<a id='L365' name='L365'></a>  res = <a href='../D/1085.html' title='Multiple defined in 3 places.'>_rsa_sec_compute_root_tr</a> (pub, key, random_ctx, random, l,
+<a id='L366' name='L366'></a>                                  <a href='../S/263.html#L1643' title='Defined at 1643 in mini-gmp.c.'>mpz_limbs_read</a>(m), <a href='../S/263.html#L1622' title='Defined at 1622 in mini-gmp.c.'>mpz_size</a>(m));
+<a id='L367' name='L367'></a>  <strong class='reserved'>if</strong> (res) <em class='brace'>{</em>
+<a id='L368' name='L368'></a>    <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/2773.html' title='Multiple defined in 3 places.'>xp</a> = <a href='../S/263.html#L1656' title='Defined at 1656 in mini-gmp.c.'>mpz_limbs_write</a> (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, l_size);
+<a id='L369' name='L369'></a>    <a href='../S/263.html#L374' title='Defined at 374 in mini-gmp.c.'>mpn_copyi</a> (<a href='../D/2773.html' title='Multiple defined in 3 places.'>xp</a>, l, l_size);
+<a id='L370' name='L370'></a>    <a href='../S/263.html#L1662' title='Defined at 1662 in mini-gmp.c.'>mpz_limbs_finish</a> (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>, l_size);
+<a id='L371' name='L371'></a>  <em class='brace'>}</em>
+<a id='L372' name='L372'></a>
+<a id='L373' name='L373'></a>  <a href='../S/606.html#L57' title='Defined at 57 in gmp-glue.h.'>TMP_GMP_FREE</a> (l);
+<a id='L374' name='L374'></a>  <strong class='reserved'>return</strong> res;
+<a id='L375' name='L375'></a><em class='brace'>}</em>
+<a id='L376' name='L376'></a><em class='sharp'>#endif</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L52'>[^]</a><a href='#L354'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

@@ -1,0 +1,587 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/algorithms/ecc.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6473.html'>algorithms</a>/ecc.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L278'>[^]</a><a href='#L537'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L278' title='Defined at 278.'>gnutls_ecc_curve_list</a></li>
+<li><a href='#L295' title='Defined at 295.'>_gnutls_ecc_curve_is_supported</a></li>
+<li><a href='#L313' title='Defined at 313.'>gnutls_oid_to_ecc_curve</a></li>
+<li><a href='#L339' title='Defined at 339.'>gnutls_ecc_curve_get_id</a></li>
+<li><a href='#L354' title='Defined at 354.'>_gnutls_ecc_curve_mark_disabled</a></li>
+<li><a href='#L368' title='Defined at 368.'>_gnutls_ecc_pk_compatible</a></li>
+<li><a href='#L388' title='Defined at 388.'>_gnutls_ecc_bits_to_curve</a></li>
+<li><a href='#L423' title='Defined at 423.'>gnutls_ecc_curve_get_name</a></li>
+<li><a href='#L448' title='Defined at 448.'>gnutls_ecc_curve_get_oid</a></li>
+<li><a href='#L471' title='Defined at 471.'>_gnutls_ecc_curve_get_params</a></li>
+<li><a href='#L493' title='Defined at 493.'>gnutls_ecc_curve_get_size</a></li>
+<li><a href='#L515' title='Defined at 515.'>gnutls_ecc_curve_get_pk</a></li>
+<li><a href='#L537' title='Defined at 537.'>_gnutls_ecc_curve_get_group</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2011-2012 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L9' name='L9'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L10' name='L10'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L11' name='L11'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> &lt;<a href='6029.html'>algorithms.h</a>&gt;
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> &lt;<a href='../I/3.html'>x509/common.h</a>&gt;
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;<a href='5466.html'>pk.h</a>&gt;
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> "<a href='6058.html'>c-strcase.h</a>"
+<a id='L29' name='L29'></a>
+<a id='L30' name='L30'></a><em class='comment'>/* Supported ECC curves</em>
+<a id='L31' name='L31'></a><em class='comment'> */</em>
+<a id='L32' name='L32'></a>
+<a id='L33' name='L33'></a><strong class='reserved'>static</strong> <a href='../D/4416.html' title='Multiple defined in 2 places.'>SYSTEM_CONFIG_OR_CONST</a>
+<a id='L34' name='L34'></a><a href='../D/8601.html' title='Multiple defined in 2 places.'>gnutls_ecc_curve_entry_st</a> ecc_curves[] = <em class='brace'>{</em>
+<a id='L35' name='L35'></a><em class='sharp'>#ifdef</em> ENABLE_NON_SUITEB_CURVES
+<a id='L36' name='L36'></a>        <em class='brace'>{</em>
+<a id='L37' name='L37'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "SECP192R1",
+<a id='L38' name='L38'></a>         .oid = "1.2.840.10045.3.1.1",
+<a id='L39' name='L39'></a>         .id = GNUTLS_ECC_CURVE_SECP192R1,
+<a id='L40' name='L40'></a>         .group = GNUTLS_GROUP_SECP192R1,
+<a id='L41' name='L41'></a>         .pk = GNUTLS_PK_ECDSA,
+<a id='L42' name='L42'></a>         .size = 24,
+<a id='L43' name='L43'></a>         .supported = 1,
+<a id='L44' name='L44'></a>        <em class='brace'>}</em>,
+<a id='L45' name='L45'></a>        <em class='brace'>{</em>
+<a id='L46' name='L46'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "SECP224R1",
+<a id='L47' name='L47'></a>         .oid = "1.3.132.0.33",
+<a id='L48' name='L48'></a>         .id = GNUTLS_ECC_CURVE_SECP224R1,
+<a id='L49' name='L49'></a>         .group = GNUTLS_GROUP_SECP224R1,
+<a id='L50' name='L50'></a>         .pk = GNUTLS_PK_ECDSA,
+<a id='L51' name='L51'></a>         .size = 28,
+<a id='L52' name='L52'></a>         .supported = 1,
+<a id='L53' name='L53'></a>        <em class='brace'>}</em>,
+<a id='L54' name='L54'></a><em class='sharp'>#endif</em>
+<a id='L55' name='L55'></a>        <em class='brace'>{</em>
+<a id='L56' name='L56'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "SECP256R1",
+<a id='L57' name='L57'></a>         .oid = "1.2.840.10045.3.1.7",
+<a id='L58' name='L58'></a>         .id = GNUTLS_ECC_CURVE_SECP256R1,
+<a id='L59' name='L59'></a>         .group = GNUTLS_GROUP_SECP256R1,
+<a id='L60' name='L60'></a>         .pk = GNUTLS_PK_ECDSA,
+<a id='L61' name='L61'></a>         .size = 32,
+<a id='L62' name='L62'></a>         .supported = 1,
+<a id='L63' name='L63'></a>        <em class='brace'>}</em>,
+<a id='L64' name='L64'></a>        <em class='brace'>{</em>
+<a id='L65' name='L65'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "SECP384R1",
+<a id='L66' name='L66'></a>         .oid = "1.3.132.0.34",
+<a id='L67' name='L67'></a>         .id = GNUTLS_ECC_CURVE_SECP384R1,
+<a id='L68' name='L68'></a>         .group = GNUTLS_GROUP_SECP384R1,
+<a id='L69' name='L69'></a>         .pk = GNUTLS_PK_ECDSA,
+<a id='L70' name='L70'></a>         .size = 48,
+<a id='L71' name='L71'></a>         .supported = 1,
+<a id='L72' name='L72'></a>        <em class='brace'>}</em>,
+<a id='L73' name='L73'></a>        <em class='brace'>{</em>
+<a id='L74' name='L74'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "SECP521R1",
+<a id='L75' name='L75'></a>         .oid = "1.3.132.0.35",
+<a id='L76' name='L76'></a>         .id = GNUTLS_ECC_CURVE_SECP521R1,
+<a id='L77' name='L77'></a>         .group = GNUTLS_GROUP_SECP521R1,
+<a id='L78' name='L78'></a>         .pk = GNUTLS_PK_ECDSA,
+<a id='L79' name='L79'></a>         .size = 66,
+<a id='L80' name='L80'></a>         .supported = 1,
+<a id='L81' name='L81'></a>        <em class='brace'>}</em>,
+<a id='L82' name='L82'></a>        <em class='brace'>{</em>
+<a id='L83' name='L83'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "X25519",
+<a id='L84' name='L84'></a>         .id = GNUTLS_ECC_CURVE_X25519,
+<a id='L85' name='L85'></a>         .group = GNUTLS_GROUP_X25519,
+<a id='L86' name='L86'></a>         .pk = GNUTLS_PK_ECDH_X25519,
+<a id='L87' name='L87'></a>         .size = 32,
+<a id='L88' name='L88'></a>         .supported = 1,
+<a id='L89' name='L89'></a>        <em class='brace'>}</em>,
+<a id='L90' name='L90'></a>        <em class='brace'>{</em>
+<a id='L91' name='L91'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "Ed25519",
+<a id='L92' name='L92'></a>         .oid = <a href='../S/5392.html#L100' title='Defined at 100 in lib/x509/common.h.'>SIG_EDDSA_SHA512_OID</a>,
+<a id='L93' name='L93'></a>         .id = GNUTLS_ECC_CURVE_ED25519,
+<a id='L94' name='L94'></a>         .pk = GNUTLS_PK_EDDSA_ED25519,
+<a id='L95' name='L95'></a>         .size = 32,
+<a id='L96' name='L96'></a>         .sig_size = 64,
+<a id='L97' name='L97'></a>         .supported = 1,
+<a id='L98' name='L98'></a>        <em class='brace'>}</em>,
+<a id='L99' name='L99'></a>        <em class='brace'>{</em>
+<a id='L100' name='L100'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "X448",
+<a id='L101' name='L101'></a>         .id = GNUTLS_ECC_CURVE_X448,
+<a id='L102' name='L102'></a>         .pk = GNUTLS_PK_ECDH_X448,
+<a id='L103' name='L103'></a>         .size = 56,
+<a id='L104' name='L104'></a>         .supported = 1,
+<a id='L105' name='L105'></a>        <em class='brace'>}</em>,
+<a id='L106' name='L106'></a>        <em class='brace'>{</em>
+<a id='L107' name='L107'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "Ed448",
+<a id='L108' name='L108'></a>         .oid = <a href='../S/5392.html#L101' title='Defined at 101 in lib/x509/common.h.'>SIG_ED448_OID</a>,
+<a id='L109' name='L109'></a>         .id = GNUTLS_ECC_CURVE_ED448,
+<a id='L110' name='L110'></a>         .pk = GNUTLS_PK_EDDSA_ED448,
+<a id='L111' name='L111'></a>         .size = 57,
+<a id='L112' name='L112'></a>         .sig_size = 114,
+<a id='L113' name='L113'></a>         .supported = 1,
+<a id='L114' name='L114'></a>        <em class='brace'>}</em>,
+<a id='L115' name='L115'></a><em class='sharp'>#if</em> ENABLE_GOST
+<a id='L116' name='L116'></a>        <em class='comment'>/* Curves for usage in GOST digital signature algorithm (GOST R</em>
+<a id='L117' name='L117'></a><em class='comment'>         * 34.10-2001/-2012) and key agreement (VKO GOST R 34.10-2001/-2012).</em>
+<a id='L118' name='L118'></a><em class='comment'>         *</em>
+<a id='L119' name='L119'></a><em class='comment'>         * Historically CryptoPro has defined three 256-bit curves for use with</em>
+<a id='L120' name='L120'></a><em class='comment'>         * digital signature algorithm (CryptoPro-A, -B, -C).</em>
+<a id='L121' name='L121'></a><em class='comment'>         *</em>
+<a id='L122' name='L122'></a><em class='comment'>         * Also it has reissues two of them with different OIDs for key</em>
+<a id='L123' name='L123'></a><em class='comment'>         * exchange (CryptoPro-XchA = CryptoPro-A and CryptoPro-XchB =</em>
+<a id='L124' name='L124'></a><em class='comment'>         * CryptoPro-C).</em>
+<a id='L125' name='L125'></a><em class='comment'>         *</em>
+<a id='L126' name='L126'></a><em class='comment'>         * Then TC26 (Standard comittee working on cryptographic standards) has</em>
+<a id='L127' name='L127'></a><em class='comment'>         * defined one 256-bit curve (TC26-256-A) and three 512-bit curves</em>
+<a id='L128' name='L128'></a><em class='comment'>         * (TC26-512-A, -B, -C).</em>
+<a id='L129' name='L129'></a><em class='comment'>         *</em>
+<a id='L130' name='L130'></a><em class='comment'>         * And finally TC26 has reissues original CryptoPro curves under their</em>
+<a id='L131' name='L131'></a><em class='comment'>         * own OID namespace (TC26-256-B = CryptoPro-A, TC26-256-C =</em>
+<a id='L132' name='L132'></a><em class='comment'>         * CryptoPro-B and TC26-256-D = CryptoPro-C).</em>
+<a id='L133' name='L133'></a><em class='comment'>         *</em>
+<a id='L134' name='L134'></a><em class='comment'>         * CryptoPro OIDs are usable for both GOST R 34.10-2001 and</em>
+<a id='L135' name='L135'></a><em class='comment'>         * GOST R 34.10-2012 keys (thus they have GNUTLS_PK_UNKNOWN in this</em>
+<a id='L136' name='L136'></a><em class='comment'>         * table).</em>
+<a id='L137' name='L137'></a><em class='comment'>         * TC26 OIDs are usable only for GOST R 34.10-2012 keys.</em>
+<a id='L138' name='L138'></a><em class='comment'>         */</em>
+<a id='L139' name='L139'></a>        <em class='brace'>{</em>
+<a id='L140' name='L140'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "CryptoPro-A",
+<a id='L141' name='L141'></a>         .oid = "1.2.643.2.2.35.1",
+<a id='L142' name='L142'></a>         .id = GNUTLS_ECC_CURVE_GOST256CPA,
+<a id='L143' name='L143'></a>         .group = GNUTLS_GROUP_GC256B,
+<a id='L144' name='L144'></a>         .pk = GNUTLS_PK_UNKNOWN,
+<a id='L145' name='L145'></a>         .size = 32,
+<a id='L146' name='L146'></a>         .gost_curve = 1,
+<a id='L147' name='L147'></a>         .supported = 1,
+<a id='L148' name='L148'></a>        <em class='brace'>}</em>,
+<a id='L149' name='L149'></a>        <em class='brace'>{</em>
+<a id='L150' name='L150'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "CryptoPro-B",
+<a id='L151' name='L151'></a>         .oid = "1.2.643.2.2.35.2",
+<a id='L152' name='L152'></a>         .id = GNUTLS_ECC_CURVE_GOST256CPB,
+<a id='L153' name='L153'></a>         .group = GNUTLS_GROUP_GC256C,
+<a id='L154' name='L154'></a>         .pk = GNUTLS_PK_UNKNOWN,
+<a id='L155' name='L155'></a>         .size = 32,
+<a id='L156' name='L156'></a>         .gost_curve = 1,
+<a id='L157' name='L157'></a>         .supported = 1,
+<a id='L158' name='L158'></a>        <em class='brace'>}</em>,
+<a id='L159' name='L159'></a>        <em class='brace'>{</em>
+<a id='L160' name='L160'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "CryptoPro-C",
+<a id='L161' name='L161'></a>         .oid = "1.2.643.2.2.35.3",
+<a id='L162' name='L162'></a>         .id = GNUTLS_ECC_CURVE_GOST256CPC,
+<a id='L163' name='L163'></a>         .group = GNUTLS_GROUP_GC256D,
+<a id='L164' name='L164'></a>         .pk = GNUTLS_PK_UNKNOWN,
+<a id='L165' name='L165'></a>         .size = 32,
+<a id='L166' name='L166'></a>         .gost_curve = 1,
+<a id='L167' name='L167'></a>         .supported = 1,
+<a id='L168' name='L168'></a>        <em class='brace'>}</em>,
+<a id='L169' name='L169'></a>        <em class='brace'>{</em>
+<a id='L170' name='L170'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "CryptoPro-XchA",
+<a id='L171' name='L171'></a>         .oid = "1.2.643.2.2.36.0",
+<a id='L172' name='L172'></a>         .id = GNUTLS_ECC_CURVE_GOST256CPXA,
+<a id='L173' name='L173'></a>         .group = GNUTLS_GROUP_GC256B,
+<a id='L174' name='L174'></a>         .pk = GNUTLS_PK_UNKNOWN,
+<a id='L175' name='L175'></a>         .size = 32,
+<a id='L176' name='L176'></a>         .gost_curve = 1,
+<a id='L177' name='L177'></a>         .supported = 1,
+<a id='L178' name='L178'></a>        <em class='brace'>}</em>,
+<a id='L179' name='L179'></a>        <em class='brace'>{</em>
+<a id='L180' name='L180'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "CryptoPro-XchB",
+<a id='L181' name='L181'></a>         .oid = "1.2.643.2.2.36.1",
+<a id='L182' name='L182'></a>         .id = GNUTLS_ECC_CURVE_GOST256CPXB,
+<a id='L183' name='L183'></a>         .group = GNUTLS_GROUP_GC256D,
+<a id='L184' name='L184'></a>         .pk = GNUTLS_PK_UNKNOWN,
+<a id='L185' name='L185'></a>         .size = 32,
+<a id='L186' name='L186'></a>         .gost_curve = 1,
+<a id='L187' name='L187'></a>         .supported = 1,
+<a id='L188' name='L188'></a>        <em class='brace'>}</em>,
+<a id='L189' name='L189'></a>        <em class='brace'>{</em>
+<a id='L190' name='L190'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "TC26-256-A",
+<a id='L191' name='L191'></a>         .oid = "1.2.643.7.1.2.1.1.1",
+<a id='L192' name='L192'></a>         .id = GNUTLS_ECC_CURVE_GOST256A,
+<a id='L193' name='L193'></a>         .group = GNUTLS_GROUP_GC256A,
+<a id='L194' name='L194'></a>         .pk = GNUTLS_PK_GOST_12_256,
+<a id='L195' name='L195'></a>         .size = 32,
+<a id='L196' name='L196'></a>         .gost_curve = 1,
+<a id='L197' name='L197'></a>         .supported = 1,
+<a id='L198' name='L198'></a>        <em class='brace'>}</em>,
+<a id='L199' name='L199'></a>        <em class='brace'>{</em>
+<a id='L200' name='L200'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "TC26-256-B",
+<a id='L201' name='L201'></a>         .oid = "1.2.643.7.1.2.1.1.2",
+<a id='L202' name='L202'></a>         .id = GNUTLS_ECC_CURVE_GOST256B,
+<a id='L203' name='L203'></a>         .group = GNUTLS_GROUP_GC256B,
+<a id='L204' name='L204'></a>         .pk = GNUTLS_PK_GOST_12_256,
+<a id='L205' name='L205'></a>         .size = 32,
+<a id='L206' name='L206'></a>         .gost_curve = 1,
+<a id='L207' name='L207'></a>         .supported = 1,
+<a id='L208' name='L208'></a>        <em class='brace'>}</em>,
+<a id='L209' name='L209'></a>        <em class='brace'>{</em>
+<a id='L210' name='L210'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "TC26-256-C",
+<a id='L211' name='L211'></a>         .oid = "1.2.643.7.1.2.1.1.3",
+<a id='L212' name='L212'></a>         .id = GNUTLS_ECC_CURVE_GOST256C,
+<a id='L213' name='L213'></a>         .group = GNUTLS_GROUP_GC256C,
+<a id='L214' name='L214'></a>         .pk = GNUTLS_PK_GOST_12_256,
+<a id='L215' name='L215'></a>         .size = 32,
+<a id='L216' name='L216'></a>         .gost_curve = 1,
+<a id='L217' name='L217'></a>         .supported = 1,
+<a id='L218' name='L218'></a>        <em class='brace'>}</em>,
+<a id='L219' name='L219'></a>        <em class='brace'>{</em>
+<a id='L220' name='L220'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "TC26-256-D",
+<a id='L221' name='L221'></a>         .oid = "1.2.643.7.1.2.1.1.4",
+<a id='L222' name='L222'></a>         .id = GNUTLS_ECC_CURVE_GOST256D,
+<a id='L223' name='L223'></a>         .group = GNUTLS_GROUP_GC256D,
+<a id='L224' name='L224'></a>         .pk = GNUTLS_PK_GOST_12_256,
+<a id='L225' name='L225'></a>         .size = 32,
+<a id='L226' name='L226'></a>         .gost_curve = 1,
+<a id='L227' name='L227'></a>         .supported = 1,
+<a id='L228' name='L228'></a>        <em class='brace'>}</em>,
+<a id='L229' name='L229'></a>        <em class='brace'>{</em>
+<a id='L230' name='L230'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "TC26-512-A",
+<a id='L231' name='L231'></a>         .oid = "1.2.643.7.1.2.1.2.1",
+<a id='L232' name='L232'></a>         .id = GNUTLS_ECC_CURVE_GOST512A,
+<a id='L233' name='L233'></a>         .group = GNUTLS_GROUP_GC512A,
+<a id='L234' name='L234'></a>         .pk = GNUTLS_PK_GOST_12_512,
+<a id='L235' name='L235'></a>         .size = 64,
+<a id='L236' name='L236'></a>         .gost_curve = 1,
+<a id='L237' name='L237'></a>         .supported = 1,
+<a id='L238' name='L238'></a>        <em class='brace'>}</em>,
+<a id='L239' name='L239'></a>        <em class='brace'>{</em>
+<a id='L240' name='L240'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "TC26-512-B",
+<a id='L241' name='L241'></a>         .oid = "1.2.643.7.1.2.1.2.2",
+<a id='L242' name='L242'></a>         .id = GNUTLS_ECC_CURVE_GOST512B,
+<a id='L243' name='L243'></a>         .group = GNUTLS_GROUP_GC512B,
+<a id='L244' name='L244'></a>         .pk = GNUTLS_PK_GOST_12_512,
+<a id='L245' name='L245'></a>         .size = 64,
+<a id='L246' name='L246'></a>         .gost_curve = 1,
+<a id='L247' name='L247'></a>         .supported = 1,
+<a id='L248' name='L248'></a>        <em class='brace'>}</em>,
+<a id='L249' name='L249'></a>        <em class='brace'>{</em>
+<a id='L250' name='L250'></a>         .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "TC26-512-C",
+<a id='L251' name='L251'></a>         .oid = "1.2.643.7.1.2.1.2.3",
+<a id='L252' name='L252'></a>         .id = GNUTLS_ECC_CURVE_GOST512C,
+<a id='L253' name='L253'></a>         .group = GNUTLS_GROUP_GC512C,
+<a id='L254' name='L254'></a>         .pk = GNUTLS_PK_GOST_12_512,
+<a id='L255' name='L255'></a>         .size = 64,
+<a id='L256' name='L256'></a>         .gost_curve = 1,
+<a id='L257' name='L257'></a>         .supported = 1,
+<a id='L258' name='L258'></a>        <em class='brace'>}</em>,
+<a id='L259' name='L259'></a><em class='sharp'>#endif</em>
+<a id='L260' name='L260'></a>        <em class='brace'>{</em>0, 0, 0<em class='brace'>}</em>
+<a id='L261' name='L261'></a><em class='brace'>}</em>;
+<a id='L262' name='L262'></a>
+<a id='L263' name='L263'></a><em class='sharp'>#define</em> <a href='../R/1117.html' title='Multiple referred from 11 places.'>GNUTLS_ECC_CURVE_LOOP</a>(<a href='../D/6902.html' title='Multiple defined in 2 places.'>b</a>) \
+<a id='L264' name='L264'></a>        <em class='brace'>{</em> <strong class='reserved'>const</strong> <a href='../D/8601.html' title='Multiple defined in 2 places.'>gnutls_ecc_curve_entry_st</a> *p; \
+<a id='L265' name='L265'></a>                <strong class='reserved'>for</strong>(p = ecc_curves; p-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>; p++) <em class='brace'>{</em> <a href='../D/6902.html' title='Multiple defined in 2 places.'>b</a> ; <em class='brace'>}</em> <em class='brace'>}</em>
+<a id='L266' name='L266'></a>
+<a id='L267' name='L267'></a>
+<a id='L268' name='L268'></a><em class='comment'>/**</em>
+<a id='L269' name='L269'></a><em class='comment'> * gnutls_ecc_curve_list:</em>
+<a id='L270' name='L270'></a><em class='comment'> *</em>
+<a id='L271' name='L271'></a><em class='comment'> * Get the list of supported elliptic curves.</em>
+<a id='L272' name='L272'></a><em class='comment'> *</em>
+<a id='L273' name='L273'></a><em class='comment'> * This function is not thread safe.</em>
+<a id='L274' name='L274'></a><em class='comment'> *</em>
+<a id='L275' name='L275'></a><em class='comment'> * Returns: Return a (0)-terminated list of #gnutls_ecc_curve_t</em>
+<a id='L276' name='L276'></a><em class='comment'> *   integers indicating the available curves.</em>
+<a id='L277' name='L277'></a><em class='comment'> **/</em>
+<a id='L278' name='L278'></a><strong class='reserved'>const</strong> gnutls_ecc_curve_t *<a href='../S/3983.html#L866' title='Referred from 866 in src/certtool-common.c.'>gnutls_ecc_curve_list</a>(<strong class='reserved'>void</strong>)
+<a id='L279' name='L279'></a><em class='brace'>{</em>
+<a id='L280' name='L280'></a>        <strong class='reserved'>static</strong> gnutls_ecc_curve_t supported_curves[<a href='../S/5822.html#L306' title='Defined at 306 in lib/gnutls_int.h.'>MAX_ALGOS</a>] = <em class='brace'>{</em> 0 <em class='brace'>}</em>;
+<a id='L281' name='L281'></a>
+<a id='L282' name='L282'></a>        <strong class='reserved'>if</strong> (supported_curves[0] == 0) <em class='brace'>{</em>
+<a id='L283' name='L283'></a>                <strong class='reserved'>int</strong> i = 0;
+<a id='L284' name='L284'></a>
+<a id='L285' name='L285'></a>                <a href='../S/5249.html#L263' title='Defined at 263 in lib/algorithms/ecc.c.'>GNUTLS_ECC_CURVE_LOOP</a>(
+<a id='L286' name='L286'></a>                        <strong class='reserved'>if</strong> (p-&gt;supported &amp;&amp; <a href='../S/5466.html#L42' title='Defined at 42 in lib/pk.h.'>_gnutls_pk_curve_exists</a>(p-&gt;id))
+<a id='L287' name='L287'></a>                                supported_curves[i++] = p-&gt;id;
+<a id='L288' name='L288'></a>                );
+<a id='L289' name='L289'></a>                supported_curves[i++] = 0;
+<a id='L290' name='L290'></a>        <em class='brace'>}</em>
+<a id='L291' name='L291'></a>
+<a id='L292' name='L292'></a>        <strong class='reserved'>return</strong> supported_curves;
+<a id='L293' name='L293'></a><em class='brace'>}</em>
+<a id='L294' name='L294'></a>
+<a id='L295' name='L295'></a><strong class='reserved'>unsigned</strong> <a href='../R/4993.html' title='Multiple referred from 7 places.'>_gnutls_ecc_curve_is_supported</a>(gnutls_ecc_curve_t curve)
+<a id='L296' name='L296'></a><em class='brace'>{</em>
+<a id='L297' name='L297'></a>        <a href='../S/5249.html#L263' title='Defined at 263 in lib/algorithms/ecc.c.'>GNUTLS_ECC_CURVE_LOOP</a>(
+<a id='L298' name='L298'></a>                <strong class='reserved'>if</strong> (p-&gt;id == curve &amp;&amp; p-&gt;supported &amp;&amp; <a href='../S/5466.html#L42' title='Defined at 42 in lib/pk.h.'>_gnutls_pk_curve_exists</a>(p-&gt;id))
+<a id='L299' name='L299'></a>                        <strong class='reserved'>return</strong> 1;
+<a id='L300' name='L300'></a>        );
+<a id='L301' name='L301'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L302' name='L302'></a><em class='brace'>}</em>
+<a id='L303' name='L303'></a>
+<a id='L304' name='L304'></a><em class='comment'>/**</em>
+<a id='L305' name='L305'></a><em class='comment'> * gnutls_oid_to_ecc_curve:</em>
+<a id='L306' name='L306'></a><em class='comment'> * @oid: is a curve's OID</em>
+<a id='L307' name='L307'></a><em class='comment'> *</em>
+<a id='L308' name='L308'></a><em class='comment'> * Returns: return a #gnutls_ecc_curve_t value corresponding to</em>
+<a id='L309' name='L309'></a><em class='comment'> *   the specified OID, or %GNUTLS_ECC_CURVE_INVALID on error.</em>
+<a id='L310' name='L310'></a><em class='comment'> *</em>
+<a id='L311' name='L311'></a><em class='comment'> * Since: 3.4.3</em>
+<a id='L312' name='L312'></a><em class='comment'> **/</em>
+<a id='L313' name='L313'></a>gnutls_ecc_curve_t <a href='../R/7867.html' title='Multiple referred from 5 places.'>gnutls_oid_to_ecc_curve</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *oid)
+<a id='L314' name='L314'></a><em class='brace'>{</em>
+<a id='L315' name='L315'></a>        gnutls_ecc_curve_t ret = GNUTLS_ECC_CURVE_INVALID;
+<a id='L316' name='L316'></a>
+<a id='L317' name='L317'></a>        <a href='../S/5249.html#L263' title='Defined at 263 in lib/algorithms/ecc.c.'>GNUTLS_ECC_CURVE_LOOP</a>(
+<a id='L318' name='L318'></a>                <strong class='reserved'>if</strong> (p-&gt;oid != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> &amp;&amp; <a href='../S/6335.html#L27' title='Defined at 27 in gl/c-strcasecmp.c.'>c_strcasecmp</a>(p-&gt;oid, oid) == 0 &amp;&amp; p-&gt;supported &amp;&amp;
+<a id='L319' name='L319'></a>                    <a href='../S/5466.html#L42' title='Defined at 42 in lib/pk.h.'>_gnutls_pk_curve_exists</a>(p-&gt;id)) <em class='brace'>{</em>
+<a id='L320' name='L320'></a>                        ret = p-&gt;id;
+<a id='L321' name='L321'></a>                        <strong class='reserved'>break</strong>;
+<a id='L322' name='L322'></a>                <em class='brace'>}</em>
+<a id='L323' name='L323'></a>        );
+<a id='L324' name='L324'></a>
+<a id='L325' name='L325'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L326' name='L326'></a><em class='brace'>}</em>
+<a id='L327' name='L327'></a>
+<a id='L328' name='L328'></a><em class='comment'>/**</em>
+<a id='L329' name='L329'></a><em class='comment'> * gnutls_ecc_curve_get_id:</em>
+<a id='L330' name='L330'></a><em class='comment'> * @name: is a curve name</em>
+<a id='L331' name='L331'></a><em class='comment'> *</em>
+<a id='L332' name='L332'></a><em class='comment'> * The names are compared in a case insensitive way.</em>
+<a id='L333' name='L333'></a><em class='comment'> *</em>
+<a id='L334' name='L334'></a><em class='comment'> * Returns: return a #gnutls_ecc_curve_t value corresponding to</em>
+<a id='L335' name='L335'></a><em class='comment'> *   the specified curve, or %GNUTLS_ECC_CURVE_INVALID on error.</em>
+<a id='L336' name='L336'></a><em class='comment'> *</em>
+<a id='L337' name='L337'></a><em class='comment'> * Since: 3.4.3</em>
+<a id='L338' name='L338'></a><em class='comment'> **/</em>
+<a id='L339' name='L339'></a>gnutls_ecc_curve_t <a href='../S/5260.html#L2116' title='Referred from 2116 in lib/priority.c.'>gnutls_ecc_curve_get_id</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>)
+<a id='L340' name='L340'></a><em class='brace'>{</em>
+<a id='L341' name='L341'></a>        gnutls_ecc_curve_t ret = GNUTLS_ECC_CURVE_INVALID;
+<a id='L342' name='L342'></a>
+<a id='L343' name='L343'></a>        <a href='../S/5249.html#L263' title='Defined at 263 in lib/algorithms/ecc.c.'>GNUTLS_ECC_CURVE_LOOP</a>(
+<a id='L344' name='L344'></a>                <strong class='reserved'>if</strong> (<a href='../S/6335.html#L27' title='Defined at 27 in gl/c-strcasecmp.c.'>c_strcasecmp</a>(p-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>) == 0 &amp;&amp; p-&gt;supported &amp;&amp;
+<a id='L345' name='L345'></a>                    <a href='../S/5466.html#L42' title='Defined at 42 in lib/pk.h.'>_gnutls_pk_curve_exists</a>(p-&gt;id)) <em class='brace'>{</em>
+<a id='L346' name='L346'></a>                        ret = p-&gt;id;
+<a id='L347' name='L347'></a>                        <strong class='reserved'>break</strong>;
+<a id='L348' name='L348'></a>                <em class='brace'>}</em>
+<a id='L349' name='L349'></a>        );
+<a id='L350' name='L350'></a>
+<a id='L351' name='L351'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L352' name='L352'></a><em class='brace'>}</em>
+<a id='L353' name='L353'></a>
+<a id='L354' name='L354'></a><strong class='reserved'>int</strong> <a href='../R/4994.html' title='Multiple referred from 2 places.'>_gnutls_ecc_curve_mark_disabled</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>)
+<a id='L355' name='L355'></a><em class='brace'>{</em>
+<a id='L356' name='L356'></a>        <a href='../D/8601.html' title='Multiple defined in 2 places.'>gnutls_ecc_curve_entry_st</a> *p;
+<a id='L357' name='L357'></a>
+<a id='L358' name='L358'></a>        <strong class='reserved'>for</strong>(p = ecc_curves; p-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>; p++) <em class='brace'>{</em>
+<a id='L359' name='L359'></a>                <strong class='reserved'>if</strong> (<a href='../S/6335.html#L27' title='Defined at 27 in gl/c-strcasecmp.c.'>c_strcasecmp</a>(p-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>) == 0) <em class='brace'>{</em>
+<a id='L360' name='L360'></a>                        p-&gt;supported = 0;
+<a id='L361' name='L361'></a>                        <strong class='reserved'>return</strong> 0;
+<a id='L362' name='L362'></a>                <em class='brace'>}</em>
+<a id='L363' name='L363'></a>        <em class='brace'>}</em>
+<a id='L364' name='L364'></a>
+<a id='L365' name='L365'></a>        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L366' name='L366'></a><em class='brace'>}</em>
+<a id='L367' name='L367'></a>
+<a id='L368' name='L368'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5249.html#L403' title='Referred from 403 in lib/algorithms/ecc.c.'>_gnutls_ecc_pk_compatible</a>(<strong class='reserved'>const</strong> <a href='../D/8601.html' title='Multiple defined in 2 places.'>gnutls_ecc_curve_entry_st</a> *p,
+<a id='L369' name='L369'></a>                                     gnutls_pk_algorithm_t pk)
+<a id='L370' name='L370'></a><em class='brace'>{</em>
+<a id='L371' name='L371'></a>        <strong class='reserved'>if</strong> (!p-&gt;supported || !<a href='../S/5466.html#L42' title='Defined at 42 in lib/pk.h.'>_gnutls_pk_curve_exists</a>(p-&gt;id))
+<a id='L372' name='L372'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L373' name='L373'></a>
+<a id='L374' name='L374'></a>        <strong class='reserved'>if</strong> (pk == GNUTLS_PK_GOST_01 ||
+<a id='L375' name='L375'></a>            pk == GNUTLS_PK_GOST_12_256)
+<a id='L376' name='L376'></a>                <strong class='reserved'>return</strong> p-&gt;gost_curve &amp;&amp; p-&gt;size == 32;
+<a id='L377' name='L377'></a>
+<a id='L378' name='L378'></a>        <strong class='reserved'>return</strong> pk == p-&gt;pk;
+<a id='L379' name='L379'></a><em class='brace'>}</em>
+<a id='L380' name='L380'></a>
+<a id='L381' name='L381'></a><em class='comment'>/*-</em>
+<a id='L382' name='L382'></a><em class='comment'> * _gnutls_ecc_bits_to_curve:</em>
+<a id='L383' name='L383'></a><em class='comment'> * @bits: is a security parameter in bits</em>
+<a id='L384' name='L384'></a><em class='comment'> *</em>
+<a id='L385' name='L385'></a><em class='comment'> * Returns: return a #gnutls_ecc_curve_t value corresponding to</em>
+<a id='L386' name='L386'></a><em class='comment'> *   the specified bit length, or %GNUTLS_ECC_CURVE_INVALID on error.</em>
+<a id='L387' name='L387'></a><em class='comment'> -*/</em>
+<a id='L388' name='L388'></a>gnutls_ecc_curve_t <a href='../R/4990.html' title='Multiple referred from 4 places.'>_gnutls_ecc_bits_to_curve</a>(gnutls_pk_algorithm_t pk, <strong class='reserved'>int</strong> bits)
+<a id='L389' name='L389'></a><em class='brace'>{</em>
+<a id='L390' name='L390'></a>        gnutls_ecc_curve_t ret;
+<a id='L391' name='L391'></a>
+<a id='L392' name='L392'></a>        <strong class='reserved'>if</strong> (pk == GNUTLS_PK_ECDSA)
+<a id='L393' name='L393'></a>                ret = GNUTLS_ECC_CURVE_SECP256R1;
+<a id='L394' name='L394'></a>        <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (pk == GNUTLS_PK_GOST_01 ||
+<a id='L395' name='L395'></a>                 pk == GNUTLS_PK_GOST_12_256)
+<a id='L396' name='L396'></a>                ret = GNUTLS_ECC_CURVE_GOST256CPA;
+<a id='L397' name='L397'></a>        <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (pk == GNUTLS_PK_GOST_12_512)
+<a id='L398' name='L398'></a>                ret = GNUTLS_ECC_CURVE_GOST512A;
+<a id='L399' name='L399'></a>        <strong class='reserved'>else</strong>
+<a id='L400' name='L400'></a>                ret = GNUTLS_ECC_CURVE_ED25519;
+<a id='L401' name='L401'></a>
+<a id='L402' name='L402'></a>        <a href='../S/5249.html#L263' title='Defined at 263 in lib/algorithms/ecc.c.'>GNUTLS_ECC_CURVE_LOOP</a>(
+<a id='L403' name='L403'></a>                <strong class='reserved'>if</strong> (<a href='../S/5249.html#L368' title='Defined at 368 in lib/algorithms/ecc.c.'>_gnutls_ecc_pk_compatible</a>(p, pk) &amp;&amp; 8 * p-&gt;size &gt;= (<strong class='reserved'>unsigned</strong>)bits) <em class='brace'>{</em>
+<a id='L404' name='L404'></a>                        ret = p-&gt;id;
+<a id='L405' name='L405'></a>                        <strong class='reserved'>break</strong>;
+<a id='L406' name='L406'></a>                <em class='brace'>}</em>
+<a id='L407' name='L407'></a>        );
+<a id='L408' name='L408'></a>
+<a id='L409' name='L409'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L410' name='L410'></a><em class='brace'>}</em>
+<a id='L411' name='L411'></a>
+<a id='L412' name='L412'></a><em class='comment'>/**</em>
+<a id='L413' name='L413'></a><em class='comment'> * gnutls_ecc_curve_get_name:</em>
+<a id='L414' name='L414'></a><em class='comment'> * @curve: is an ECC curve</em>
+<a id='L415' name='L415'></a><em class='comment'> *</em>
+<a id='L416' name='L416'></a><em class='comment'> * Convert a #gnutls_ecc_curve_t value to a string.</em>
+<a id='L417' name='L417'></a><em class='comment'> *</em>
+<a id='L418' name='L418'></a><em class='comment'> * Returns: a string that contains the name of the specified</em>
+<a id='L419' name='L419'></a><em class='comment'> *   curve or %NULL.</em>
+<a id='L420' name='L420'></a><em class='comment'> *</em>
+<a id='L421' name='L421'></a><em class='comment'> * Since: 3.0</em>
+<a id='L422' name='L422'></a><em class='comment'> **/</em>
+<a id='L423' name='L423'></a><strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../R/7715.html' title='Multiple referred from 23 places.'>gnutls_ecc_curve_get_name</a>(gnutls_ecc_curve_t curve)
+<a id='L424' name='L424'></a><em class='brace'>{</em>
+<a id='L425' name='L425'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *ret = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L426' name='L426'></a>
+<a id='L427' name='L427'></a>        <a href='../S/5249.html#L263' title='Defined at 263 in lib/algorithms/ecc.c.'>GNUTLS_ECC_CURVE_LOOP</a>(
+<a id='L428' name='L428'></a>                <strong class='reserved'>if</strong> (p-&gt;id == curve) <em class='brace'>{</em>
+<a id='L429' name='L429'></a>                        ret = p-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>;
+<a id='L430' name='L430'></a>                        <strong class='reserved'>break</strong>;
+<a id='L431' name='L431'></a>                <em class='brace'>}</em>
+<a id='L432' name='L432'></a>        );
+<a id='L433' name='L433'></a>
+<a id='L434' name='L434'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L435' name='L435'></a><em class='brace'>}</em>
+<a id='L436' name='L436'></a>
+<a id='L437' name='L437'></a><em class='comment'>/**</em>
+<a id='L438' name='L438'></a><em class='comment'> * gnutls_ecc_curve_get_oid:</em>
+<a id='L439' name='L439'></a><em class='comment'> * @curve: is an ECC curve</em>
+<a id='L440' name='L440'></a><em class='comment'> *</em>
+<a id='L441' name='L441'></a><em class='comment'> * Convert a #gnutls_ecc_curve_t value to its object identifier.</em>
+<a id='L442' name='L442'></a><em class='comment'> *</em>
+<a id='L443' name='L443'></a><em class='comment'> * Returns: a string that contains the OID of the specified</em>
+<a id='L444' name='L444'></a><em class='comment'> *   curve or %NULL.</em>
+<a id='L445' name='L445'></a><em class='comment'> *</em>
+<a id='L446' name='L446'></a><em class='comment'> * Since: 3.4.3</em>
+<a id='L447' name='L447'></a><em class='comment'> **/</em>
+<a id='L448' name='L448'></a><strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../R/7716.html' title='Multiple referred from 4 places.'>gnutls_ecc_curve_get_oid</a>(gnutls_ecc_curve_t curve)
+<a id='L449' name='L449'></a><em class='brace'>{</em>
+<a id='L450' name='L450'></a>        <strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *ret = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L451' name='L451'></a>
+<a id='L452' name='L452'></a>        <a href='../S/5249.html#L263' title='Defined at 263 in lib/algorithms/ecc.c.'>GNUTLS_ECC_CURVE_LOOP</a>(
+<a id='L453' name='L453'></a>                <strong class='reserved'>if</strong> (p-&gt;id == curve) <em class='brace'>{</em>
+<a id='L454' name='L454'></a>                        ret = p-&gt;oid;
+<a id='L455' name='L455'></a>                        <strong class='reserved'>break</strong>;
+<a id='L456' name='L456'></a>                <em class='brace'>}</em>
+<a id='L457' name='L457'></a>        );
+<a id='L458' name='L458'></a>
+<a id='L459' name='L459'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L460' name='L460'></a><em class='brace'>}</em>
+<a id='L461' name='L461'></a>
+<a id='L462' name='L462'></a><em class='comment'>/*-</em>
+<a id='L463' name='L463'></a><em class='comment'> * _gnutls_ecc_curve_get_params:</em>
+<a id='L464' name='L464'></a><em class='comment'> * @curve: is an ECC curve</em>
+<a id='L465' name='L465'></a><em class='comment'> *</em>
+<a id='L466' name='L466'></a><em class='comment'> * Returns the information on a curve.</em>
+<a id='L467' name='L467'></a><em class='comment'> *</em>
+<a id='L468' name='L468'></a><em class='comment'> * Returns: a pointer to #gnutls_ecc_curve_entry_st or %NULL.</em>
+<a id='L469' name='L469'></a><em class='comment'> -*/</em>
+<a id='L470' name='L470'></a><strong class='reserved'>const</strong> <a href='../D/8601.html' title='Multiple defined in 2 places.'>gnutls_ecc_curve_entry_st</a>
+<a id='L471' name='L471'></a>    *<a href='../R/4992.html' title='Multiple referred from 14 places.'>_gnutls_ecc_curve_get_params</a>(gnutls_ecc_curve_t curve)
+<a id='L472' name='L472'></a><em class='brace'>{</em>
+<a id='L473' name='L473'></a>        <strong class='reserved'>const</strong> <a href='../D/8601.html' title='Multiple defined in 2 places.'>gnutls_ecc_curve_entry_st</a> *ret = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L474' name='L474'></a>
+<a id='L475' name='L475'></a>        <a href='../S/5249.html#L263' title='Defined at 263 in lib/algorithms/ecc.c.'>GNUTLS_ECC_CURVE_LOOP</a>(
+<a id='L476' name='L476'></a>                <strong class='reserved'>if</strong> (p-&gt;id == curve) <em class='brace'>{</em>
+<a id='L477' name='L477'></a>                        ret = p;
+<a id='L478' name='L478'></a>                        <strong class='reserved'>break</strong>;
+<a id='L479' name='L479'></a>                <em class='brace'>}</em>
+<a id='L480' name='L480'></a>        );
+<a id='L481' name='L481'></a>
+<a id='L482' name='L482'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L483' name='L483'></a><em class='brace'>}</em>
+<a id='L484' name='L484'></a>
+<a id='L485' name='L485'></a><em class='comment'>/**</em>
+<a id='L486' name='L486'></a><em class='comment'> * gnutls_ecc_curve_get_size:</em>
+<a id='L487' name='L487'></a><em class='comment'> * @curve: is an ECC curve</em>
+<a id='L488' name='L488'></a><em class='comment'> *</em>
+<a id='L489' name='L489'></a><em class='comment'> * Returns: the size in bytes of the curve or 0 on failure.</em>
+<a id='L490' name='L490'></a><em class='comment'> *</em>
+<a id='L491' name='L491'></a><em class='comment'> * Since: 3.0</em>
+<a id='L492' name='L492'></a><em class='comment'> **/</em>
+<a id='L493' name='L493'></a><strong class='reserved'>int</strong> <a href='../R/7718.html' title='Multiple referred from 18 places.'>gnutls_ecc_curve_get_size</a>(gnutls_ecc_curve_t curve)
+<a id='L494' name='L494'></a><em class='brace'>{</em>
+<a id='L495' name='L495'></a>        <strong class='reserved'>int</strong> ret = 0;
+<a id='L496' name='L496'></a>
+<a id='L497' name='L497'></a>        <a href='../S/5249.html#L263' title='Defined at 263 in lib/algorithms/ecc.c.'>GNUTLS_ECC_CURVE_LOOP</a>(
+<a id='L498' name='L498'></a>                <strong class='reserved'>if</strong> (p-&gt;id == curve) <em class='brace'>{</em>
+<a id='L499' name='L499'></a>                        ret = p-&gt;size;
+<a id='L500' name='L500'></a>                        <strong class='reserved'>break</strong>;
+<a id='L501' name='L501'></a>                <em class='brace'>}</em>
+<a id='L502' name='L502'></a>        );
+<a id='L503' name='L503'></a>
+<a id='L504' name='L504'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L505' name='L505'></a><em class='brace'>}</em>
+<a id='L506' name='L506'></a>
+<a id='L507' name='L507'></a><em class='comment'>/**</em>
+<a id='L508' name='L508'></a><em class='comment'> * gnutls_ecc_curve_get_pk:</em>
+<a id='L509' name='L509'></a><em class='comment'> * @curve: is an ECC curve</em>
+<a id='L510' name='L510'></a><em class='comment'> *</em>
+<a id='L511' name='L511'></a><em class='comment'> * Returns: the public key algorithm associated with the named curve or %GNUTLS_PK_UNKNOWN.</em>
+<a id='L512' name='L512'></a><em class='comment'> *</em>
+<a id='L513' name='L513'></a><em class='comment'> * Since: 3.5.0</em>
+<a id='L514' name='L514'></a><em class='comment'> **/</em>
+<a id='L515' name='L515'></a>gnutls_pk_algorithm_t <a href='../R/7717.html' title='Multiple referred from 4 places.'>gnutls_ecc_curve_get_pk</a>(gnutls_ecc_curve_t curve)
+<a id='L516' name='L516'></a><em class='brace'>{</em>
+<a id='L517' name='L517'></a>        <strong class='reserved'>int</strong> ret = GNUTLS_PK_UNKNOWN;
+<a id='L518' name='L518'></a>
+<a id='L519' name='L519'></a>        <a href='../S/5249.html#L263' title='Defined at 263 in lib/algorithms/ecc.c.'>GNUTLS_ECC_CURVE_LOOP</a>(
+<a id='L520' name='L520'></a>                <strong class='reserved'>if</strong> (p-&gt;id == curve &amp;&amp; p-&gt;supported) <em class='brace'>{</em>
+<a id='L521' name='L521'></a>                        ret = p-&gt;pk;
+<a id='L522' name='L522'></a>                        <strong class='reserved'>break</strong>;
+<a id='L523' name='L523'></a>                <em class='brace'>}</em>
+<a id='L524' name='L524'></a>        );
+<a id='L525' name='L525'></a>
+<a id='L526' name='L526'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L527' name='L527'></a><em class='brace'>}</em>
+<a id='L528' name='L528'></a>
+<a id='L529' name='L529'></a><em class='comment'>/**</em>
+<a id='L530' name='L530'></a><em class='comment'> * _gnutls_ecc_curve_get_group:</em>
+<a id='L531' name='L531'></a><em class='comment'> * @curve: is an ECC curve</em>
+<a id='L532' name='L532'></a><em class='comment'> *</em>
+<a id='L533' name='L533'></a><em class='comment'> * Returns: the group associated with the named curve or %GNUTLS_GROUP_INVALID.</em>
+<a id='L534' name='L534'></a><em class='comment'> *</em>
+<a id='L535' name='L535'></a><em class='comment'> * Since: 3.6.11</em>
+<a id='L536' name='L536'></a><em class='comment'> */</em>
+<a id='L537' name='L537'></a>gnutls_group_t <a href='../R/4991.html' title='Multiple referred from 2 places.'>_gnutls_ecc_curve_get_group</a>(gnutls_ecc_curve_t curve)
+<a id='L538' name='L538'></a><em class='brace'>{</em>
+<a id='L539' name='L539'></a>        gnutls_group_t ret = GNUTLS_GROUP_INVALID;
+<a id='L540' name='L540'></a>
+<a id='L541' name='L541'></a>        <a href='../S/5249.html#L263' title='Defined at 263 in lib/algorithms/ecc.c.'>GNUTLS_ECC_CURVE_LOOP</a>(
+<a id='L542' name='L542'></a>                <strong class='reserved'>if</strong> (p-&gt;id == curve &amp;&amp; p-&gt;supported &amp;&amp; <a href='../S/5466.html#L42' title='Defined at 42 in lib/pk.h.'>_gnutls_pk_curve_exists</a>(p-&gt;id)) <em class='brace'>{</em>
+<a id='L543' name='L543'></a>                        ret = p-&gt;group;
+<a id='L544' name='L544'></a>                        <strong class='reserved'>break</strong>;
+<a id='L545' name='L545'></a>                <em class='brace'>}</em>
+<a id='L546' name='L546'></a>        );
+<a id='L547' name='L547'></a>
+<a id='L548' name='L548'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L549' name='L549'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L278'>[^]</a><a href='#L537'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

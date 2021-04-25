@@ -1,0 +1,368 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/x509/krb5.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6492.html'>x509</a>/krb5.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L46'>[^]</a><a href='#L291'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L46' title='Defined at 46.'>cleanup_principal</a></li>
+<li><a href='#L58' title='Defined at 58.'>name_to_principal</a></li>
+<li><a href='#L139' title='Defined at 139.'>_gnutls_krb5_principal_to_der</a></li>
+<li><a href='#L211' title='Defined at 211.'>principal_to_str</a></li>
+<li><a href='#L291' title='Defined at 291.'>_gnutls_krb5_der_to_principal</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2015 Red Hat, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L9' name='L9'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L10' name='L10'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L11' name='L11'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> &lt;config.h&gt;
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> &lt;gnutls/gnutls.h&gt;
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> &lt;<a href='5274.html'>libtasn1.h</a>&gt;
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;stdint.h&gt;
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;<a href='../I/422.html'>errors.h</a>&gt;
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> "<a href='5342.html'>krb5.h</a>"
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> "<a href='../I/3.html'>common.h</a>"
+<a id='L32' name='L32'></a>
+<a id='L33' name='L33'></a><em class='sharp'>#define</em> <a href='../R/4845.html' title='Multiple referred from 568 places.'>_gnutls_asn2err</a>(<a href='../D/12391.html' title='Multiple defined in 2 places.'>x</a>) GNUTLS_E_ASN1_DER_ERROR
+<a id='L34' name='L34'></a>
+<a id='L35' name='L35'></a><em class='sharp'>#define</em> <a href='../R/2360.html' title='Multiple referred from 3 places.'>MAX_COMPONENTS</a> 6
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>struct</strong> <a href='../R/9147.html' title='Multiple referred from 5 places.'>krb5_principal_data</a> <em class='brace'>{</em>
+<a id='L38' name='L38'></a>        <strong class='reserved'>char</strong> *realm;
+<a id='L39' name='L39'></a>        <strong class='reserved'>char</strong> *data[<a href='../S/5345.html#L35' title='Defined at 35 in lib/x509/krb5.c.'>MAX_COMPONENTS</a>];
+<a id='L40' name='L40'></a>        <a href='../D/12096.html' title='Multiple defined in 11 places.'>uint32_t</a> <a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L41' name='L41'></a>        <a href='../D/10012.html' title='Multiple defined in 8 places.'>int8_t</a> <a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>;
+<a id='L42' name='L42'></a><em class='brace'>}</em> <a href='../R/9147.html' title='Multiple referred from 5 places.'>krb5_principal_data</a>;
+<a id='L43' name='L43'></a>
+<a id='L44' name='L44'></a><strong class='reserved'>extern</strong> <strong class='reserved'>const</strong> <a href='../S/5274.html#L216' title='Defined at 216 in lib/minitasn1/libtasn1.h.'>asn1_static_node</a> krb5_asn1_tab[];
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/6378.html' title='Multiple referred from 2 places.'>cleanup_principal</a>(<a href='../D/10106.html' title='Multiple defined in 2 places.'>krb5_principal_data</a> * princ)
+<a id='L47' name='L47'></a><em class='brace'>{</em>
+<a id='L48' name='L48'></a>        <strong class='reserved'>unsigned</strong> i;
+<a id='L49' name='L49'></a>        <strong class='reserved'>if</strong> (princ) <em class='brace'>{</em>
+<a id='L50' name='L50'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(princ-&gt;realm);
+<a id='L51' name='L51'></a>                <strong class='reserved'>for</strong> (i = 0; i &lt; princ-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>; i++)
+<a id='L52' name='L52'></a>                        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(princ-&gt;data[i]);
+<a id='L53' name='L53'></a>                memset(princ, 0, <strong class='reserved'>sizeof</strong>(*princ));
+<a id='L54' name='L54'></a>                <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(princ);
+<a id='L55' name='L55'></a>        <em class='brace'>}</em>
+<a id='L56' name='L56'></a><em class='brace'>}</em>
+<a id='L57' name='L57'></a>
+<a id='L58' name='L58'></a><strong class='reserved'>static</strong> <a href='../D/10106.html' title='Multiple defined in 2 places.'>krb5_principal_data</a> *<a href='../S/5345.html#L146' title='Referred from 146 in lib/x509/krb5.c.'>name_to_principal</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *_name)
+<a id='L59' name='L59'></a><em class='brace'>{</em>
+<a id='L60' name='L60'></a>        <a href='../D/10106.html' title='Multiple defined in 2 places.'>krb5_principal_data</a> *princ;
+<a id='L61' name='L61'></a>        <strong class='reserved'>char</strong> *p, *p2, *<a href='../D/11529.html' title='Multiple defined in 6 places.'>sp</a>;
+<a id='L62' name='L62'></a>        <strong class='reserved'>unsigned</strong> pos = 0;
+<a id='L63' name='L63'></a>        <strong class='reserved'>char</strong> *<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L64' name='L64'></a>
+<a id='L65' name='L65'></a>        princ = gnutls_calloc(1, <strong class='reserved'>sizeof</strong>(<strong class='reserved'>struct</strong> <a href='../D/10106.html' title='Multiple defined in 2 places.'>krb5_principal_data</a>));
+<a id='L66' name='L66'></a>        <strong class='reserved'>if</strong> (princ == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L67' name='L67'></a>                <strong class='reserved'>return</strong> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L68' name='L68'></a>
+<a id='L69' name='L69'></a>        <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = gnutls_strdup(_name);
+<a id='L70' name='L70'></a>        <strong class='reserved'>if</strong> (<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L71' name='L71'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L72' name='L72'></a>                <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L73' name='L73'></a>        <em class='brace'>}</em>
+<a id='L74' name='L74'></a>
+<a id='L75' name='L75'></a>        p = <a href='../D/11631.html' title='Multiple defined in 5 places.'>strrchr</a>(<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, '@');
+<a id='L76' name='L76'></a>        p2 = <a href='../D/11595.html' title='Multiple defined in 5 places.'>strchr</a>(<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, '@');
+<a id='L77' name='L77'></a>        <strong class='reserved'>if</strong> (p == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L78' name='L78'></a>                <em class='comment'>/* unknown name type */</em>
+<a id='L79' name='L79'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L80' name='L80'></a>                <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L81' name='L81'></a>        <em class='brace'>}</em>
+<a id='L82' name='L82'></a>
+<a id='L83' name='L83'></a>        princ-&gt;realm = gnutls_strdup(p + 1);
+<a id='L84' name='L84'></a>        <strong class='reserved'>if</strong> (princ-&gt;realm == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L85' name='L85'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L86' name='L86'></a>                <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L87' name='L87'></a>        <em class='brace'>}</em>
+<a id='L88' name='L88'></a>        *p = 0;
+<a id='L89' name='L89'></a>
+<a id='L90' name='L90'></a>        <strong class='reserved'>if</strong> (p == p2) <em class='brace'>{</em>
+<a id='L91' name='L91'></a>                p = <a href='../D/11638.html' title='Multiple defined in 10 places.'>strtok_r</a>(<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, "/", &amp;<a href='../D/11529.html' title='Multiple defined in 6 places.'>sp</a>);
+<a id='L92' name='L92'></a>                <strong class='reserved'>while</strong> (p) <em class='brace'>{</em>
+<a id='L93' name='L93'></a>                        <strong class='reserved'>if</strong> (pos == <a href='../S/5345.html#L35' title='Defined at 35 in lib/x509/krb5.c.'>MAX_COMPONENTS</a>) <em class='brace'>{</em>
+<a id='L94' name='L94'></a>                                <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>
+<a id='L95' name='L95'></a>                                    ("%s: Cannot parse names with more than %d components\n",
+<a id='L96' name='L96'></a>                                     __func__, <a href='../S/5345.html#L35' title='Defined at 35 in lib/x509/krb5.c.'>MAX_COMPONENTS</a>);
+<a id='L97' name='L97'></a>                                <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L98' name='L98'></a>                        <em class='brace'>}</em>
+<a id='L99' name='L99'></a>
+<a id='L100' name='L100'></a>                        princ-&gt;data[pos] = gnutls_strdup(p);
+<a id='L101' name='L101'></a>                        <strong class='reserved'>if</strong> (princ-&gt;data[pos] == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L102' name='L102'></a>                                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L103' name='L103'></a>                                <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L104' name='L104'></a>                        <em class='brace'>}</em>
+<a id='L105' name='L105'></a>
+<a id='L106' name='L106'></a>                        princ-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>++;
+<a id='L107' name='L107'></a>                        pos++;
+<a id='L108' name='L108'></a>
+<a id='L109' name='L109'></a>                        p = <a href='../D/11638.html' title='Multiple defined in 10 places.'>strtok_r</a>(<a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, "/", &amp;<a href='../D/11529.html' title='Multiple defined in 6 places.'>sp</a>);
+<a id='L110' name='L110'></a>                <em class='brace'>}</em>
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a>                <strong class='reserved'>if</strong> ((princ-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> == 2)
+<a id='L113' name='L113'></a>                    &amp;&amp; (strcmp(princ-&gt;data[0], "krbtgt") == 0)) <em class='brace'>{</em>
+<a id='L114' name='L114'></a>                        princ-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = 2;        <em class='comment'>/* KRB_NT_SRV_INST */</em>
+<a id='L115' name='L115'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L116' name='L116'></a>                        princ-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = 1;        <em class='comment'>/* KRB_NT_PRINCIPAL */</em>
+<a id='L117' name='L117'></a>                <em class='brace'>}</em>
+<a id='L118' name='L118'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>                <em class='comment'>/* enterprise */</em>
+<a id='L119' name='L119'></a>                princ-&gt;data[0] = gnutls_strdup(<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>);
+<a id='L120' name='L120'></a>                <strong class='reserved'>if</strong> (princ-&gt;data[0] == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L121' name='L121'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L122' name='L122'></a>                        <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L123' name='L123'></a>                <em class='brace'>}</em>
+<a id='L124' name='L124'></a>
+<a id='L125' name='L125'></a>                princ-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>++;
+<a id='L126' name='L126'></a>                princ-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a> = 10;       <em class='comment'>/* KRB_NT_ENTERPRISE */</em>
+<a id='L127' name='L127'></a>        <em class='brace'>}</em>
+<a id='L128' name='L128'></a>
+<a id='L129' name='L129'></a>        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L130' name='L130'></a> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>:
+<a id='L131' name='L131'></a>        <a href='../S/5345.html#L46' title='Defined at 46 in lib/x509/krb5.c.'>cleanup_principal</a>(princ);
+<a id='L132' name='L132'></a>        princ = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L133' name='L133'></a>
+<a id='L134' name='L134'></a> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>:
+<a id='L135' name='L135'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>);
+<a id='L136' name='L136'></a>        <strong class='reserved'>return</strong> princ;
+<a id='L137' name='L137'></a><em class='brace'>}</em>
+<a id='L138' name='L138'></a>
+<a id='L139' name='L139'></a><strong class='reserved'>int</strong> <a href='../R/5197.html' title='Multiple referred from 2 places.'>_gnutls_krb5_principal_to_der</a>(<strong class='reserved'>const</strong> <strong class='reserved'>char</strong> *<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, gnutls_datum_t * der)
+<a id='L140' name='L140'></a><em class='brace'>{</em>
+<a id='L141' name='L141'></a>        <strong class='reserved'>int</strong> ret, result;
+<a id='L142' name='L142'></a>        <a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> c2 = <a href='../S/5274.html#L537' title='Defined at 537 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE_EMPTY</a>;
+<a id='L143' name='L143'></a>        <a href='../D/10106.html' title='Multiple defined in 2 places.'>krb5_principal_data</a> *princ;
+<a id='L144' name='L144'></a>        <strong class='reserved'>unsigned</strong> i;
+<a id='L145' name='L145'></a>
+<a id='L146' name='L146'></a>        princ = <a href='../S/5345.html#L58' title='Defined at 58 in lib/x509/krb5.c.'>name_to_principal</a>(<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>);
+<a id='L147' name='L147'></a>        <strong class='reserved'>if</strong> (princ == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L148' name='L148'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L149' name='L149'></a>                ret = GNUTLS_E_PARSING_ERROR;
+<a id='L150' name='L150'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L151' name='L151'></a>        <em class='brace'>}</em>
+<a id='L152' name='L152'></a>
+<a id='L153' name='L153'></a>        result =
+<a id='L154' name='L154'></a>            <a href='../S/5280.html#L700' title='Defined at 700 in lib/minitasn1/structure.c.'>asn1_create_element</a>(<a href='../S/6036.html#L38' title='Defined at 38 in lib/global.h.'>_gnutls_get_gnutls_asn</a>(),
+<a id='L155' name='L155'></a>                                "GNUTLS.KRB5PrincipalName", &amp;c2);
+<a id='L156' name='L156'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L157' name='L157'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L158' name='L158'></a>                ret = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L159' name='L159'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L160' name='L160'></a>        <em class='brace'>}</em>
+<a id='L161' name='L161'></a>
+<a id='L162' name='L162'></a>        result =
+<a id='L163' name='L163'></a>            <a href='../S/5285.html#L302' title='Defined at 302 in lib/minitasn1/element.c.'>asn1_write_value</a>(c2, "realm", princ-&gt;realm, strlen(princ-&gt;realm));
+<a id='L164' name='L164'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L165' name='L165'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L166' name='L166'></a>                ret = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L167' name='L167'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L168' name='L168'></a>        <em class='brace'>}</em>
+<a id='L169' name='L169'></a>
+<a id='L170' name='L170'></a>        result =
+<a id='L171' name='L171'></a>            <a href='../S/5285.html#L302' title='Defined at 302 in lib/minitasn1/element.c.'>asn1_write_value</a>(c2, "principalName.name-type", &amp;princ-&gt;<a href='../S/3982.html#L148' title='Defined at 148 in src/list.h.'>type</a>, 1);
+<a id='L172' name='L172'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L173' name='L173'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L174' name='L174'></a>                ret = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L175' name='L175'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L176' name='L176'></a>        <em class='brace'>}</em>
+<a id='L177' name='L177'></a>
+<a id='L178' name='L178'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; princ-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>; i++) <em class='brace'>{</em>
+<a id='L179' name='L179'></a>                result =
+<a id='L180' name='L180'></a>                    <a href='../S/5285.html#L302' title='Defined at 302 in lib/minitasn1/element.c.'>asn1_write_value</a>(c2, "principalName.name-string", "NEW", 1);
+<a id='L181' name='L181'></a>                <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L182' name='L182'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L183' name='L183'></a>                        ret = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L184' name='L184'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L185' name='L185'></a>                <em class='brace'>}</em>
+<a id='L186' name='L186'></a>
+<a id='L187' name='L187'></a>                result =
+<a id='L188' name='L188'></a>                    <a href='../S/5285.html#L302' title='Defined at 302 in lib/minitasn1/element.c.'>asn1_write_value</a>(c2,
+<a id='L189' name='L189'></a>                                     "principalName.name-string.?LAST",
+<a id='L190' name='L190'></a>                                     princ-&gt;data[i], strlen(princ-&gt;data[i]));
+<a id='L191' name='L191'></a>                <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L192' name='L192'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L193' name='L193'></a>                        ret = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L194' name='L194'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L195' name='L195'></a>                <em class='brace'>}</em>
+<a id='L196' name='L196'></a>        <em class='brace'>}</em>
+<a id='L197' name='L197'></a>
+<a id='L198' name='L198'></a>        ret = <a href='../S/5381.html#L843' title='Defined at 843 in lib/x509/common.c.'>_gnutls_x509_der_encode</a>(c2, "", der, 0);
+<a id='L199' name='L199'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L200' name='L200'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L201' name='L201'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L202' name='L202'></a>        <em class='brace'>}</em>
+<a id='L203' name='L203'></a>
+<a id='L204' name='L204'></a>        ret = 0;
+<a id='L205' name='L205'></a> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>:
+<a id='L206' name='L206'></a>        <a href='../S/5345.html#L46' title='Defined at 46 in lib/x509/krb5.c.'>cleanup_principal</a>(princ);
+<a id='L207' name='L207'></a>        <a href='../S/5280.html#L294' title='Defined at 294 in lib/minitasn1/structure.c.'>asn1_delete_structure</a>(&amp;c2);
+<a id='L208' name='L208'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L209' name='L209'></a><em class='brace'>}</em>
+<a id='L210' name='L210'></a>
+<a id='L211' name='L211'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5345.html#L316' title='Referred from 316 in lib/x509/krb5.c.'>principal_to_str</a>(<a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> c2, <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * str)
+<a id='L212' name='L212'></a><em class='brace'>{</em>
+<a id='L213' name='L213'></a>        gnutls_datum_t realm = <em class='brace'>{</em> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0 <em class='brace'>}</em>;
+<a id='L214' name='L214'></a>        gnutls_datum_t component = <em class='brace'>{</em> <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>, 0 <em class='brace'>}</em>;
+<a id='L215' name='L215'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>char</strong> name_type[2];
+<a id='L216' name='L216'></a>        <strong class='reserved'>int</strong> ret, result, len;
+<a id='L217' name='L217'></a>        <strong class='reserved'>unsigned</strong> i;
+<a id='L218' name='L218'></a>        <strong class='reserved'>char</strong> val[128];
+<a id='L219' name='L219'></a>
+<a id='L220' name='L220'></a>        ret = <a href='../S/5381.html#L733' title='Defined at 733 in lib/x509/common.c.'>_gnutls_x509_read_value</a>(c2, "realm", &amp;realm);
+<a id='L221' name='L221'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L222' name='L222'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L223' name='L223'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L224' name='L224'></a>        <em class='brace'>}</em>
+<a id='L225' name='L225'></a>
+<a id='L226' name='L226'></a>        len = <strong class='reserved'>sizeof</strong>(name_type);
+<a id='L227' name='L227'></a>        result =
+<a id='L228' name='L228'></a>            <a href='../S/5285.html#L760' title='Defined at 760 in lib/minitasn1/element.c.'>asn1_read_value</a>(c2, "principalName.name-type", name_type, &amp;len);
+<a id='L229' name='L229'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L230' name='L230'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L231' name='L231'></a>                ret = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L232' name='L232'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L233' name='L233'></a>        <em class='brace'>}</em>
+<a id='L234' name='L234'></a>
+<a id='L235' name='L235'></a>        <strong class='reserved'>if</strong> (len != 1
+<a id='L236' name='L236'></a>            || (name_type[0] != 1 &amp;&amp; name_type[0] != 2 &amp;&amp; name_type[0] != 10)) <em class='brace'>{</em>
+<a id='L237' name='L237'></a>                ret = GNUTLS_E_INVALID_REQUEST;
+<a id='L238' name='L238'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L239' name='L239'></a>        <em class='brace'>}</em>
+<a id='L240' name='L240'></a>
+<a id='L241' name='L241'></a>        <strong class='reserved'>for</strong> (i = 0;; i++) <em class='brace'>{</em>
+<a id='L242' name='L242'></a>                <a href='../D/11510.html' title='Multiple defined in 14 places.'>snprintf</a>(val, <strong class='reserved'>sizeof</strong>(val), "principalName.name-string.?%u",
+<a id='L243' name='L243'></a>                         i + 1);
+<a id='L244' name='L244'></a>                ret = <a href='../S/5381.html#L733' title='Defined at 733 in lib/x509/common.c.'>_gnutls_x509_read_value</a>(c2, val, &amp;component);
+<a id='L245' name='L245'></a>                <strong class='reserved'>if</strong> (ret == GNUTLS_E_ASN1_VALUE_NOT_FOUND
+<a id='L246' name='L246'></a>                    || ret == GNUTLS_E_ASN1_ELEMENT_NOT_FOUND)
+<a id='L247' name='L247'></a>                        <strong class='reserved'>break</strong>;
+<a id='L248' name='L248'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L249' name='L249'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L250' name='L250'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L251' name='L251'></a>                <em class='brace'>}</em>
+<a id='L252' name='L252'></a>
+<a id='L253' name='L253'></a>                <strong class='reserved'>if</strong> (i &gt; 0) <em class='brace'>{</em>
+<a id='L254' name='L254'></a>                        ret = <a href='../S/5333.html#L107' title='Defined at 107 in lib/str.h.'>_gnutls_buffer_append_data</a>(str, "/", 1);
+<a id='L255' name='L255'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L256' name='L256'></a>                                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L257' name='L257'></a>                                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L258' name='L258'></a>                        <em class='brace'>}</em>
+<a id='L259' name='L259'></a>                <em class='brace'>}</em>
+<a id='L260' name='L260'></a>
+<a id='L261' name='L261'></a>                ret =
+<a id='L262' name='L262'></a>                    <a href='../S/5333.html#L107' title='Defined at 107 in lib/str.h.'>_gnutls_buffer_append_data</a>(str, component.data,
+<a id='L263' name='L263'></a>                                               component.size);
+<a id='L264' name='L264'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L265' name='L265'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L266' name='L266'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L267' name='L267'></a>                <em class='brace'>}</em>
+<a id='L268' name='L268'></a>
+<a id='L269' name='L269'></a>                _gnutls_free_datum(&amp;component);
+<a id='L270' name='L270'></a>        <em class='brace'>}</em>
+<a id='L271' name='L271'></a>
+<a id='L272' name='L272'></a>        ret = <a href='../S/5333.html#L107' title='Defined at 107 in lib/str.h.'>_gnutls_buffer_append_data</a>(str, "@", 1);
+<a id='L273' name='L273'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L274' name='L274'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L275' name='L275'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L276' name='L276'></a>        <em class='brace'>}</em>
+<a id='L277' name='L277'></a>
+<a id='L278' name='L278'></a>        ret = <a href='../S/5333.html#L107' title='Defined at 107 in lib/str.h.'>_gnutls_buffer_append_data</a>(str, realm.data, realm.size);
+<a id='L279' name='L279'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L280' name='L280'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L281' name='L281'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L282' name='L282'></a>        <em class='brace'>}</em>
+<a id='L283' name='L283'></a>
+<a id='L284' name='L284'></a>        ret = 0;
+<a id='L285' name='L285'></a> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>:
+<a id='L286' name='L286'></a>        _gnutls_free_datum(&amp;component);
+<a id='L287' name='L287'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(realm.data);
+<a id='L288' name='L288'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L289' name='L289'></a><em class='brace'>}</em>
+<a id='L290' name='L290'></a>
+<a id='L291' name='L291'></a><strong class='reserved'>int</strong> <a href='../R/5196.html' title='Multiple referred from 2 places.'>_gnutls_krb5_der_to_principal</a>(<strong class='reserved'>const</strong> gnutls_datum_t * der,
+<a id='L292' name='L292'></a>                                  gnutls_datum_t * <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>)
+<a id='L293' name='L293'></a><em class='brace'>{</em>
+<a id='L294' name='L294'></a>        <strong class='reserved'>int</strong> ret, result;
+<a id='L295' name='L295'></a>        <a href='../S/5274.html#L528' title='Defined at 528 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE</a> c2 = <a href='../S/5274.html#L537' title='Defined at 537 in lib/minitasn1/libtasn1.h.'>ASN1_TYPE_EMPTY</a>;
+<a id='L296' name='L296'></a>        <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> str;
+<a id='L297' name='L297'></a>
+<a id='L298' name='L298'></a>        <a href='../S/5806.html#L70' title='Defined at 70 in lib/str.c.'>_gnutls_buffer_init</a>(&amp;str);
+<a id='L299' name='L299'></a>
+<a id='L300' name='L300'></a>        result =
+<a id='L301' name='L301'></a>            <a href='../S/5280.html#L700' title='Defined at 700 in lib/minitasn1/structure.c.'>asn1_create_element</a>(<a href='../S/6036.html#L38' title='Defined at 38 in lib/global.h.'>_gnutls_get_gnutls_asn</a>(),
+<a id='L302' name='L302'></a>                                "GNUTLS.KRB5PrincipalName", &amp;c2);
+<a id='L303' name='L303'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L304' name='L304'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L305' name='L305'></a>                ret = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L306' name='L306'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L307' name='L307'></a>        <em class='brace'>}</em>
+<a id='L308' name='L308'></a>
+<a id='L309' name='L309'></a>        result = <a href='../S/5273.html#L1610' title='Defined at 1610 in lib/minitasn1/decoding.c.'>asn1_der_decoding</a>(&amp;c2, der-&gt;data, der-&gt;size, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L310' name='L310'></a>        <strong class='reserved'>if</strong> (result != <a href='../S/5274.html#L120' title='Defined at 120 in lib/minitasn1/libtasn1.h.'>ASN1_SUCCESS</a>) <em class='brace'>{</em>
+<a id='L311' name='L311'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L312' name='L312'></a>                ret = <a href='../D/5634.html' title='Multiple defined in 2 places.'>_gnutls_asn2err</a>(result);
+<a id='L313' name='L313'></a>                <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L314' name='L314'></a>        <em class='brace'>}</em>
+<a id='L315' name='L315'></a>
+<a id='L316' name='L316'></a>        ret = <a href='../S/5345.html#L211' title='Defined at 211 in lib/x509/krb5.c.'>principal_to_str</a>(c2, &amp;str);
+<a id='L317' name='L317'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L318' name='L318'></a>                <em class='comment'>/* for some reason we cannot convert to a human readable string</em>
+<a id='L319' name='L319'></a><em class='comment'>                 * the principal. Then we use the #HEX format.</em>
+<a id='L320' name='L320'></a><em class='comment'>                 */</em>
+<a id='L321' name='L321'></a>                <a href='../S/5333.html#L97' title='Defined at 97 in lib/str.h.'>_gnutls_buffer_reset</a>(&amp;str);
+<a id='L322' name='L322'></a>                ret = <a href='../S/5333.html#L107' title='Defined at 107 in lib/str.h.'>_gnutls_buffer_append_data</a>(&amp;str, "#", 1);
+<a id='L323' name='L323'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L324' name='L324'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L325' name='L325'></a>                        <strong class='reserved'>goto</strong> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>;
+<a id='L326' name='L326'></a>                <em class='brace'>}</em>
+<a id='L327' name='L327'></a>
+<a id='L328' name='L328'></a>                <a href='../S/5806.html#L1011' title='Defined at 1011 in lib/str.c.'>_gnutls_buffer_hexprint</a>(&amp;str, der-&gt;data, der-&gt;size);
+<a id='L329' name='L329'></a>        <em class='brace'>}</em>
+<a id='L330' name='L330'></a>
+<a id='L331' name='L331'></a>        <a href='../S/5280.html#L294' title='Defined at 294 in lib/minitasn1/structure.c.'>asn1_delete_structure</a>(&amp;c2);
+<a id='L332' name='L332'></a>        <strong class='reserved'>return</strong> <a href='../S/5806.html#L237' title='Defined at 237 in lib/str.c.'>_gnutls_buffer_to_datum</a>(&amp;str, <a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>, 1);
+<a id='L333' name='L333'></a>
+<a id='L334' name='L334'></a> <a href='../S/6280.html#L68' title='Defined at 68 in gl/tests/test-stat-time.c.'>cleanup</a>:
+<a id='L335' name='L335'></a>        <a href='../S/5806.html#L77' title='Defined at 77 in lib/str.c.'>_gnutls_buffer_clear</a>(&amp;str);
+<a id='L336' name='L336'></a>        <a href='../S/5280.html#L294' title='Defined at 294 in lib/minitasn1/structure.c.'>asn1_delete_structure</a>(&amp;c2);
+<a id='L337' name='L337'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L338' name='L338'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L46'>[^]</a><a href='#L291'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

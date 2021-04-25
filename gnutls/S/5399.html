@@ -1,0 +1,625 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/ext/signature.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6475.html'>ext</a>/signature.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L84'>[^]</a><a href='#L584'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L84' title='Defined at 84.'>_gnutls_sign_algorithm_write_params</a></li>
+<li><a href='#L140' title='Defined at 140.'>_gnutls_sign_algorithm_parse_data</a></li>
+<li><a href='#L203' title='Defined at 203.'>_gnutls_signature_algorithm_recv_params</a></li>
+<li><a href='#L249' title='Defined at 249.'>_gnutls_signature_algorithm_send_params</a></li>
+<li><a href='#L278' title='Defined at 278.'>is_gost_sig_present</a></li>
+<li><a href='#L302' title='Defined at 302.'>_gnutls_session_get_sign_algo</a></li>
+<li><a href='#L414' title='Defined at 414.'>_gnutls_session_sign_algo_enabled</a></li>
+<li><a href='#L449' title='Defined at 449.'>signature_algorithms_deinit_data</a></li>
+<li><a href='#L455' title='Defined at 455.'>signature_algorithms_pack</a></li>
+<li><a href='#L469' title='Defined at 469.'>signature_algorithms_unpack</a></li>
+<li><a href='#L521' title='Defined at 521.'>gnutls_sign_algorithm_get_requested</a></li>
+<li><a href='#L567' title='Defined at 567.'>gnutls_sign_algorithm_get</a></li>
+<li><a href='#L584' title='Defined at 584.'>gnutls_sign_algorithm_get_client</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2002-2016 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> * Copyright (C) 2015-2017 Red Hat, Inc.</em>
+<a id='L4' name='L4'></a><em class='comment'> *</em>
+<a id='L5' name='L5'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L8' name='L8'></a><em class='comment'> *</em>
+<a id='L9' name='L9'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L10' name='L10'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L11' name='L11'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L12' name='L12'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L13' name='L13'></a><em class='comment'> *</em>
+<a id='L14' name='L14'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L15' name='L15'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L16' name='L16'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L17' name='L17'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L18' name='L18'></a><em class='comment'> *</em>
+<a id='L19' name='L19'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L20' name='L20'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L21' name='L21'></a><em class='comment'> *</em>
+<a id='L22' name='L22'></a><em class='comment'> */</em>
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><em class='comment'>/* This file contains the code for the Signature Algorithms TLS extension.</em>
+<a id='L25' name='L25'></a><em class='comment'> * This extension is currently gnutls specific.</em>
+<a id='L26' name='L26'></a><em class='comment'> */</em>
+<a id='L27' name='L27'></a>
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> "<a href='5268.html'>num.h</a>"
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;gnutls/gnutls.h&gt;
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> &lt;<a href='../I/242.html'>ext/signature.h</a>&gt;
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;<a href='5748.html'>state.h</a>&gt;
+<a id='L34' name='L34'></a><em class='sharp'>#include</em> &lt;<a href='5268.html'>num.h</a>&gt;
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> &lt;<a href='6029.html'>algorithms.h</a>&gt;
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> &lt;<a href='5803.html'>abstract_int.h</a>&gt;
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a><em class='comment'>/*</em>
+<a id='L39' name='L39'></a><em class='comment'> * Some (all SChannel) clients fail to send proper SigAlgs due to Micro$oft crazyness.</em>
+<a id='L40' name='L40'></a><em class='comment'> * Patch the extension for them.</em>
+<a id='L41' name='L41'></a><em class='comment'> */</em>
+<a id='L42' name='L42'></a><em class='sharp'>#ifdef</em> ENABLE_GOST
+<a id='L43' name='L43'></a><em class='sharp'>#define</em> <a href='../R/1802.html' title='Multiple referred from 2 places.'>GOST_SIG_FIXUP_SCHANNEL</a>
+<a id='L44' name='L44'></a><em class='sharp'>#endif</em>
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5399.html#L203' title='Defined at 203 in lib/ext/signature.c.'>_gnutls_signature_algorithm_recv_params</a>(gnutls_session_t
+<a id='L47' name='L47'></a>                                                   <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L48' name='L48'></a>                                                   <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * data,
+<a id='L49' name='L49'></a>                                                   <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> data_size);
+<a id='L50' name='L50'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5399.html#L249' title='Defined at 249 in lib/ext/signature.c.'>_gnutls_signature_algorithm_send_params</a>(gnutls_session_t
+<a id='L51' name='L51'></a>                                                   <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L52' name='L52'></a>                                                   <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * extdata);
+<a id='L53' name='L53'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../S/5399.html#L449' title='Defined at 449 in lib/ext/signature.c.'>signature_algorithms_deinit_data</a>(gnutls_ext_priv_data_t priv);
+<a id='L54' name='L54'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5399.html#L455' title='Defined at 455 in lib/ext/signature.c.'>signature_algorithms_pack</a>(gnutls_ext_priv_data_t epriv,
+<a id='L55' name='L55'></a>                                     <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps);
+<a id='L56' name='L56'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5399.html#L469' title='Defined at 469 in lib/ext/signature.c.'>signature_algorithms_unpack</a>(<a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps,
+<a id='L57' name='L57'></a>                                       gnutls_ext_priv_data_t * _priv);
+<a id='L58' name='L58'></a>
+<a id='L59' name='L59'></a><strong class='reserved'>const</strong> <a href='../D/9926.html' title='Multiple defined in 2 places.'>hello_ext_entry_st</a> ext_mod_sig = <em class='brace'>{</em>
+<a id='L60' name='L60'></a>        .<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a> = "Signature Algorithms",
+<a id='L61' name='L61'></a>        .tls_id = 13,
+<a id='L62' name='L62'></a>        .gid = <a href='../S/5822.html#L318' title='Defined at 318 in lib/gnutls_int.h.'>GNUTLS_EXTENSION_SIGNATURE_ALGORITHMS</a>,
+<a id='L63' name='L63'></a>        .validity = GNUTLS_EXT_FLAG_TLS | GNUTLS_EXT_FLAG_DTLS | GNUTLS_EXT_FLAG_CLIENT_HELLO,
+<a id='L64' name='L64'></a>        .client_parse_point = GNUTLS_EXT_TLS,
+<a id='L65' name='L65'></a>        .server_parse_point = GNUTLS_EXT_TLS,
+<a id='L66' name='L66'></a>        .recv_func = <a href='../S/5399.html#L203' title='Defined at 203 in lib/ext/signature.c.'>_gnutls_signature_algorithm_recv_params</a>,
+<a id='L67' name='L67'></a>        .send_func = <a href='../S/5399.html#L249' title='Defined at 249 in lib/ext/signature.c.'>_gnutls_signature_algorithm_send_params</a>,
+<a id='L68' name='L68'></a>        .pack_func = <a href='../S/5399.html#L455' title='Defined at 455 in lib/ext/signature.c.'>signature_algorithms_pack</a>,
+<a id='L69' name='L69'></a>        .unpack_func = <a href='../S/5399.html#L469' title='Defined at 469 in lib/ext/signature.c.'>signature_algorithms_unpack</a>,
+<a id='L70' name='L70'></a>        .deinit_func = <a href='../S/5399.html#L449' title='Defined at 449 in lib/ext/signature.c.'>signature_algorithms_deinit_data</a>,
+<a id='L71' name='L71'></a>        .cannot_be_overriden = 1
+<a id='L72' name='L72'></a><em class='brace'>}</em>;
+<a id='L73' name='L73'></a>
+<a id='L74' name='L74'></a><strong class='reserved'>typedef</strong> <strong class='reserved'>struct</strong> <em class='brace'>{</em>
+<a id='L75' name='L75'></a>        <em class='comment'>/* TLS 1.2 signature algorithms */</em>
+<a id='L76' name='L76'></a>        gnutls_sign_algorithm_t sign_algorithms[<a href='../S/5822.html#L306' title='Defined at 306 in lib/gnutls_int.h.'>MAX_ALGOS</a>];
+<a id='L77' name='L77'></a>        <a href='../D/12095.html' title='Multiple defined in 8 places.'>uint16_t</a> sign_algorithms_size;
+<a id='L78' name='L78'></a><em class='brace'>}</em> <a href='../R/10455.html' title='Multiple referred from 6 places.'>sig_ext_st</a>;
+<a id='L79' name='L79'></a>
+<a id='L80' name='L80'></a><em class='comment'>/* generates a SignatureAndHashAlgorithm structure with length as prefix</em>
+<a id='L81' name='L81'></a><em class='comment'> * by using the setup priorities.</em>
+<a id='L82' name='L82'></a><em class='comment'> */</em>
+<a id='L83' name='L83'></a><strong class='reserved'>int</strong>
+<a id='L84' name='L84'></a><a href='../R/5491.html' title='Multiple referred from 4 places.'>_gnutls_sign_algorithm_write_params</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L85' name='L85'></a>                                    <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * extdata)
+<a id='L86' name='L86'></a><em class='brace'>{</em>
+<a id='L87' name='L87'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> *p;
+<a id='L88' name='L88'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> len, i;
+<a id='L89' name='L89'></a>        <strong class='reserved'>const</strong> <a href='../S/5822.html#L724' title='Defined at 724 in lib/gnutls_int.h.'>sign_algorithm_st</a> *aid, *prev = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L90' name='L90'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> <a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>[<a href='../S/5822.html#L306' title='Defined at 306 in lib/gnutls_int.h.'>MAX_ALGOS</a>*2];
+<a id='L91' name='L91'></a>
+<a id='L92' name='L92'></a>        p = <a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>;
+<a id='L93' name='L93'></a>        len = 0;
+<a id='L94' name='L94'></a>
+<a id='L95' name='L95'></a>        <em class='comment'>/* This generates a list of TLS signature algorithms. It has</em>
+<a id='L96' name='L96'></a><em class='comment'>         * limited duplicate detection, and does not add twice the same</em>
+<a id='L97' name='L97'></a><em class='comment'>         * AID */</em>
+<a id='L98' name='L98'></a>
+<a id='L99' name='L99'></a>        <strong class='reserved'>for</strong> (i=0;i&lt;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.priorities-&gt;sigalg.size;i++) <em class='brace'>{</em>
+<a id='L100' name='L100'></a>                aid = &amp;<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.priorities-&gt;sigalg.entry[i]-&gt;aid;
+<a id='L101' name='L101'></a>
+<a id='L102' name='L102'></a>                <strong class='reserved'>if</strong> (<a href='../S/6029.html#L56' title='Defined at 56 in lib/algorithms.h.'>HAVE_UNKNOWN_SIGAID</a>(aid))
+<a id='L103' name='L103'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L104' name='L104'></a>
+<a id='L105' name='L105'></a>                <strong class='reserved'>if</strong> (prev &amp;&amp; prev-&gt;id[0] == aid-&gt;id[0] &amp;&amp; prev-&gt;id[1] == aid-&gt;id[1])
+<a id='L106' name='L106'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L107' name='L107'></a>
+<a id='L108' name='L108'></a>                <em class='comment'>/* Ignore non-GOST sign types for CertReq */</em>
+<a id='L109' name='L109'></a>                <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.cs &amp;&amp;
+<a id='L110' name='L110'></a>                    <a href='../S/6029.html#L511' title='Defined at 511 in lib/algorithms.h.'>_gnutls_kx_is_vko_gost</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.cs-&gt;kx_algorithm) &amp;&amp;
+<a id='L111' name='L111'></a>                    !<a href='../S/6029.html#L520' title='Defined at 520 in lib/algorithms.h.'>_sign_is_gost</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.priorities-&gt;sigalg.entry[i]))
+<a id='L112' name='L112'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L113' name='L113'></a>
+<a id='L114' name='L114'></a>                <a href='../D/5914.html' title='Multiple defined in 2 places.'>_gnutls_handshake_log</a>
+<a id='L115' name='L115'></a>                    ("EXT[%p]: sent signature algo (%d.%d) %s\n", <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L116' name='L116'></a>                     (<strong class='reserved'>int</strong>)aid-&gt;id[0], (<strong class='reserved'>int</strong>)aid-&gt;id[1],
+<a id='L117' name='L117'></a>                     <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.priorities-&gt;sigalg.entry[i]-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>);
+<a id='L118' name='L118'></a>
+<a id='L119' name='L119'></a>                len += 2;
+<a id='L120' name='L120'></a>                <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>(len &gt;= <strong class='reserved'>sizeof</strong>(<a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>))) <em class='brace'>{</em>
+<a id='L121' name='L121'></a>                        len -= 2;
+<a id='L122' name='L122'></a>                        <strong class='reserved'>break</strong>;
+<a id='L123' name='L123'></a>                <em class='brace'>}</em>
+<a id='L124' name='L124'></a>
+<a id='L125' name='L125'></a>                *p = aid-&gt;id[0];
+<a id='L126' name='L126'></a>                p++;
+<a id='L127' name='L127'></a>                *p = aid-&gt;id[1];
+<a id='L128' name='L128'></a>                p++;
+<a id='L129' name='L129'></a>                prev = aid;
+<a id='L130' name='L130'></a>        <em class='brace'>}</em>
+<a id='L131' name='L131'></a>
+<a id='L132' name='L132'></a>        <strong class='reserved'>return</strong> <a href='../S/5806.html#L932' title='Defined at 932 in lib/str.c.'>_gnutls_buffer_append_data_prefix</a>(extdata, 16, <a href='../S/1430.html#L32' title='Defined at 32 in doc/examples/tlsproxy/buffer.c.'>buffer</a>, len);
+<a id='L133' name='L133'></a><em class='brace'>}</em>
+<a id='L134' name='L134'></a>
+<a id='L135' name='L135'></a>
+<a id='L136' name='L136'></a><em class='comment'>/* Parses the Signature Algorithm structure and stores data into</em>
+<a id='L137' name='L137'></a><em class='comment'> * session-&gt;security_parameters.extensions.</em>
+<a id='L138' name='L138'></a><em class='comment'> */</em>
+<a id='L139' name='L139'></a><strong class='reserved'>int</strong>
+<a id='L140' name='L140'></a><a href='../R/5490.html' title='Multiple referred from 4 places.'>_gnutls_sign_algorithm_parse_data</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L141' name='L141'></a>                                  <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * data, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> data_size)
+<a id='L142' name='L142'></a><em class='brace'>{</em>
+<a id='L143' name='L143'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> sig, i;
+<a id='L144' name='L144'></a>        <a href='../S/5399.html#L78' title='Defined at 78 in lib/ext/signature.c.'>sig_ext_st</a> *priv;
+<a id='L145' name='L145'></a>        gnutls_ext_priv_data_t epriv;
+<a id='L146' name='L146'></a>        <strong class='reserved'>const</strong> <a href='../S/5822.html#L713' title='Defined at 713 in lib/gnutls_int.h.'>version_entry_st</a> *ver = <a href='../S/5822.html#L1524' title='Defined at 1524 in lib/gnutls_int.h.'>get_version</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L147' name='L147'></a>
+<a id='L148' name='L148'></a>        <strong class='reserved'>if</strong> (data_size == 0 || data_size % 2 != 0)
+<a id='L149' name='L149'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_UNEXPECTED_PACKET_LENGTH);
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a>        <strong class='reserved'>if</strong> (ver == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em> <em class='comment'>/* assume TLS 1.2 semantics */</em>
+<a id='L152' name='L152'></a>                ver = <a href='../D/12187.html' title='Multiple defined in 2 places.'>version_to_entry</a>(GNUTLS_TLS1_2);
+<a id='L153' name='L153'></a>                <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>(ver == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)) <em class='brace'>{</em>
+<a id='L154' name='L154'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L155' name='L155'></a>                <em class='brace'>}</em>
+<a id='L156' name='L156'></a>        <em class='brace'>}</em>
+<a id='L157' name='L157'></a>
+<a id='L158' name='L158'></a>        priv = gnutls_calloc(1, <strong class='reserved'>sizeof</strong>(*priv));
+<a id='L159' name='L159'></a>        <strong class='reserved'>if</strong> (priv == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L160' name='L160'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L161' name='L161'></a>                <strong class='reserved'>return</strong> GNUTLS_E_MEMORY_ERROR;
+<a id='L162' name='L162'></a>        <em class='brace'>}</em>
+<a id='L163' name='L163'></a>
+<a id='L164' name='L164'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; data_size; i += 2) <em class='brace'>{</em>
+<a id='L165' name='L165'></a>                <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> id[2];
+<a id='L166' name='L166'></a>
+<a id='L167' name='L167'></a>                id[0] = data[i];
+<a id='L168' name='L168'></a>                id[1] = data[i + 1];
+<a id='L169' name='L169'></a>
+<a id='L170' name='L170'></a>                sig = <a href='../S/5247.html#L715' title='Defined at 715 in lib/algorithms/sign.c.'>_gnutls_tls_aid_to_sign</a>(id[0], id[1], ver);
+<a id='L171' name='L171'></a>
+<a id='L172' name='L172'></a>                <a href='../D/5914.html' title='Multiple defined in 2 places.'>_gnutls_handshake_log</a>
+<a id='L173' name='L173'></a>                    ("EXT[%p]: rcvd signature algo (%d.%d) %s\n", <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L174' name='L174'></a>                     (<strong class='reserved'>int</strong>)id[0], (<strong class='reserved'>int</strong>)id[1],
+<a id='L175' name='L175'></a>                     <a href='../S/5247.html#L432' title='Defined at 432 in lib/algorithms/sign.c.'>gnutls_sign_get_name</a>(sig));
+<a id='L176' name='L176'></a>
+<a id='L177' name='L177'></a>                <strong class='reserved'>if</strong> (sig != GNUTLS_SIGN_UNKNOWN) <em class='brace'>{</em>
+<a id='L178' name='L178'></a>                        <strong class='reserved'>if</strong> (priv-&gt;sign_algorithms_size == <a href='../S/5822.html#L306' title='Defined at 306 in lib/gnutls_int.h.'>MAX_ALGOS</a>)
+<a id='L179' name='L179'></a>                                <strong class='reserved'>break</strong>;
+<a id='L180' name='L180'></a>                        priv-&gt;sign_algorithms[priv-&gt;
+<a id='L181' name='L181'></a>                                              sign_algorithms_size++] = sig;
+<a id='L182' name='L182'></a>                <em class='brace'>}</em>
+<a id='L183' name='L183'></a>        <em class='brace'>}</em>
+<a id='L184' name='L184'></a>
+<a id='L185' name='L185'></a>        epriv = priv;
+<a id='L186' name='L186'></a>        <a href='../S/5633.html#L697' title='Defined at 697 in lib/hello_ext.c.'>_gnutls_hello_ext_set_priv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L187' name='L187'></a>                                     <a href='../S/5822.html#L318' title='Defined at 318 in lib/gnutls_int.h.'>GNUTLS_EXTENSION_SIGNATURE_ALGORITHMS</a>,
+<a id='L188' name='L188'></a>                                     epriv);
+<a id='L189' name='L189'></a>
+<a id='L190' name='L190'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L191' name='L191'></a><em class='brace'>}</em>
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a><em class='comment'>/*</em>
+<a id='L194' name='L194'></a><em class='comment'> * In case of a server: if a SIGNATURE_ALGORITHMS extension type is</em>
+<a id='L195' name='L195'></a><em class='comment'> * received then it stores into the session security parameters the</em>
+<a id='L196' name='L196'></a><em class='comment'> * new value.</em>
+<a id='L197' name='L197'></a><em class='comment'> *</em>
+<a id='L198' name='L198'></a><em class='comment'> * In case of a client: If a signature_algorithms have been specified</em>
+<a id='L199' name='L199'></a><em class='comment'> * then it is an error;</em>
+<a id='L200' name='L200'></a><em class='comment'> */</em>
+<a id='L201' name='L201'></a>
+<a id='L202' name='L202'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L203' name='L203'></a><a href='../R/5497.html' title='Multiple referred from 2 places.'>_gnutls_signature_algorithm_recv_params</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L204' name='L204'></a>                                        <strong class='reserved'>const</strong> <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> * data,
+<a id='L205' name='L205'></a>                                        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> data_size)
+<a id='L206' name='L206'></a><em class='brace'>{</em>
+<a id='L207' name='L207'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L208' name='L208'></a>
+<a id='L209' name='L209'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.entity == GNUTLS_CLIENT) <em class='brace'>{</em>
+<a id='L210' name='L210'></a>                <em class='comment'>/* nothing for now */</em>
+<a id='L211' name='L211'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L212' name='L212'></a>                <em class='comment'>/* Although TLS 1.2 mandates that we must not accept reply</em>
+<a id='L213' name='L213'></a><em class='comment'>                 * to this message, there are good reasons to just ignore it. Check</em>
+<a id='L214' name='L214'></a><em class='comment'>                 * https://www.ietf.org/mail-archive/web/tls/current/msg03880.html</em>
+<a id='L215' name='L215'></a><em class='comment'>                 */</em>
+<a id='L216' name='L216'></a>                <em class='comment'>/* return GNUTLS_E_UNEXPECTED_PACKET; */</em>
+<a id='L217' name='L217'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L218' name='L218'></a>                <em class='comment'>/* SERVER SIDE</em>
+<a id='L219' name='L219'></a><em class='comment'>                 */</em>
+<a id='L220' name='L220'></a>                <strong class='reserved'>if</strong> (data_size &gt;= 2) <em class='brace'>{</em>
+<a id='L221' name='L221'></a>                        <a href='../D/12095.html' title='Multiple defined in 8 places.'>uint16_t</a> len;
+<a id='L222' name='L222'></a>
+<a id='L223' name='L223'></a>                        <a href='../D/711.html' title='Multiple defined in 2 places.'>DECR_LEN</a>(data_size, 2);
+<a id='L224' name='L224'></a>                        len = <a href='../S/5268.html#L83' title='Defined at 83 in lib/num.h.'>_gnutls_read_uint16</a>(data);
+<a id='L225' name='L225'></a>                        <a href='../D/711.html' title='Multiple defined in 2 places.'>DECR_LEN</a>(data_size, len);
+<a id='L226' name='L226'></a>
+<a id='L227' name='L227'></a>                        <strong class='reserved'>if</strong> (data_size &gt; 0)
+<a id='L228' name='L228'></a>                                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_UNEXPECTED_PACKET_LENGTH);
+<a id='L229' name='L229'></a>
+<a id='L230' name='L230'></a>                        ret =
+<a id='L231' name='L231'></a>                            <a href='../S/5399.html#L140' title='Defined at 140 in lib/ext/signature.c.'>_gnutls_sign_algorithm_parse_data</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L232' name='L232'></a>                                                              data + 2,
+<a id='L233' name='L233'></a>                                                              len);
+<a id='L234' name='L234'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L235' name='L235'></a>                                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L236' name='L236'></a>                                <strong class='reserved'>return</strong> ret;
+<a id='L237' name='L237'></a>                        <em class='brace'>}</em>
+<a id='L238' name='L238'></a>                <em class='brace'>}</em> <strong class='reserved'>else</strong> <em class='brace'>{</em>
+<a id='L239' name='L239'></a>                        <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_UNEXPECTED_PACKET_LENGTH);
+<a id='L240' name='L240'></a>                <em class='brace'>}</em>
+<a id='L241' name='L241'></a>        <em class='brace'>}</em>
+<a id='L242' name='L242'></a>
+<a id='L243' name='L243'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L244' name='L244'></a><em class='brace'>}</em>
+<a id='L245' name='L245'></a>
+<a id='L246' name='L246'></a><em class='comment'>/* returns data_size or a negative number on failure</em>
+<a id='L247' name='L247'></a><em class='comment'> */</em>
+<a id='L248' name='L248'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L249' name='L249'></a><a href='../R/5498.html' title='Multiple referred from 2 places.'>_gnutls_signature_algorithm_send_params</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L250' name='L250'></a>                                        <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * extdata)
+<a id='L251' name='L251'></a><em class='brace'>{</em>
+<a id='L252' name='L252'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L253' name='L253'></a>        <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> init_length = extdata-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a>;
+<a id='L254' name='L254'></a>        <strong class='reserved'>const</strong> <a href='../S/5822.html#L713' title='Defined at 713 in lib/gnutls_int.h.'>version_entry_st</a> *ver = <a href='../S/5822.html#L1524' title='Defined at 1524 in lib/gnutls_int.h.'>get_version</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L255' name='L255'></a>
+<a id='L256' name='L256'></a>        <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>(ver == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>))
+<a id='L257' name='L257'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L258' name='L258'></a>
+<a id='L259' name='L259'></a>        <em class='comment'>/* this function sends the client extension data */</em>
+<a id='L260' name='L260'></a>        <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.entity == GNUTLS_CLIENT
+<a id='L261' name='L261'></a>            &amp;&amp; <a href='../S/6029.html#L92' title='Defined at 92 in lib/algorithms.h.'>_gnutls_version_has_selectable_sighash</a>(ver)) <em class='brace'>{</em>
+<a id='L262' name='L262'></a>                <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.priorities-&gt;sigalg.size &gt; 0) <em class='brace'>{</em>
+<a id='L263' name='L263'></a>                        ret =
+<a id='L264' name='L264'></a>                            <a href='../S/5399.html#L84' title='Defined at 84 in lib/ext/signature.c.'>_gnutls_sign_algorithm_write_params</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, extdata);
+<a id='L265' name='L265'></a>                        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L266' name='L266'></a>                                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(ret);
+<a id='L267' name='L267'></a>
+<a id='L268' name='L268'></a>                        <strong class='reserved'>return</strong> extdata-&gt;<a href='../S/3982.html#L156' title='Defined at 156 in src/list.h.'>length</a> - init_length;
+<a id='L269' name='L269'></a>                <em class='brace'>}</em>
+<a id='L270' name='L270'></a>        <em class='brace'>}</em>
+<a id='L271' name='L271'></a>
+<a id='L272' name='L272'></a>        <em class='comment'>/* if we are here it means we don't send the extension */</em>
+<a id='L273' name='L273'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L274' name='L274'></a><em class='brace'>}</em>
+<a id='L275' name='L275'></a>
+<a id='L276' name='L276'></a><em class='sharp'>#ifdef</em> <a href='../S/5399.html#L43' title='Defined at 43 in lib/ext/signature.c.'>GOST_SIG_FIXUP_SCHANNEL</a>
+<a id='L277' name='L277'></a><strong class='reserved'>static</strong> <a href='../D/6941.html' title='Multiple defined in 8 places.'>bool</a>
+<a id='L278' name='L278'></a><a href='../S/5399.html#L340' title='Referred from 340 in lib/ext/signature.c.'>is_gost_sig_present</a>(<a href='../S/5399.html#L78' title='Defined at 78 in lib/ext/signature.c.'>sig_ext_st</a> *priv)
+<a id='L279' name='L279'></a><em class='brace'>{</em>
+<a id='L280' name='L280'></a>        <strong class='reserved'>unsigned</strong> i;
+<a id='L281' name='L281'></a>        <strong class='reserved'>const</strong> <a href='../D/9271.html' title='Multiple defined in 2 places.'>gnutls_sign_entry_st</a> *se;
+<a id='L282' name='L282'></a>
+<a id='L283' name='L283'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; priv-&gt;sign_algorithms_size; i++) <em class='brace'>{</em>
+<a id='L284' name='L284'></a>                se = <a href='../S/5247.html#L750' title='Defined at 750 in lib/algorithms/sign.c.'>_gnutls_sign_to_entry</a>(priv-&gt;sign_algorithms[i]);
+<a id='L285' name='L285'></a>                <strong class='reserved'>if</strong> (se != <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> &amp;&amp; <a href='../S/6029.html#L520' title='Defined at 520 in lib/algorithms.h.'>_sign_is_gost</a>(se))
+<a id='L286' name='L286'></a>                        <strong class='reserved'>return</strong> <a href='../D/11987.html' title='Multiple defined in 16 places.'>true</a>;
+<a id='L287' name='L287'></a>        <em class='brace'>}</em>
+<a id='L288' name='L288'></a>
+<a id='L289' name='L289'></a>        <strong class='reserved'>return</strong> <a href='../D/7809.html' title='Multiple defined in 16 places.'>false</a>;
+<a id='L290' name='L290'></a><em class='brace'>}</em>
+<a id='L291' name='L291'></a><em class='sharp'>#endif</em>
+<a id='L292' name='L292'></a>
+<a id='L293' name='L293'></a><em class='comment'>/* Returns a requested by the peer signature algorithm that</em>
+<a id='L294' name='L294'></a><em class='comment'> * matches the given certificate's public key algorithm.</em>
+<a id='L295' name='L295'></a><em class='comment'> *</em>
+<a id='L296' name='L296'></a><em class='comment'> * When the @client_cert flag is not set, then this function will</em>
+<a id='L297' name='L297'></a><em class='comment'> * also check whether the signature algorithm is allowed to be</em>
+<a id='L298' name='L298'></a><em class='comment'> * used in that session. Otherwise GNUTLS_SIGN_UNKNOWN is</em>
+<a id='L299' name='L299'></a><em class='comment'> * returned.</em>
+<a id='L300' name='L300'></a><em class='comment'> */</em>
+<a id='L301' name='L301'></a>gnutls_sign_algorithm_t
+<a id='L302' name='L302'></a><a href='../R/5468.html' title='Multiple referred from 5 places.'>_gnutls_session_get_sign_algo</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L303' name='L303'></a>                              <a href='../D/8871.html' title='Multiple defined in 2 places.'>gnutls_pcert_st</a> * cert,
+<a id='L304' name='L304'></a>                              gnutls_privkey_t privkey,
+<a id='L305' name='L305'></a>                              <strong class='reserved'>unsigned</strong> client_cert,
+<a id='L306' name='L306'></a>                              gnutls_kx_algorithm_t kx_algorithm)
+<a id='L307' name='L307'></a><em class='brace'>{</em>
+<a id='L308' name='L308'></a>        <strong class='reserved'>unsigned</strong> i;
+<a id='L309' name='L309'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L310' name='L310'></a>        <strong class='reserved'>const</strong> <a href='../S/5822.html#L713' title='Defined at 713 in lib/gnutls_int.h.'>version_entry_st</a> *ver = <a href='../S/5822.html#L1524' title='Defined at 1524 in lib/gnutls_int.h.'>get_version</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L311' name='L311'></a>        <a href='../S/5399.html#L78' title='Defined at 78 in lib/ext/signature.c.'>sig_ext_st</a> *priv;
+<a id='L312' name='L312'></a>        gnutls_ext_priv_data_t epriv;
+<a id='L313' name='L313'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> cert_algo;
+<a id='L314' name='L314'></a>        <strong class='reserved'>const</strong> <a href='../D/9271.html' title='Multiple defined in 2 places.'>gnutls_sign_entry_st</a> *se;
+<a id='L315' name='L315'></a>
+<a id='L316' name='L316'></a>        <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>(ver == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>))
+<a id='L317' name='L317'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_SIGN_UNKNOWN);
+<a id='L318' name='L318'></a>
+<a id='L319' name='L319'></a>        cert_algo = <a href='../S/5334.html#L88' title='Defined at 88 in lib/pubkey.c.'>gnutls_pubkey_get_pk_algorithm</a>(cert-&gt;pubkey, <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>);
+<a id='L320' name='L320'></a>
+<a id='L321' name='L321'></a>        ret =
+<a id='L322' name='L322'></a>            <a href='../S/5633.html#L717' title='Defined at 717 in lib/hello_ext.c.'>_gnutls_hello_ext_get_priv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L323' name='L323'></a>                                        <a href='../S/5822.html#L318' title='Defined at 318 in lib/gnutls_int.h.'>GNUTLS_EXTENSION_SIGNATURE_ALGORITHMS</a>,
+<a id='L324' name='L324'></a>                                        &amp;epriv);
+<a id='L325' name='L325'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L326' name='L326'></a>                priv = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L327' name='L327'></a>        <strong class='reserved'>else</strong>
+<a id='L328' name='L328'></a>                priv = epriv;
+<a id='L329' name='L329'></a>
+<a id='L330' name='L330'></a><em class='sharp'>#ifdef</em> <a href='../S/5399.html#L43' title='Defined at 43 in lib/ext/signature.c.'>GOST_SIG_FIXUP_SCHANNEL</a>
+<a id='L331' name='L331'></a>        <em class='comment'>/*</em>
+<a id='L332' name='L332'></a><em class='comment'>         * Some (all SChannel) clients fail to send proper SigAlgs due to Micro$oft crazyness.</em>
+<a id='L333' name='L333'></a><em class='comment'>         * If we are negotiating GOST KX (because we have received GOST</em>
+<a id='L334' name='L334'></a><em class='comment'>         * ciphersuites) and if we have received no GOST SignatureAlgorithms,</em>
+<a id='L335' name='L335'></a><em class='comment'>         * assume that the client could not send them and continue negotiation</em>
+<a id='L336' name='L336'></a><em class='comment'>         * as if correct algorithm was sent.</em>
+<a id='L337' name='L337'></a><em class='comment'>         */</em>
+<a id='L338' name='L338'></a>        <strong class='reserved'>if</strong> (<a href='../S/6029.html#L511' title='Defined at 511 in lib/algorithms.h.'>_gnutls_kx_is_vko_gost</a>(kx_algorithm) &amp;&amp;
+<a id='L339' name='L339'></a>            (!priv ||
+<a id='L340' name='L340'></a>             !<a href='../S/5399.html#L278' title='Defined at 278 in lib/ext/signature.c.'>is_gost_sig_present</a>(priv) ||
+<a id='L341' name='L341'></a>             !<a href='../S/6029.html#L92' title='Defined at 92 in lib/algorithms.h.'>_gnutls_version_has_selectable_sighash</a>(ver))) <em class='brace'>{</em>
+<a id='L342' name='L342'></a>                gnutls_digest_algorithm_t dig;
+<a id='L343' name='L343'></a>
+<a id='L344' name='L344'></a>                <a href='../D/5914.html' title='Multiple defined in 2 places.'>_gnutls_handshake_log</a>("EXT[%p]: GOST KX, but no GOST SigAlgs received, patching up.", <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L345' name='L345'></a>
+<a id='L346' name='L346'></a>                <strong class='reserved'>if</strong> (cert_algo == GNUTLS_PK_GOST_01)
+<a id='L347' name='L347'></a>                        dig = GNUTLS_DIG_GOSTR_94;
+<a id='L348' name='L348'></a>                <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (cert_algo == GNUTLS_PK_GOST_12_256)
+<a id='L349' name='L349'></a>                        dig = GNUTLS_DIG_STREEBOG_256;
+<a id='L350' name='L350'></a>                <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (cert_algo == GNUTLS_PK_GOST_12_512)
+<a id='L351' name='L351'></a>                        dig = GNUTLS_DIG_STREEBOG_512;
+<a id='L352' name='L352'></a>                <strong class='reserved'>else</strong>
+<a id='L353' name='L353'></a>                        dig = GNUTLS_DIG_SHA1;
+<a id='L354' name='L354'></a>
+<a id='L355' name='L355'></a>                ret = <a href='../S/5247.html#L610' title='Defined at 610 in lib/algorithms/sign.c.'>gnutls_pk_to_sign</a>(cert_algo, dig);
+<a id='L356' name='L356'></a>
+<a id='L357' name='L357'></a>                <strong class='reserved'>if</strong> (!client_cert &amp;&amp; <a href='../S/5399.html#L414' title='Defined at 414 in lib/ext/signature.c.'>_gnutls_session_sign_algo_enabled</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, ret) &lt; 0)
+<a id='L358' name='L358'></a>                        <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L359' name='L359'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L360' name='L360'></a>        <em class='brace'>}</em>
+<a id='L361' name='L361'></a><em class='sharp'>#endif</em>
+<a id='L362' name='L362'></a>
+<a id='L363' name='L363'></a>        <strong class='reserved'>if</strong> (!priv || !<a href='../S/6029.html#L92' title='Defined at 92 in lib/algorithms.h.'>_gnutls_version_has_selectable_sighash</a>(ver)) <em class='brace'>{</em>
+<a id='L364' name='L364'></a>                <em class='comment'>/* none set, allow SHA-1 only */</em>
+<a id='L365' name='L365'></a>                ret = <a href='../S/5247.html#L610' title='Defined at 610 in lib/algorithms/sign.c.'>gnutls_pk_to_sign</a>(cert_algo, GNUTLS_DIG_SHA1);
+<a id='L366' name='L366'></a>
+<a id='L367' name='L367'></a>                <strong class='reserved'>if</strong> (!client_cert &amp;&amp; <a href='../S/5399.html#L414' title='Defined at 414 in lib/ext/signature.c.'>_gnutls_session_sign_algo_enabled</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, ret) &lt; 0)
+<a id='L368' name='L368'></a>                        <strong class='reserved'>goto</strong> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>;
+<a id='L369' name='L369'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L370' name='L370'></a>        <em class='brace'>}</em>
+<a id='L371' name='L371'></a>
+<a id='L372' name='L372'></a>
+<a id='L373' name='L373'></a>
+<a id='L374' name='L374'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; priv-&gt;sign_algorithms_size; i++) <em class='brace'>{</em>
+<a id='L375' name='L375'></a>                se = <a href='../S/5247.html#L750' title='Defined at 750 in lib/algorithms/sign.c.'>_gnutls_sign_to_entry</a>(priv-&gt;sign_algorithms[i]);
+<a id='L376' name='L376'></a>                <strong class='reserved'>if</strong> (se == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>)
+<a id='L377' name='L377'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L378' name='L378'></a>
+<a id='L379' name='L379'></a>                <a href='../D/5914.html' title='Multiple defined in 2 places.'>_gnutls_handshake_log</a>("checking cert compat with %s\n", se-&gt;<a href='../D/10382.html' title='Multiple defined in 2 places.'>name</a>);
+<a id='L380' name='L380'></a>
+<a id='L381' name='L381'></a>                <strong class='reserved'>if</strong> (<a href='../S/5995.html#L1924' title='Defined at 1924 in lib/privkey.c.'>_gnutls_privkey_compatible_with_sig</a>(privkey, priv-&gt;sign_algorithms[i]) == 0)
+<a id='L382' name='L382'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L383' name='L383'></a>
+<a id='L384' name='L384'></a>                <strong class='reserved'>if</strong> (<a href='../S/6029.html#L408' title='Defined at 408 in lib/algorithms.h.'>sign_supports_cert_pk_algorithm</a>(se, cert_algo) != 0) <em class='brace'>{</em>
+<a id='L385' name='L385'></a>                        <strong class='reserved'>if</strong> (<a href='../S/5334.html#L2086' title='Defined at 2086 in lib/pubkey.c.'>_gnutls_pubkey_compatible_with_sig</a>
+<a id='L386' name='L386'></a>                            (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, cert-&gt;pubkey, ver, se-&gt;id) &lt; 0)
+<a id='L387' name='L387'></a>                                <strong class='reserved'>continue</strong>;
+<a id='L388' name='L388'></a>
+<a id='L389' name='L389'></a>                        <strong class='reserved'>if</strong> (<a href='../S/5399.html#L414' title='Defined at 414 in lib/ext/signature.c.'>_gnutls_session_sign_algo_enabled</a>
+<a id='L390' name='L390'></a>                            (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, se-&gt;id) &lt; 0)
+<a id='L391' name='L391'></a>                                <strong class='reserved'>continue</strong>;
+<a id='L392' name='L392'></a>
+<a id='L393' name='L393'></a>                        <strong class='reserved'>return</strong> se-&gt;id;
+<a id='L394' name='L394'></a>                <em class='brace'>}</em>
+<a id='L395' name='L395'></a>        <em class='brace'>}</em>
+<a id='L396' name='L396'></a>
+<a id='L397' name='L397'></a>        <em class='comment'>/* When having a legacy client certificate which can only be signed</em>
+<a id='L398' name='L398'></a><em class='comment'>         * using algorithms we don't always enable by default (e.g., DSA-SHA1),</em>
+<a id='L399' name='L399'></a><em class='comment'>         * continue and sign with it. */</em>
+<a id='L400' name='L400'></a>        <strong class='reserved'>if</strong> (client_cert) <em class='brace'>{</em>
+<a id='L401' name='L401'></a>                <a href='../S/5298.html#L718' title='Defined at 718 in lib/errors.c.'>_gnutls_audit_log</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>, "No shared signature schemes with peer for client certificate (%s). Is the certificate a legacy one?\n",
+<a id='L402' name='L402'></a>                                  <a href='../S/5248.html#L253' title='Defined at 253 in lib/algorithms/publickey.c.'>gnutls_pk_get_name</a>(cert_algo));
+<a id='L403' name='L403'></a>        <em class='brace'>}</em>
+<a id='L404' name='L404'></a>
+<a id='L405' name='L405'></a> <a href='../D/7803.html' title='Multiple defined in 2 places.'>fail</a>:
+<a id='L406' name='L406'></a>        <strong class='reserved'>return</strong> GNUTLS_SIGN_UNKNOWN;
+<a id='L407' name='L407'></a><em class='brace'>}</em>
+<a id='L408' name='L408'></a>
+<a id='L409' name='L409'></a><em class='comment'>/* Check if the given signature algorithm is supported.</em>
+<a id='L410' name='L410'></a><em class='comment'> * This means that it is enabled by the priority functions,</em>
+<a id='L411' name='L411'></a><em class='comment'> * and in case of a server a matching certificate exists.</em>
+<a id='L412' name='L412'></a><em class='comment'> */</em>
+<a id='L413' name='L413'></a><strong class='reserved'>int</strong>
+<a id='L414' name='L414'></a><a href='../R/5475.html' title='Multiple referred from 8 places.'>_gnutls_session_sign_algo_enabled</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L415' name='L415'></a>                                  gnutls_sign_algorithm_t sig)
+<a id='L416' name='L416'></a><em class='brace'>{</em>
+<a id='L417' name='L417'></a>        <strong class='reserved'>unsigned</strong> i;
+<a id='L418' name='L418'></a>        <strong class='reserved'>const</strong> <a href='../S/5822.html#L713' title='Defined at 713 in lib/gnutls_int.h.'>version_entry_st</a> *ver = <a href='../S/5822.html#L1524' title='Defined at 1524 in lib/gnutls_int.h.'>get_version</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L419' name='L419'></a>
+<a id='L420' name='L420'></a>        <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>(ver == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>))
+<a id='L421' name='L421'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L422' name='L422'></a>
+<a id='L423' name='L423'></a>        <strong class='reserved'>if</strong> (!<a href='../S/6029.html#L92' title='Defined at 92 in lib/algorithms.h.'>_gnutls_version_has_selectable_sighash</a>(ver)) <em class='brace'>{</em>
+<a id='L424' name='L424'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L425' name='L425'></a>        <em class='brace'>}</em>
+<a id='L426' name='L426'></a>
+<a id='L427' name='L427'></a>        <strong class='reserved'>if</strong> (ver-&gt;tls13_sem) <em class='brace'>{</em>
+<a id='L428' name='L428'></a>                <em class='comment'>/* disallow RSA, DSA, and SHA1 */</em>
+<a id='L429' name='L429'></a>                <strong class='reserved'>const</strong> <a href='../D/9271.html' title='Multiple defined in 2 places.'>gnutls_sign_entry_st</a> *se;
+<a id='L430' name='L430'></a>
+<a id='L431' name='L431'></a>                se = <a href='../S/5247.html#L750' title='Defined at 750 in lib/algorithms/sign.c.'>_gnutls_sign_to_entry</a>(sig);
+<a id='L432' name='L432'></a>                <strong class='reserved'>if</strong> (se == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a> || (se-&gt;flags &amp; <a href='../S/6029.html#L355' title='Defined at 355 in lib/algorithms.h.'>GNUTLS_SIGN_FLAG_TLS13_OK</a>) == 0) <em class='brace'>{</em>
+<a id='L433' name='L433'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L434' name='L434'></a>                        <strong class='reserved'>goto</strong> disallowed;
+<a id='L435' name='L435'></a>                <em class='brace'>}</em>
+<a id='L436' name='L436'></a>        <em class='brace'>}</em>
+<a id='L437' name='L437'></a>
+<a id='L438' name='L438'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.priorities-&gt;sigalg.size; i++) <em class='brace'>{</em>
+<a id='L439' name='L439'></a>                <strong class='reserved'>if</strong> (<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;internals.priorities-&gt;sigalg.entry[i]-&gt;id == sig) <em class='brace'>{</em>
+<a id='L440' name='L440'></a>                        <strong class='reserved'>return</strong> 0;       <em class='comment'>/* ok */</em>
+<a id='L441' name='L441'></a>                <em class='brace'>}</em>
+<a id='L442' name='L442'></a>        <em class='brace'>}</em>
+<a id='L443' name='L443'></a>
+<a id='L444' name='L444'></a> disallowed:
+<a id='L445' name='L445'></a>        <a href='../D/5914.html' title='Multiple defined in 2 places.'>_gnutls_handshake_log</a>("Signature algorithm %s is not enabled\n", gnutls_sign_algorithm_get_name(sig));
+<a id='L446' name='L446'></a>        <strong class='reserved'>return</strong> GNUTLS_E_UNSUPPORTED_SIGNATURE_ALGORITHM;
+<a id='L447' name='L447'></a><em class='brace'>}</em>
+<a id='L448' name='L448'></a>
+<a id='L449' name='L449'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/10476.html' title='Multiple referred from 2 places.'>signature_algorithms_deinit_data</a>(gnutls_ext_priv_data_t priv)
+<a id='L450' name='L450'></a><em class='brace'>{</em>
+<a id='L451' name='L451'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(priv);
+<a id='L452' name='L452'></a><em class='brace'>}</em>
+<a id='L453' name='L453'></a>
+<a id='L454' name='L454'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L455' name='L455'></a><a href='../R/10477.html' title='Multiple referred from 2 places.'>signature_algorithms_pack</a>(gnutls_ext_priv_data_t epriv,
+<a id='L456' name='L456'></a>                          <a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps)
+<a id='L457' name='L457'></a><em class='brace'>{</em>
+<a id='L458' name='L458'></a>        <a href='../S/5399.html#L78' title='Defined at 78 in lib/ext/signature.c.'>sig_ext_st</a> *priv = epriv;
+<a id='L459' name='L459'></a>        <strong class='reserved'>int</strong> ret, i;
+<a id='L460' name='L460'></a>
+<a id='L461' name='L461'></a>        <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, priv-&gt;sign_algorithms_size);
+<a id='L462' name='L462'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; priv-&gt;sign_algorithms_size; i++) <em class='brace'>{</em>
+<a id='L463' name='L463'></a>                <a href='../S/5333.html#L235' title='Defined at 235 in lib/str.h.'>BUFFER_APPEND_NUM</a>(ps, priv-&gt;sign_algorithms[i]);
+<a id='L464' name='L464'></a>        <em class='brace'>}</em>
+<a id='L465' name='L465'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L466' name='L466'></a><em class='brace'>}</em>
+<a id='L467' name='L467'></a>
+<a id='L468' name='L468'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L469' name='L469'></a><a href='../R/10478.html' title='Multiple referred from 2 places.'>signature_algorithms_unpack</a>(<a href='../D/8411.html' title='Multiple defined in 2 places.'>gnutls_buffer_st</a> * ps,
+<a id='L470' name='L470'></a>                            gnutls_ext_priv_data_t * _priv)
+<a id='L471' name='L471'></a><em class='brace'>{</em>
+<a id='L472' name='L472'></a>        <a href='../S/5399.html#L78' title='Defined at 78 in lib/ext/signature.c.'>sig_ext_st</a> *priv;
+<a id='L473' name='L473'></a>        <strong class='reserved'>int</strong> i, ret;
+<a id='L474' name='L474'></a>        gnutls_ext_priv_data_t epriv;
+<a id='L475' name='L475'></a>
+<a id='L476' name='L476'></a>        priv = gnutls_calloc(1, <strong class='reserved'>sizeof</strong>(*priv));
+<a id='L477' name='L477'></a>        <strong class='reserved'>if</strong> (priv == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L478' name='L478'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L479' name='L479'></a>                <strong class='reserved'>return</strong> GNUTLS_E_MEMORY_ERROR;
+<a id='L480' name='L480'></a>        <em class='brace'>}</em>
+<a id='L481' name='L481'></a>
+<a id='L482' name='L482'></a>        <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, priv-&gt;sign_algorithms_size);
+<a id='L483' name='L483'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; priv-&gt;sign_algorithms_size; i++) <em class='brace'>{</em>
+<a id='L484' name='L484'></a>                <a href='../S/5333.html#L281' title='Defined at 281 in lib/str.h.'>BUFFER_POP_NUM</a>(ps, priv-&gt;sign_algorithms[i]);
+<a id='L485' name='L485'></a>        <em class='brace'>}</em>
+<a id='L486' name='L486'></a>
+<a id='L487' name='L487'></a>        epriv = priv;
+<a id='L488' name='L488'></a>        *_priv = epriv;
+<a id='L489' name='L489'></a>
+<a id='L490' name='L490'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L491' name='L491'></a>
+<a id='L492' name='L492'></a>      error:
+<a id='L493' name='L493'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(priv);
+<a id='L494' name='L494'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L495' name='L495'></a><em class='brace'>}</em>
+<a id='L496' name='L496'></a>
+<a id='L497' name='L497'></a>
+<a id='L498' name='L498'></a>
+<a id='L499' name='L499'></a><em class='comment'>/**</em>
+<a id='L500' name='L500'></a><em class='comment'> * gnutls_sign_algorithm_get_requested:</em>
+<a id='L501' name='L501'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L502' name='L502'></a><em class='comment'> * @indx: is an index of the signature algorithm to return</em>
+<a id='L503' name='L503'></a><em class='comment'> * @algo: the returned certificate type will be stored there</em>
+<a id='L504' name='L504'></a><em class='comment'> *</em>
+<a id='L505' name='L505'></a><em class='comment'> * Returns the signature algorithm specified by index that was</em>
+<a id='L506' name='L506'></a><em class='comment'> * requested by the peer. If the specified index has no data available</em>
+<a id='L507' name='L507'></a><em class='comment'> * this function returns %GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE.  If</em>
+<a id='L508' name='L508'></a><em class='comment'> * the negotiated TLS version does not support signature algorithms</em>
+<a id='L509' name='L509'></a><em class='comment'> * then %GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE will be returned even</em>
+<a id='L510' name='L510'></a><em class='comment'> * for the first index.  The first index is 0.</em>
+<a id='L511' name='L511'></a><em class='comment'> *</em>
+<a id='L512' name='L512'></a><em class='comment'> * This function is useful in the certificate callback functions</em>
+<a id='L513' name='L513'></a><em class='comment'> * to assist in selecting the correct certificate.</em>
+<a id='L514' name='L514'></a><em class='comment'> *</em>
+<a id='L515' name='L515'></a><em class='comment'> * Returns: On success, %GNUTLS_E_SUCCESS (0) is returned, otherwise</em>
+<a id='L516' name='L516'></a><em class='comment'> *   an error code is returned.</em>
+<a id='L517' name='L517'></a><em class='comment'> *</em>
+<a id='L518' name='L518'></a><em class='comment'> * Since: 2.10.0</em>
+<a id='L519' name='L519'></a><em class='comment'> **/</em>
+<a id='L520' name='L520'></a><strong class='reserved'>int</strong>
+<a id='L521' name='L521'></a>gnutls_sign_algorithm_get_requested(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L522' name='L522'></a>                                    <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> indx,
+<a id='L523' name='L523'></a>                                    gnutls_sign_algorithm_t * algo)
+<a id='L524' name='L524'></a><em class='brace'>{</em>
+<a id='L525' name='L525'></a>        <strong class='reserved'>const</strong> <a href='../S/5822.html#L713' title='Defined at 713 in lib/gnutls_int.h.'>version_entry_st</a> *ver = <a href='../S/5822.html#L1524' title='Defined at 1524 in lib/gnutls_int.h.'>get_version</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>);
+<a id='L526' name='L526'></a>        <a href='../S/5399.html#L78' title='Defined at 78 in lib/ext/signature.c.'>sig_ext_st</a> *priv;
+<a id='L527' name='L527'></a>        gnutls_ext_priv_data_t epriv;
+<a id='L528' name='L528'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L529' name='L529'></a>
+<a id='L530' name='L530'></a>        <strong class='reserved'>if</strong> (<a href='../D/12114.html' title='Multiple defined in 2 places.'>unlikely</a>(ver == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>))
+<a id='L531' name='L531'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INTERNAL_ERROR);
+<a id='L532' name='L532'></a>
+<a id='L533' name='L533'></a>        ret =
+<a id='L534' name='L534'></a>            <a href='../S/5633.html#L717' title='Defined at 717 in lib/hello_ext.c.'>_gnutls_hello_ext_get_priv</a>(<a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>,
+<a id='L535' name='L535'></a>                                        <a href='../S/5822.html#L318' title='Defined at 318 in lib/gnutls_int.h.'>GNUTLS_EXTENSION_SIGNATURE_ALGORITHMS</a>,
+<a id='L536' name='L536'></a>                                        &amp;epriv);
+<a id='L537' name='L537'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L538' name='L538'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L539' name='L539'></a>                <strong class='reserved'>return</strong> ret;
+<a id='L540' name='L540'></a>        <em class='brace'>}</em>
+<a id='L541' name='L541'></a>        priv = epriv;
+<a id='L542' name='L542'></a>
+<a id='L543' name='L543'></a>        <strong class='reserved'>if</strong> (!<a href='../S/6029.html#L92' title='Defined at 92 in lib/algorithms.h.'>_gnutls_version_has_selectable_sighash</a>(ver)
+<a id='L544' name='L544'></a>            || priv-&gt;sign_algorithms_size == 0) <em class='brace'>{</em>
+<a id='L545' name='L545'></a>                <strong class='reserved'>return</strong> GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE;
+<a id='L546' name='L546'></a>        <em class='brace'>}</em>
+<a id='L547' name='L547'></a>
+<a id='L548' name='L548'></a>        <strong class='reserved'>if</strong> (indx &lt; priv-&gt;sign_algorithms_size) <em class='brace'>{</em>
+<a id='L549' name='L549'></a>                *algo = priv-&gt;sign_algorithms[indx];
+<a id='L550' name='L550'></a>                <strong class='reserved'>return</strong> 0;
+<a id='L551' name='L551'></a>        <em class='brace'>}</em> <strong class='reserved'>else</strong>
+<a id='L552' name='L552'></a>                <strong class='reserved'>return</strong> GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE;
+<a id='L553' name='L553'></a><em class='brace'>}</em>
+<a id='L554' name='L554'></a>
+<a id='L555' name='L555'></a><em class='comment'>/**</em>
+<a id='L556' name='L556'></a><em class='comment'> * gnutls_sign_algorithm_get:</em>
+<a id='L557' name='L557'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L558' name='L558'></a><em class='comment'> *</em>
+<a id='L559' name='L559'></a><em class='comment'> * Returns the signature algorithm that is (or will be) used in this</em>
+<a id='L560' name='L560'></a><em class='comment'> * session by the server to sign data. This function should be</em>
+<a id='L561' name='L561'></a><em class='comment'> * used only with TLS 1.2 or later.</em>
+<a id='L562' name='L562'></a><em class='comment'> *</em>
+<a id='L563' name='L563'></a><em class='comment'> * Returns: The sign algorithm or %GNUTLS_SIGN_UNKNOWN.</em>
+<a id='L564' name='L564'></a><em class='comment'> *</em>
+<a id='L565' name='L565'></a><em class='comment'> * Since: 3.1.1</em>
+<a id='L566' name='L566'></a><em class='comment'> **/</em>
+<a id='L567' name='L567'></a><strong class='reserved'>int</strong> <a href='../R/8335.html' title='Multiple referred from 13 places.'>gnutls_sign_algorithm_get</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L568' name='L568'></a><em class='brace'>{</em>
+<a id='L569' name='L569'></a>        <strong class='reserved'>return</strong> <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.server_sign_algo;
+<a id='L570' name='L570'></a><em class='brace'>}</em>
+<a id='L571' name='L571'></a>
+<a id='L572' name='L572'></a><em class='comment'>/**</em>
+<a id='L573' name='L573'></a><em class='comment'> * gnutls_sign_algorithm_get_client:</em>
+<a id='L574' name='L574'></a><em class='comment'> * @session: is a #gnutls_session_t type.</em>
+<a id='L575' name='L575'></a><em class='comment'> *</em>
+<a id='L576' name='L576'></a><em class='comment'> * Returns the signature algorithm that is (or will be) used in this</em>
+<a id='L577' name='L577'></a><em class='comment'> * session by the client to sign data. This function should be</em>
+<a id='L578' name='L578'></a><em class='comment'> * used only with TLS 1.2 or later.</em>
+<a id='L579' name='L579'></a><em class='comment'> *</em>
+<a id='L580' name='L580'></a><em class='comment'> * Returns: The sign algorithm or %GNUTLS_SIGN_UNKNOWN.</em>
+<a id='L581' name='L581'></a><em class='comment'> *</em>
+<a id='L582' name='L582'></a><em class='comment'> * Since: 3.1.11</em>
+<a id='L583' name='L583'></a><em class='comment'> **/</em>
+<a id='L584' name='L584'></a><strong class='reserved'>int</strong> <a href='../R/8336.html' title='Multiple referred from 13 places.'>gnutls_sign_algorithm_get_client</a>(gnutls_session_t <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>)
+<a id='L585' name='L585'></a><em class='brace'>{</em>
+<a id='L586' name='L586'></a>        <strong class='reserved'>return</strong> <a href='../D/11336.html' title='Multiple defined in 2 places.'>session</a>-&gt;security_parameters.client_sign_algo;
+<a id='L587' name='L587'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L84'>[^]</a><a href='#L584'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

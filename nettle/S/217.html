@@ -1,0 +1,380 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>examples/ecc-benchmark.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/766.html'>examples</a>/ecc-benchmark.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L56'>[^]</a><a href='#L324'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L56' title='Defined at 56.'>xalloc</a></li>
+<li><a href='#L68' title='Defined at 68.'>xalloc_limbs</a></li>
+<li><a href='#L75' title='Defined at 75.'>time_function</a></li>
+<li><a href='#L102' title='Defined at 102.'>modinv_gcd</a></li>
+<li><a href='#L138' title='Defined at 138.'>bench_modp</a></li>
+<li><a href='#L146' title='Defined at 146.'>bench_reduce</a></li>
+<li><a href='#L154' title='Defined at 154.'>bench_modq</a></li>
+<li><a href='#L162' title='Defined at 162.'>bench_modinv</a></li>
+<li><a href='#L170' title='Defined at 170.'>bench_modinv_gcd</a></li>
+<li><a href='#L180' title='Defined at 180.'>bench_modinv_powm</a></li>
+<li><a href='#L194' title='Defined at 194.'>bench_dup_hh</a></li>
+<li><a href='#L201' title='Defined at 201.'>bench_add_hh</a></li>
+<li><a href='#L208' title='Defined at 208.'>bench_add_hhh</a></li>
+<li><a href='#L215' title='Defined at 215.'>bench_mul_g</a></li>
+<li><a href='#L222' title='Defined at 222.'>bench_mul_a</a></li>
+<li><a href='#L230' title='Defined at 230.'>mpn_random</a></li>
+<li><a href='#L239' title='Defined at 239.'>bench_curve</a></li>
+<li><a href='#L324' title='Defined at 324.'>main</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* ecc-benchmark.c</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Copyright (C) 2013 Niels Möller</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   This file is part of GNU Nettle.</em>
+<a id='L6' name='L6'></a><em class='comment'></em>
+<a id='L7' name='L7'></a><em class='comment'>   GNU Nettle is free software: you can redistribute it and/or</em>
+<a id='L8' name='L8'></a><em class='comment'>   modify it under the terms of either:</em>
+<a id='L9' name='L9'></a><em class='comment'></em>
+<a id='L10' name='L10'></a><em class='comment'>     * the GNU Lesser General Public License as published by the Free</em>
+<a id='L11' name='L11'></a><em class='comment'>       Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L12' name='L12'></a><em class='comment'>       option) any later version.</em>
+<a id='L13' name='L13'></a><em class='comment'></em>
+<a id='L14' name='L14'></a><em class='comment'>   or</em>
+<a id='L15' name='L15'></a><em class='comment'></em>
+<a id='L16' name='L16'></a><em class='comment'>     * the GNU General Public License as published by the Free</em>
+<a id='L17' name='L17'></a><em class='comment'>       Software Foundation; either version 2 of the License, or (at your</em>
+<a id='L18' name='L18'></a><em class='comment'>       option) any later version.</em>
+<a id='L19' name='L19'></a><em class='comment'></em>
+<a id='L20' name='L20'></a><em class='comment'>   or both in parallel, as here.</em>
+<a id='L21' name='L21'></a><em class='comment'></em>
+<a id='L22' name='L22'></a><em class='comment'>   GNU Nettle is distributed in the hope that it will be useful,</em>
+<a id='L23' name='L23'></a><em class='comment'>   but WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L24' name='L24'></a><em class='comment'>   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L25' name='L25'></a><em class='comment'>   General Public License for more details.</em>
+<a id='L26' name='L26'></a><em class='comment'></em>
+<a id='L27' name='L27'></a><em class='comment'>   You should have received copies of the GNU General Public License and</em>
+<a id='L28' name='L28'></a><em class='comment'>   the GNU Lesser General Public License along with this program.  If</em>
+<a id='L29' name='L29'></a><em class='comment'>   not, see http://www.gnu.org/licenses/.</em>
+<a id='L30' name='L30'></a><em class='comment'>*/</em>
+<a id='L31' name='L31'></a>
+<a id='L32' name='L32'></a><em class='comment'>/* Development of Nettle's ECC support was funded by the .SE Internet Fund. */</em>
+<a id='L33' name='L33'></a>
+<a id='L34' name='L34'></a><em class='sharp'>#if</em> HAVE_CONFIG_H
+<a id='L35' name='L35'></a><em class='sharp'># include</em> "config.h"
+<a id='L36' name='L36'></a><em class='sharp'>#endif</em>
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> &lt;stdarg.h&gt;
+<a id='L39' name='L39'></a><em class='sharp'>#include</em> &lt;stdio.h&gt;
+<a id='L40' name='L40'></a><em class='sharp'>#include</em> &lt;stdlib.h&gt;
+<a id='L41' name='L41'></a><em class='sharp'>#include</em> &lt;string.h&gt;
+<a id='L42' name='L42'></a>
+<a id='L43' name='L43'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L44' name='L44'></a>
+<a id='L45' name='L45'></a><em class='sharp'>#include</em> &lt;time.h&gt;
+<a id='L46' name='L46'></a>
+<a id='L47' name='L47'></a><em class='sharp'>#include</em> "<a href='206.html'>timing.h</a>"
+<a id='L48' name='L48'></a>
+<a id='L49' name='L49'></a><em class='sharp'>#include</em> "<a href='762.html'>../ecc.h</a>"
+<a id='L50' name='L50'></a><em class='sharp'>#include</em> "<a href='106.html'>../ecc-internal.h</a>"
+<a id='L51' name='L51'></a><em class='sharp'>#include</em> "<a href='606.html'>../gmp-glue.h</a>"
+<a id='L52' name='L52'></a>
+<a id='L53' name='L53'></a><em class='sharp'>#define</em> <a href='../R/48.html' title='Multiple referred from 6 places.'>BENCH_INTERVAL</a> 0.1
+<a id='L54' name='L54'></a>
+<a id='L55' name='L55'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> *
+<a id='L56' name='L56'></a><a href='../R/2550.html' title='Multiple referred from 114 places.'>xalloc</a> (size_t size)
+<a id='L57' name='L57'></a><em class='brace'>{</em>
+<a id='L58' name='L58'></a>  <strong class='reserved'>void</strong> *<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a> = malloc (size);
+<a id='L59' name='L59'></a>  <strong class='reserved'>if</strong> (!<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>)
+<a id='L60' name='L60'></a>    <em class='brace'>{</em>
+<a id='L61' name='L61'></a>      fprintf (stderr, "Virtual memory exhausted\n");
+<a id='L62' name='L62'></a>      abort ();
+<a id='L63' name='L63'></a>    <em class='brace'>}</em>
+<a id='L64' name='L64'></a>  <strong class='reserved'>return</strong> <a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>;
+<a id='L65' name='L65'></a><em class='brace'>}</em>
+<a id='L66' name='L66'></a>
+<a id='L67' name='L67'></a><strong class='reserved'>static</strong> <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *
+<a id='L68' name='L68'></a><a href='../R/2551.html' title='Multiple referred from 49 places.'>xalloc_limbs</a> (<a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> size)
+<a id='L69' name='L69'></a><em class='brace'>{</em>
+<a id='L70' name='L70'></a>  <strong class='reserved'>return</strong> <a href='../D/2771.html' title='Multiple defined in 6 places.'>xalloc</a> (size * <strong class='reserved'>sizeof</strong>(<a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a>));
+<a id='L71' name='L71'></a><em class='brace'>}</em>
+<a id='L72' name='L72'></a>
+<a id='L73' name='L73'></a><em class='comment'>/* Returns second per function call */</em>
+<a id='L74' name='L74'></a><strong class='reserved'>static</strong> <strong class='reserved'>double</strong>
+<a id='L75' name='L75'></a><a href='../R/2464.html' title='Multiple referred from 40 places.'>time_function</a>(<strong class='reserved'>void</strong> (*f)(<strong class='reserved'>void</strong> *arg), <strong class='reserved'>void</strong> *arg)
+<a id='L76' name='L76'></a><em class='brace'>{</em>
+<a id='L77' name='L77'></a>  <strong class='reserved'>unsigned</strong> ncalls;
+<a id='L78' name='L78'></a>  <strong class='reserved'>double</strong> elapsed;
+<a id='L79' name='L79'></a>
+<a id='L80' name='L80'></a>  <em class='comment'>/* Warm up */</em>
+<a id='L81' name='L81'></a>  f(arg);
+<a id='L82' name='L82'></a>  <strong class='reserved'>for</strong> (ncalls = 10 ;;)
+<a id='L83' name='L83'></a>    <em class='brace'>{</em>
+<a id='L84' name='L84'></a>      <strong class='reserved'>unsigned</strong> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L85' name='L85'></a>
+<a id='L86' name='L86'></a>      time_start();
+<a id='L87' name='L87'></a>      <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 0; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &lt; ncalls; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++)
+<a id='L88' name='L88'></a>        f(arg);
+<a id='L89' name='L89'></a>      elapsed = time_end();
+<a id='L90' name='L90'></a>      <strong class='reserved'>if</strong> (elapsed &gt; <a href='../D/73.html' title='Multiple defined in 3 places.'>BENCH_INTERVAL</a>)
+<a id='L91' name='L91'></a>        <strong class='reserved'>break</strong>;
+<a id='L92' name='L92'></a>      <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (elapsed &lt; <a href='../D/73.html' title='Multiple defined in 3 places.'>BENCH_INTERVAL</a> / 10)
+<a id='L93' name='L93'></a>        ncalls *= 10;
+<a id='L94' name='L94'></a>      <strong class='reserved'>else</strong>
+<a id='L95' name='L95'></a>        ncalls *= 2;
+<a id='L96' name='L96'></a>    <em class='brace'>}</em>
+<a id='L97' name='L97'></a>  <strong class='reserved'>return</strong> elapsed / ncalls;
+<a id='L98' name='L98'></a><em class='brace'>}</em>
+<a id='L99' name='L99'></a>
+<a id='L100' name='L100'></a><em class='sharp'>#if</em> !NETTLE_USE_MINI_GMP
+<a id='L101' name='L101'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L102' name='L102'></a><a href='../R/1686.html' title='Multiple referred from 5 places.'>modinv_gcd</a> (<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../D/1513.html' title='Multiple defined in 2 places.'>ecc_curve</a> *ecc,
+<a id='L103' name='L103'></a>            <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>, <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>)
+<a id='L104' name='L104'></a><em class='brace'>{</em>
+<a id='L105' name='L105'></a>  <a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> size = ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size;
+<a id='L106' name='L106'></a>  <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/2741.html' title='Multiple defined in 5 places.'>up</a> = <a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>;
+<a id='L107' name='L107'></a>  <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/2752.html' title='Multiple defined in 7 places.'>vp</a> = <a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a> + size+1;
+<a id='L108' name='L108'></a>  <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *gp = <a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a> + 2*(size+1);
+<a id='L109' name='L109'></a>  <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/2561.html' title='Multiple defined in 8 places.'>sp</a> = <a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a> + 3*(size+1);
+<a id='L110' name='L110'></a>  <a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> gn, sn;
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a>  <a href='../S/263.html#L374' title='Defined at 374 in mini-gmp.c.'>mpn_copyi</a> (<a href='../D/2741.html' title='Multiple defined in 5 places.'>up</a>, <a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>, size);
+<a id='L113' name='L113'></a>  <a href='../S/263.html#L374' title='Defined at 374 in mini-gmp.c.'>mpn_copyi</a> (<a href='../D/2752.html' title='Multiple defined in 7 places.'>vp</a>, ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.m, size);
+<a id='L114' name='L114'></a>  gn = mpn_gcdext (gp, <a href='../D/2561.html' title='Multiple defined in 8 places.'>sp</a>, &amp;sn, <a href='../D/2741.html' title='Multiple defined in 5 places.'>up</a>, size, <a href='../D/2752.html' title='Multiple defined in 7 places.'>vp</a>, size);
+<a id='L115' name='L115'></a>  <strong class='reserved'>if</strong> (gn != 1 || gp[0] != 1)
+<a id='L116' name='L116'></a>    <strong class='reserved'>return</strong> 0;
+<a id='L117' name='L117'></a>  
+<a id='L118' name='L118'></a>  <strong class='reserved'>if</strong> (sn &lt; 0)
+<a id='L119' name='L119'></a>    <a href='../S/263.html#L520' title='Defined at 520 in mini-gmp.c.'>mpn_sub</a> (<a href='../D/2561.html' title='Multiple defined in 8 places.'>sp</a>, ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.m, size, <a href='../D/2561.html' title='Multiple defined in 8 places.'>sp</a>, -sn);
+<a id='L120' name='L120'></a>  <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (sn &lt; size)
+<a id='L121' name='L121'></a>    <em class='comment'>/* Zero-pad. */</em>
+<a id='L122' name='L122'></a>    <a href='../S/263.html#L423' title='Defined at 423 in mini-gmp.c.'>mpn_zero</a> (<a href='../D/2561.html' title='Multiple defined in 8 places.'>sp</a> + sn, size - sn);
+<a id='L123' name='L123'></a>
+<a id='L124' name='L124'></a>  <a href='../S/263.html#L374' title='Defined at 374 in mini-gmp.c.'>mpn_copyi</a> (<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, <a href='../D/2561.html' title='Multiple defined in 8 places.'>sp</a>, size);
+<a id='L125' name='L125'></a>  <strong class='reserved'>return</strong> 1;
+<a id='L126' name='L126'></a><em class='brace'>}</em>
+<a id='L127' name='L127'></a><em class='sharp'>#endif</em>
+<a id='L128' name='L128'></a>
+<a id='L129' name='L129'></a><strong class='reserved'>struct</strong> <a href='../R/1326.html' title='Multiple referred from 12 places.'>ecc_ctx</a> <em class='brace'>{</em>
+<a id='L130' name='L130'></a>  <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../D/1513.html' title='Multiple defined in 2 places.'>ecc_curve</a> *ecc;
+<a id='L131' name='L131'></a>  <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>;
+<a id='L132' name='L132'></a>  <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>;
+<a id='L133' name='L133'></a>  <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/1286.html' title='Multiple defined in 2 places.'>bp</a>;
+<a id='L134' name='L134'></a>  <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>;
+<a id='L135' name='L135'></a><em class='brace'>}</em>;
+<a id='L136' name='L136'></a>
+<a id='L137' name='L137'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L138' name='L138'></a><a href='../S/217.html#L275' title='Referred from 275 in examples/ecc-benchmark.c.'>bench_modp</a> (<strong class='reserved'>void</strong> *<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>)
+<a id='L139' name='L139'></a><em class='brace'>{</em>
+<a id='L140' name='L140'></a>  <strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *ctx = (<strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *) <a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>;
+<a id='L141' name='L141'></a>  <a href='../S/263.html#L374' title='Defined at 374 in mini-gmp.c.'>mpn_copyi</a> (ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, ctx-&gt;<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>, 2*ctx-&gt;ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size);
+<a id='L142' name='L142'></a>  ctx-&gt;ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.mod (&amp;ctx-&gt;ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>, ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>);
+<a id='L143' name='L143'></a><em class='brace'>}</em>
+<a id='L144' name='L144'></a>
+<a id='L145' name='L145'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L146' name='L146'></a><a href='../S/217.html#L276' title='Referred from 276 in examples/ecc-benchmark.c.'>bench_reduce</a> (<strong class='reserved'>void</strong> *<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>)
+<a id='L147' name='L147'></a><em class='brace'>{</em>
+<a id='L148' name='L148'></a>  <strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *ctx = (<strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *) <a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>;
+<a id='L149' name='L149'></a>  <a href='../S/263.html#L374' title='Defined at 374 in mini-gmp.c.'>mpn_copyi</a> (ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, ctx-&gt;<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>, 2*ctx-&gt;ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size);
+<a id='L150' name='L150'></a>  ctx-&gt;ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.<a href='../S/564.html#L46' title='Defined at 46 in gcmdata.c.'>reduce</a> (&amp;ctx-&gt;ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>, ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>);
+<a id='L151' name='L151'></a><em class='brace'>}</em>
+<a id='L152' name='L152'></a>
+<a id='L153' name='L153'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L154' name='L154'></a><a href='../S/217.html#L278' title='Referred from 278 in examples/ecc-benchmark.c.'>bench_modq</a> (<strong class='reserved'>void</strong> *<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>)
+<a id='L155' name='L155'></a><em class='brace'>{</em>
+<a id='L156' name='L156'></a>  <strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *ctx = (<strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *) <a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>;
+<a id='L157' name='L157'></a>  <a href='../S/263.html#L374' title='Defined at 374 in mini-gmp.c.'>mpn_copyi</a> (ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, ctx-&gt;<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>, 2*ctx-&gt;ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size);
+<a id='L158' name='L158'></a>  ctx-&gt;ecc-&gt;q.mod(&amp;ctx-&gt;ecc-&gt;q, ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>);
+<a id='L159' name='L159'></a><em class='brace'>}</em>
+<a id='L160' name='L160'></a>
+<a id='L161' name='L161'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L162' name='L162'></a><a href='../S/217.html#L280' title='Referred from 280 in examples/ecc-benchmark.c.'>bench_modinv</a> (<strong class='reserved'>void</strong> *<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>)
+<a id='L163' name='L163'></a><em class='brace'>{</em>
+<a id='L164' name='L164'></a>  <strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *ctx = (<strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *) <a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>;
+<a id='L165' name='L165'></a>  ctx-&gt;ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.<a href='../S/205.html#L70' title='Defined at 70 in aesdata.c.'>invert</a> (&amp;ctx-&gt;ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>, ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, ctx-&gt;<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>, ctx-&gt;<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>);
+<a id='L166' name='L166'></a><em class='brace'>}</em>
+<a id='L167' name='L167'></a>
+<a id='L168' name='L168'></a><em class='sharp'>#if</em> !NETTLE_USE_MINI_GMP
+<a id='L169' name='L169'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L170' name='L170'></a><a href='../S/217.html#L282' title='Referred from 282 in examples/ecc-benchmark.c.'>bench_modinv_gcd</a> (<strong class='reserved'>void</strong> *<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>)
+<a id='L171' name='L171'></a><em class='brace'>{</em>
+<a id='L172' name='L172'></a>  <strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *ctx = (<strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *) <a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>;
+<a id='L173' name='L173'></a>  <a href='../S/263.html#L374' title='Defined at 374 in mini-gmp.c.'>mpn_copyi</a> (ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a> + ctx-&gt;ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size, ctx-&gt;<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>, ctx-&gt;ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size);
+<a id='L174' name='L174'></a>  <a href='../S/217.html#L102' title='Defined at 102 in examples/ecc-benchmark.c.'>modinv_gcd</a> (ctx-&gt;ecc, ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a> + ctx-&gt;ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size, ctx-&gt;<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>);  
+<a id='L175' name='L175'></a><em class='brace'>}</em>
+<a id='L176' name='L176'></a><em class='sharp'>#endif</em>
+<a id='L177' name='L177'></a>
+<a id='L178' name='L178'></a><em class='sharp'>#ifdef</em> mpn_sec_powm
+<a id='L179' name='L179'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L180' name='L180'></a><a href='../S/217.html#L287' title='Referred from 287 in examples/ecc-benchmark.c.'>bench_modinv_powm</a> (<strong class='reserved'>void</strong> *<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>)
+<a id='L181' name='L181'></a><em class='brace'>{</em>
+<a id='L182' name='L182'></a>  <strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *ctx = (<strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *) <a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>;
+<a id='L183' name='L183'></a>  <strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../D/1513.html' title='Multiple defined in 2 places.'>ecc_curve</a> *ecc = ctx-&gt;ecc;
+<a id='L184' name='L184'></a>  <a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> size = ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size;
+<a id='L185' name='L185'></a>  
+<a id='L186' name='L186'></a>  <a href='../S/263.html#L481' title='Defined at 481 in mini-gmp.c.'>mpn_sub_1</a> (ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a> + size, ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.m, size, 2);
+<a id='L187' name='L187'></a>  mpn_sec_powm (ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, ctx-&gt;<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>, size,
+<a id='L188' name='L188'></a>                ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a> + size, ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.bit_size,
+<a id='L189' name='L189'></a>                ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.m, size, ctx-&gt;<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>);
+<a id='L190' name='L190'></a><em class='brace'>}</em>
+<a id='L191' name='L191'></a><em class='sharp'>#endif</em>
+<a id='L192' name='L192'></a>
+<a id='L193' name='L193'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L194' name='L194'></a><a href='../S/217.html#L291' title='Referred from 291 in examples/ecc-benchmark.c.'>bench_dup_hh</a> (<strong class='reserved'>void</strong> *<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>)
+<a id='L195' name='L195'></a><em class='brace'>{</em>
+<a id='L196' name='L196'></a>  <strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *ctx = (<strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *) <a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>;
+<a id='L197' name='L197'></a>  ctx-&gt;ecc-&gt;dup (ctx-&gt;ecc, ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, ctx-&gt;<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>, ctx-&gt;<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>);
+<a id='L198' name='L198'></a><em class='brace'>}</em>
+<a id='L199' name='L199'></a>
+<a id='L200' name='L200'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L201' name='L201'></a><a href='../S/217.html#L292' title='Referred from 292 in examples/ecc-benchmark.c.'>bench_add_hh</a> (<strong class='reserved'>void</strong> *<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>)
+<a id='L202' name='L202'></a><em class='brace'>{</em>
+<a id='L203' name='L203'></a>  <strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *ctx = (<strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *) <a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>;
+<a id='L204' name='L204'></a>  ctx-&gt;ecc-&gt;add_hh (ctx-&gt;ecc, ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, ctx-&gt;<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>, ctx-&gt;<a href='../D/1286.html' title='Multiple defined in 2 places.'>bp</a>, ctx-&gt;<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>);
+<a id='L205' name='L205'></a><em class='brace'>}</em>
+<a id='L206' name='L206'></a>
+<a id='L207' name='L207'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L208' name='L208'></a><a href='../S/217.html#L293' title='Referred from 293 in examples/ecc-benchmark.c.'>bench_add_hhh</a> (<strong class='reserved'>void</strong> *<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>)
+<a id='L209' name='L209'></a><em class='brace'>{</em>
+<a id='L210' name='L210'></a>  <strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *ctx = (<strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *) <a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>;
+<a id='L211' name='L211'></a>  ctx-&gt;ecc-&gt;add_hhh (ctx-&gt;ecc, ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, ctx-&gt;<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>, ctx-&gt;<a href='../D/1286.html' title='Multiple defined in 2 places.'>bp</a>, ctx-&gt;<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>);
+<a id='L212' name='L212'></a><em class='brace'>}</em>
+<a id='L213' name='L213'></a>
+<a id='L214' name='L214'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L215' name='L215'></a><a href='../S/217.html#L294' title='Referred from 294 in examples/ecc-benchmark.c.'>bench_mul_g</a> (<strong class='reserved'>void</strong> *<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>)
+<a id='L216' name='L216'></a><em class='brace'>{</em>
+<a id='L217' name='L217'></a>  <strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *ctx = (<strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *) <a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>;
+<a id='L218' name='L218'></a>  ctx-&gt;ecc-&gt;mul_g (ctx-&gt;ecc, ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, ctx-&gt;<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>, ctx-&gt;<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>);
+<a id='L219' name='L219'></a><em class='brace'>}</em>
+<a id='L220' name='L220'></a>
+<a id='L221' name='L221'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L222' name='L222'></a><a href='../S/217.html#L295' title='Referred from 295 in examples/ecc-benchmark.c.'>bench_mul_a</a> (<strong class='reserved'>void</strong> *<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>)
+<a id='L223' name='L223'></a><em class='brace'>{</em>
+<a id='L224' name='L224'></a>  <strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *ctx = (<strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> *) <a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>;
+<a id='L225' name='L225'></a>  ctx-&gt;ecc-&gt;mul (ctx-&gt;ecc, ctx-&gt;<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>, ctx-&gt;<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>, ctx-&gt;<a href='../D/1286.html' title='Multiple defined in 2 places.'>bp</a>, ctx-&gt;<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>);
+<a id='L226' name='L226'></a><em class='brace'>}</em>
+<a id='L227' name='L227'></a>
+<a id='L228' name='L228'></a><em class='sharp'>#if</em> NETTLE_USE_MINI_GMP
+<a id='L229' name='L229'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L230' name='L230'></a><a href='../R/1738.html' title='Multiple referred from 2 places.'>mpn_random</a> (<a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> *<a href='../D/2773.html' title='Multiple defined in 3 places.'>xp</a>, <a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> n)
+<a id='L231' name='L231'></a><em class='brace'>{</em>
+<a id='L232' name='L232'></a>  <a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L233' name='L233'></a>  <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 0; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &lt; n; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++)
+<a id='L234' name='L234'></a>    <a href='../D/2773.html' title='Multiple defined in 3 places.'>xp</a>[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>] = rand();
+<a id='L235' name='L235'></a><em class='brace'>}</em>
+<a id='L236' name='L236'></a><em class='sharp'>#endif</em>
+<a id='L237' name='L237'></a>
+<a id='L238' name='L238'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L239' name='L239'></a><a href='../S/217.html#L334' title='Referred from 334 in examples/ecc-benchmark.c.'>bench_curve</a> (<strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../D/1513.html' title='Multiple defined in 2 places.'>ecc_curve</a> *ecc)
+<a id='L240' name='L240'></a><em class='brace'>{</em>
+<a id='L241' name='L241'></a>  <strong class='reserved'>struct</strong> <a href='../S/217.html#L129' title='Defined at 129 in examples/ecc-benchmark.c.'>ecc_ctx</a> ctx;  
+<a id='L242' name='L242'></a>  <strong class='reserved'>double</strong> modp, <a href='../S/564.html#L46' title='Defined at 46 in gcmdata.c.'>reduce</a>, modq, modinv, <a href='../S/217.html#L102' title='Defined at 102 in examples/ecc-benchmark.c.'>modinv_gcd</a>, modinv_powm,
+<a id='L243' name='L243'></a>    dup_hh, add_hh, add_hhh,
+<a id='L244' name='L244'></a>    mul_g, mul_a;
+<a id='L245' name='L245'></a>
+<a id='L246' name='L246'></a>  <a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a> mask;
+<a id='L247' name='L247'></a>  <a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> itch;
+<a id='L248' name='L248'></a>
+<a id='L249' name='L249'></a>  ctx.ecc = ecc;
+<a id='L250' name='L250'></a>  ctx.<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a> = <a href='../D/2772.html' title='Multiple defined in 2 places.'>xalloc_limbs</a> (3*ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size);
+<a id='L251' name='L251'></a>  ctx.<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a> = <a href='../D/2772.html' title='Multiple defined in 2 places.'>xalloc_limbs</a> (3*ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size);
+<a id='L252' name='L252'></a>  ctx.<a href='../D/1286.html' title='Multiple defined in 2 places.'>bp</a> = <a href='../D/2772.html' title='Multiple defined in 2 places.'>xalloc_limbs</a> (3*ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size);
+<a id='L253' name='L253'></a>  itch = ecc-&gt;mul_itch;
+<a id='L254' name='L254'></a><em class='sharp'>#ifdef</em> mpn_sec_powm
+<a id='L255' name='L255'></a>  <em class='brace'>{</em>
+<a id='L256' name='L256'></a>    <a href='../S/71.html#L61' title='Defined at 61 in mini-gmp.h.'>mp_size_t</a> powm_itch
+<a id='L257' name='L257'></a>      = mpn_sec_powm_itch (ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size, ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.bit_size, ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size);
+<a id='L258' name='L258'></a>    <strong class='reserved'>if</strong> (powm_itch &gt; itch)
+<a id='L259' name='L259'></a>      itch = powm_itch;
+<a id='L260' name='L260'></a>  <em class='brace'>}</em>
+<a id='L261' name='L261'></a><em class='sharp'>#endif</em>
+<a id='L262' name='L262'></a>  ctx.<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a> = <a href='../D/2772.html' title='Multiple defined in 2 places.'>xalloc_limbs</a> (itch);
+<a id='L263' name='L263'></a>
+<a id='L264' name='L264'></a>  <a href='../S/217.html#L230' title='Defined at 230 in examples/ecc-benchmark.c.'>mpn_random</a> (ctx.<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>, 3*ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size);
+<a id='L265' name='L265'></a>  <a href='../S/217.html#L230' title='Defined at 230 in examples/ecc-benchmark.c.'>mpn_random</a> (ctx.<a href='../D/1286.html' title='Multiple defined in 2 places.'>bp</a>, 3*ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size);
+<a id='L266' name='L266'></a>
+<a id='L267' name='L267'></a>  mask = (~(<a href='../S/71.html#L60' title='Defined at 60 in mini-gmp.h.'>mp_limb_t</a>) 0) &gt;&gt; (ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size * GMP_NUMB_BITS - ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.bit_size);
+<a id='L268' name='L268'></a>  ctx.<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>[ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size - 1] &amp;= mask;
+<a id='L269' name='L269'></a>  ctx.<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>[2*ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size - 1] &amp;= mask;
+<a id='L270' name='L270'></a>  ctx.<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>[3*ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size - 1] &amp;= mask;
+<a id='L271' name='L271'></a>  ctx.<a href='../D/1286.html' title='Multiple defined in 2 places.'>bp</a>[ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size - 1] &amp;= mask;
+<a id='L272' name='L272'></a>  ctx.<a href='../D/1286.html' title='Multiple defined in 2 places.'>bp</a>[2*ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size - 1] &amp;= mask;
+<a id='L273' name='L273'></a>  ctx.<a href='../D/1286.html' title='Multiple defined in 2 places.'>bp</a>[3*ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.size - 1] &amp;= mask;
+<a id='L274' name='L274'></a>
+<a id='L275' name='L275'></a>  modp = <a href='../D/2681.html' title='Multiple defined in 3 places.'>time_function</a> (<a href='../S/217.html#L138' title='Defined at 138 in examples/ecc-benchmark.c.'>bench_modp</a>, &amp;ctx);
+<a id='L276' name='L276'></a>  <a href='../S/564.html#L46' title='Defined at 46 in gcmdata.c.'>reduce</a> = <a href='../D/2681.html' title='Multiple defined in 3 places.'>time_function</a> (<a href='../S/217.html#L146' title='Defined at 146 in examples/ecc-benchmark.c.'>bench_reduce</a>, &amp;ctx);
+<a id='L277' name='L277'></a>
+<a id='L278' name='L278'></a>  modq = <a href='../D/2681.html' title='Multiple defined in 3 places.'>time_function</a> (<a href='../S/217.html#L154' title='Defined at 154 in examples/ecc-benchmark.c.'>bench_modq</a>, &amp;ctx);
+<a id='L279' name='L279'></a>
+<a id='L280' name='L280'></a>  modinv = <a href='../D/2681.html' title='Multiple defined in 3 places.'>time_function</a> (<a href='../S/217.html#L162' title='Defined at 162 in examples/ecc-benchmark.c.'>bench_modinv</a>, &amp;ctx);
+<a id='L281' name='L281'></a><em class='sharp'>#if</em> !NETTLE_USE_MINI_GMP
+<a id='L282' name='L282'></a>  <a href='../S/217.html#L102' title='Defined at 102 in examples/ecc-benchmark.c.'>modinv_gcd</a> = <a href='../D/2681.html' title='Multiple defined in 3 places.'>time_function</a> (<a href='../S/217.html#L170' title='Defined at 170 in examples/ecc-benchmark.c.'>bench_modinv_gcd</a>, &amp;ctx);
+<a id='L283' name='L283'></a><em class='sharp'>#else</em>
+<a id='L284' name='L284'></a>  <a href='../S/217.html#L102' title='Defined at 102 in examples/ecc-benchmark.c.'>modinv_gcd</a> = 0;
+<a id='L285' name='L285'></a><em class='sharp'>#endif</em>
+<a id='L286' name='L286'></a><em class='sharp'>#ifdef</em> mpn_sec_powm
+<a id='L287' name='L287'></a>  modinv_powm = <a href='../D/2681.html' title='Multiple defined in 3 places.'>time_function</a> (<a href='../S/217.html#L180' title='Defined at 180 in examples/ecc-benchmark.c.'>bench_modinv_powm</a>, &amp;ctx);
+<a id='L288' name='L288'></a><em class='sharp'>#else</em>
+<a id='L289' name='L289'></a>  modinv_powm = 0;
+<a id='L290' name='L290'></a><em class='sharp'>#endif</em>
+<a id='L291' name='L291'></a>  dup_hh = <a href='../D/2681.html' title='Multiple defined in 3 places.'>time_function</a> (<a href='../S/217.html#L194' title='Defined at 194 in examples/ecc-benchmark.c.'>bench_dup_hh</a>, &amp;ctx);
+<a id='L292' name='L292'></a>  add_hh = <a href='../D/2681.html' title='Multiple defined in 3 places.'>time_function</a> (<a href='../S/217.html#L201' title='Defined at 201 in examples/ecc-benchmark.c.'>bench_add_hh</a>, &amp;ctx);
+<a id='L293' name='L293'></a>  add_hhh = <a href='../D/2681.html' title='Multiple defined in 3 places.'>time_function</a> (<a href='../S/217.html#L208' title='Defined at 208 in examples/ecc-benchmark.c.'>bench_add_hhh</a>, &amp;ctx);
+<a id='L294' name='L294'></a>  mul_g = <a href='../D/2681.html' title='Multiple defined in 3 places.'>time_function</a> (<a href='../S/217.html#L215' title='Defined at 215 in examples/ecc-benchmark.c.'>bench_mul_g</a>, &amp;ctx);
+<a id='L295' name='L295'></a>  mul_a = <a href='../D/2681.html' title='Multiple defined in 3 places.'>time_function</a> (<a href='../S/217.html#L222' title='Defined at 222 in examples/ecc-benchmark.c.'>bench_mul_a</a>, &amp;ctx);
+<a id='L296' name='L296'></a>
+<a id='L297' name='L297'></a>  free (ctx.<a href='../D/2329.html' title='Multiple defined in 6 places.'>rp</a>);
+<a id='L298' name='L298'></a>  free (ctx.<a href='../D/1133.html' title='Multiple defined in 2 places.'>ap</a>);
+<a id='L299' name='L299'></a>  free (ctx.<a href='../D/1286.html' title='Multiple defined in 2 places.'>bp</a>);
+<a id='L300' name='L300'></a>  free (ctx.<a href='../D/2691.html' title='Multiple defined in 34 places.'>tp</a>);
+<a id='L301' name='L301'></a>
+<a id='L302' name='L302'></a>  printf ("%4d %6.4f %6.4f %6.4f %6.2f %6.3f %6.2f %6.3f %6.3f %6.3f %6.1f %6.1f\n",
+<a id='L303' name='L303'></a>          ecc-&gt;<a href='../S/697.html#L70' title='Defined at 70 in curve25519-mul-g.c.'>p</a>.bit_size, 1e6 * modp, 1e6 * <a href='../S/564.html#L46' title='Defined at 46 in gcmdata.c.'>reduce</a>, 1e6 * modq,
+<a id='L304' name='L304'></a>          1e6 * modinv, 1e6 * <a href='../S/217.html#L102' title='Defined at 102 in examples/ecc-benchmark.c.'>modinv_gcd</a>, 1e6 * modinv_powm,
+<a id='L305' name='L305'></a>          1e6 * dup_hh, 1e6 * add_hh, 1e6 * add_hhh,
+<a id='L306' name='L306'></a>          1e6 * mul_g, 1e6 * mul_a);
+<a id='L307' name='L307'></a><em class='brace'>}</em>
+<a id='L308' name='L308'></a>
+<a id='L309' name='L309'></a><strong class='reserved'>const</strong> <strong class='reserved'>struct</strong> <a href='../D/1513.html' title='Multiple defined in 2 places.'>ecc_curve</a> * <strong class='reserved'>const</strong> curves[] = <em class='brace'>{</em>
+<a id='L310' name='L310'></a>  &amp;_nettle_secp_192r1,
+<a id='L311' name='L311'></a>  &amp;_nettle_secp_224r1,
+<a id='L312' name='L312'></a>  &amp;_nettle_curve25519,
+<a id='L313' name='L313'></a>  &amp;_nettle_secp_256r1,
+<a id='L314' name='L314'></a>  &amp;_nettle_secp_384r1,
+<a id='L315' name='L315'></a>  &amp;_nettle_curve448,
+<a id='L316' name='L316'></a>  &amp;_nettle_secp_521r1,
+<a id='L317' name='L317'></a>  &amp;_nettle_gost_gc256b,
+<a id='L318' name='L318'></a>  &amp;_nettle_gost_gc512a,
+<a id='L319' name='L319'></a><em class='brace'>}</em>;
+<a id='L320' name='L320'></a>
+<a id='L321' name='L321'></a><em class='sharp'>#define</em> <a href='../R/1984.html' title='Multiple referred from 2 places.'>numberof</a>(<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>)  (<strong class='reserved'>sizeof</strong> (<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>) / <strong class='reserved'>sizeof</strong> ((<a href='../D/2765.html' title='Multiple defined in 4 places.'>x</a>)[0]))
+<a id='L322' name='L322'></a>
+<a id='L323' name='L323'></a><strong class='reserved'>int</strong>
+<a id='L324' name='L324'></a>main (<strong class='reserved'>int</strong> argc UNUSED, <strong class='reserved'>char</strong> **argv UNUSED)
+<a id='L325' name='L325'></a><em class='brace'>{</em>
+<a id='L326' name='L326'></a>  <strong class='reserved'>unsigned</strong> <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>;
+<a id='L327' name='L327'></a>
+<a id='L328' name='L328'></a>  <a href='../S/207.html#L103' title='Defined at 103 in examples/timing.c.'>time_init</a>();
+<a id='L329' name='L329'></a>  printf ("%4s %6s %6s %6s %6s %6s %6s %6s %6s %6s %6s %6s (us)\n",
+<a id='L330' name='L330'></a>          "size", "modp", "reduce", "modq", "modinv", "mi_gcd", "mi_pow",
+<a id='L331' name='L331'></a>          "dup_hh", "add_hh", "ad_hhh",
+<a id='L332' name='L332'></a>          "mul_g", "mul_a");
+<a id='L333' name='L333'></a>  <strong class='reserved'>for</strong> (<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> = 0; <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a> &lt; <a href='../D/2187.html' title='Multiple defined in 2 places.'>numberof</a> (curves); <a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>++)
+<a id='L334' name='L334'></a>    <a href='../S/217.html#L239' title='Defined at 239 in examples/ecc-benchmark.c.'>bench_curve</a> (curves[<a href='../D/1832.html' title='Multiple defined in 2 places.'>i</a>]);
+<a id='L335' name='L335'></a>
+<a id='L336' name='L336'></a>  <strong class='reserved'>return</strong> EXIT_SUCCESS;
+<a id='L337' name='L337'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L56'>[^]</a><a href='#L324'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

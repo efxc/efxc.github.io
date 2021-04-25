@@ -1,0 +1,547 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/accelerated/cryptodev.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6465.html'>accelerated</a>/cryptodev.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L68'>[^]</a><a href='#L503'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L68' title='Defined at 68.'>cryptodev_cipher_init</a></li>
+<li><a href='#L90' title='Defined at 90.'>cryptodev_cipher_setkey</a></li>
+<li><a href='#L108' title='Defined at 108.'>cryptodev_setiv</a></li>
+<li><a href='#L121' title='Defined at 121.'>cryptodev_encrypt</a></li>
+<li><a href='#L140' title='Defined at 140.'>cryptodev_decrypt</a></li>
+<li><a href='#L159' title='Defined at 159.'>cryptodev_deinit</a></li>
+<li><a href='#L176' title='Defined at 176.'>register_crypto</a></li>
+<li><a href='#L235' title='Defined at 235.'>_gnutls_cryptodev_init</a></li>
+<li><a href='#L283' title='Defined at 283.'>_gnutls_cryptodev_deinit</a></li>
+<li><a href='#L304' title='Defined at 304.'>cryptodev_mac_fast</a></li>
+<li><a href='#L364' title='Defined at 364.'>cryptodev_digest_fast</a></li>
+<li><a href='#L402' title='Defined at 402.'>register_mac_digest</a></li>
+<li><a href='#L490' title='Defined at 490.'>register_mac_digest</a></li>
+<li><a href='#L498' title='Defined at 498.'>_gnutls_cryptodev_init</a></li>
+<li><a href='#L503' title='Defined at 503.'>_gnutls_cryptodev_deinit</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2009-2010, 2012 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> *</em>
+<a id='L4' name='L4'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L5' name='L5'></a><em class='comment'> *</em>
+<a id='L6' name='L6'></a><em class='comment'> * This file is part of GnuTLS.</em>
+<a id='L7' name='L7'></a><em class='comment'> *</em>
+<a id='L8' name='L8'></a><em class='comment'> * The GnuTLS is free software; you can redistribute it and/or</em>
+<a id='L9' name='L9'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L10' name='L10'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L11' name='L11'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L12' name='L12'></a><em class='comment'> *</em>
+<a id='L13' name='L13'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L14' name='L14'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L15' name='L15'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L16' name='L16'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L17' name='L17'></a><em class='comment'> *</em>
+<a id='L18' name='L18'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L19' name='L19'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;.</em>
+<a id='L20' name='L20'></a><em class='comment'> *</em>
+<a id='L21' name='L21'></a><em class='comment'> */</em>
+<a id='L22' name='L22'></a>
+<a id='L23' name='L23'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L24' name='L24'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L25' name='L25'></a><em class='sharp'>#include</em> &lt;<a href='../I/579.html'>gnutls/crypto.h</a>&gt;
+<a id='L26' name='L26'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> &lt;<a href='5736.html'>accelerated/cryptodev.h</a>&gt;
+<a id='L28' name='L28'></a>
+<a id='L29' name='L29'></a><em class='sharp'>#ifdef</em> ENABLE_CRYPTODEV
+<a id='L30' name='L30'></a>
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;assert.h&gt;
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> &lt;fcntl.h&gt;
+<a id='L33' name='L33'></a><em class='sharp'>#include</em> &lt;sys/ioctl.h&gt;
+<a id='L34' name='L34'></a><em class='sharp'>#include</em> &lt;<a href='5736.html'>crypto/cryptodev.h</a>&gt;
+<a id='L35' name='L35'></a>
+<a id='L36' name='L36'></a><em class='sharp'>#ifndef</em> <a href='../D/623.html' title='Multiple defined in 2 places.'>CRYPTO_CIPHER_MAX_KEY_LEN</a>
+<a id='L37' name='L37'></a><em class='sharp'>#define</em> <a href='../R/459.html' title='Multiple referred from 5 places.'>CRYPTO_CIPHER_MAX_KEY_LEN</a> 64
+<a id='L38' name='L38'></a><em class='sharp'>#endif</em>
+<a id='L39' name='L39'></a>
+<a id='L40' name='L40'></a><em class='sharp'>#ifndef</em> <a href='../D/827.html' title='Multiple defined in 2 places.'>EALG_MAX_BLOCK_LEN</a>
+<a id='L41' name='L41'></a><em class='sharp'>#define</em> <a href='../R/653.html' title='Multiple referred from 4 places.'>EALG_MAX_BLOCK_LEN</a> 16
+<a id='L42' name='L42'></a><em class='sharp'>#endif</em>
+<a id='L43' name='L43'></a>
+<a id='L44' name='L44'></a><strong class='reserved'>int</strong> _gnutls_cryptodev_fd = -1;
+<a id='L45' name='L45'></a>
+<a id='L46' name='L46'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../D/11097.html' title='Multiple defined in 2 places.'>register_mac_digest</a>(<strong class='reserved'>int</strong> cfd);
+<a id='L47' name='L47'></a>
+<a id='L48' name='L48'></a><strong class='reserved'>struct</strong> <a href='../R/6521.html' title='Multiple referred from 9 places.'>cryptodev_ctx</a> <em class='brace'>{</em>
+<a id='L49' name='L49'></a>        <strong class='reserved'>struct</strong> session_op sess;
+<a id='L50' name='L50'></a>        <strong class='reserved'>struct</strong> crypt_op cryp;
+<a id='L51' name='L51'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> iv[<a href='../D/827.html' title='Multiple defined in 2 places.'>EALG_MAX_BLOCK_LEN</a>];
+<a id='L52' name='L52'></a>
+<a id='L53' name='L53'></a>        <strong class='reserved'>int</strong> cfd;
+<a id='L54' name='L54'></a><em class='brace'>}</em>;
+<a id='L55' name='L55'></a>
+<a id='L56' name='L56'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <strong class='reserved'>int</strong> gnutls_cipher_map[] = <em class='brace'>{</em>
+<a id='L57' name='L57'></a>        [GNUTLS_CIPHER_AES_128_CBC] = CRYPTO_AES_CBC,
+<a id='L58' name='L58'></a>        [GNUTLS_CIPHER_AES_192_CBC] = CRYPTO_AES_CBC,
+<a id='L59' name='L59'></a>        [GNUTLS_CIPHER_AES_256_CBC] = CRYPTO_AES_CBC,
+<a id='L60' name='L60'></a>        [GNUTLS_CIPHER_3DES_CBC] = CRYPTO_3DES_CBC,
+<a id='L61' name='L61'></a>        [GNUTLS_CIPHER_CAMELLIA_128_CBC] = CRYPTO_CAMELLIA_CBC,
+<a id='L62' name='L62'></a>        [GNUTLS_CIPHER_CAMELLIA_192_CBC] = CRYPTO_CAMELLIA_CBC,
+<a id='L63' name='L63'></a>        [GNUTLS_CIPHER_CAMELLIA_256_CBC] = CRYPTO_CAMELLIA_CBC,
+<a id='L64' name='L64'></a>        [GNUTLS_CIPHER_DES_CBC] = CRYPTO_DES_CBC,
+<a id='L65' name='L65'></a><em class='brace'>}</em>;
+<a id='L66' name='L66'></a>
+<a id='L67' name='L67'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L68' name='L68'></a><a href='../S/5739.html#L168' title='Referred from 168 in lib/accelerated/cryptodev.c.'>cryptodev_cipher_init</a>(gnutls_cipher_algorithm_t algorithm, <strong class='reserved'>void</strong> **_ctx,
+<a id='L69' name='L69'></a>                      <strong class='reserved'>int</strong> enc)
+<a id='L70' name='L70'></a><em class='brace'>{</em>
+<a id='L71' name='L71'></a>        <strong class='reserved'>struct</strong> <a href='../S/5739.html#L48' title='Defined at 48 in lib/accelerated/cryptodev.c.'>cryptodev_ctx</a> *ctx;
+<a id='L72' name='L72'></a>        <strong class='reserved'>int</strong> cipher = gnutls_cipher_map[algorithm];
+<a id='L73' name='L73'></a>
+<a id='L74' name='L74'></a>        *_ctx = gnutls_calloc(1, <strong class='reserved'>sizeof</strong>(<strong class='reserved'>struct</strong> <a href='../S/5739.html#L48' title='Defined at 48 in lib/accelerated/cryptodev.c.'>cryptodev_ctx</a>));
+<a id='L75' name='L75'></a>        <strong class='reserved'>if</strong> (*_ctx == <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>) <em class='brace'>{</em>
+<a id='L76' name='L76'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L77' name='L77'></a>                <strong class='reserved'>return</strong> GNUTLS_E_MEMORY_ERROR;
+<a id='L78' name='L78'></a>        <em class='brace'>}</em>
+<a id='L79' name='L79'></a>
+<a id='L80' name='L80'></a>        ctx = *_ctx;
+<a id='L81' name='L81'></a>
+<a id='L82' name='L82'></a>        ctx-&gt;cfd = _gnutls_cryptodev_fd;
+<a id='L83' name='L83'></a>        ctx-&gt;sess.cipher = cipher;
+<a id='L84' name='L84'></a>        ctx-&gt;cryp.iv = ctx-&gt;iv;
+<a id='L85' name='L85'></a>
+<a id='L86' name='L86'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L87' name='L87'></a><em class='brace'>}</em>
+<a id='L88' name='L88'></a>
+<a id='L89' name='L89'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L90' name='L90'></a><a href='../S/5739.html#L169' title='Referred from 169 in lib/accelerated/cryptodev.c.'>cryptodev_cipher_setkey</a>(<strong class='reserved'>void</strong> *_ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *key, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> keysize)
+<a id='L91' name='L91'></a><em class='brace'>{</em>
+<a id='L92' name='L92'></a>        <strong class='reserved'>struct</strong> <a href='../S/5739.html#L48' title='Defined at 48 in lib/accelerated/cryptodev.c.'>cryptodev_ctx</a> *ctx = _ctx;
+<a id='L93' name='L93'></a>
+<a id='L94' name='L94'></a>        <a href='../D/478.html' title='Multiple defined in 4 places.'>CHECK_AES_KEYSIZE</a>(keysize);
+<a id='L95' name='L95'></a>
+<a id='L96' name='L96'></a>        ctx-&gt;sess.keylen = keysize;
+<a id='L97' name='L97'></a>        ctx-&gt;sess.key = (<strong class='reserved'>void</strong> *) key;
+<a id='L98' name='L98'></a>
+<a id='L99' name='L99'></a>        <strong class='reserved'>if</strong> (<a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(ctx-&gt;cfd, CIOCGSESSION, &amp;ctx-&gt;sess)) <em class='brace'>{</em>
+<a id='L100' name='L100'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L101' name='L101'></a>                <strong class='reserved'>return</strong> GNUTLS_E_CRYPTODEV_IOCTL_ERROR;
+<a id='L102' name='L102'></a>        <em class='brace'>}</em>
+<a id='L103' name='L103'></a>        ctx-&gt;cryp.ses = ctx-&gt;sess.ses;
+<a id='L104' name='L104'></a>
+<a id='L105' name='L105'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L106' name='L106'></a><em class='brace'>}</em>
+<a id='L107' name='L107'></a>
+<a id='L108' name='L108'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5739.html#L170' title='Referred from 170 in lib/accelerated/cryptodev.c.'>cryptodev_setiv</a>(<strong class='reserved'>void</strong> *_ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *iv, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> iv_size)
+<a id='L109' name='L109'></a><em class='brace'>{</em>
+<a id='L110' name='L110'></a>        <strong class='reserved'>struct</strong> <a href='../S/5739.html#L48' title='Defined at 48 in lib/accelerated/cryptodev.c.'>cryptodev_ctx</a> *ctx = _ctx;
+<a id='L111' name='L111'></a>
+<a id='L112' name='L112'></a>        <strong class='reserved'>if</strong> (iv_size &gt; <a href='../D/827.html' title='Multiple defined in 2 places.'>EALG_MAX_BLOCK_LEN</a>)
+<a id='L113' name='L113'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_INVALID_REQUEST);
+<a id='L114' name='L114'></a>
+<a id='L115' name='L115'></a>        memcpy(ctx-&gt;iv, iv, iv_size);
+<a id='L116' name='L116'></a>
+<a id='L117' name='L117'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L118' name='L118'></a><em class='brace'>}</em>
+<a id='L119' name='L119'></a>
+<a id='L120' name='L120'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L121' name='L121'></a><a href='../S/5739.html#L171' title='Referred from 171 in lib/accelerated/cryptodev.c.'>cryptodev_encrypt</a>(<strong class='reserved'>void</strong> *_ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *src, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> src_size,
+<a id='L122' name='L122'></a>                  <strong class='reserved'>void</strong> *dst, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> dst_size)
+<a id='L123' name='L123'></a><em class='brace'>{</em>
+<a id='L124' name='L124'></a>        <strong class='reserved'>struct</strong> <a href='../S/5739.html#L48' title='Defined at 48 in lib/accelerated/cryptodev.c.'>cryptodev_ctx</a> *ctx = _ctx;
+<a id='L125' name='L125'></a>        ctx-&gt;cryp.len = src_size;
+<a id='L126' name='L126'></a>        ctx-&gt;cryp.src = (<strong class='reserved'>void</strong> *) src;
+<a id='L127' name='L127'></a>        ctx-&gt;cryp.dst = dst;
+<a id='L128' name='L128'></a>        ctx-&gt;cryp.op = COP_ENCRYPT;
+<a id='L129' name='L129'></a>        ctx-&gt;cryp.flags = COP_FLAG_WRITE_IV;
+<a id='L130' name='L130'></a>
+<a id='L131' name='L131'></a>        <strong class='reserved'>if</strong> (<a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(ctx-&gt;cfd, CIOCCRYPT, &amp;ctx-&gt;cryp)) <em class='brace'>{</em>
+<a id='L132' name='L132'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L133' name='L133'></a>                <strong class='reserved'>return</strong> GNUTLS_E_CRYPTODEV_IOCTL_ERROR;
+<a id='L134' name='L134'></a>        <em class='brace'>}</em>
+<a id='L135' name='L135'></a>
+<a id='L136' name='L136'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L137' name='L137'></a><em class='brace'>}</em>
+<a id='L138' name='L138'></a>
+<a id='L139' name='L139'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L140' name='L140'></a><a href='../S/5739.html#L172' title='Referred from 172 in lib/accelerated/cryptodev.c.'>cryptodev_decrypt</a>(<strong class='reserved'>void</strong> *_ctx, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *src, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> src_size,
+<a id='L141' name='L141'></a>                  <strong class='reserved'>void</strong> *dst, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> dst_size)
+<a id='L142' name='L142'></a><em class='brace'>{</em>
+<a id='L143' name='L143'></a>        <strong class='reserved'>struct</strong> <a href='../S/5739.html#L48' title='Defined at 48 in lib/accelerated/cryptodev.c.'>cryptodev_ctx</a> *ctx = _ctx;
+<a id='L144' name='L144'></a>
+<a id='L145' name='L145'></a>        ctx-&gt;cryp.len = src_size;
+<a id='L146' name='L146'></a>        ctx-&gt;cryp.src = (<strong class='reserved'>void</strong> *) src;
+<a id='L147' name='L147'></a>        ctx-&gt;cryp.dst = dst;
+<a id='L148' name='L148'></a>        ctx-&gt;cryp.op = COP_DECRYPT;
+<a id='L149' name='L149'></a>        ctx-&gt;cryp.flags = COP_FLAG_WRITE_IV;
+<a id='L150' name='L150'></a>
+<a id='L151' name='L151'></a>        <strong class='reserved'>if</strong> (<a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(ctx-&gt;cfd, CIOCCRYPT, &amp;ctx-&gt;cryp)) <em class='brace'>{</em>
+<a id='L152' name='L152'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L153' name='L153'></a>                <strong class='reserved'>return</strong> GNUTLS_E_CRYPTODEV_IOCTL_ERROR;
+<a id='L154' name='L154'></a>        <em class='brace'>}</em>
+<a id='L155' name='L155'></a>
+<a id='L156' name='L156'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L157' name='L157'></a><em class='brace'>}</em>
+<a id='L158' name='L158'></a>
+<a id='L159' name='L159'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong> <a href='../R/6523.html' title='Multiple referred from 2 places.'>cryptodev_deinit</a>(<strong class='reserved'>void</strong> *_ctx)
+<a id='L160' name='L160'></a><em class='brace'>{</em>
+<a id='L161' name='L161'></a>        <strong class='reserved'>struct</strong> <a href='../S/5739.html#L48' title='Defined at 48 in lib/accelerated/cryptodev.c.'>cryptodev_ctx</a> *ctx = _ctx;
+<a id='L162' name='L162'></a>
+<a id='L163' name='L163'></a>        <a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(ctx-&gt;cfd, CIOCFSESSION, &amp;ctx-&gt;sess.ses);
+<a id='L164' name='L164'></a>        <a href='../S/5460.html#L110' title='Defined at 110 in lib/mem.c.'>gnutls_free</a>(ctx);
+<a id='L165' name='L165'></a><em class='brace'>}</em>
+<a id='L166' name='L166'></a>
+<a id='L167' name='L167'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <a href='../S/5825.html#L48' title='Defined at 48 in lib/crypto-backend.h.'>gnutls_crypto_cipher_st</a> cipher_struct = <em class='brace'>{</em>
+<a id='L168' name='L168'></a>        .<a href='../S/4268.html#L34' title='Defined at 34 in fuzz/fuzzer.h.'>init</a> = <a href='../S/5739.html#L68' title='Defined at 68 in lib/accelerated/cryptodev.c.'>cryptodev_cipher_init</a>,
+<a id='L169' name='L169'></a>        .setkey = <a href='../S/5739.html#L90' title='Defined at 90 in lib/accelerated/cryptodev.c.'>cryptodev_cipher_setkey</a>,
+<a id='L170' name='L170'></a>        .setiv = <a href='../S/5739.html#L108' title='Defined at 108 in lib/accelerated/cryptodev.c.'>cryptodev_setiv</a>,
+<a id='L171' name='L171'></a>        .encrypt = <a href='../S/5739.html#L121' title='Defined at 121 in lib/accelerated/cryptodev.c.'>cryptodev_encrypt</a>,
+<a id='L172' name='L172'></a>        .decrypt = <a href='../S/5739.html#L140' title='Defined at 140 in lib/accelerated/cryptodev.c.'>cryptodev_decrypt</a>,
+<a id='L173' name='L173'></a>        .<a href='../S/4268.html#L39' title='Defined at 39 in fuzz/fuzzer.h.'>deinit</a> = <a href='../S/5739.html#L159' title='Defined at 159 in lib/accelerated/cryptodev.c.'>cryptodev_deinit</a>,
+<a id='L174' name='L174'></a><em class='brace'>}</em>;
+<a id='L175' name='L175'></a>
+<a id='L176' name='L176'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5739.html#L265' title='Referred from 265 in lib/accelerated/cryptodev.c.'>register_crypto</a>(<strong class='reserved'>int</strong> cfd)
+<a id='L177' name='L177'></a><em class='brace'>{</em>
+<a id='L178' name='L178'></a>        <strong class='reserved'>struct</strong> session_op sess;
+<a id='L179' name='L179'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> fake_key[<a href='../D/623.html' title='Multiple defined in 2 places.'>CRYPTO_CIPHER_MAX_KEY_LEN</a>];
+<a id='L180' name='L180'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> i;
+<a id='L181' name='L181'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L182' name='L182'></a><em class='sharp'>#ifdef</em> CIOCGSESSINFO
+<a id='L183' name='L183'></a>        <strong class='reserved'>struct</strong> session_info_op siop;
+<a id='L184' name='L184'></a><em class='sharp'>#endif</em>
+<a id='L185' name='L185'></a>
+<a id='L186' name='L186'></a>        memset(&amp;sess, 0, <strong class='reserved'>sizeof</strong>(sess));
+<a id='L187' name='L187'></a>
+<a id='L188' name='L188'></a>        <strong class='reserved'>for</strong> (i = 0;
+<a id='L189' name='L189'></a>             i &lt; <strong class='reserved'>sizeof</strong>(gnutls_cipher_map) / <strong class='reserved'>sizeof</strong>(gnutls_cipher_map[0]);
+<a id='L190' name='L190'></a>             i++) <em class='brace'>{</em>
+<a id='L191' name='L191'></a>                <strong class='reserved'>if</strong> (gnutls_cipher_map[i] == 0)
+<a id='L192' name='L192'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L193' name='L193'></a>
+<a id='L194' name='L194'></a>                <em class='comment'>/* test if a cipher is supported and if yes register it */</em>
+<a id='L195' name='L195'></a>                sess.cipher = gnutls_cipher_map[i];
+<a id='L196' name='L196'></a>                sess.keylen = <a href='../S/5256.html#L432' title='Defined at 432 in lib/algorithms/ciphers.c.'>gnutls_cipher_get_key_size</a>(i);
+<a id='L197' name='L197'></a>                sess.key = fake_key;
+<a id='L198' name='L198'></a>
+<a id='L199' name='L199'></a>                <strong class='reserved'>if</strong> (<a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(cfd, CIOCGSESSION, &amp;sess)) <em class='brace'>{</em>
+<a id='L200' name='L200'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L201' name='L201'></a>                <em class='brace'>}</em>
+<a id='L202' name='L202'></a><em class='sharp'>#ifdef</em> CIOCGSESSINFO
+<a id='L203' name='L203'></a>                memset(&amp;siop, 0, <strong class='reserved'>sizeof</strong>(siop));
+<a id='L204' name='L204'></a>
+<a id='L205' name='L205'></a>                siop.ses = sess.ses;    <em class='comment'>/* do not register ciphers that are not hw accelerated */</em>
+<a id='L206' name='L206'></a>                <strong class='reserved'>if</strong> (<a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(cfd, CIOCGSESSINFO, &amp;siop) == 0) <em class='brace'>{</em>
+<a id='L207' name='L207'></a>                        <strong class='reserved'>if</strong> (!(siop.flags &amp; SIOP_FLAG_KERNEL_DRIVER_ONLY)) <em class='brace'>{</em>
+<a id='L208' name='L208'></a>                                <a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(cfd, CIOCFSESSION, &amp;sess.ses);
+<a id='L209' name='L209'></a>                                <strong class='reserved'>continue</strong>;
+<a id='L210' name='L210'></a>                        <em class='brace'>}</em>
+<a id='L211' name='L211'></a>                <em class='brace'>}</em>
+<a id='L212' name='L212'></a><em class='sharp'>#endif</em>
+<a id='L213' name='L213'></a>
+<a id='L214' name='L214'></a>                <a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(cfd, CIOCFSESSION, &amp;sess.ses);
+<a id='L215' name='L215'></a>
+<a id='L216' name='L216'></a>                <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>("/dev/crypto: registering: %s\n",
+<a id='L217' name='L217'></a>                                  <a href='../S/5256.html#L449' title='Defined at 449 in lib/algorithms/ciphers.c.'>gnutls_cipher_get_name</a>(i));
+<a id='L218' name='L218'></a>                ret =
+<a id='L219' name='L219'></a>                    <a href='../S/5244.html#L175' title='Defined at 175 in lib/crypto-backend.c.'>gnutls_crypto_single_cipher_register</a>(i, 90,
+<a id='L220' name='L220'></a>                                                         &amp;cipher_struct, 0);
+<a id='L221' name='L221'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L222' name='L222'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L223' name='L223'></a>                        <strong class='reserved'>return</strong> ret;
+<a id='L224' name='L224'></a>                <em class='brace'>}</em>
+<a id='L225' name='L225'></a>
+<a id='L226' name='L226'></a>        <em class='brace'>}</em>
+<a id='L227' name='L227'></a>
+<a id='L228' name='L228'></a><em class='sharp'>#ifdef</em> CIOCAUTHCRYPT
+<a id='L229' name='L229'></a>        <strong class='reserved'>return</strong> <a href='../S/5735.html#L239' title='Defined at 239 in lib/accelerated/cryptodev-gcm.c.'>_cryptodev_register_gcm_crypto</a>(cfd);
+<a id='L230' name='L230'></a><em class='sharp'>#else</em>
+<a id='L231' name='L231'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L232' name='L232'></a><em class='sharp'>#endif</em>
+<a id='L233' name='L233'></a><em class='brace'>}</em>
+<a id='L234' name='L234'></a>
+<a id='L235' name='L235'></a><strong class='reserved'>int</strong> <a href='../R/4955.html' title='Multiple referred from 2 places.'>_gnutls_cryptodev_init</a>(<strong class='reserved'>void</strong>)
+<a id='L236' name='L236'></a><em class='brace'>{</em>
+<a id='L237' name='L237'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L238' name='L238'></a>
+<a id='L239' name='L239'></a>        <em class='comment'>/* Open the crypto device */</em>
+<a id='L240' name='L240'></a>        _gnutls_cryptodev_fd = <a href='../D/10450.html' title='Multiple defined in 9 places.'>open</a>("/dev/crypto", <a href='../S/4212.html#L101' title='Defined at 101 in src/libopts/compat/windows-config.h.'>O_RDWR</a>, 0);
+<a id='L241' name='L241'></a>        <strong class='reserved'>if</strong> (_gnutls_cryptodev_fd &lt; 0) <em class='brace'>{</em>
+<a id='L242' name='L242'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L243' name='L243'></a>                <strong class='reserved'>return</strong> GNUTLS_E_CRYPTODEV_DEVICE_ERROR;
+<a id='L244' name='L244'></a>        <em class='brace'>}</em>
+<a id='L245' name='L245'></a><em class='sharp'>#ifndef</em> CRIOGET_NOT_NEEDED
+<a id='L246' name='L246'></a>        <em class='brace'>{</em>
+<a id='L247' name='L247'></a>                <strong class='reserved'>int</strong> cfd = -1;
+<a id='L248' name='L248'></a>                <em class='comment'>/* Clone file descriptor */</em>
+<a id='L249' name='L249'></a>                <strong class='reserved'>if</strong> (<a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(_gnutls_cryptodev_fd, CRIOGET, &amp;cfd)) <em class='brace'>{</em>
+<a id='L250' name='L250'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L251' name='L251'></a>                        <strong class='reserved'>return</strong> GNUTLS_E_CRYPTODEV_IOCTL_ERROR;
+<a id='L252' name='L252'></a>                <em class='brace'>}</em>
+<a id='L253' name='L253'></a>
+<a id='L254' name='L254'></a>                <em class='comment'>/* Set close-on-exec (not really needed here) */</em>
+<a id='L255' name='L255'></a>                <strong class='reserved'>if</strong> (<a href='../D/7815.html' title='Multiple defined in 10 places.'>fcntl</a>(cfd, F_SETFD, 1) == -1) <em class='brace'>{</em>
+<a id='L256' name='L256'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L257' name='L257'></a>                        <strong class='reserved'>return</strong> GNUTLS_E_CRYPTODEV_IOCTL_ERROR;
+<a id='L258' name='L258'></a>                <em class='brace'>}</em>
+<a id='L259' name='L259'></a>
+<a id='L260' name='L260'></a>                <a href='../D/7245.html' title='Multiple defined in 25 places.'>close</a>(_gnutls_cryptodev_fd);
+<a id='L261' name='L261'></a>                _gnutls_cryptodev_fd = cfd;
+<a id='L262' name='L262'></a>        <em class='brace'>}</em>
+<a id='L263' name='L263'></a><em class='sharp'>#endif</em>
+<a id='L264' name='L264'></a>
+<a id='L265' name='L265'></a>        ret = <a href='../S/5739.html#L176' title='Defined at 176 in lib/accelerated/cryptodev.c.'>register_crypto</a>(_gnutls_cryptodev_fd);
+<a id='L266' name='L266'></a>        <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L267' name='L267'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L268' name='L268'></a>
+<a id='L269' name='L269'></a>        <strong class='reserved'>if</strong> (ret &gt;= 0) <em class='brace'>{</em>
+<a id='L270' name='L270'></a>                ret = <a href='../D/11097.html' title='Multiple defined in 2 places.'>register_mac_digest</a>(_gnutls_cryptodev_fd);
+<a id='L271' name='L271'></a>                <strong class='reserved'>if</strong> (ret &lt; 0)
+<a id='L272' name='L272'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L273' name='L273'></a>        <em class='brace'>}</em>
+<a id='L274' name='L274'></a>
+<a id='L275' name='L275'></a>        <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L276' name='L276'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L277' name='L277'></a>                <a href='../D/7245.html' title='Multiple defined in 25 places.'>close</a>(_gnutls_cryptodev_fd);
+<a id='L278' name='L278'></a>        <em class='brace'>}</em>
+<a id='L279' name='L279'></a>
+<a id='L280' name='L280'></a>        <strong class='reserved'>return</strong> ret;
+<a id='L281' name='L281'></a><em class='brace'>}</em>
+<a id='L282' name='L282'></a>
+<a id='L283' name='L283'></a><strong class='reserved'>void</strong> <a href='../R/4954.html' title='Multiple referred from 2 places.'>_gnutls_cryptodev_deinit</a>(<strong class='reserved'>void</strong>)
+<a id='L284' name='L284'></a><em class='brace'>{</em>
+<a id='L285' name='L285'></a>        <strong class='reserved'>if</strong> (_gnutls_cryptodev_fd != -1)
+<a id='L286' name='L286'></a>                <a href='../D/7245.html' title='Multiple defined in 25 places.'>close</a>(_gnutls_cryptodev_fd);
+<a id='L287' name='L287'></a><em class='brace'>}</em>
+<a id='L288' name='L288'></a>
+<a id='L289' name='L289'></a><em class='comment'>/* MAC and digest stuff */</em>
+<a id='L290' name='L290'></a>
+<a id='L291' name='L291'></a><em class='comment'>/* if we are using linux /dev/crypto</em>
+<a id='L292' name='L292'></a><em class='comment'> */</em>
+<a id='L293' name='L293'></a><em class='sharp'>#if</em> <strong class='reserved'>defined</strong>(COP_FLAG_UPDATE) &amp;&amp; <strong class='reserved'>defined</strong>(COP_FLAG_RESET)
+<a id='L294' name='L294'></a>
+<a id='L295' name='L295'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <strong class='reserved'>int</strong> gnutls_mac_map[] = <em class='brace'>{</em>
+<a id='L296' name='L296'></a>        [GNUTLS_MAC_MD5] = CRYPTO_MD5_HMAC,
+<a id='L297' name='L297'></a>        [GNUTLS_MAC_SHA1] = CRYPTO_SHA1_HMAC,
+<a id='L298' name='L298'></a>        [GNUTLS_MAC_SHA256] = CRYPTO_SHA2_256_HMAC,
+<a id='L299' name='L299'></a>        [GNUTLS_MAC_SHA384] = CRYPTO_SHA2_384_HMAC,
+<a id='L300' name='L300'></a>        [GNUTLS_MAC_SHA512] = CRYPTO_SHA2_512_HMAC,
+<a id='L301' name='L301'></a><em class='brace'>}</em>;
+<a id='L302' name='L302'></a>
+<a id='L303' name='L303'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L304' name='L304'></a><a href='../S/5739.html#L350' title='Referred from 350 in lib/accelerated/cryptodev.c.'>cryptodev_mac_fast</a>(gnutls_mac_algorithm_t algo,
+<a id='L305' name='L305'></a>                   <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *nonce, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> nonce_size,
+<a id='L306' name='L306'></a>                   <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *key, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> key_size, <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *text,
+<a id='L307' name='L307'></a>                   <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> text_size, <strong class='reserved'>void</strong> *digest)
+<a id='L308' name='L308'></a><em class='brace'>{</em>
+<a id='L309' name='L309'></a>        <strong class='reserved'>struct</strong> <a href='../S/5739.html#L48' title='Defined at 48 in lib/accelerated/cryptodev.c.'>cryptodev_ctx</a> ctx;
+<a id='L310' name='L310'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L311' name='L311'></a>
+<a id='L312' name='L312'></a>        assert(nonce_size == 0);
+<a id='L313' name='L313'></a>
+<a id='L314' name='L314'></a>        memset(&amp;ctx, 0, <strong class='reserved'>sizeof</strong>(ctx));
+<a id='L315' name='L315'></a>        ctx.cfd = _gnutls_cryptodev_fd;
+<a id='L316' name='L316'></a>        ctx.sess.mac = gnutls_mac_map[algo];
+<a id='L317' name='L317'></a>
+<a id='L318' name='L318'></a>        ctx.sess.mackeylen = key_size;
+<a id='L319' name='L319'></a>        ctx.sess.mackey = (<strong class='reserved'>void</strong> *) key;
+<a id='L320' name='L320'></a>
+<a id='L321' name='L321'></a>        <strong class='reserved'>if</strong> (<a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(ctx.cfd, CIOCGSESSION, &amp;ctx.sess))
+<a id='L322' name='L322'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_CRYPTODEV_IOCTL_ERROR);
+<a id='L323' name='L323'></a>
+<a id='L324' name='L324'></a>        ctx.cryp.ses = ctx.sess.ses;
+<a id='L325' name='L325'></a>
+<a id='L326' name='L326'></a>        ctx.cryp.len = text_size;
+<a id='L327' name='L327'></a>        ctx.cryp.src = (<strong class='reserved'>void</strong> *) text;
+<a id='L328' name='L328'></a>        ctx.cryp.dst = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L329' name='L329'></a>        ctx.cryp.op = COP_ENCRYPT;
+<a id='L330' name='L330'></a>        ctx.cryp.mac = digest;
+<a id='L331' name='L331'></a>
+<a id='L332' name='L332'></a>        ret = <a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(ctx.cfd, CIOCCRYPT, &amp;ctx.cryp);
+<a id='L333' name='L333'></a>
+<a id='L334' name='L334'></a>        <a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(_gnutls_cryptodev_fd, CIOCFSESSION, &amp;ctx.sess.ses);
+<a id='L335' name='L335'></a>        <strong class='reserved'>if</strong> (ret != 0)
+<a id='L336' name='L336'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_CRYPTODEV_IOCTL_ERROR);
+<a id='L337' name='L337'></a>
+<a id='L338' name='L338'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L339' name='L339'></a><em class='brace'>}</em>
+<a id='L340' name='L340'></a>
+<a id='L341' name='L341'></a><em class='sharp'>#define</em> cryptodev_mac_deinit <a href='../S/5739.html#L159' title='Defined at 159 in lib/accelerated/cryptodev.c.'>cryptodev_deinit</a>
+<a id='L342' name='L342'></a>
+<a id='L343' name='L343'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <a href='../S/5825.html#L63' title='Defined at 63 in lib/crypto-backend.h.'>gnutls_crypto_mac_st</a> mac_struct = <em class='brace'>{</em>
+<a id='L344' name='L344'></a>        .<a href='../S/4268.html#L34' title='Defined at 34 in fuzz/fuzzer.h.'>init</a> = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L345' name='L345'></a>        .setkey = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L346' name='L346'></a>        .setnonce = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L347' name='L347'></a>        .<a href='../D/9874.html' title='Multiple defined in 5 places.'>hash</a> = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L348' name='L348'></a>        .output = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L349' name='L349'></a>        .<a href='../S/4268.html#L39' title='Defined at 39 in fuzz/fuzzer.h.'>deinit</a> = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L350' name='L350'></a>        .fast = <a href='../S/5739.html#L304' title='Defined at 304 in lib/accelerated/cryptodev.c.'>cryptodev_mac_fast</a>
+<a id='L351' name='L351'></a><em class='brace'>}</em>;
+<a id='L352' name='L352'></a>
+<a id='L353' name='L353'></a><em class='comment'>/* Digest algorithms */</em>
+<a id='L354' name='L354'></a>
+<a id='L355' name='L355'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <strong class='reserved'>int</strong> gnutls_digest_map[] = <em class='brace'>{</em>
+<a id='L356' name='L356'></a>        [GNUTLS_DIG_MD5] = CRYPTO_MD5,
+<a id='L357' name='L357'></a>        [GNUTLS_DIG_SHA1] = CRYPTO_SHA1,
+<a id='L358' name='L358'></a>        [GNUTLS_DIG_SHA256] = CRYPTO_SHA2_256,
+<a id='L359' name='L359'></a>        [GNUTLS_DIG_SHA384] = CRYPTO_SHA2_384,
+<a id='L360' name='L360'></a>        [GNUTLS_DIG_SHA512] = CRYPTO_SHA2_512,
+<a id='L361' name='L361'></a><em class='brace'>}</em>;
+<a id='L362' name='L362'></a>
+<a id='L363' name='L363'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong>
+<a id='L364' name='L364'></a><a href='../S/5739.html#L399' title='Referred from 399 in lib/accelerated/cryptodev.c.'>cryptodev_digest_fast</a>(gnutls_digest_algorithm_t algo,
+<a id='L365' name='L365'></a>                      <strong class='reserved'>const</strong> <strong class='reserved'>void</strong> *text, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> text_size, <strong class='reserved'>void</strong> *digest)
+<a id='L366' name='L366'></a><em class='brace'>{</em>
+<a id='L367' name='L367'></a>        <strong class='reserved'>struct</strong> <a href='../S/5739.html#L48' title='Defined at 48 in lib/accelerated/cryptodev.c.'>cryptodev_ctx</a> ctx;
+<a id='L368' name='L368'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L369' name='L369'></a>
+<a id='L370' name='L370'></a>        memset(&amp;ctx, 0, <strong class='reserved'>sizeof</strong>(ctx));
+<a id='L371' name='L371'></a>        ctx.cfd = _gnutls_cryptodev_fd;
+<a id='L372' name='L372'></a>        ctx.sess.mac = gnutls_digest_map[algo];
+<a id='L373' name='L373'></a>
+<a id='L374' name='L374'></a>        <strong class='reserved'>if</strong> (<a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(ctx.cfd, CIOCGSESSION, &amp;ctx.sess))
+<a id='L375' name='L375'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_CRYPTODEV_IOCTL_ERROR);
+<a id='L376' name='L376'></a>
+<a id='L377' name='L377'></a>        ctx.cryp.ses = ctx.sess.ses;
+<a id='L378' name='L378'></a>
+<a id='L379' name='L379'></a>        ctx.cryp.len = text_size;
+<a id='L380' name='L380'></a>        ctx.cryp.src = (<strong class='reserved'>void</strong> *) text;
+<a id='L381' name='L381'></a>        ctx.cryp.dst = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L382' name='L382'></a>        ctx.cryp.op = COP_ENCRYPT;
+<a id='L383' name='L383'></a>        ctx.cryp.mac = digest;
+<a id='L384' name='L384'></a>
+<a id='L385' name='L385'></a>        ret = <a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(ctx.cfd, CIOCCRYPT, &amp;ctx.cryp);
+<a id='L386' name='L386'></a>
+<a id='L387' name='L387'></a>        <a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(_gnutls_cryptodev_fd, CIOCFSESSION, &amp;ctx.sess.ses);
+<a id='L388' name='L388'></a>        <strong class='reserved'>if</strong> (ret != 0)
+<a id='L389' name='L389'></a>                <strong class='reserved'>return</strong> <a href='../D/8394.html' title='Multiple defined in 8 places.'>gnutls_assert_val</a>(GNUTLS_E_CRYPTODEV_IOCTL_ERROR);
+<a id='L390' name='L390'></a>
+<a id='L391' name='L391'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L392' name='L392'></a><em class='brace'>}</em>
+<a id='L393' name='L393'></a>
+<a id='L394' name='L394'></a><strong class='reserved'>static</strong> <strong class='reserved'>const</strong> <a href='../S/5825.html#L76' title='Defined at 76 in lib/crypto-backend.h.'>gnutls_crypto_digest_st</a> digest_struct = <em class='brace'>{</em>
+<a id='L395' name='L395'></a>        .<a href='../S/4268.html#L34' title='Defined at 34 in fuzz/fuzzer.h.'>init</a> = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L396' name='L396'></a>        .<a href='../D/9874.html' title='Multiple defined in 5 places.'>hash</a> = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L397' name='L397'></a>        .output = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L398' name='L398'></a>        .<a href='../S/4268.html#L39' title='Defined at 39 in fuzz/fuzzer.h.'>deinit</a> = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>,
+<a id='L399' name='L399'></a>        .fast = <a href='../S/5739.html#L364' title='Defined at 364 in lib/accelerated/cryptodev.c.'>cryptodev_digest_fast</a>
+<a id='L400' name='L400'></a><em class='brace'>}</em>;
+<a id='L401' name='L401'></a>
+<a id='L402' name='L402'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../R/10096.html' title='Multiple referred from 2 places.'>register_mac_digest</a>(<strong class='reserved'>int</strong> cfd)
+<a id='L403' name='L403'></a><em class='brace'>{</em>
+<a id='L404' name='L404'></a>        <strong class='reserved'>struct</strong> session_op sess;
+<a id='L405' name='L405'></a>        <a href='../D/12098.html' title='Multiple defined in 8 places.'>uint8_t</a> fake_key[<a href='../D/623.html' title='Multiple defined in 2 places.'>CRYPTO_CIPHER_MAX_KEY_LEN</a>];
+<a id='L406' name='L406'></a>        <strong class='reserved'>unsigned</strong> <strong class='reserved'>int</strong> i;
+<a id='L407' name='L407'></a>        <strong class='reserved'>int</strong> ret;
+<a id='L408' name='L408'></a><em class='sharp'>#ifdef</em> CIOCGSESSINFO
+<a id='L409' name='L409'></a>        <strong class='reserved'>struct</strong> session_info_op siop;
+<a id='L410' name='L410'></a><em class='sharp'>#endif</em>
+<a id='L411' name='L411'></a>
+<a id='L412' name='L412'></a>        memset(&amp;sess, 0, <strong class='reserved'>sizeof</strong>(sess));
+<a id='L413' name='L413'></a>        <strong class='reserved'>for</strong> (i = 0; i &lt; <strong class='reserved'>sizeof</strong>(gnutls_mac_map) / <strong class='reserved'>sizeof</strong>(gnutls_mac_map[0]);
+<a id='L414' name='L414'></a>             i++) <em class='brace'>{</em>
+<a id='L415' name='L415'></a>                <strong class='reserved'>if</strong> (gnutls_mac_map[i] == 0)
+<a id='L416' name='L416'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L417' name='L417'></a>
+<a id='L418' name='L418'></a>                sess.mac = gnutls_mac_map[i];
+<a id='L419' name='L419'></a>                sess.mackeylen = 8;
+<a id='L420' name='L420'></a>                sess.mackey = fake_key;
+<a id='L421' name='L421'></a>
+<a id='L422' name='L422'></a>                <strong class='reserved'>if</strong> (<a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(cfd, CIOCGSESSION, &amp;sess)) <em class='brace'>{</em>
+<a id='L423' name='L423'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L424' name='L424'></a>                <em class='brace'>}</em>
+<a id='L425' name='L425'></a><em class='sharp'>#ifdef</em> CIOCGSESSINFO
+<a id='L426' name='L426'></a>                memset(&amp;siop, 0, <strong class='reserved'>sizeof</strong>(siop));
+<a id='L427' name='L427'></a>
+<a id='L428' name='L428'></a>                siop.ses = sess.ses;    <em class='comment'>/* do not register ciphers that are not hw accelerated */</em>
+<a id='L429' name='L429'></a>                <strong class='reserved'>if</strong> (<a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(cfd, CIOCGSESSINFO, &amp;siop) == 0) <em class='brace'>{</em>
+<a id='L430' name='L430'></a>                        <strong class='reserved'>if</strong> (!(siop.flags &amp; SIOP_FLAG_KERNEL_DRIVER_ONLY)) <em class='brace'>{</em>
+<a id='L431' name='L431'></a>                                <a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(cfd, CIOCFSESSION, &amp;sess.ses);
+<a id='L432' name='L432'></a>                                <strong class='reserved'>continue</strong>;
+<a id='L433' name='L433'></a>                        <em class='brace'>}</em>
+<a id='L434' name='L434'></a>                <em class='brace'>}</em>
+<a id='L435' name='L435'></a><em class='sharp'>#endif</em>
+<a id='L436' name='L436'></a>                <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>("/dev/crypto: registering: HMAC-%s\n",
+<a id='L437' name='L437'></a>                                  <a href='../S/5245.html#L223' title='Defined at 223 in lib/algorithms/mac.c.'>gnutls_mac_get_name</a>(i));
+<a id='L438' name='L438'></a>
+<a id='L439' name='L439'></a>                <a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(cfd, CIOCFSESSION, &amp;sess.ses);
+<a id='L440' name='L440'></a>
+<a id='L441' name='L441'></a>                ret =
+<a id='L442' name='L442'></a>                    <a href='../S/5244.html#L344' title='Defined at 344 in lib/crypto-backend.c.'>gnutls_crypto_single_mac_register</a>(i, 90, &amp;mac_struct, 0);
+<a id='L443' name='L443'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L444' name='L444'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L445' name='L445'></a>                        <strong class='reserved'>return</strong> ret;
+<a id='L446' name='L446'></a>                <em class='brace'>}</em>
+<a id='L447' name='L447'></a>        <em class='brace'>}</em>
+<a id='L448' name='L448'></a>
+<a id='L449' name='L449'></a>        memset(&amp;sess, 0, <strong class='reserved'>sizeof</strong>(sess));
+<a id='L450' name='L450'></a>        <strong class='reserved'>for</strong> (i = 0;
+<a id='L451' name='L451'></a>             i &lt; <strong class='reserved'>sizeof</strong>(gnutls_digest_map) / <strong class='reserved'>sizeof</strong>(gnutls_digest_map[0]);
+<a id='L452' name='L452'></a>             i++) <em class='brace'>{</em>
+<a id='L453' name='L453'></a>                <strong class='reserved'>if</strong> (gnutls_digest_map[i] == 0)
+<a id='L454' name='L454'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L455' name='L455'></a>
+<a id='L456' name='L456'></a>                sess.mac = gnutls_digest_map[i];
+<a id='L457' name='L457'></a>
+<a id='L458' name='L458'></a>                <strong class='reserved'>if</strong> (<a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(cfd, CIOCGSESSION, &amp;sess)) <em class='brace'>{</em>
+<a id='L459' name='L459'></a>                        <strong class='reserved'>continue</strong>;
+<a id='L460' name='L460'></a>                <em class='brace'>}</em>
+<a id='L461' name='L461'></a><em class='sharp'>#ifdef</em> CIOCGSESSINFO
+<a id='L462' name='L462'></a>                memset(&amp;siop, 0, <strong class='reserved'>sizeof</strong>(siop));
+<a id='L463' name='L463'></a>
+<a id='L464' name='L464'></a>                siop.ses = sess.ses;
+<a id='L465' name='L465'></a>                <strong class='reserved'>if</strong> (<a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(cfd, CIOCGSESSINFO, &amp;siop) == 0) <em class='brace'>{</em>
+<a id='L466' name='L466'></a>                        <strong class='reserved'>if</strong> (!(siop.flags &amp; SIOP_FLAG_KERNEL_DRIVER_ONLY)) <em class='brace'>{</em>
+<a id='L467' name='L467'></a>                                <a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(cfd, CIOCFSESSION, &amp;sess.ses);
+<a id='L468' name='L468'></a>                                <strong class='reserved'>continue</strong>;
+<a id='L469' name='L469'></a>                        <em class='brace'>}</em>
+<a id='L470' name='L470'></a>                <em class='brace'>}</em>
+<a id='L471' name='L471'></a><em class='sharp'>#endif</em>
+<a id='L472' name='L472'></a>
+<a id='L473' name='L473'></a>                <a href='../D/10034.html' title='Multiple defined in 7 places.'>ioctl</a>(cfd, CIOCFSESSION, &amp;sess.ses);
+<a id='L474' name='L474'></a>
+<a id='L475' name='L475'></a>                <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>("/dev/crypto: registering: %s\n",
+<a id='L476' name='L476'></a>                                  <a href='../S/5245.html#L223' title='Defined at 223 in lib/algorithms/mac.c.'>gnutls_mac_get_name</a>(i));
+<a id='L477' name='L477'></a>                ret =
+<a id='L478' name='L478'></a>                    <a href='../S/5244.html#L380' title='Defined at 380 in lib/crypto-backend.c.'>gnutls_crypto_single_digest_register</a>(i, 90,
+<a id='L479' name='L479'></a>                                                         &amp;digest_struct, 0);
+<a id='L480' name='L480'></a>                <strong class='reserved'>if</strong> (ret &lt; 0) <em class='brace'>{</em>
+<a id='L481' name='L481'></a>                        <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L482' name='L482'></a>                        <strong class='reserved'>return</strong> ret;
+<a id='L483' name='L483'></a>                <em class='brace'>}</em>
+<a id='L484' name='L484'></a>        <em class='brace'>}</em>
+<a id='L485' name='L485'></a>
+<a id='L486' name='L486'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L487' name='L487'></a><em class='brace'>}</em>
+<a id='L488' name='L488'></a>
+<a id='L489' name='L489'></a><em class='sharp'>#else</em>
+<a id='L490' name='L490'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../R/10096.html' title='Multiple referred from 2 places.'>register_mac_digest</a>(<strong class='reserved'>int</strong> cfd)
+<a id='L491' name='L491'></a><em class='brace'>{</em>
+<a id='L492' name='L492'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L493' name='L493'></a><em class='brace'>}</em>
+<a id='L494' name='L494'></a>
+<a id='L495' name='L495'></a><em class='sharp'>#endif</em>                          <em class='comment'>/* defined(COP_FLAG_UPDATE) */</em>
+<a id='L496' name='L496'></a>
+<a id='L497' name='L497'></a><em class='sharp'>#else</em>                           <em class='comment'>/* ENABLE_CRYPTODEV */</em>
+<a id='L498' name='L498'></a><strong class='reserved'>int</strong> <a href='../R/4955.html' title='Multiple referred from 2 places.'>_gnutls_cryptodev_init</a>(<strong class='reserved'>void</strong>)
+<a id='L499' name='L499'></a><em class='brace'>{</em>
+<a id='L500' name='L500'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L501' name='L501'></a><em class='brace'>}</em>
+<a id='L502' name='L502'></a>
+<a id='L503' name='L503'></a><strong class='reserved'>void</strong> <a href='../R/4954.html' title='Multiple referred from 2 places.'>_gnutls_cryptodev_deinit</a>(<strong class='reserved'>void</strong>)
+<a id='L504' name='L504'></a><em class='brace'>{</em>
+<a id='L505' name='L505'></a>        <strong class='reserved'>return</strong>;
+<a id='L506' name='L506'></a><em class='brace'>}</em>
+<a id='L507' name='L507'></a><em class='sharp'>#endif</em>                          <em class='comment'>/* ENABLE_CRYPTODEV */</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L68'>[^]</a><a href='#L503'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

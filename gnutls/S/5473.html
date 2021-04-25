@@ -1,0 +1,112 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>lib/nettle/sysrng-getentropy.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/6464.html'>lib</a>/<a href='../files/6481.html'>nettle</a>/sysrng-getentropy.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L55'>[^]</a><a href='#L79'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L55' title='Defined at 55.'>_rnd_get_system_entropy_simple</a></li>
+<li><a href='#L68' title='Defined at 68.'>_rnd_system_entropy_init</a></li>
+<li><a href='#L74' title='Defined at 74.'>_rnd_system_entropy_check</a></li>
+<li><a href='#L79' title='Defined at 79.'>_rnd_system_entropy_deinit</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/*</em>
+<a id='L2' name='L2'></a><em class='comment'> * Copyright (C) 2010-2016 Free Software Foundation, Inc.</em>
+<a id='L3' name='L3'></a><em class='comment'> * Copyright (C) 2015-2016 Red Hat, Inc.</em>
+<a id='L4' name='L4'></a><em class='comment'> *</em>
+<a id='L5' name='L5'></a><em class='comment'> * Author: Nikos Mavrogiannopoulos</em>
+<a id='L6' name='L6'></a><em class='comment'> *</em>
+<a id='L7' name='L7'></a><em class='comment'> * This file is part of GNUTLS.</em>
+<a id='L8' name='L8'></a><em class='comment'> *</em>
+<a id='L9' name='L9'></a><em class='comment'> * The GNUTLS library is free software; you can redistribute it and/or</em>
+<a id='L10' name='L10'></a><em class='comment'> * modify it under the terms of the GNU Lesser General Public License</em>
+<a id='L11' name='L11'></a><em class='comment'> * as published by the Free Software Foundation; either version 2.1 of</em>
+<a id='L12' name='L12'></a><em class='comment'> * the License, or (at your option) any later version.</em>
+<a id='L13' name='L13'></a><em class='comment'> *</em>
+<a id='L14' name='L14'></a><em class='comment'> * This library is distributed in the hope that it will be useful, but</em>
+<a id='L15' name='L15'></a><em class='comment'> * WITHOUT ANY WARRANTY; without even the implied warranty of</em>
+<a id='L16' name='L16'></a><em class='comment'> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU</em>
+<a id='L17' name='L17'></a><em class='comment'> * Lesser General Public License for more details.</em>
+<a id='L18' name='L18'></a><em class='comment'> *</em>
+<a id='L19' name='L19'></a><em class='comment'> * You should have received a copy of the GNU Lesser General Public License</em>
+<a id='L20' name='L20'></a><em class='comment'> * along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;</em>
+<a id='L21' name='L21'></a><em class='comment'> *</em>
+<a id='L22' name='L22'></a><em class='comment'> */</em>
+<a id='L23' name='L23'></a>
+<a id='L24' name='L24'></a><em class='comment'>/* The *BSD getentropy() system random generator. The simplest of all.</em>
+<a id='L25' name='L25'></a><em class='comment'> */</em>
+<a id='L26' name='L26'></a>
+<a id='L27' name='L27'></a><em class='sharp'>#include</em> "<a href='5822.html'>gnutls_int.h</a>"
+<a id='L28' name='L28'></a><em class='sharp'>#include</em> "<a href='../I/422.html'>errors.h</a>"
+<a id='L29' name='L29'></a><em class='sharp'>#include</em> &lt;<a href='6025.html'>locks.h</a>&gt;
+<a id='L30' name='L30'></a><em class='sharp'>#include</em> &lt;<a href='5268.html'>num.h</a>&gt;
+<a id='L31' name='L31'></a><em class='sharp'>#include</em> &lt;errno.h&gt;
+<a id='L32' name='L32'></a><em class='sharp'>#include</em> &lt;<a href='5474.html'>rnd-common.h</a>&gt;
+<a id='L33' name='L33'></a>
+<a id='L34' name='L34'></a><em class='sharp'>#include</em> &lt;sys/types.h&gt;
+<a id='L35' name='L35'></a><em class='sharp'>#include</em> &lt;sys/stat.h&gt;
+<a id='L36' name='L36'></a><em class='sharp'>#include</em> &lt;unistd.h&gt;
+<a id='L37' name='L37'></a><em class='sharp'>#ifdef</em> __APPLE__
+<a id='L38' name='L38'></a><em class='sharp'>#include</em> &lt;<a href='5990.html'>sys/random.h</a>&gt;
+<a id='L39' name='L39'></a><em class='sharp'>#endif</em>
+<a id='L40' name='L40'></a>
+<a id='L41' name='L41'></a><em class='comment'>/* gnulib wants to claim strerror even if it cannot provide it. WTF */</em>
+<a id='L42' name='L42'></a><em class='sharp'>#undef</em> <a href='../R/10604.html' title='Multiple referred from 57 places.'>strerror</a>
+<a id='L43' name='L43'></a>
+<a id='L44' name='L44'></a><em class='comment'>/* The POSIX (Linux-BSD) randomness gatherer.</em>
+<a id='L45' name='L45'></a><em class='comment'> */</em>
+<a id='L46' name='L46'></a>
+<a id='L47' name='L47'></a><em class='sharp'>#include</em> &lt;time.h&gt;
+<a id='L48' name='L48'></a><em class='sharp'>#include</em> &lt;sys/types.h&gt;
+<a id='L49' name='L49'></a><em class='sharp'>#include</em> &lt;sys/stat.h&gt;
+<a id='L50' name='L50'></a><em class='sharp'>#include</em> &lt;sys/time.h&gt;
+<a id='L51' name='L51'></a><em class='sharp'>#include</em> &lt;fcntl.h&gt;
+<a id='L52' name='L52'></a>
+<a id='L53' name='L53'></a>get_entropy_func _rnd_get_system_entropy = <a href='../D/2959.html' title='Multiple defined in 10 places.'>NULL</a>;
+<a id='L54' name='L54'></a>
+<a id='L55' name='L55'></a><strong class='reserved'>static</strong> <strong class='reserved'>int</strong> <a href='../S/5473.html#L70' title='Referred from 70 in lib/nettle/sysrng-getentropy.c.'>_rnd_get_system_entropy_simple</a>(<strong class='reserved'>void</strong>* _rnd, <a href='../D/11503.html' title='Multiple defined in 2 places.'>size_t</a> size)
+<a id='L56' name='L56'></a><em class='brace'>{</em>
+<a id='L57' name='L57'></a>        <strong class='reserved'>if</strong> (<a href='../D/8175.html' title='Multiple defined in 2 places.'>getentropy</a>(_rnd, size) &lt; 0) <em class='brace'>{</em>
+<a id='L58' name='L58'></a>                <strong class='reserved'>int</strong> <a href='../S/5535.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-eh.c.'>e</a> = errno;
+<a id='L59' name='L59'></a>                <a href='../D/8393.html' title='Multiple defined in 9 places.'>gnutls_assert</a>();
+<a id='L60' name='L60'></a>                <a href='../D/5746.html' title='Multiple defined in 5 places.'>_gnutls_debug_log</a>
+<a id='L61' name='L61'></a>                        ("Failed to use getentropy: %s\n",
+<a id='L62' name='L62'></a>                                         <a href='../D/11613.html' title='Multiple defined in 8 places.'>strerror</a>(<a href='../S/5535.html#L63' title='Defined at 63 in lib/nettle/ecc/ecc-dup-eh.c.'>e</a>));
+<a id='L63' name='L63'></a>                <strong class='reserved'>return</strong> GNUTLS_E_RANDOM_DEVICE_ERROR;
+<a id='L64' name='L64'></a>        <em class='brace'>}</em>
+<a id='L65' name='L65'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L66' name='L66'></a><em class='brace'>}</em>
+<a id='L67' name='L67'></a>
+<a id='L68' name='L68'></a><strong class='reserved'>int</strong> <a href='../R/5770.html' title='Multiple referred from 5 places.'>_rnd_system_entropy_init</a>(<strong class='reserved'>void</strong>)
+<a id='L69' name='L69'></a><em class='brace'>{</em>
+<a id='L70' name='L70'></a>        _rnd_get_system_entropy = <a href='../S/5473.html#L55' title='Defined at 55 in lib/nettle/sysrng-getentropy.c.'>_rnd_get_system_entropy_simple</a>;
+<a id='L71' name='L71'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L72' name='L72'></a><em class='brace'>}</em>
+<a id='L73' name='L73'></a>
+<a id='L74' name='L74'></a><strong class='reserved'>int</strong> <a href='../R/5768.html' title='Multiple referred from 3 places.'>_rnd_system_entropy_check</a>(<strong class='reserved'>void</strong>)
+<a id='L75' name='L75'></a><em class='brace'>{</em>
+<a id='L76' name='L76'></a>        <strong class='reserved'>return</strong> 0;
+<a id='L77' name='L77'></a><em class='brace'>}</em>
+<a id='L78' name='L78'></a>
+<a id='L79' name='L79'></a><strong class='reserved'>void</strong> <a href='../R/5769.html' title='Multiple referred from 4 places.'>_rnd_system_entropy_deinit</a>(<strong class='reserved'>void</strong>)
+<a id='L80' name='L80'></a><em class='brace'>{</em>
+<a id='L81' name='L81'></a>        <strong class='reserved'>return</strong>;
+<a id='L82' name='L82'></a><em class='brace'>}</em>
+<a id='L83' name='L83'></a>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L55'>[^]</a><a href='#L79'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>

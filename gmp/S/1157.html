@@ -1,0 +1,664 @@
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Transitional//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+<title>mpn/generic/powm.c</title>
+<meta name='robots' content='noindex,nofollow' />
+<meta name='generator' content='GLOBAL-6.6.3' />
+<meta http-equiv='Content-Style-Type' content='text/css' />
+<link rel='stylesheet' type='text/css' href='../style.css' />
+</head>
+<body>
+<a id='TOP' name='TOP'></a><h2 class='header'><a href='../mains.html'>root</a>/<a href='../files/2101.html'>mpn</a>/<a href='../files/2124.html'>generic</a>/powm.c</h2>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L139'>[^]</a><a href='#L193'>[v]</a>[top]<a href='#BOTTOM'>[bottom]</a><a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+<hr />
+<h2 class='header'>DEFINITIONS</h2>
+This source file includes following definitions.
+<ol>
+<li><a href='#L139' title='Defined at 139.'>getbits</a></li>
+<li><a href='#L163' title='Defined at 163.'>win_size</a></li>
+<li><a href='#L174' title='Defined at 174.'>redcify</a></li>
+<li><a href='#L193' title='Defined at 193.'>mpn_powm</a></li>
+</ol>
+<hr />
+<pre>
+<a id='L1' name='L1'></a><em class='comment'>/* mpn_powm -- Compute R = U^E mod M.</em>
+<a id='L2' name='L2'></a><em class='comment'></em>
+<a id='L3' name='L3'></a><em class='comment'>   Contributed to the GNU project by Torbjorn Granlund.</em>
+<a id='L4' name='L4'></a><em class='comment'></em>
+<a id='L5' name='L5'></a><em class='comment'>   THE FUNCTIONS IN THIS FILE ARE INTERNAL WITH MUTABLE INTERFACES.  IT IS ONLY</em>
+<a id='L6' name='L6'></a><em class='comment'>   SAFE TO REACH THEM THROUGH DOCUMENTED INTERFACES.  IN FACT, IT IS ALMOST</em>
+<a id='L7' name='L7'></a><em class='comment'>   GUARANTEED THAT THEY WILL CHANGE OR DISAPPEAR IN A FUTURE GNU MP RELEASE.</em>
+<a id='L8' name='L8'></a><em class='comment'></em>
+<a id='L9' name='L9'></a><em class='comment'>Copyright 2007-2012, 2019 Free Software Foundation, Inc.</em>
+<a id='L10' name='L10'></a><em class='comment'></em>
+<a id='L11' name='L11'></a><em class='comment'>This file is part of the GNU MP Library.</em>
+<a id='L12' name='L12'></a><em class='comment'></em>
+<a id='L13' name='L13'></a><em class='comment'>The GNU MP Library is free software; you can redistribute it and/or modify</em>
+<a id='L14' name='L14'></a><em class='comment'>it under the terms of either:</em>
+<a id='L15' name='L15'></a><em class='comment'></em>
+<a id='L16' name='L16'></a><em class='comment'>  * the GNU Lesser General Public License as published by the Free</em>
+<a id='L17' name='L17'></a><em class='comment'>    Software Foundation; either version 3 of the License, or (at your</em>
+<a id='L18' name='L18'></a><em class='comment'>    option) any later version.</em>
+<a id='L19' name='L19'></a><em class='comment'></em>
+<a id='L20' name='L20'></a><em class='comment'>or</em>
+<a id='L21' name='L21'></a><em class='comment'></em>
+<a id='L22' name='L22'></a><em class='comment'>  * the GNU General Public License as published by the Free Software</em>
+<a id='L23' name='L23'></a><em class='comment'>    Foundation; either version 2 of the License, or (at your option) any</em>
+<a id='L24' name='L24'></a><em class='comment'>    later version.</em>
+<a id='L25' name='L25'></a><em class='comment'></em>
+<a id='L26' name='L26'></a><em class='comment'>or both in parallel, as here.</em>
+<a id='L27' name='L27'></a><em class='comment'></em>
+<a id='L28' name='L28'></a><em class='comment'>The GNU MP Library is distributed in the hope that it will be useful, but</em>
+<a id='L29' name='L29'></a><em class='comment'>WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY</em>
+<a id='L30' name='L30'></a><em class='comment'>or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License</em>
+<a id='L31' name='L31'></a><em class='comment'>for more details.</em>
+<a id='L32' name='L32'></a><em class='comment'></em>
+<a id='L33' name='L33'></a><em class='comment'>You should have received copies of the GNU General Public License and the</em>
+<a id='L34' name='L34'></a><em class='comment'>GNU Lesser General Public License along with the GNU MP Library.  If not,</em>
+<a id='L35' name='L35'></a><em class='comment'>see https://www.gnu.org/licenses/.  */</em>
+<a id='L36' name='L36'></a>
+<a id='L37' name='L37'></a>
+<a id='L38' name='L38'></a><em class='comment'>/*</em>
+<a id='L39' name='L39'></a><em class='comment'>  BASIC ALGORITHM, Compute U^E mod M, where M &lt; B^n is odd.</em>
+<a id='L40' name='L40'></a><em class='comment'></em>
+<a id='L41' name='L41'></a><em class='comment'>  1. W &lt;- U</em>
+<a id='L42' name='L42'></a><em class='comment'></em>
+<a id='L43' name='L43'></a><em class='comment'>  2. T &lt;- (B^n * U) mod M                Convert to REDC form</em>
+<a id='L44' name='L44'></a><em class='comment'></em>
+<a id='L45' name='L45'></a><em class='comment'>  3. Compute table U^1, U^3, U^5... of E-dependent size</em>
+<a id='L46' name='L46'></a><em class='comment'></em>
+<a id='L47' name='L47'></a><em class='comment'>  4. While there are more bits in E</em>
+<a id='L48' name='L48'></a><em class='comment'>       W &lt;- power left-to-right base-k</em>
+<a id='L49' name='L49'></a><em class='comment'></em>
+<a id='L50' name='L50'></a><em class='comment'></em>
+<a id='L51' name='L51'></a><em class='comment'>  TODO:</em>
+<a id='L52' name='L52'></a><em class='comment'></em>
+<a id='L53' name='L53'></a><em class='comment'>   * Make getbits a macro, thereby allowing it to update the index operand.</em>
+<a id='L54' name='L54'></a><em class='comment'>     That will simplify the code using getbits.  (Perhaps make getbits' sibling</em>
+<a id='L55' name='L55'></a><em class='comment'>     getbit then have similar form, for symmetry.)</em>
+<a id='L56' name='L56'></a><em class='comment'></em>
+<a id='L57' name='L57'></a><em class='comment'>   * Write an itch function.  Or perhaps get rid of tp parameter since the huge</em>
+<a id='L58' name='L58'></a><em class='comment'>     pp area is allocated locally anyway?</em>
+<a id='L59' name='L59'></a><em class='comment'></em>
+<a id='L60' name='L60'></a><em class='comment'>   * Choose window size without looping.  (Superoptimize or think(tm).)</em>
+<a id='L61' name='L61'></a><em class='comment'></em>
+<a id='L62' name='L62'></a><em class='comment'>   * Handle small bases with initial, reduction-free exponentiation.</em>
+<a id='L63' name='L63'></a><em class='comment'></em>
+<a id='L64' name='L64'></a><em class='comment'>   * Call new division functions, not mpn_tdiv_qr.</em>
+<a id='L65' name='L65'></a><em class='comment'></em>
+<a id='L66' name='L66'></a><em class='comment'>   * Consider special code for one-limb M.</em>
+<a id='L67' name='L67'></a><em class='comment'></em>
+<a id='L68' name='L68'></a><em class='comment'>   * How should we handle the redc1/redc2/redc_n choice?</em>
+<a id='L69' name='L69'></a><em class='comment'>     - redc1:  T(binvert_1limb)  + e * (n)   * (T(mullo-1x1) + n*T(addmul_1))</em>
+<a id='L70' name='L70'></a><em class='comment'>     - redc2:  T(binvert_2limbs) + e * (n/2) * (T(mullo-2x2) + n*T(addmul_2))</em>
+<a id='L71' name='L71'></a><em class='comment'>     - redc_n: T(binvert_nlimbs) + e * (T(mullo-nxn) + T(M(n)))</em>
+<a id='L72' name='L72'></a><em class='comment'>     This disregards the addmul_N constant term, but we could think of</em>
+<a id='L73' name='L73'></a><em class='comment'>     that as part of the respective mullo.</em>
+<a id='L74' name='L74'></a><em class='comment'></em>
+<a id='L75' name='L75'></a><em class='comment'>   * When U (the base) is small, we should start the exponentiation with plain</em>
+<a id='L76' name='L76'></a><em class='comment'>     operations, then convert that partial result to REDC form.</em>
+<a id='L77' name='L77'></a><em class='comment'></em>
+<a id='L78' name='L78'></a><em class='comment'>   * When U is just one limb, should it be handled without the k-ary tricks?</em>
+<a id='L79' name='L79'></a><em class='comment'>     We could keep a factor of B^n in W, but use U' = BU as base.  After</em>
+<a id='L80' name='L80'></a><em class='comment'>     multiplying by this (pseudo two-limb) number, we need to multiply by 1/B</em>
+<a id='L81' name='L81'></a><em class='comment'>     mod M.</em>
+<a id='L82' name='L82'></a><em class='comment'>*/</em>
+<a id='L83' name='L83'></a>
+<a id='L84' name='L84'></a><em class='sharp'>#include</em> "<a href='146.html'>gmp-impl.h</a>"
+<a id='L85' name='L85'></a><em class='sharp'>#include</em> "<a href='150.html'>longlong.h</a>"
+<a id='L86' name='L86'></a>
+<a id='L87' name='L87'></a><em class='sharp'>#undef</em> <a href='../R/772.html' title='Multiple referred from 3 places.'>MPN_REDC_0</a>
+<a id='L88' name='L88'></a><em class='sharp'>#define</em> <a href='../R/772.html' title='Multiple referred from 3 places.'>MPN_REDC_0</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, mp, invm)                                    \
+<a id='L89' name='L89'></a>  <strong class='reserved'>do</strong> <em class='brace'>{</em>                                                                  \
+<a id='L90' name='L90'></a>    <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> <a href='../S/1163.html#L86' title='Defined at 86 in mpn/generic/toom42_mulmid.c.'>p1</a>, <a href='../D/3670.html' title='Multiple defined in 12 places.'>r0</a>, u0, _dummy;                                       \
+<a id='L91' name='L91'></a>    u0 = *(<a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>);                                                         \
+<a id='L92' name='L92'></a>    <a href='../D/4442.html' title='Multiple defined in 55 places.'>umul_ppmm</a> (<a href='../S/1163.html#L86' title='Defined at 86 in mpn/generic/toom42_mulmid.c.'>p1</a>, _dummy, *(mp), (u0 * (invm)) &amp; <a href='../S/81.html#L47' title='Defined at 47 in asl.h.'>GMP_NUMB_MASK</a>);       \
+<a id='L93' name='L93'></a>    <a href='../D/34.html' title='Multiple defined in 3 places.'>ASSERT</a> (((u0 + _dummy) &amp; <a href='../S/81.html#L47' title='Defined at 47 in asl.h.'>GMP_NUMB_MASK</a>) == 0);                      \
+<a id='L94' name='L94'></a>    <a href='../S/1163.html#L86' title='Defined at 86 in mpn/generic/toom42_mulmid.c.'>p1</a> += (u0 != 0);                                                    \
+<a id='L95' name='L95'></a>    <a href='../D/3670.html' title='Multiple defined in 12 places.'>r0</a> = (<a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>)[1] + <a href='../S/1163.html#L86' title='Defined at 86 in mpn/generic/toom42_mulmid.c.'>p1</a>;                                                  \
+<a id='L96' name='L96'></a>    <strong class='reserved'>if</strong> (<a href='../S/1163.html#L86' title='Defined at 86 in mpn/generic/toom42_mulmid.c.'>p1</a> &gt; <a href='../D/3670.html' title='Multiple defined in 12 places.'>r0</a>)                                                        \
+<a id='L97' name='L97'></a>      <a href='../D/3670.html' title='Multiple defined in 12 places.'>r0</a> -= *(mp);                                                      \
+<a id='L98' name='L98'></a>    *(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>) = <a href='../D/3670.html' title='Multiple defined in 12 places.'>r0</a>;                                                         \
+<a id='L99' name='L99'></a>  <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L100' name='L100'></a>
+<a id='L101' name='L101'></a><em class='sharp'>#undef</em> <a href='../R/773.html' title='Multiple referred from 16 places.'>MPN_REDC_1</a>
+<a id='L102' name='L102'></a><em class='sharp'>#if</em> HAVE_NATIVE_mpn_sbpi1_bdiv_r
+<a id='L103' name='L103'></a><em class='sharp'>#define</em> <a href='../R/773.html' title='Multiple referred from 16 places.'>MPN_REDC_1</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, mp, n, invm)                                 \
+<a id='L104' name='L104'></a>  <strong class='reserved'>do</strong> <em class='brace'>{</em>                                                                  \
+<a id='L105' name='L105'></a>    <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> cy;                                                       \
+<a id='L106' name='L106'></a>    cy = <a href='../D/3164.html' title='Multiple defined in 2 places.'>mpn_sbpi1_bdiv_r</a> (<a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, 2 * n, mp, n, invm);                     \
+<a id='L107' name='L107'></a>    <strong class='reserved'>if</strong> (cy != 0)                                                        \
+<a id='L108' name='L108'></a>      <a href='../D/3206.html' title='Multiple defined in 4 places.'>mpn_sub_n</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a> + n, mp, n);                                    \
+<a id='L109' name='L109'></a>    <strong class='reserved'>else</strong>                                                                \
+<a id='L110' name='L110'></a>      <a href='../S/146.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a> + n, n);                                         \
+<a id='L111' name='L111'></a>  <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L112' name='L112'></a><em class='sharp'>#else</em>
+<a id='L113' name='L113'></a><em class='sharp'>#define</em> <a href='../R/773.html' title='Multiple referred from 16 places.'>MPN_REDC_1</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, mp, n, invm)                                 \
+<a id='L114' name='L114'></a>  <strong class='reserved'>do</strong> <em class='brace'>{</em>                                                                  \
+<a id='L115' name='L115'></a>    <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> cy;                                                       \
+<a id='L116' name='L116'></a>    cy = <a href='../D/3141.html' title='Multiple defined in 2 places.'>mpn_redc_1</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, mp, n, invm);                              \
+<a id='L117' name='L117'></a>    <strong class='reserved'>if</strong> (cy != 0)                                                        \
+<a id='L118' name='L118'></a>      <a href='../D/3206.html' title='Multiple defined in 4 places.'>mpn_sub_n</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, mp, n);                                        \
+<a id='L119' name='L119'></a>  <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L120' name='L120'></a><em class='sharp'>#endif</em>
+<a id='L121' name='L121'></a>
+<a id='L122' name='L122'></a><em class='sharp'>#undef</em> <a href='../R/775.html' title='Multiple referred from 7 places.'>MPN_REDC_2</a>
+<a id='L123' name='L123'></a><em class='sharp'>#define</em> <a href='../R/775.html' title='Multiple referred from 7 places.'>MPN_REDC_2</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, mp, n, mip)                                  \
+<a id='L124' name='L124'></a>  <strong class='reserved'>do</strong> <em class='brace'>{</em>                                                                  \
+<a id='L125' name='L125'></a>    <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> cy;                                                       \
+<a id='L126' name='L126'></a>    cy = <a href='../D/3142.html' title='Multiple defined in 2 places.'>mpn_redc_2</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, mp, n, mip);                               \
+<a id='L127' name='L127'></a>    <strong class='reserved'>if</strong> (cy != 0)                                                        \
+<a id='L128' name='L128'></a>      <a href='../D/3206.html' title='Multiple defined in 4 places.'>mpn_sub_n</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, mp, n);                                        \
+<a id='L129' name='L129'></a>  <em class='brace'>}</em> <strong class='reserved'>while</strong> (0)
+<a id='L130' name='L130'></a>
+<a id='L131' name='L131'></a><em class='sharp'>#if</em> <a href='../D/464.html' title='Multiple defined in 7 places.'>HAVE_NATIVE_mpn_addmul_2</a> || HAVE_NATIVE_mpn_redc_2
+<a id='L132' name='L132'></a><em class='sharp'>#define</em> <a href='../R/1561.html' title='Multiple referred from 6 places.'>WANT_REDC_2</a> 1
+<a id='L133' name='L133'></a><em class='sharp'>#endif</em>
+<a id='L134' name='L134'></a>
+<a id='L135' name='L135'></a><em class='sharp'>#define</em> <a href='../R/2303.html' title='Multiple referred from 3 places.'>getbit</a>(p,bi) \
+<a id='L136' name='L136'></a>  ((p[(bi - 1) / <a href='../D/425.html' title='Multiple defined in 116 places.'>GMP_LIMB_BITS</a>] &gt;&gt; (bi - 1) % <a href='../D/425.html' title='Multiple defined in 116 places.'>GMP_LIMB_BITS</a>) &amp; 1)
+<a id='L137' name='L137'></a>
+<a id='L138' name='L138'></a><strong class='reserved'>static</strong> <strong class='reserved'>inline</strong> <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a>
+<a id='L139' name='L139'></a><a href='../R/2304.html' title='Multiple referred from 6 places.'>getbits</a> (<strong class='reserved'>const</strong> <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> *p, <a href='../S/18.html#L62' title='Defined at 62 in mini-gmp/mini-gmp.h.'>mp_bitcnt_t</a> bi, <strong class='reserved'>int</strong> nbits)
+<a id='L140' name='L140'></a><em class='brace'>{</em>
+<a id='L141' name='L141'></a>  <strong class='reserved'>int</strong> nbits_in_r;
+<a id='L142' name='L142'></a>  <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> r;
+<a id='L143' name='L143'></a>  <a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> i;
+<a id='L144' name='L144'></a>
+<a id='L145' name='L145'></a>  <strong class='reserved'>if</strong> (bi &lt; nbits)
+<a id='L146' name='L146'></a>    <em class='brace'>{</em>
+<a id='L147' name='L147'></a>      <strong class='reserved'>return</strong> p[0] &amp; (((<a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a>) 1 &lt;&lt; bi) - 1);
+<a id='L148' name='L148'></a>    <em class='brace'>}</em>
+<a id='L149' name='L149'></a>  <strong class='reserved'>else</strong>
+<a id='L150' name='L150'></a>    <em class='brace'>{</em>
+<a id='L151' name='L151'></a>      bi -= nbits;                      <em class='comment'>/* bit index of low bit to extract */</em>
+<a id='L152' name='L152'></a>      i = bi / GMP_NUMB_BITS;           <em class='comment'>/* word index of low bit to extract */</em>
+<a id='L153' name='L153'></a>      bi %= GMP_NUMB_BITS;              <em class='comment'>/* bit index in low word */</em>
+<a id='L154' name='L154'></a>      r = p[i] &gt;&gt; bi;                   <em class='comment'>/* extract (low) bits */</em>
+<a id='L155' name='L155'></a>      nbits_in_r = GMP_NUMB_BITS - bi;  <em class='comment'>/* number of bits now in r */</em>
+<a id='L156' name='L156'></a>      <strong class='reserved'>if</strong> (nbits_in_r &lt; nbits)           <em class='comment'>/* did we get enough bits? */</em>
+<a id='L157' name='L157'></a>        r += p[i + 1] &lt;&lt; nbits_in_r;    <em class='comment'>/* prepend bits from higher word */</em>
+<a id='L158' name='L158'></a>      <strong class='reserved'>return</strong> r &amp; (((<a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a>) 1 &lt;&lt; nbits) - 1);
+<a id='L159' name='L159'></a>    <em class='brace'>}</em>
+<a id='L160' name='L160'></a><em class='brace'>}</em>
+<a id='L161' name='L161'></a>
+<a id='L162' name='L162'></a><strong class='reserved'>static</strong> <strong class='reserved'>inline</strong> <strong class='reserved'>int</strong>
+<a id='L163' name='L163'></a><a href='../R/4182.html' title='Multiple referred from 5 places.'>win_size</a> (<a href='../S/18.html#L62' title='Defined at 62 in mini-gmp/mini-gmp.h.'>mp_bitcnt_t</a> eb)
+<a id='L164' name='L164'></a><em class='brace'>{</em>
+<a id='L165' name='L165'></a>  <strong class='reserved'>int</strong> k;
+<a id='L166' name='L166'></a>  <strong class='reserved'>static</strong> <a href='../S/18.html#L62' title='Defined at 62 in mini-gmp/mini-gmp.h.'>mp_bitcnt_t</a> x[] = <em class='brace'>{</em>0,7,25,81,241,673,1793,4609,11521,28161,~(<a href='../S/18.html#L62' title='Defined at 62 in mini-gmp/mini-gmp.h.'>mp_bitcnt_t</a>)0<em class='brace'>}</em>;
+<a id='L167' name='L167'></a>  <strong class='reserved'>for</strong> (k = 1; eb &gt; x[k]; k++)
+<a id='L168' name='L168'></a>    ;
+<a id='L169' name='L169'></a>  <strong class='reserved'>return</strong> k;
+<a id='L170' name='L170'></a><em class='brace'>}</em>
+<a id='L171' name='L171'></a>
+<a id='L172' name='L172'></a><em class='comment'>/* Convert U to REDC form, U_r = B^n * U mod M */</em>
+<a id='L173' name='L173'></a><strong class='reserved'>static</strong> <strong class='reserved'>void</strong>
+<a id='L174' name='L174'></a><a href='../R/3400.html' title='Multiple referred from 3 places.'>redcify</a> (<a href='../S/18.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../S/18.html#L65' title='Defined at 65 in mini-gmp/mini-gmp.h.'>mp_srcptr</a> <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, <a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> un, <a href='../S/18.html#L65' title='Defined at 65 in mini-gmp/mini-gmp.h.'>mp_srcptr</a> mp, <a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> n)
+<a id='L175' name='L175'></a><em class='brace'>{</em>
+<a id='L176' name='L176'></a>  <a href='../S/18.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, qp;
+<a id='L177' name='L177'></a>  <a href='../D/1427.html' title='Multiple defined in 4 places.'>TMP_DECL</a>;
+<a id='L178' name='L178'></a>  <a href='../D/1431.html' title='Multiple defined in 4 places.'>TMP_MARK</a>;
+<a id='L179' name='L179'></a>
+<a id='L180' name='L180'></a>  <a href='../S/146.html#L499' title='Defined at 499 in gmp-impl.h.'>TMP_ALLOC_LIMBS_2</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, un + n, qp, un + 1);
+<a id='L181' name='L181'></a>
+<a id='L182' name='L182'></a>  <a href='../S/146.html#L1919' title='Defined at 1919 in gmp-impl.h.'>MPN_ZERO</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, n);
+<a id='L183' name='L183'></a>  <a href='../S/146.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a> + n, <a href='../D/4450.html' title='Multiple defined in 2 places.'>up</a>, un);
+<a id='L184' name='L184'></a>  <a href='../S/1207.html#L47' title='Defined at 47 in mpn/generic/tdiv_qr.c.'>mpn_tdiv_qr</a> (qp, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, 0L, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, un + n, mp, n);
+<a id='L185' name='L185'></a>  <a href='../D/1429.html' title='Multiple defined in 4 places.'>TMP_FREE</a>;
+<a id='L186' name='L186'></a><em class='brace'>}</em>
+<a id='L187' name='L187'></a>
+<a id='L188' name='L188'></a><em class='comment'>/* rp[n-1..0] = bp[bn-1..0] ^ ep[en-1..0] mod mp[n-1..0]</em>
+<a id='L189' name='L189'></a><em class='comment'>   Requires that mp[n-1..0] is odd.</em>
+<a id='L190' name='L190'></a><em class='comment'>   Requires that ep[en-1..0] is &gt; 1.</em>
+<a id='L191' name='L191'></a><em class='comment'>   Uses scratch space at tp of MAX(mpn_binvert_itch(n),2n) limbs.  */</em>
+<a id='L192' name='L192'></a><strong class='reserved'>void</strong>
+<a id='L193' name='L193'></a><a href='../R/2864.html' title='Multiple referred from 2 places.'>mpn_powm</a> (<a href='../S/18.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../S/18.html#L65' title='Defined at 65 in mini-gmp/mini-gmp.h.'>mp_srcptr</a> <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a>, <a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> bn,
+<a id='L194' name='L194'></a>          <a href='../S/18.html#L65' title='Defined at 65 in mini-gmp/mini-gmp.h.'>mp_srcptr</a> ep, <a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> en,
+<a id='L195' name='L195'></a>          <a href='../S/18.html#L65' title='Defined at 65 in mini-gmp/mini-gmp.h.'>mp_srcptr</a> mp, <a href='../S/18.html#L61' title='Defined at 61 in mini-gmp/mini-gmp.h.'>mp_size_t</a> n, <a href='../S/18.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>)
+<a id='L196' name='L196'></a><em class='brace'>{</em>
+<a id='L197' name='L197'></a>  <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> <a href='../D/2676.html' title='Multiple defined in 8 places.'>ip</a>[2], *mip;
+<a id='L198' name='L198'></a>  <strong class='reserved'>int</strong> cnt;
+<a id='L199' name='L199'></a>  <a href='../S/18.html#L62' title='Defined at 62 in mini-gmp/mini-gmp.h.'>mp_bitcnt_t</a> ebi;
+<a id='L200' name='L200'></a>  <strong class='reserved'>int</strong> windowsize, this_windowsize;
+<a id='L201' name='L201'></a>  <a href='../D/2745.html' title='Multiple defined in 2 places.'>mp_limb_t</a> expbits;
+<a id='L202' name='L202'></a>  <a href='../S/18.html#L64' title='Defined at 64 in mini-gmp/mini-gmp.h.'>mp_ptr</a> pp, this_pp;
+<a id='L203' name='L203'></a>  <strong class='reserved'>long</strong> i;
+<a id='L204' name='L204'></a>  <a href='../D/1427.html' title='Multiple defined in 4 places.'>TMP_DECL</a>;
+<a id='L205' name='L205'></a>
+<a id='L206' name='L206'></a>  <a href='../D/34.html' title='Multiple defined in 3 places.'>ASSERT</a> (en &gt; 1 || (en == 1 &amp;&amp; ep[0] &gt; 1));
+<a id='L207' name='L207'></a>  <a href='../D/34.html' title='Multiple defined in 3 places.'>ASSERT</a> (n &gt;= 1 &amp;&amp; ((mp[0] &amp; 1) != 0));
+<a id='L208' name='L208'></a>
+<a id='L209' name='L209'></a>  <a href='../D/1431.html' title='Multiple defined in 4 places.'>TMP_MARK</a>;
+<a id='L210' name='L210'></a>
+<a id='L211' name='L211'></a>  <a href='../S/146.html#L2972' title='Defined at 2972 in gmp-impl.h.'>MPN_SIZEINBASE_2EXP</a>(ebi, ep, en, 1);
+<a id='L212' name='L212'></a>
+<a id='L213' name='L213'></a><em class='sharp'>#if</em> 0
+<a id='L214' name='L214'></a>  <strong class='reserved'>if</strong> (bn &lt; n)
+<a id='L215' name='L215'></a>    <em class='brace'>{</em>
+<a id='L216' name='L216'></a>      <em class='comment'>/* Do the first few exponent bits without mod reductions,</em>
+<a id='L217' name='L217'></a><em class='comment'>         until the result is greater than the mod argument.  */</em>
+<a id='L218' name='L218'></a>      <strong class='reserved'>for</strong> (;;)
+<a id='L219' name='L219'></a>        <em class='brace'>{</em>
+<a id='L220' name='L220'></a>          <a href='../D/3186.html' title='Multiple defined in 2 places.'>mpn_sqr</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, this_pp, tn);
+<a id='L221' name='L221'></a>          tn = tn * 2 - 1,  tn += <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>[tn] != 0;
+<a id='L222' name='L222'></a>          <strong class='reserved'>if</strong> (<a href='../D/2537.html' title='Multiple defined in 3 places.'>getbit</a> (ep, ebi) != 0)
+<a id='L223' name='L223'></a>            <a href='../D/3092.html' title='Multiple defined in 2 places.'>mpn_mul</a> (..., <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, tn, <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a>, bn);
+<a id='L224' name='L224'></a>          ebi--;
+<a id='L225' name='L225'></a>        <em class='brace'>}</em>
+<a id='L226' name='L226'></a>    <em class='brace'>}</em>
+<a id='L227' name='L227'></a><em class='sharp'>#endif</em>
+<a id='L228' name='L228'></a>
+<a id='L229' name='L229'></a>  windowsize = <a href='../D/4488.html' title='Multiple defined in 4 places.'>win_size</a> (ebi);
+<a id='L230' name='L230'></a>
+<a id='L231' name='L231'></a><em class='sharp'>#if</em> <a href='../D/1657.html' title='Multiple defined in 2 places.'>WANT_REDC_2</a>
+<a id='L232' name='L232'></a>  <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1074.html' title='Multiple defined in 36 places.'>REDC_1_TO_REDC_2_THRESHOLD</a>))
+<a id='L233' name='L233'></a>    <em class='brace'>{</em>
+<a id='L234' name='L234'></a>      mip = <a href='../D/2676.html' title='Multiple defined in 8 places.'>ip</a>;
+<a id='L235' name='L235'></a>      <a href='../S/146.html#L3306' title='Defined at 3306 in gmp-impl.h.'>binvert_limb</a> (mip[0], mp[0]);
+<a id='L236' name='L236'></a>      mip[0] = -mip[0];
+<a id='L237' name='L237'></a>    <em class='brace'>}</em>
+<a id='L238' name='L238'></a>  <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1076.html' title='Multiple defined in 34 places.'>REDC_2_TO_REDC_N_THRESHOLD</a>))
+<a id='L239' name='L239'></a>    <em class='brace'>{</em>
+<a id='L240' name='L240'></a>      mip = <a href='../D/2676.html' title='Multiple defined in 8 places.'>ip</a>;
+<a id='L241' name='L241'></a>      <a href='../D/2890.html' title='Multiple defined in 2 places.'>mpn_binvert</a> (mip, mp, 2, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>);
+<a id='L242' name='L242'></a>      mip[0] = -mip[0]; mip[1] = ~mip[1];
+<a id='L243' name='L243'></a>    <em class='brace'>}</em>
+<a id='L244' name='L244'></a><em class='sharp'>#else</em>
+<a id='L245' name='L245'></a>  <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1075.html' title='Multiple defined in 65 places.'>REDC_1_TO_REDC_N_THRESHOLD</a>))
+<a id='L246' name='L246'></a>    <em class='brace'>{</em>
+<a id='L247' name='L247'></a>      mip = <a href='../D/2676.html' title='Multiple defined in 8 places.'>ip</a>;
+<a id='L248' name='L248'></a>      <a href='../S/146.html#L3306' title='Defined at 3306 in gmp-impl.h.'>binvert_limb</a> (mip[0], mp[0]);
+<a id='L249' name='L249'></a>      mip[0] = -mip[0];
+<a id='L250' name='L250'></a>    <em class='brace'>}</em>
+<a id='L251' name='L251'></a><em class='sharp'>#endif</em>
+<a id='L252' name='L252'></a>  <strong class='reserved'>else</strong>
+<a id='L253' name='L253'></a>    <em class='brace'>{</em>
+<a id='L254' name='L254'></a>      mip = <a href='../S/146.html#L487' title='Defined at 487 in gmp-impl.h.'>TMP_ALLOC_LIMBS</a> (n);
+<a id='L255' name='L255'></a>      <a href='../D/2890.html' title='Multiple defined in 2 places.'>mpn_binvert</a> (mip, mp, n, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>);
+<a id='L256' name='L256'></a>    <em class='brace'>}</em>
+<a id='L257' name='L257'></a>
+<a id='L258' name='L258'></a>  pp = <a href='../S/146.html#L487' title='Defined at 487 in gmp-impl.h.'>TMP_ALLOC_LIMBS</a> (n &lt;&lt; (windowsize - 1));
+<a id='L259' name='L259'></a>
+<a id='L260' name='L260'></a>  this_pp = pp;
+<a id='L261' name='L261'></a>  <a href='../D/3694.html' title='Multiple defined in 2 places.'>redcify</a> (this_pp, <a href='../D/2167.html' title='Multiple defined in 2 places.'>bp</a>, bn, mp, n);
+<a id='L262' name='L262'></a>
+<a id='L263' name='L263'></a>  <em class='comment'>/* Store b^2 at rp.  */</em>
+<a id='L264' name='L264'></a>  <a href='../D/3186.html' title='Multiple defined in 2 places.'>mpn_sqr</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, this_pp, n);
+<a id='L265' name='L265'></a><em class='sharp'>#if</em> 0
+<a id='L266' name='L266'></a>  <strong class='reserved'>if</strong> (n == 1) <em class='brace'>{</em>
+<a id='L267' name='L267'></a>    <a href='../D/815.html' title='Multiple defined in 2 places.'>MPN_REDC_0</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, mip[0]);
+<a id='L268' name='L268'></a>  <em class='brace'>}</em> <strong class='reserved'>else</strong>
+<a id='L269' name='L269'></a><em class='sharp'>#endif</em>
+<a id='L270' name='L270'></a><em class='sharp'>#if</em> <a href='../D/1657.html' title='Multiple defined in 2 places.'>WANT_REDC_2</a>
+<a id='L271' name='L271'></a>  <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1074.html' title='Multiple defined in 36 places.'>REDC_1_TO_REDC_2_THRESHOLD</a>))
+<a id='L272' name='L272'></a>    <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0]);
+<a id='L273' name='L273'></a>  <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1076.html' title='Multiple defined in 34 places.'>REDC_2_TO_REDC_N_THRESHOLD</a>))
+<a id='L274' name='L274'></a>    <a href='../D/818.html' title='Multiple defined in 2 places.'>MPN_REDC_2</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip);
+<a id='L275' name='L275'></a><em class='sharp'>#else</em>
+<a id='L276' name='L276'></a>  <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1075.html' title='Multiple defined in 65 places.'>REDC_1_TO_REDC_N_THRESHOLD</a>))
+<a id='L277' name='L277'></a>    <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0]);
+<a id='L278' name='L278'></a><em class='sharp'>#endif</em>
+<a id='L279' name='L279'></a>  <strong class='reserved'>else</strong>
+<a id='L280' name='L280'></a>    <a href='../D/3143.html' title='Multiple defined in 2 places.'>mpn_redc_n</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip);
+<a id='L281' name='L281'></a>
+<a id='L282' name='L282'></a>  <em class='comment'>/* Precompute odd powers of b and put them in the temporary area at pp.  */</em>
+<a id='L283' name='L283'></a>  <strong class='reserved'>for</strong> (i = (1 &lt;&lt; (windowsize - 1)) - 1; i &gt; 0; i--)
+<a id='L284' name='L284'></a><em class='sharp'>#if</em> 1
+<a id='L285' name='L285'></a>    <strong class='reserved'>if</strong> (n == 1) <em class='brace'>{</em>
+<a id='L286' name='L286'></a>      <a href='../D/4442.html' title='Multiple defined in 55 places.'>umul_ppmm</a>((<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>)[1], *(<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>), *(this_pp), *(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>));
+<a id='L287' name='L287'></a>      ++this_pp ;
+<a id='L288' name='L288'></a>      <a href='../D/815.html' title='Multiple defined in 2 places.'>MPN_REDC_0</a> (this_pp, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, mip[0]);
+<a id='L289' name='L289'></a>    <em class='brace'>}</em> <strong class='reserved'>else</strong>
+<a id='L290' name='L290'></a><em class='sharp'>#endif</em>
+<a id='L291' name='L291'></a>    <em class='brace'>{</em>
+<a id='L292' name='L292'></a>      <a href='../D/3106.html' title='Multiple defined in 2 places.'>mpn_mul_n</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, this_pp, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, n);
+<a id='L293' name='L293'></a>      this_pp += n;
+<a id='L294' name='L294'></a><em class='sharp'>#if</em> <a href='../D/1657.html' title='Multiple defined in 2 places.'>WANT_REDC_2</a>
+<a id='L295' name='L295'></a>      <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1074.html' title='Multiple defined in 36 places.'>REDC_1_TO_REDC_2_THRESHOLD</a>))
+<a id='L296' name='L296'></a>        <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (this_pp, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0]);
+<a id='L297' name='L297'></a>      <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1076.html' title='Multiple defined in 34 places.'>REDC_2_TO_REDC_N_THRESHOLD</a>))
+<a id='L298' name='L298'></a>        <a href='../D/818.html' title='Multiple defined in 2 places.'>MPN_REDC_2</a> (this_pp, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip);
+<a id='L299' name='L299'></a><em class='sharp'>#else</em>
+<a id='L300' name='L300'></a>      <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1075.html' title='Multiple defined in 65 places.'>REDC_1_TO_REDC_N_THRESHOLD</a>))
+<a id='L301' name='L301'></a>        <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (this_pp, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0]);
+<a id='L302' name='L302'></a><em class='sharp'>#endif</em>
+<a id='L303' name='L303'></a>      <strong class='reserved'>else</strong>
+<a id='L304' name='L304'></a>        <a href='../D/3143.html' title='Multiple defined in 2 places.'>mpn_redc_n</a> (this_pp, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip);
+<a id='L305' name='L305'></a>    <em class='brace'>}</em>
+<a id='L306' name='L306'></a>
+<a id='L307' name='L307'></a>  expbits = <a href='../D/2538.html' title='Multiple defined in 3 places.'>getbits</a> (ep, ebi, windowsize);
+<a id='L308' name='L308'></a>  <strong class='reserved'>if</strong> (ebi &lt; windowsize)
+<a id='L309' name='L309'></a>    ebi = 0;
+<a id='L310' name='L310'></a>  <strong class='reserved'>else</strong>
+<a id='L311' name='L311'></a>    ebi -= windowsize;
+<a id='L312' name='L312'></a>
+<a id='L313' name='L313'></a>  <a href='../D/2369.html' title='Multiple defined in 12 places.'>count_trailing_zeros</a> (cnt, expbits);
+<a id='L314' name='L314'></a>  ebi += cnt;
+<a id='L315' name='L315'></a>  expbits &gt;&gt;= cnt;
+<a id='L316' name='L316'></a>
+<a id='L317' name='L317'></a>  <a href='../S/146.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, pp + n * (expbits &gt;&gt; 1), n);
+<a id='L318' name='L318'></a>
+<a id='L319' name='L319'></a><em class='sharp'>#define</em> <a href='../R/501.html' title='Multiple referred from 23 places.'>INNERLOOP</a>                                                       \
+<a id='L320' name='L320'></a>  <strong class='reserved'>while</strong> (ebi != 0)                                                      \
+<a id='L321' name='L321'></a>    <em class='brace'>{</em>                                                                   \
+<a id='L322' name='L322'></a>      <strong class='reserved'>while</strong> (<a href='../D/2537.html' title='Multiple defined in 3 places.'>getbit</a> (ep, ebi) == 0)                                     \
+<a id='L323' name='L323'></a>        <em class='brace'>{</em>                                                               \
+<a id='L324' name='L324'></a>          <a href='../D/833.html' title='Multiple defined in 43 places.'>MPN_SQR</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, n);                                          \
+<a id='L325' name='L325'></a>          <a href='../D/820.html' title='Multiple defined in 46 places.'>MPN_REDUCE</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip);                              \
+<a id='L326' name='L326'></a>          <strong class='reserved'>if</strong> (--ebi == 0)                                               \
+<a id='L327' name='L327'></a>            <strong class='reserved'>goto</strong> done;                                                  \
+<a id='L328' name='L328'></a>        <em class='brace'>}</em>                                                               \
+<a id='L329' name='L329'></a>                                                                        \
+<a id='L330' name='L330'></a>      <em class='comment'>/* The next bit of the exponent is 1.  Now extract the largest    \</em>
+<a id='L331' name='L331'></a><em class='comment'>         block of bits &lt;= windowsize, and such that the least           \</em>
+<a id='L332' name='L332'></a><em class='comment'>         significant bit is 1.  */</em>                                      \
+<a id='L333' name='L333'></a>                                                                        \
+<a id='L334' name='L334'></a>      expbits = <a href='../D/2538.html' title='Multiple defined in 3 places.'>getbits</a> (ep, ebi, windowsize);                          \
+<a id='L335' name='L335'></a>      this_windowsize = windowsize;                                     \
+<a id='L336' name='L336'></a>      <strong class='reserved'>if</strong> (ebi &lt; windowsize)                                             \
+<a id='L337' name='L337'></a>        <em class='brace'>{</em>                                                               \
+<a id='L338' name='L338'></a>          this_windowsize -= windowsize - ebi;                          \
+<a id='L339' name='L339'></a>          ebi = 0;                                                      \
+<a id='L340' name='L340'></a>        <em class='brace'>}</em>                                                               \
+<a id='L341' name='L341'></a>      <strong class='reserved'>else</strong>                                                              \
+<a id='L342' name='L342'></a>        ebi -= windowsize;                                              \
+<a id='L343' name='L343'></a>                                                                        \
+<a id='L344' name='L344'></a>      <a href='../D/2369.html' title='Multiple defined in 12 places.'>count_trailing_zeros</a> (cnt, expbits);                              \
+<a id='L345' name='L345'></a>      this_windowsize -= cnt;                                           \
+<a id='L346' name='L346'></a>      ebi += cnt;                                                       \
+<a id='L347' name='L347'></a>      expbits &gt;&gt;= cnt;                                                  \
+<a id='L348' name='L348'></a>                                                                        \
+<a id='L349' name='L349'></a>      <strong class='reserved'>do</strong>                                                                \
+<a id='L350' name='L350'></a>        <em class='brace'>{</em>                                                               \
+<a id='L351' name='L351'></a>          <a href='../D/833.html' title='Multiple defined in 43 places.'>MPN_SQR</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, n);                                          \
+<a id='L352' name='L352'></a>          <a href='../D/820.html' title='Multiple defined in 46 places.'>MPN_REDUCE</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip);                              \
+<a id='L353' name='L353'></a>        <em class='brace'>}</em>                                                               \
+<a id='L354' name='L354'></a>      <strong class='reserved'>while</strong> (--this_windowsize != 0);                                   \
+<a id='L355' name='L355'></a>                                                                        \
+<a id='L356' name='L356'></a>      <a href='../D/809.html' title='Multiple defined in 42 places.'>MPN_MUL_N</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, pp + n * (expbits &gt;&gt; 1), n);                   \
+<a id='L357' name='L357'></a>      <a href='../D/820.html' title='Multiple defined in 46 places.'>MPN_REDUCE</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip);                                  \
+<a id='L358' name='L358'></a>    <em class='brace'>}</em>
+<a id='L359' name='L359'></a>
+<a id='L360' name='L360'></a>
+<a id='L361' name='L361'></a>  <strong class='reserved'>if</strong> (n == 1)
+<a id='L362' name='L362'></a>    <em class='brace'>{</em>
+<a id='L363' name='L363'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L364' name='L364'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L365' name='L365'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L366' name='L366'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/4442.html' title='Multiple defined in 55 places.'>umul_ppmm</a>((r)[1], *(r), *(a), *(b))
+<a id='L367' name='L367'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/4442.html' title='Multiple defined in 55 places.'>umul_ppmm</a>((r)[1], *(r), *(a), *(a))
+<a id='L368' name='L368'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/815.html' title='Multiple defined in 2 places.'>MPN_REDC_0</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, mip[0])
+<a id='L369' name='L369'></a>      <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L370' name='L370'></a>    <em class='brace'>}</em>
+<a id='L371' name='L371'></a>  <strong class='reserved'>else</strong>
+<a id='L372' name='L372'></a><em class='sharp'>#if</em> <a href='../D/1657.html' title='Multiple defined in 2 places.'>WANT_REDC_2</a>
+<a id='L373' name='L373'></a>  <strong class='reserved'>if</strong> (<a href='../D/1074.html' title='Multiple defined in 36 places.'>REDC_1_TO_REDC_2_THRESHOLD</a> &lt; <a href='../D/910.html' title='Multiple defined in 115 places.'>MUL_TOOM22_THRESHOLD</a>)
+<a id='L374' name='L374'></a>    <em class='brace'>{</em>
+<a id='L375' name='L375'></a>      <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1074.html' title='Multiple defined in 36 places.'>REDC_1_TO_REDC_2_THRESHOLD</a>))
+<a id='L376' name='L376'></a>        <em class='brace'>{</em>
+<a id='L377' name='L377'></a>          <strong class='reserved'>if</strong> (<a href='../D/1074.html' title='Multiple defined in 36 places.'>REDC_1_TO_REDC_2_THRESHOLD</a> &lt; <a href='../D/1371.html' title='Multiple defined in 114 places.'>SQR_BASECASE_THRESHOLD</a>
+<a id='L378' name='L378'></a>              || <a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1371.html' title='Multiple defined in 114 places.'>SQR_BASECASE_THRESHOLD</a>))
+<a id='L379' name='L379'></a>            <em class='brace'>{</em>
+<a id='L380' name='L380'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L381' name='L381'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L382' name='L382'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L383' name='L383'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,b,n)
+<a id='L384' name='L384'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,a,n)
+<a id='L385' name='L385'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0])
+<a id='L386' name='L386'></a>              <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L387' name='L387'></a>            <em class='brace'>}</em>
+<a id='L388' name='L388'></a>          <strong class='reserved'>else</strong>
+<a id='L389' name='L389'></a>            <em class='brace'>{</em>
+<a id='L390' name='L390'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L391' name='L391'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L392' name='L392'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L393' name='L393'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,b,n)
+<a id='L394' name='L394'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3187.html' title='Multiple defined in 6 places.'>mpn_sqr_basecase</a> (r,a,n)
+<a id='L395' name='L395'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0])
+<a id='L396' name='L396'></a>              <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L397' name='L397'></a>            <em class='brace'>}</em>
+<a id='L398' name='L398'></a>        <em class='brace'>}</em>
+<a id='L399' name='L399'></a>      <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/910.html' title='Multiple defined in 115 places.'>MUL_TOOM22_THRESHOLD</a>))
+<a id='L400' name='L400'></a>        <em class='brace'>{</em>
+<a id='L401' name='L401'></a>          <strong class='reserved'>if</strong> (<a href='../D/910.html' title='Multiple defined in 115 places.'>MUL_TOOM22_THRESHOLD</a> &lt; <a href='../D/1371.html' title='Multiple defined in 114 places.'>SQR_BASECASE_THRESHOLD</a>
+<a id='L402' name='L402'></a>              || <a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1371.html' title='Multiple defined in 114 places.'>SQR_BASECASE_THRESHOLD</a>))
+<a id='L403' name='L403'></a>            <em class='brace'>{</em>
+<a id='L404' name='L404'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L405' name='L405'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L406' name='L406'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L407' name='L407'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,b,n)
+<a id='L408' name='L408'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,a,n)
+<a id='L409' name='L409'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/818.html' title='Multiple defined in 2 places.'>MPN_REDC_2</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip)
+<a id='L410' name='L410'></a>              <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L411' name='L411'></a>            <em class='brace'>}</em>
+<a id='L412' name='L412'></a>          <strong class='reserved'>else</strong>
+<a id='L413' name='L413'></a>            <em class='brace'>{</em>
+<a id='L414' name='L414'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L415' name='L415'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L416' name='L416'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L417' name='L417'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,b,n)
+<a id='L418' name='L418'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3187.html' title='Multiple defined in 6 places.'>mpn_sqr_basecase</a> (r,a,n)
+<a id='L419' name='L419'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/818.html' title='Multiple defined in 2 places.'>MPN_REDC_2</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip)
+<a id='L420' name='L420'></a>              <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L421' name='L421'></a>            <em class='brace'>}</em>
+<a id='L422' name='L422'></a>        <em class='brace'>}</em>
+<a id='L423' name='L423'></a>      <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1076.html' title='Multiple defined in 34 places.'>REDC_2_TO_REDC_N_THRESHOLD</a>))
+<a id='L424' name='L424'></a>        <em class='brace'>{</em>
+<a id='L425' name='L425'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L426' name='L426'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L427' name='L427'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L428' name='L428'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3106.html' title='Multiple defined in 2 places.'>mpn_mul_n</a> (r,a,b,n)
+<a id='L429' name='L429'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3186.html' title='Multiple defined in 2 places.'>mpn_sqr</a> (r,a,n)
+<a id='L430' name='L430'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/818.html' title='Multiple defined in 2 places.'>MPN_REDC_2</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip)
+<a id='L431' name='L431'></a>          <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L432' name='L432'></a>        <em class='brace'>}</em>
+<a id='L433' name='L433'></a>      <strong class='reserved'>else</strong>
+<a id='L434' name='L434'></a>        <em class='brace'>{</em>
+<a id='L435' name='L435'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L436' name='L436'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L437' name='L437'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L438' name='L438'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3106.html' title='Multiple defined in 2 places.'>mpn_mul_n</a> (r,a,b,n)
+<a id='L439' name='L439'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3186.html' title='Multiple defined in 2 places.'>mpn_sqr</a> (r,a,n)
+<a id='L440' name='L440'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/3143.html' title='Multiple defined in 2 places.'>mpn_redc_n</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip)
+<a id='L441' name='L441'></a>          <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L442' name='L442'></a>        <em class='brace'>}</em>
+<a id='L443' name='L443'></a>    <em class='brace'>}</em>
+<a id='L444' name='L444'></a>  <strong class='reserved'>else</strong>
+<a id='L445' name='L445'></a>    <em class='brace'>{</em>
+<a id='L446' name='L446'></a>      <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/910.html' title='Multiple defined in 115 places.'>MUL_TOOM22_THRESHOLD</a>))
+<a id='L447' name='L447'></a>        <em class='brace'>{</em>
+<a id='L448' name='L448'></a>          <strong class='reserved'>if</strong> (<a href='../D/910.html' title='Multiple defined in 115 places.'>MUL_TOOM22_THRESHOLD</a> &lt; <a href='../D/1371.html' title='Multiple defined in 114 places.'>SQR_BASECASE_THRESHOLD</a>
+<a id='L449' name='L449'></a>              || <a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1371.html' title='Multiple defined in 114 places.'>SQR_BASECASE_THRESHOLD</a>))
+<a id='L450' name='L450'></a>            <em class='brace'>{</em>
+<a id='L451' name='L451'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L452' name='L452'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L453' name='L453'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L454' name='L454'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,b,n)
+<a id='L455' name='L455'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,a,n)
+<a id='L456' name='L456'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0])
+<a id='L457' name='L457'></a>              <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L458' name='L458'></a>            <em class='brace'>}</em>
+<a id='L459' name='L459'></a>          <strong class='reserved'>else</strong>
+<a id='L460' name='L460'></a>            <em class='brace'>{</em>
+<a id='L461' name='L461'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L462' name='L462'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L463' name='L463'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L464' name='L464'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,b,n)
+<a id='L465' name='L465'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3187.html' title='Multiple defined in 6 places.'>mpn_sqr_basecase</a> (r,a,n)
+<a id='L466' name='L466'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0])
+<a id='L467' name='L467'></a>              <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L468' name='L468'></a>            <em class='brace'>}</em>
+<a id='L469' name='L469'></a>        <em class='brace'>}</em>
+<a id='L470' name='L470'></a>      <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1074.html' title='Multiple defined in 36 places.'>REDC_1_TO_REDC_2_THRESHOLD</a>))
+<a id='L471' name='L471'></a>        <em class='brace'>{</em>
+<a id='L472' name='L472'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L473' name='L473'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L474' name='L474'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L475' name='L475'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3106.html' title='Multiple defined in 2 places.'>mpn_mul_n</a> (r,a,b,n)
+<a id='L476' name='L476'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3186.html' title='Multiple defined in 2 places.'>mpn_sqr</a> (r,a,n)
+<a id='L477' name='L477'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0])
+<a id='L478' name='L478'></a>          <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L479' name='L479'></a>        <em class='brace'>}</em>
+<a id='L480' name='L480'></a>      <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1076.html' title='Multiple defined in 34 places.'>REDC_2_TO_REDC_N_THRESHOLD</a>))
+<a id='L481' name='L481'></a>        <em class='brace'>{</em>
+<a id='L482' name='L482'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L483' name='L483'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L484' name='L484'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L485' name='L485'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3106.html' title='Multiple defined in 2 places.'>mpn_mul_n</a> (r,a,b,n)
+<a id='L486' name='L486'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3186.html' title='Multiple defined in 2 places.'>mpn_sqr</a> (r,a,n)
+<a id='L487' name='L487'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/818.html' title='Multiple defined in 2 places.'>MPN_REDC_2</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip)
+<a id='L488' name='L488'></a>          <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L489' name='L489'></a>        <em class='brace'>}</em>
+<a id='L490' name='L490'></a>      <strong class='reserved'>else</strong>
+<a id='L491' name='L491'></a>        <em class='brace'>{</em>
+<a id='L492' name='L492'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L493' name='L493'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L494' name='L494'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L495' name='L495'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3106.html' title='Multiple defined in 2 places.'>mpn_mul_n</a> (r,a,b,n)
+<a id='L496' name='L496'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3186.html' title='Multiple defined in 2 places.'>mpn_sqr</a> (r,a,n)
+<a id='L497' name='L497'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/3143.html' title='Multiple defined in 2 places.'>mpn_redc_n</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip)
+<a id='L498' name='L498'></a>          <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L499' name='L499'></a>        <em class='brace'>}</em>
+<a id='L500' name='L500'></a>    <em class='brace'>}</em>
+<a id='L501' name='L501'></a>
+<a id='L502' name='L502'></a><em class='sharp'>#else</em>  <em class='comment'>/* WANT_REDC_2 */</em>
+<a id='L503' name='L503'></a>
+<a id='L504' name='L504'></a>  <strong class='reserved'>if</strong> (<a href='../D/1075.html' title='Multiple defined in 65 places.'>REDC_1_TO_REDC_N_THRESHOLD</a> &lt; <a href='../D/910.html' title='Multiple defined in 115 places.'>MUL_TOOM22_THRESHOLD</a>)
+<a id='L505' name='L505'></a>    <em class='brace'>{</em>
+<a id='L506' name='L506'></a>      <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1075.html' title='Multiple defined in 65 places.'>REDC_1_TO_REDC_N_THRESHOLD</a>))
+<a id='L507' name='L507'></a>        <em class='brace'>{</em>
+<a id='L508' name='L508'></a>          <strong class='reserved'>if</strong> (<a href='../D/1075.html' title='Multiple defined in 65 places.'>REDC_1_TO_REDC_N_THRESHOLD</a> &lt; <a href='../D/1371.html' title='Multiple defined in 114 places.'>SQR_BASECASE_THRESHOLD</a>
+<a id='L509' name='L509'></a>              || <a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1371.html' title='Multiple defined in 114 places.'>SQR_BASECASE_THRESHOLD</a>))
+<a id='L510' name='L510'></a>            <em class='brace'>{</em>
+<a id='L511' name='L511'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L512' name='L512'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L513' name='L513'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L514' name='L514'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,b,n)
+<a id='L515' name='L515'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,a,n)
+<a id='L516' name='L516'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0])
+<a id='L517' name='L517'></a>              <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L518' name='L518'></a>            <em class='brace'>}</em>
+<a id='L519' name='L519'></a>          <strong class='reserved'>else</strong>
+<a id='L520' name='L520'></a>            <em class='brace'>{</em>
+<a id='L521' name='L521'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L522' name='L522'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L523' name='L523'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L524' name='L524'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,b,n)
+<a id='L525' name='L525'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3187.html' title='Multiple defined in 6 places.'>mpn_sqr_basecase</a> (r,a,n)
+<a id='L526' name='L526'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0])
+<a id='L527' name='L527'></a>              <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L528' name='L528'></a>            <em class='brace'>}</em>
+<a id='L529' name='L529'></a>        <em class='brace'>}</em>
+<a id='L530' name='L530'></a>      <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/910.html' title='Multiple defined in 115 places.'>MUL_TOOM22_THRESHOLD</a>))
+<a id='L531' name='L531'></a>        <em class='brace'>{</em>
+<a id='L532' name='L532'></a>          <strong class='reserved'>if</strong> (<a href='../D/910.html' title='Multiple defined in 115 places.'>MUL_TOOM22_THRESHOLD</a> &lt; <a href='../D/1371.html' title='Multiple defined in 114 places.'>SQR_BASECASE_THRESHOLD</a>
+<a id='L533' name='L533'></a>              || <a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1371.html' title='Multiple defined in 114 places.'>SQR_BASECASE_THRESHOLD</a>))
+<a id='L534' name='L534'></a>            <em class='brace'>{</em>
+<a id='L535' name='L535'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L536' name='L536'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L537' name='L537'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L538' name='L538'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,b,n)
+<a id='L539' name='L539'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,a,n)
+<a id='L540' name='L540'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/3143.html' title='Multiple defined in 2 places.'>mpn_redc_n</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip)
+<a id='L541' name='L541'></a>              <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L542' name='L542'></a>            <em class='brace'>}</em>
+<a id='L543' name='L543'></a>          <strong class='reserved'>else</strong>
+<a id='L544' name='L544'></a>            <em class='brace'>{</em>
+<a id='L545' name='L545'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L546' name='L546'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L547' name='L547'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L548' name='L548'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,b,n)
+<a id='L549' name='L549'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3187.html' title='Multiple defined in 6 places.'>mpn_sqr_basecase</a> (r,a,n)
+<a id='L550' name='L550'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/3143.html' title='Multiple defined in 2 places.'>mpn_redc_n</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip)
+<a id='L551' name='L551'></a>              <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L552' name='L552'></a>            <em class='brace'>}</em>
+<a id='L553' name='L553'></a>        <em class='brace'>}</em>
+<a id='L554' name='L554'></a>      <strong class='reserved'>else</strong>
+<a id='L555' name='L555'></a>        <em class='brace'>{</em>
+<a id='L556' name='L556'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L557' name='L557'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L558' name='L558'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L559' name='L559'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3106.html' title='Multiple defined in 2 places.'>mpn_mul_n</a> (r,a,b,n)
+<a id='L560' name='L560'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3186.html' title='Multiple defined in 2 places.'>mpn_sqr</a> (r,a,n)
+<a id='L561' name='L561'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/3143.html' title='Multiple defined in 2 places.'>mpn_redc_n</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip)
+<a id='L562' name='L562'></a>          <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L563' name='L563'></a>        <em class='brace'>}</em>
+<a id='L564' name='L564'></a>    <em class='brace'>}</em>
+<a id='L565' name='L565'></a>  <strong class='reserved'>else</strong>
+<a id='L566' name='L566'></a>    <em class='brace'>{</em>
+<a id='L567' name='L567'></a>      <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/910.html' title='Multiple defined in 115 places.'>MUL_TOOM22_THRESHOLD</a>))
+<a id='L568' name='L568'></a>        <em class='brace'>{</em>
+<a id='L569' name='L569'></a>          <strong class='reserved'>if</strong> (<a href='../D/910.html' title='Multiple defined in 115 places.'>MUL_TOOM22_THRESHOLD</a> &lt; <a href='../D/1371.html' title='Multiple defined in 114 places.'>SQR_BASECASE_THRESHOLD</a>
+<a id='L570' name='L570'></a>              || <a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1371.html' title='Multiple defined in 114 places.'>SQR_BASECASE_THRESHOLD</a>))
+<a id='L571' name='L571'></a>            <em class='brace'>{</em>
+<a id='L572' name='L572'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L573' name='L573'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L574' name='L574'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L575' name='L575'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,b,n)
+<a id='L576' name='L576'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,a,n)
+<a id='L577' name='L577'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0])
+<a id='L578' name='L578'></a>              <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L579' name='L579'></a>            <em class='brace'>}</em>
+<a id='L580' name='L580'></a>          <strong class='reserved'>else</strong>
+<a id='L581' name='L581'></a>            <em class='brace'>{</em>
+<a id='L582' name='L582'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L583' name='L583'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L584' name='L584'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L585' name='L585'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3100.html' title='Multiple defined in 3 places.'>mpn_mul_basecase</a> (r,a,n,b,n)
+<a id='L586' name='L586'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3187.html' title='Multiple defined in 6 places.'>mpn_sqr_basecase</a> (r,a,n)
+<a id='L587' name='L587'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0])
+<a id='L588' name='L588'></a>              <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L589' name='L589'></a>            <em class='brace'>}</em>
+<a id='L590' name='L590'></a>        <em class='brace'>}</em>
+<a id='L591' name='L591'></a>      <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1075.html' title='Multiple defined in 65 places.'>REDC_1_TO_REDC_N_THRESHOLD</a>))
+<a id='L592' name='L592'></a>        <em class='brace'>{</em>
+<a id='L593' name='L593'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L594' name='L594'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L595' name='L595'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L596' name='L596'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3106.html' title='Multiple defined in 2 places.'>mpn_mul_n</a> (r,a,b,n)
+<a id='L597' name='L597'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3186.html' title='Multiple defined in 2 places.'>mpn_sqr</a> (r,a,n)
+<a id='L598' name='L598'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0])
+<a id='L599' name='L599'></a>          <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L600' name='L600'></a>        <em class='brace'>}</em>
+<a id='L601' name='L601'></a>      <strong class='reserved'>else</strong>
+<a id='L602' name='L602'></a>        <em class='brace'>{</em>
+<a id='L603' name='L603'></a><em class='sharp'>#undef</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>
+<a id='L604' name='L604'></a><em class='sharp'>#undef</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>
+<a id='L605' name='L605'></a><em class='sharp'>#undef</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>
+<a id='L606' name='L606'></a><em class='sharp'>#define</em> <a href='../S/1157.html#L356' title='Referred from 356 in mpn/generic/powm.c.'>MPN_MUL_N</a>(r,a,b,n)              <a href='../D/3106.html' title='Multiple defined in 2 places.'>mpn_mul_n</a> (r,a,b,n)
+<a id='L607' name='L607'></a><em class='sharp'>#define</em> <a href='../R/790.html' title='Multiple referred from 5 places.'>MPN_SQR</a>(r,a,n)                  <a href='../D/3186.html' title='Multiple defined in 2 places.'>mpn_sqr</a> (r,a,n)
+<a id='L608' name='L608'></a><em class='sharp'>#define</em> <a href='../R/777.html' title='Multiple referred from 5 places.'>MPN_REDUCE</a>(<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>,<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>,mp,n,mip)      <a href='../D/3143.html' title='Multiple defined in 2 places.'>mpn_redc_n</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip)
+<a id='L609' name='L609'></a>          <a href='../D/528.html' title='Multiple defined in 2 places.'>INNERLOOP</a>;
+<a id='L610' name='L610'></a>        <em class='brace'>}</em>
+<a id='L611' name='L611'></a>    <em class='brace'>}</em>
+<a id='L612' name='L612'></a><em class='sharp'>#endif</em>  <em class='comment'>/* WANT_REDC_2 */</em>
+<a id='L613' name='L613'></a>
+<a id='L614' name='L614'></a> done:
+<a id='L615' name='L615'></a>
+<a id='L616' name='L616'></a>  <a href='../S/146.html#L1849' title='Defined at 1849 in gmp-impl.h.'>MPN_COPY</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, n);
+<a id='L617' name='L617'></a>  <a href='../S/146.html#L1919' title='Defined at 1919 in gmp-impl.h.'>MPN_ZERO</a> (<a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a> + n, n);
+<a id='L618' name='L618'></a>
+<a id='L619' name='L619'></a><em class='sharp'>#if</em> <a href='../D/1657.html' title='Multiple defined in 2 places.'>WANT_REDC_2</a>
+<a id='L620' name='L620'></a>  <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1074.html' title='Multiple defined in 36 places.'>REDC_1_TO_REDC_2_THRESHOLD</a>))
+<a id='L621' name='L621'></a>    <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0]);
+<a id='L622' name='L622'></a>  <strong class='reserved'>else</strong> <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1076.html' title='Multiple defined in 34 places.'>REDC_2_TO_REDC_N_THRESHOLD</a>))
+<a id='L623' name='L623'></a>    <a href='../D/818.html' title='Multiple defined in 2 places.'>MPN_REDC_2</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip);
+<a id='L624' name='L624'></a><em class='sharp'>#else</em>
+<a id='L625' name='L625'></a>  <strong class='reserved'>if</strong> (<a href='../S/146.html#L1368' title='Defined at 1368 in gmp-impl.h.'>BELOW_THRESHOLD</a> (n, <a href='../D/1075.html' title='Multiple defined in 65 places.'>REDC_1_TO_REDC_N_THRESHOLD</a>))
+<a id='L626' name='L626'></a>    <a href='../D/816.html' title='Multiple defined in 3 places.'>MPN_REDC_1</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip[0]);
+<a id='L627' name='L627'></a><em class='sharp'>#endif</em>
+<a id='L628' name='L628'></a>  <strong class='reserved'>else</strong>
+<a id='L629' name='L629'></a>    <a href='../D/3143.html' title='Multiple defined in 2 places.'>mpn_redc_n</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/4360.html' title='Multiple defined in 12 places.'>tp</a>, mp, n, mip);
+<a id='L630' name='L630'></a>
+<a id='L631' name='L631'></a>  <strong class='reserved'>if</strong> (<a href='../S/21.html#L389' title='Defined at 389 in mini-gmp/mini-gmp.c.'>mpn_cmp</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, mp, n) &gt;= 0)
+<a id='L632' name='L632'></a>    <a href='../D/3206.html' title='Multiple defined in 4 places.'>mpn_sub_n</a> (<a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, <a href='../D/3916.html' title='Multiple defined in 3 places.'>rp</a>, mp, n);
+<a id='L633' name='L633'></a>
+<a id='L634' name='L634'></a>  <a href='../D/1429.html' title='Multiple defined in 4 places.'>TMP_FREE</a>;
+<a id='L635' name='L635'></a><em class='brace'>}</em>
+</pre>
+<hr />
+<a id='BOTTOM' name='BOTTOM'></a>
+<em class='comment'>/* [&lt;][&gt;]<a href='#L139'>[^]</a><a href='#L193'>[v]</a><a href='#TOP'>[top]</a>[bottom]<a href='../mains.html'>[index]</a><a href='../help.html'>[help]</a> */</em>
+</body>
+</html>
